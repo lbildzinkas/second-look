@@ -32,11 +32,12 @@ Individual steps: `npm run build`, `npm run lint`, `npm test`.
 Build first (`npm run build`), then give the engine a GitHub token through the environment and point it at any public pull request:
 
 ```sh
-GITHUB_TOKEN="$(gh auth token)" npx second-look-engine \
+GITHUB_TOKEN="$(gh auth token)" node packages/engine/dist/main.js \
   review https://github.com/{owner}/{repo}/pull/{number}
 ```
 
-(`node packages/engine/dist/main.js review …` works the same.)
+The engine package also installs a `second-look-engine` bin link once its
+build output exists (`npm ci` again after `npm run build`).
 
 The command fetches the pull request's metadata and full diff — the description is kept in full, never truncated, and the diff comes from the diff media type, so a large lockfile keeps every line — parses it into files and hunks, and prints a JSON review result with one part per changed file. Compare the file list and line counts with the GitHub page.
 

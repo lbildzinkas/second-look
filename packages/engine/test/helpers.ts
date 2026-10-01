@@ -23,7 +23,7 @@ export interface FixtureTransport {
  */
 export function fixtureFetch(): FixtureTransport {
   const requests: RecordedRequest[] = [];
-  const fetch: typeof fetch = async (input, init) => {
+  const fetchImpl: typeof fetch = async (input, init) => {
     const url =
       typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const headers = new Headers(init?.headers);
@@ -49,7 +49,7 @@ export function fixtureFetch(): FixtureTransport {
       },
     });
   };
-  return { fetch, requests };
+  return { fetch: fetchImpl, requests };
 }
 
 /** A fetch that always fails with the given error. */
