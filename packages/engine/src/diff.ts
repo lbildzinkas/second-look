@@ -377,6 +377,37 @@ export function parseDiff(diff: string): ParsedDiff {
       }
     }
 
+    if (hunk && (oldRemaining > 0 || newRemaining > 0)) {
+      const prefix = line[0]!;
+      const text = line.slice(1);
+      if (prefix === '-' && oldRemaining > 0) {
+        pushLine({ kind: 'deletion', oldLineNumber: oldLine, text });
+        oldLine++;
+        oldRemaining--;
+        part.deletions++;
+      } else if (prefix === '+' && newRemaining > 0) {
+        pushLine({ kind: 'addition', newLineNumber: newLine, text });
+        newLine++;
+        newRemaining--;
+        part.additions++;
+      } else {
+        // A context line, written as ' ' plus content; tolerate a fully
+        // empty line as context with empty content.
+        const contextText = prefix === ' ' ? text : line;
+        pushLine({
+          kind: 'context',
+          oldLineNumber: oldLine,
+          newLineNumber: newLine,
+          text: contextText,
+        });
+        oldLine++;
+        newLine++;
+        oldRemaining--;
+        newRemaining--;
+      }
+      continue;
+    }
+
     match = OLD_PATH.exec(line);
     if (match) {
       const path = sideHeaderPath(match[1]!, 'a/');
@@ -415,37 +446,6 @@ export function parseDiff(diff: string): ParsedDiff {
       oldRemaining = hunk.oldLines;
       newRemaining = hunk.newLines;
       lastDiffLine = undefined;
-      continue;
-    }
-
-    if (hunk && (oldRemaining > 0 || newRemaining > 0)) {
-      const prefix = line[0]!;
-      const text = line.slice(1);
-      if (prefix === '-' && oldRemaining > 0) {
-        pushLine({ kind: 'deletion', oldLineNumber: oldLine, text });
-        oldLine++;
-        oldRemaining--;
-        part.deletions++;
-      } else if (prefix === '+' && newRemaining > 0) {
-        pushLine({ kind: 'addition', newLineNumber: newLine, text });
-        newLine++;
-        newRemaining--;
-        part.additions++;
-      } else {
-        // A context line, written as ' ' plus content; tolerate a fully
-        // empty line as context with empty content.
-        const contextText = prefix === ' ' ? text : line;
-        pushLine({
-          kind: 'context',
-          oldLineNumber: oldLine,
-          newLineNumber: newLine,
-          text: contextText,
-        });
-        oldLine++;
-        newLine++;
-        oldRemaining--;
-        newRemaining--;
-      }
       continue;
     }
 

@@ -231,6 +231,33 @@ describe('parseDiff', () => {
     expect(files[7]!.additions).toBe(48);
   });
 
+  it('treats header-shaped hunk body lines as body, not headers', () => {
+    const { files } = parseDiff(fixture('header-like-body.diff'));
+    const lua = files[0]!;
+    expect(lua.path).toBe('build.lua');
+    expect(lua.deletions).toBe(1);
+    expect(lua.additions).toBe(1);
+    expect(lua.hunks[0]!.lines.map((line) => [line.kind, line.text])).toEqual([
+      ['context', 'keep one'],
+      ['deletion', '-- a/vendored.patch'],
+      ['addition', '++ b/vendored.patch'],
+      ['context', 'keep two'],
+    ]);
+
+    const generated = files[1]!;
+    expect(generated.changeKind).toBe('addition');
+    expect(generated.additions).toBe(1);
+    expect(generated.hunks[0]!.lines[0]!.text).toBe('++ b/generated.txt');
+    expect(generated.hunks[0]!.lines[0]!.newLineNumber).toBe(1);
+
+    const tail = files[2]!;
+    expect(tail.changeKind).toBe('deletion');
+    expect(tail.path).toBe('tail.txt');
+    expect(tail.deletions).toBe(1);
+    expect(tail.hunks[0]!.lines[0]!.text).toBe('-- /dev/null');
+    expect(tail.hunks[0]!.lines[0]!.oldLineNumber).toBe(1);
+  });
+
   it('rejects input that is not a diff', () => {
     expect(() => parseDiff('this is not a diff\n')).toThrow(/diff --git/);
   });
