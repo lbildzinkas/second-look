@@ -80,6 +80,7 @@ describe('validateCoverage', () => {
       hunks: [],
       additions: 0,
       deletions: 0,
+      syntax: structuredClone(parsed.files[0]!.syntax),
     });
     const report = validateCoverage(parsed, extra);
     expect(report.ok).toBe(false);

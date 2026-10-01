@@ -45,7 +45,7 @@ describe('GitHubClient against recorded responses', () => {
     expect(summary.author).toBe('reviewer-login');
     expect(summary.base).toBe('master');
     expect(summary.head).toBe('update-deps');
-    expect(summary.headSha).toBe('f00dcafe1234567890abcdef1234567890abcdef12');
+    expect(summary.headSha).toBe('f00dcafe1234567890abcdef1234567890abcdef');
     // The description arrives exactly as recorded, byte for byte, however
     // long it is; the engine never truncates it.
     expect(summary.description).toBe(recordedJson.body);
@@ -94,7 +94,7 @@ describe('GitHubClient against recorded responses', () => {
     const client = new GitHubClient({ token: 'test-token', fetch: transport.fetch });
     const attributes = await client.getGitAttributesAt(
       ref,
-      'f00dcafe1234567890abcdef1234567890abcdef12',
+      'f00dcafe1234567890abcdef1234567890abcdef',
     );
 
     expect(attributes).toBe(
@@ -109,7 +109,7 @@ describe('GitHubClient against recorded responses', () => {
     expect(transport.requests).toHaveLength(1);
     expect(transport.requests[0]!.url).toBe(
       'https://api.github.com/repos/example-org/example-repo/contents/.gitattributes' +
-        '?ref=f00dcafe1234567890abcdef1234567890abcdef12',
+        '?ref=f00dcafe1234567890abcdef1234567890abcdef',
     );
   });
 

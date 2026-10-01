@@ -1,0 +1,29 @@
+{
+  "url": "https://api.github.com/repos/example-org/example-repo/pulls/7",
+  "id": 123456007,
+  "html_url": "https://github.com/example-org/example-repo/pull/7",
+  "number": 7,
+  "state": "open",
+  "locked": false,
+  "title": "Reformat the Python helpers and tax the cart total",
+  "user": {
+    "login": "reviewer-login",
+    "id": 1000,
+    "type": "User"
+  },
+  "body": "Reformats app/reformat.py, moves the flag out of the discount block, restyles Greeter and taxes the cart total.",
+  "created_at": "2026-09-30T10:15:00Z",
+  "updated_at": "2026-09-30T11:30:00Z",
+  "head": {
+    "ref": "tidy-and-tax",
+    "sha": "7777777777777777777777777777777777777777"
+  },
+  "base": {
+    "ref": "master",
+    "sha": "5555555555555555555555555555555555555555"
+  },
+  "mergeable": true,
+  "additions": 18,
+  "deletions": 19,
+  "changed_files": 6
+}
