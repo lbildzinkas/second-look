@@ -1,0 +1,8 @@
+diff --git a/src/fresh.ts b/src/fresh.ts
+new file mode 100644
+index 0000000..def4567
+--- /dev/null
++++ b/src/fresh.ts
+@@ -0,0 +1,2 @@
++first line
++second line

@@ -1,0 +1,12 @@
+diff --git a/src/config.ts b/src/settings.ts
+similarity index 85%
+rename from src/config.ts
+rename to src/settings.ts
+index aa11bb2..cc33dd4 100644
+--- a/src/config.ts
++++ b/src/settings.ts
+@@ -2,3 +2,3 @@
+ context line
+-removed during the rename
++added during the rename
+ more context

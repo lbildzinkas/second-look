@@ -1,0 +1,27 @@
+{
+  "name": "second-look",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "check": "npm run build && npm run lint && npm test"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "@second-look/engine": "0.1.0",
+    "@types/node": "^22.19.27",
+    "eslint": "^9.39.2",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.48.0",
+    "vitest": "^3.2.4"
+  }
+}
