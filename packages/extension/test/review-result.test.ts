@@ -76,6 +76,14 @@ describe('isReviewResult', () => {
     expect(isReviewResult(value)).toBe(false);
   });
 
+  it('accepts a part for a copied file', () => {
+    const value = JSON.parse(JSON.stringify(sampleResult())) as {
+      parts: { changeKind: string }[];
+    };
+    value.parts[0]!.changeKind = 'copy';
+    expect(isReviewResult(value)).toBe(true);
+  });
+
   it('rejects a part whose numbers are not integers', () => {
     const value = JSON.parse(JSON.stringify(sampleResult())) as {
       parts: { additions: number }[];

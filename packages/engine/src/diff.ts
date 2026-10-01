@@ -17,29 +17,149 @@ interface CurrentFile {
   inBinaryPatch: boolean;
 }
 
-const DIFF_GIT = /^diff --git a\/(.*?) b\/(.*)$/;
+const DIFF_GIT = /^diff --git (.*)$/;
 const OLD_MODE = /^old mode (\d+)$/;
 const NEW_MODE = /^new mode (\d+)$/;
 const DELETED_FILE_MODE = /^deleted file mode (\d+)$/;
 const NEW_FILE_MODE = /^new file mode (\d+)$/;
 const RENAME_FROM = /^rename from (.+)$/;
 const RENAME_TO = /^rename to (.+)$/;
-const BINARY_FILES = /^Binary files a\/(.*) and b\/(.*) differ$/;
-const OLD_PATH = /^--- (a\/.+|\/dev\/null)$/;
-const NEW_PATH = /^\+\+\+ (b\/.+|\/dev\/null)$/;
-const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@ ?(.*)$/;
+const COPY_FROM = /^copy from (.+)$/;
+const COPY_TO = /^copy to (.+)$/;
+const BINARY_FILES =
+  /^Binary files (a\/.+|\/dev\/null|"a\/(?:[^"\\]|\\.)*") and (b\/.+|\/dev\/null|"b\/(?:[^"\\]|\\.)*") differ$/;
+const OLD_PATH = /^--- (a\/.+|\/dev\/null|"a\/(?:[^"\\]|\\.)*")$/;
+const NEW_PATH = /^\+\+\+ (b\/.+|\/dev\/null|"b\/(?:[^"\\]|\\.)*")$/;
+const HUNK_HEADER = /^@@ -(\d+)(?:,(\d))? \+(\d+)(?:,(\d+))? @@ ?(.*)$/;
+
+/** Bytes for the escapes git writes inside a C-quoted path. */
+const ESCAPED_BYTES: Readonly<Record<string, number>> = {
+  '"': 0x22,
+  '\\': 0x5c,
+  n: 0x0a,
+  r: 0x0d,
+  t: 0x09,
+};
+
+const utf8Encoder = new TextEncoder();
+const utf8Decoder = new TextDecoder();
+
+/**
+ * Decodes one path token of a diff header. Unquoted tokens pass through;
+ * quoted tokens unwrap git's C quoting (core.quotePath), whose octal
+ * escapes reassemble the path's UTF-8 bytes. Undefined for a malformed
+ * quoted token.
+ */
+function decodePathToken(token: string): string | undefined {
+  if (!token.startsWith('"')) {
+    return token;
+  }
+  if (token.length < 2 || !token.endsWith('"')) {
+    return undefined;
+  }
+  const bytes: number[] = [];
+  for (let i = 1; i < token.length - 1; i++) {
+    const ch = token[i]!;
+    if (ch !== '\\') {
+      bytes.push(...utf8Encoder.encode(ch));
+      continue;
+    }
+    const escaped = token[i + 1];
+    if (escaped === undefined) {
+      return undefined;
+    }
+    const byte = ESCAPED_BYTES[escaped];
+    if (byte !== undefined) {
+      bytes.push(byte);
+      i++;
+      continue;
+    }
+    if (escaped < '0' || escaped > '7') {
+      return undefined;
+    }
+    let value = 0;
+    let digits = 0;
+    while (digits < 3) {
+      const digit = token[i + 1 + digits];
+      if (digit === undefined || digit < '0' || digit > '7') {
+        break;
+      }
+      value = value * 8 + Number(digit);
+      digits++;
+    }
+    bytes.push(value);
+    i += digits;
+  }
+  return utf8Decoder.decode(Uint8Array.from(bytes));
+}
+
+/** A token's bare path when it decodes with the given prefix, else undefined. */
+function barePath(token: string, prefix: 'a/' | 'b/'): string | undefined {
+  const decoded = decodePathToken(token);
+  if (decoded === undefined || !decoded.startsWith(prefix)) {
+    return undefined;
+  }
+  return decoded.slice(prefix.length);
+}
+
+/**
+ * Reads one side of a two-sided header (`---`, `+++`, `Binary files … and
+ * …`): `/dev/null` means the side is absent, any other token yields its
+ * bare path. Null when the token is not a decodable `a/…`/`b/…` path.
+ */
+function sideHeaderPath(token: string, prefix: 'a/' | 'b/'): string | undefined | null {
+  if (token === '/dev/null') {
+    return undefined;
+  }
+  const path = barePath(token, prefix);
+  return path === undefined ? null : path;
+}
+
+/**
+ * Splits the two path tokens of a `diff --git` line. Quoted tokens wrap
+ * their own `a/` or `b/` prefix; a bare pair splits at the first ` b/`,
+ * which stays ambiguous for paths that themselves contain ` b/`, so the
+ * header paths keep precedence.
+ */
+function splitDiffGitPaths(rest: string): { oldToken: string; newToken: string } | undefined {
+  if (rest.startsWith('"')) {
+    let end = -1;
+    for (let i = 1; i < rest.length; i++) {
+      const ch = rest[i]!;
+      if (ch === '\\') {
+        i++;
+      } else if (ch === '"') {
+        end = i;
+        break;
+      }
+    }
+    if (end === -1 || rest[end + 1] !== ' ') {
+      return undefined;
+    }
+    return { oldToken: rest.slice(0, end + 1), newToken: rest.slice(end + 2) };
+  }
+  const quotedAt = rest.indexOf(' "');
+  const splitAt = quotedAt !== -1 ? quotedAt : rest.indexOf(' b/');
+  if (splitAt === -1) {
+    return undefined;
+  }
+  return { oldToken: rest.slice(0, splitAt), newToken: rest.slice(splitAt + 1) };
+}
 
 /**
  * Parses a unified diff, as GitHub returns it for the diff media type, into
  * typed files and hunks.
  *
- * Handles renames (pure and with edits), additions, deletions, binary files
- * (`Binary files ... differ` and `GIT binary patch`), mode-only changes, and
- * files that end without a final newline. Large patches that the REST file
- * list truncates arrive intact from the diff endpoint and parse the same way.
+ * Handles renames and copies (pure and with edits), additions, deletions,
+ * binary files (`Binary files ... differ` with either side absent and
+ * `GIT binary patch`), mode-only changes, and files that end without a
+ * final newline. Large patches that the REST file list truncates arrive
+ * intact from the diff endpoint and parse the same way. Paths that git
+ * C-quotes (core.quotePath) are decoded in every header they appear in.
  *
- * Paths are taken from the `rename to`/`rename from` headers when present,
- * otherwise from the `---`/`+++` headers, and only as a fallback from the
+ * Paths are taken from the `rename to`/`rename from` (or `copy to`/`copy
+ * from`) headers when present, otherwise from the `---`/`+++` headers or
+ * the sides of the `Binary files` line, and only as a fallback from the
  * `diff --git` line, whose `a/... b/...` form is ambiguous for paths that
  * themselves contain ` b/`.
  */
@@ -98,8 +218,13 @@ export function parseDiff(diff: string): ParsedDiff {
 
     let match = DIFF_GIT.exec(line);
     if (match) {
-      current = startFile(match[2]!);
-      continue;
+      const tokens = splitDiffGitPaths(match[1]!);
+      const newPath = tokens === undefined ? undefined : barePath(tokens.newToken, 'b/');
+      if (tokens !== undefined && newPath !== undefined &&
+          barePath(tokens.oldToken, 'a/') !== undefined) {
+        current = startFile(newPath);
+        continue;
+      }
     }
 
     if (!current) {
@@ -183,46 +308,91 @@ export function parseDiff(diff: string): ParsedDiff {
 
     match = RENAME_FROM.exec(line);
     if (match) {
-      part.previousPath = match[1]!;
-      part.changeKind = 'rename';
-      hunk = undefined;
-      lastDiffLine = undefined;
-      continue;
+      const path = decodePathToken(match[1]!);
+      if (path !== undefined) {
+        part.previousPath = path;
+        part.changeKind = 'rename';
+        hunk = undefined;
+        lastDiffLine = undefined;
+        continue;
+      }
     }
 
     match = RENAME_TO.exec(line);
     if (match) {
-      part.path = match[1]!;
-      part.changeKind = 'rename';
-      hunk = undefined;
-      lastDiffLine = undefined;
-      continue;
+      const path = decodePathToken(match[1]!);
+      if (path !== undefined) {
+        part.path = path;
+        part.changeKind = 'rename';
+        hunk = undefined;
+        lastDiffLine = undefined;
+        continue;
+      }
+    }
+
+    match = COPY_FROM.exec(line);
+    if (match) {
+      const path = decodePathToken(match[1]!);
+      if (path !== undefined) {
+        part.previousPath = path;
+        part.changeKind = 'copy';
+        hunk = undefined;
+        lastDiffLine = undefined;
+        continue;
+      }
+    }
+
+    match = COPY_TO.exec(line);
+    if (match) {
+      const path = decodePathToken(match[1]!);
+      if (path !== undefined) {
+        part.path = path;
+        part.changeKind = 'copy';
+        hunk = undefined;
+        lastDiffLine = undefined;
+        continue;
+      }
     }
 
     match = BINARY_FILES.exec(line);
     if (match) {
-      part.isBinary = true;
-      current.oldHeaderPath = match[1];
-      current.newHeaderPath = match[2];
-      hunk = undefined;
-      lastDiffLine = undefined;
-      continue;
+      const oldPath = sideHeaderPath(match[1]!, 'a/');
+      const newPath = sideHeaderPath(match[2]!, 'b/');
+      if (oldPath !== null && newPath !== null) {
+        part.isBinary = true;
+        current.oldHeaderPath = oldPath;
+        current.newHeaderPath = newPath;
+        if (oldPath === undefined) {
+          part.changeKind = 'addition';
+        } else if (newPath === undefined) {
+          part.changeKind = 'deletion';
+        }
+        hunk = undefined;
+        lastDiffLine = undefined;
+        continue;
+      }
     }
 
     match = OLD_PATH.exec(line);
     if (match) {
-      current.oldHeaderPath = match[1] === '/dev/null' ? undefined : match[1]!.slice(2);
-      hunk = undefined;
-      lastDiffLine = undefined;
-      continue;
+      const path = sideHeaderPath(match[1]!, 'a/');
+      if (path !== null) {
+        current.oldHeaderPath = path;
+        hunk = undefined;
+        lastDiffLine = undefined;
+        continue;
+      }
     }
 
     match = NEW_PATH.exec(line);
     if (match) {
-      current.newHeaderPath = match[1] === '/dev/null' ? undefined : match[1]!.slice(2);
-      hunk = undefined;
-      lastDiffLine = undefined;
-      continue;
+      const path = sideHeaderPath(match[1]!, 'b/');
+      if (path !== null) {
+        current.newHeaderPath = path;
+        hunk = undefined;
+        lastDiffLine = undefined;
+        continue;
+      }
     }
 
     match = HUNK_HEADER.exec(line);

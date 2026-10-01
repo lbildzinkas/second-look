@@ -10,6 +10,7 @@ const CHANGE_KINDS: readonly ChangeKind[] = [
   'deletion',
   'modification',
   'rename',
+  'copy',
 ];
 
 const LINE_KINDS: readonly DiffLineKind[] = ['context', 'addition', 'deletion'];

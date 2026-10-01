@@ -21,7 +21,9 @@ export type ChangeKind =
   /** An edited file that kept its path. */
   | 'modification'
   /** A file whose path changed, with or without edits. */
-  | 'rename';
+  | 'rename'
+  /** A file copied from another path, with or without edits. */
+  | 'copy';
 
 /** The review result the engine produces for one pull request. */
 export interface ReviewResult {

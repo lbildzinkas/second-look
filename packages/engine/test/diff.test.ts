@@ -90,6 +90,52 @@ describe('parseDiff', () => {
     expect(file.additions + file.deletions).toBe(0);
   });
 
+  it('parses an added binary file whose old side is /dev/null', () => {
+    const { files } = parseDiff(fixture('binary-added.diff'));
+    const file = files[0]!;
+    expect(file.isBinary).toBe(true);
+    expect(file.changeKind).toBe('addition');
+    expect(file.path).toBe('assets/shot.png');
+    expect(file.hunks).toHaveLength(0);
+    expect(file.additions + file.deletions).toBe(0);
+  });
+
+  it('parses a deleted binary file whose new side is /dev/null', () => {
+    const { files } = parseDiff(fixture('binary-deleted.diff'));
+    const file = files[0]!;
+    expect(file.isBinary).toBe(true);
+    expect(file.changeKind).toBe('deletion');
+    expect(file.path).toBe('assets/old-logo.png');
+    expect(file.hunks).toHaveLength(0);
+    expect(file.additions + file.deletions).toBe(0);
+  });
+
+  it('decodes C-quoted paths in diff --git, ---/+++ and rename headers', () => {
+    const { files } = parseDiff(fixture('quoted-path.diff'));
+    expect(files.map((file) => file.path)).toEqual(['\u00fcber.md', 'docs/neu \u2605.md']);
+    const edited = files[0]!;
+    expect(edited.changeKind).toBe('modification');
+    expect(edited.additions).toBe(1);
+    expect(edited.deletions).toBe(1);
+    expect(edited.hunks[0]!.lines.map((line) => line.text)).toEqual(['alt', 'neu']);
+    const renamed = files[1]!;
+    expect(renamed.changeKind).toBe('rename');
+    expect(renamed.previousPath).toBe('docs/alt.md');
+    expect(renamed.hunks).toHaveLength(0);
+  });
+
+  it('parses a copied file like a rename, with a copy change kind', () => {
+    const { files } = parseDiff(fixture('copy.diff'));
+    const file = files[0]!;
+    expect(file.changeKind).toBe('copy');
+    expect(file.path).toBe('lib/greet-copy.js');
+    expect(file.previousPath).toBe('lib/greet.js');
+    expect(file.additions).toBe(1);
+    expect(file.deletions).toBe(1);
+    expect(file.hunks[0]!.lines[1]!.oldLineNumber).toBe(2);
+    expect(file.hunks[0]!.lines[2]!.newLineNumber).toBe(2);
+  });
+
   it('parses a binary file carried as a GIT binary patch', () => {
     const { files } = parseDiff(fixture('git-binary-patch.diff'));
     const file = files[0]!;
