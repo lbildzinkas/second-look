@@ -1,0 +1,828 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Second Look — chosen reviewing surface</title>
+<style>
+/* ---------- board chrome ---------- */
+*,*::before,*::after{box-sizing:border-box}
+:root{
+  --bd-bg:#111214;--bd-panel:#18191c;--bd-line:#2a2c31;--bd-ink:#e6e6e6;--bd-dim:#9a9ca3;--bd-acc:#4daafc;--bd-ok:#89d185;--bd-bad:#f48771;--bd-warn:#e2c08d;
+}
+html,body{margin:0;background:var(--bd-bg);color:var(--bd-ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+a{color:var(--bd-acc)}
+.wrap{max-width:1880px;margin:0 auto;padding:28px 28px 120px}
+h1{font-size:30px;line-height:1.2;margin:0 0 6px;letter-spacing:-.01em}
+h2{font-size:22px;margin:0 0 4px}
+h3{font-size:16px;margin:0 0 6px}
+.lede{color:var(--bd-dim);max-width:980px;margin:0}
+.eyebrow{text-transform:uppercase;letter-spacing:.08em;font-size:12px;color:var(--bd-acc);font-weight:600}
+.row{display:flex;gap:16px;flex-wrap:wrap}
+.row>*{min-width:0}
+.card{background:var(--bd-panel);border:1px solid var(--bd-line);border-radius:10px;padding:16px 18px}
+.top{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:18px;margin:22px 0 26px}
+@media (max-width:1100px){.top{grid-template-columns:minmax(0,1fr)}}
+.sample ul{margin:6px 0 0;padding-left:18px;color:#cfd1d6}
+.sample li{margin:2px 0}
+.sample code,.lede code{font:13px "SF Mono",Menlo,Consolas,monospace;background:#23252a;padding:1px 5px;border-radius:4px}
+.tag{display:inline-block;font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;border:1px solid var(--bd-line);color:var(--bd-dim);white-space:nowrap}
+.tag.rec{border-color:#2f6f3a;color:var(--bd-ok);background:#132516}
+.opts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-bottom:30px}
+@media (max-width:1100px){.opts{grid-template-columns:minmax(0,1fr)}}
+.opt{display:flex;flex-direction:column;gap:8px}
+.opt .letter{font:700 13px/1 "SF Mono",Menlo,monospace;background:#23252a;border:1px solid var(--bd-line);border-radius:6px;padding:5px 7px;margin-right:8px}
+.opt .idea{color:#cfd1d6;margin:0}
+.opt .trade{font-size:14px;color:var(--bd-dim);margin:0;border-left:3px solid var(--bd-line);padding-left:10px}
+.opt .trade b{color:var(--bd-ink);font-weight:600}
+.opt.recd{border-color:#2f6f3a;box-shadow:0 0 0 1px #2f6f3a inset}
+form.pick{display:flex;flex-direction:column;gap:8px;margin-top:auto;padding-top:10px;border-top:1px dashed var(--bd-line)}
+form.pick .choices{display:flex;flex-wrap:wrap;gap:6px}
+form.pick label.ch{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--bd-line);border-radius:999px;padding:4px 11px;font-size:13px;cursor:pointer;background:#1d1f23}
+form.pick label.ch:has(input:checked){border-color:var(--bd-acc);background:#13263a;color:#fff}
+form.pick input[type=radio]{accent-color:var(--bd-acc);margin:0}
+form.pick textarea{width:100%;min-height:54px;resize:vertical;background:#0f1012;color:var(--bd-ink);border:1px solid var(--bd-line);border-radius:6px;padding:7px 9px;font:13px/1.4 inherit}
+form.pick .act{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+button.q{background:#0e639c;color:#fff;border:0;border-radius:6px;padding:6px 13px;font:600 13px inherit;cursor:pointer}
+button.q:hover{background:#1177bb}
+.qstate{font-size:12px;color:var(--bd-dim)}
+.qstate.ok{color:var(--bd-ok)}
+.recbox{border-color:#2f6f3a;background:linear-gradient(180deg,#132016,#18191c 60%)}
+.recbox p{margin:6px 0 0;color:#cfd1d6}
+/* moments */
+.mnav{position:sticky;top:0;z-index:20;background:rgba(17,18,20,.94);backdrop-filter:blur(6px);border-bottom:1px solid var(--bd-line);margin:0 -28px 18px;padding:10px 28px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.mnav a{color:var(--bd-dim);text-decoration:none;font-size:13px;border:1px solid var(--bd-line);border-radius:999px;padding:4px 11px;white-space:nowrap}
+.mnav a:hover{color:#fff;border-color:#555}
+.mnav .sp{flex:1}
+.seg{display:inline-flex;border:1px solid var(--bd-line);border-radius:8px;overflow:hidden}
+.seg button{background:transparent;color:var(--bd-dim);border:0;padding:5px 11px;font:600 12px inherit;cursor:pointer}
+.seg button[aria-pressed=true]{background:#2a2d33;color:#fff}
+section.moment{margin:0 0 46px;scroll-margin-top:64px}
+.mhead{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+.mhead .num{font:700 13px "SF Mono",Menlo,monospace;color:var(--bd-acc)}
+.mdesc{color:var(--bd-dim);margin:0 0 14px;max-width:1100px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+body.one .grid3{grid-template-columns:minmax(0,1fr)}
+body.one .shot:not(.on){display:none}
+body.one .shot{max-width:1400px}
+.otabs{display:none;gap:6px;margin-bottom:10px}
+body.one .otabs{display:flex}
+.otabs button{background:#1d1f23;border:1px solid var(--bd-line);color:var(--bd-dim);border-radius:7px;padding:6px 12px;font:600 13px inherit;cursor:pointer}
+.otabs button[aria-pressed=true]{color:#fff;border-color:var(--bd-acc);background:#13263a}
+@media (max-width:1100px){.grid3{grid-template-columns:minmax(0,1fr)}}
+.shot{min-width:0}
+.cap{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:13px;color:var(--bd-dim)}
+.cap b{color:var(--bd-ink)}
+.cap .sp{flex:1}
+.cap button{background:transparent;border:1px solid var(--bd-line);color:var(--bd-dim);border-radius:6px;font:12px inherit;padding:2px 8px;cursor:pointer}
+.cap button:hover{color:#fff}
+.stage{position:relative;width:100%;overflow:hidden;border-radius:8px;border:1px solid #000;box-shadow:0 8px 30px rgba(0,0,0,.45)}
+.stage>.vs{position:absolute;left:0;top:0;transform-origin:0 0}
+.note{font-size:13px;color:#cfd1d6;margin:8px 2px 0}
+.mpick{margin-top:14px;max-width:1100px}
+.final{margin-top:10px}
+.final form.pick{border-top:0;padding-top:0}
+/* overlay */
+.ov{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.85);display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:16px;overflow:auto}
+.ov[hidden]{display:none}
+.ov .bar{width:100%;max-width:1600px;display:flex;align-items:center;gap:10px;margin-bottom:10px;color:#ddd}
+.ov .bar .sp{flex:1}
+.ov .bar button{background:#2a2d33;border:1px solid #444;color:#fff;border-radius:6px;padding:5px 12px;font:600 13px inherit;cursor:pointer}
+.ov .stage{max-width:1600px}
+
+/* ---------- VS Code mockup (Dark Modern tokens) ---------- */
+.vs{--fg:#cccccc;--mut:#9d9d9d;--dim:#6e7681;--ed:#1f1f1f;--bar:#181818;--line:#2b2b2b;--acc:#0078d4;--acc2:#4daafc;--sel:#04395e;--hov:#2a2d2e;--wid:#252526;
+  width:1280px;height:800px;background:var(--ed);color:var(--fg);font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;display:flex;flex-direction:column;overflow:hidden;text-align:left}
+.vs *{min-width:0}
+.vs .mono{font-family:"SF Mono",Menlo,Consolas,"Liberation Mono",monospace}
+.vs-title{height:30px;flex:none;background:var(--bar);border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 10px;gap:8px}
+.vs-title .dots{display:flex;gap:7px}.vs-title .dots i{width:12px;height:12px;border-radius:50%;background:#3c3c3c;display:block}
+.vs-title .dots i:nth-child(1){background:#ff5f57}.vs-title .dots i:nth-child(2){background:#febc2e}.vs-title .dots i:nth-child(3){background:#28c840}
+.vs-cc{margin:0 auto;width:420px;height:22px;border:1px solid #3c3c3c;background:#222;border-radius:6px;color:var(--mut);font-size:12px;display:flex;align-items:center;justify-content:center;gap:6px}
+.vs-body{flex:1;display:flex;min-height:0}
+.vs-act{width:48px;flex:none;background:var(--bar);border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;padding-top:4px}
+.vs-act .ai{width:48px;height:46px;display:flex;align-items:center;justify-content:center;color:#868686;position:relative}
+.vs-act .ai.on{color:#fff}.vs-act .ai.on::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:2px;background:var(--acc)}
+.vs-act .ai .bdg{position:absolute;right:8px;bottom:8px;background:var(--acc);color:#fff;font-size:9px;border-radius:8px;padding:0 4px;line-height:14px}
+.vs-act .grow{flex:1}
+.vs-act svg{width:24px;height:24px}
+.vs-side{flex:none;background:var(--bar);border-right:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden}
+.vs-sideh{height:35px;flex:none;display:flex;align-items:center;padding:0 12px 0 20px;font-size:11px;letter-spacing:.04em;color:#ccc;text-transform:uppercase;gap:6px}
+.vs-sideh .sp{flex:1}
+.vs-sec{flex:none;height:22px;display:flex;align-items:center;gap:4px;padding:0 8px 0 2px;white-space:nowrap;overflow:hidden;font:700 11px/1 inherit;text-transform:uppercase;color:#ccc;border-top:1px solid var(--line)}
+.vs-sec .tw{width:16px;text-align:center;color:#ccc;font-weight:400}
+.vs-sec .sp{flex:1}.vs-sec .cnt{background:#616161;color:#fff;border-radius:9px;padding:1px 6px;font-size:10px;font-weight:600}
+.vs-main{flex:1;display:flex;flex-direction:column;min-width:0}
+.vs-tabs{height:35px;flex:none;background:var(--bar);display:flex;border-bottom:1px solid var(--line)}
+.vs-tab{display:flex;align-items:center;gap:6px;padding:0 12px;color:var(--mut);border-right:1px solid var(--line);font-size:13px;white-space:nowrap;max-width:330px;overflow:hidden}
+.vs-tab.on{background:var(--ed);color:#fff;border-top:1px solid var(--acc);margin-bottom:-1px}
+.vs-tab .x{color:#888;margin-left:4px}
+.vs-bread{height:22px;flex:none;display:flex;align-items:center;gap:5px;padding:0 14px;color:var(--mut);font-size:12px;white-space:nowrap;overflow:hidden}
+.vs-ed{flex:1;overflow:hidden;position:relative;min-height:0}
+.vs-split{display:flex;height:100%}
+.vs-panel{height:210px;flex:none;border-top:1px solid var(--line);background:var(--ed);display:flex;flex-direction:column}
+.vs-ptabs{height:35px;display:flex;align-items:center;gap:20px;padding:0 20px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut)}
+.vs-ptabs .on{color:#e7e7e7;border-bottom:1px solid #e7e7e7;padding-bottom:5px;margin-top:6px}
+.vs-status{height:22px;flex:none;background:var(--bar);border-top:1px solid var(--line);display:flex;align-items:center;font-size:12px;color:var(--mut);gap:0}
+.vs-status .rem{background:var(--acc);color:#fff;height:100%;display:flex;align-items:center;padding:0 10px}
+.vs-status span{padding:0 8px;display:flex;align-items:center;gap:4px;white-space:nowrap}
+.vs-status .sp{flex:1}
+/* tree */
+.tr{height:22px;display:flex;align-items:center;gap:5px;padding-right:8px;white-space:nowrap;color:#ccc;position:relative}
+.tr.tall{height:auto;align-items:flex-start;padding-top:3px;padding-bottom:3px}
+.tr.sel{background:var(--sel);outline:1px solid var(--acc);outline-offset:-1px}
+.tr .tw{width:14px;color:#c5c5c5;flex:none;text-align:center;font-size:11px}
+.tr .lab{overflow:hidden;text-overflow:ellipsis}
+.tr .desc{color:var(--mut);font-size:12px;overflow:hidden;text-overflow:ellipsis}
+.tr .sp{flex:1}
+.tr .two{display:flex;flex-direction:column;min-width:0;flex:1}
+.tr .two .desc{white-space:normal;line-height:1.3;font-size:11.5px}
+.cb{width:14px;height:14px;flex:none;border:1px solid #6b6b6b;border-radius:3px;background:#2a2a2a;display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:#fff;margin-top:1px}
+.cb.on{background:var(--acc);border-color:var(--acc)}
+.cb.on::after{content:"✓"}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--acc2);flex:none;display:inline-block}
+.num{font-size:10px;font-weight:700;border-radius:9px;padding:0 5px;line-height:15px;flex:none}
+.num.red{background:#c72e2e;color:#fff}.num.blue{background:var(--acc);color:#fff}.num.gray{background:#4d4d4d;color:#ddd}
+.u{font:700 10px/14px inherit;color:#e2c08d;border:1px solid #6b5a2e;border-radius:3px;padding:0 3px;flex:none}
+/* pills */
+.pl{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;border-radius:3px;padding:0 6px;line-height:17px;white-space:nowrap;flex:none}
+.pl.must{background:#5a1d1d;color:#f48771}.pl.worth{background:#4a3f17;color:#e2c08d}.pl.context{background:#30343a;color:#b8bcc4}.pl.noise{background:transparent;color:#8b8b8b;border:1px solid #444;line-height:15px}
+.pl.verified,.pl.met{background:#1d3a20;color:#89d185}.pl.refuted,.pl.notmet{background:#4b1f1f;color:#f48771}.pl.unverifiable{background:#463b12;color:#e2c08d}.pl.notchecked{background:#2f3136;color:#a8a8a8}.pl.manual{background:#1f3550;color:#79b8ff}
+.pl.unexpl{background:#463b12;color:#e2c08d}.pl.changed{background:#0b3557;color:#79c0ff}.pl.resolved{background:#22262c;color:#89d185;border:1px solid #2f4a33;line-height:15px}
+.stamp{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--dim);white-space:nowrap}
+.stamp::before{content:"";width:9px;height:9px;border-radius:2px;background:linear-gradient(135deg,#d97757,#b8572f);display:inline-block}
+.src{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#9cc2e6;border:1px solid #2c4a66;border-radius:3px;padding:0 5px;line-height:16px;white-space:nowrap}
+.spin{width:11px;height:11px;border:2px solid #555;border-top-color:var(--acc2);border-radius:50%;display:inline-block;animation:sp 1s linear infinite;flex:none}
+@keyframes sp{to{transform:rotate(360deg)}}
+.skel{display:block;height:9px;border-radius:4px;background:linear-gradient(90deg,#2a2a2a,#333,#2a2a2a);margin:7px 0}
+.btn{display:inline-flex;align-items:center;gap:5px;background:var(--acc);color:#fff;border-radius:2px;padding:3px 10px;font-size:12px;white-space:nowrap;flex:none}
+.btn.sec{background:#313131;color:#ccc;border:1px solid #3c3c3c}
+.btn.ghost{background:transparent;color:var(--acc2);padding:3px 4px}
+.lk{color:var(--acc2)}
+.kbd{font:11px "SF Mono",Menlo,monospace;border:1px solid #555;border-bottom-width:2px;border-radius:3px;padding:0 4px;color:#ccc}
+/* diff */
+.mdh{height:30px;display:flex;align-items:center;gap:8px;padding:0 12px;background:#252526;border-top:1px solid #333;border-bottom:1px solid #333;font-size:13px;white-space:nowrap}
+.mdh .p{color:var(--mut);overflow:hidden;text-overflow:ellipsis}
+.mdh .add{color:#89d185}.mdh .del{color:#f48771}.mdh .st{font:700 11px "SF Mono",monospace;width:14px;text-align:center}
+.mdh .st.A{color:#73c991}.mdh .st.M{color:#e2c08d}.mdh .st.R{color:#73c991}
+.dl{display:flex;font:12.5px/19px "SF Mono",Menlo,Consolas,monospace;white-space:pre}
+.dl .g{width:40px;flex:none;text-align:right;padding-right:8px;color:#6e7681}
+.dl .s{width:16px;flex:none;color:#888}
+.dl .c{flex:1;overflow:hidden;padding-right:10px}
+.dl.add{background:rgba(155,185,85,.16)}.dl.add .s{color:#89d185}
+.dl.del{background:rgba(255,0,0,.16)}.dl.del .s{color:#f48771}
+.dl.hl{box-shadow:inset 3px 0 0 #f48771}
+.dl.hb{box-shadow:inset 3px 0 0 var(--acc2)}
+.dl.hunk{color:#6e7681;background:#1b2733}
+.lens{font:11.5px/18px -apple-system,system-ui,sans-serif;color:#999;padding-left:64px;white-space:nowrap}
+.lens b{font-weight:600}
+.lens .ok{color:#89d185}.lens .bad{color:#f48771}
+.tk{color:#569cd6}.ts{color:#ce9178}.tc{color:#6a9955}.tn{color:#b5cea8}.td{color:#dcdcaa}.tf{color:#dcdcaa}
+/* comment thread widget */
+.th{margin:4px 14px 6px 64px;border:1px solid #454545;border-top:2px solid var(--acc);background:var(--wid);border-radius:0 0 3px 3px;font:13px/1.45 -apple-system,system-ui,sans-serif;white-space:normal}
+.th.red{border-top-color:#f14c4c}.th.amber{border-top-color:#cca700}.th.green{border-top-color:#89d185}.th.gray{border-top-color:#6e7681}
+.th-h{display:flex;align-items:center;gap:8px;padding:5px 10px;border-bottom:1px solid #383838;font-size:12px;color:#ccc}
+.th-h .sp{flex:1}
+.th-b{padding:8px 10px;display:flex;flex-direction:column;gap:6px}
+.th-b p{margin:0}
+.th-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.av{width:20px;height:20px;border-radius:50%;flex:none;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff}
+.av.sl{background:linear-gradient(135deg,#3a7bd5,#00a3a3)}.av.me{background:#8957e5}.av.au{background:#b5651d}
+.ta{background:#313131;border:1px solid var(--acc);border-radius:2px;padding:6px 8px;color:#ddd;min-height:52px;font-size:13px}
+.code{background:#181818;border:1px solid #333;border-radius:3px;padding:5px 0;font:12px/18px "SF Mono",Menlo,monospace;white-space:pre;overflow:hidden}
+.code .ln{color:#6e7681;display:inline-block;width:34px;text-align:right;margin-right:10px}
+.code .hi{background:rgba(244,135,113,.14);display:block;box-shadow:inset 3px 0 0 #f48771}
+.cap2{font-size:11px;color:var(--mut);display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+/* webview generic */
+.wv{height:100%;overflow:hidden;padding:18px 26px;background:var(--ed)}
+.wv h1{font-size:20px;margin:0 0 4px;color:#e7e7e7;font-weight:600;letter-spacing:0}
+.wv h2{font-size:15px;margin:16px 0 8px;color:#e7e7e7;font-weight:600}
+.wv h3{font-size:13px;margin:0;color:#e7e7e7;font-weight:600}
+.wv p{margin:0 0 6px}
+.wv .meta{color:var(--mut);font-size:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.stages{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 4px}
+.stg{display:inline-flex;align-items:center;gap:5px;font-size:12px;border:1px solid #3a3a3a;border-radius:12px;padding:1px 9px;color:#ccc;background:#232323}
+.stg.done::before{content:"✓";color:#89d185;font-weight:700}
+.stg.wait{color:#777}
+.story{background:#252526;border:1px solid #333;border-left:3px solid var(--acc2);border-radius:3px;padding:10px 12px;font-size:13.5px;line-height:1.55;color:#ddd}
+.story .pt{color:#9cdcfe;border-bottom:1px dotted #9cdcfe}
+table.t{width:100%;border-collapse:collapse;font-size:12.5px}
+table.t th{text-align:left;color:var(--mut);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.03em;border-bottom:1px solid #3a3a3a;padding:5px 8px}
+table.t td{border-bottom:1px solid #2e2e2e;padding:6px 8px;vertical-align:top}
+table.t tr.focus td{background:#2a1d1d}
+.ci{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:#ccc;align-items:center}
+.ci .ok{color:#89d185}
+.toast{position:absolute;right:14px;bottom:14px;width:430px;background:#252526;border:1px solid #454545;box-shadow:0 6px 20px rgba(0,0,0,.5);border-radius:4px;padding:10px 12px;font-size:13px;display:flex;flex-direction:column;gap:8px}
+.qp{position:absolute;left:50%;top:6px;transform:translateX(-50%);width:560px;background:#252526;border:1px solid #454545;box-shadow:0 8px 24px rgba(0,0,0,.6);border-radius:6px;padding:6px;z-index:5}
+.qp .in{border:1px solid var(--acc);background:#313131;padding:4px 8px;color:#ccc;border-radius:2px;margin-bottom:4px}
+.qp .it{padding:5px 8px;display:flex;gap:8px;align-items:center;border-radius:3px}
+.qp .it.on{background:var(--sel);outline:1px solid var(--acc)}
+.qp .it .d{color:var(--mut);font-size:12px}
+/* option B article */
+.rail{width:250px;flex:none;border-right:1px solid #2b2b2b;padding:16px 12px;background:#1b1b1b;overflow:hidden}
+.rail .ri{display:flex;gap:7px;align-items:flex-start;padding:5px 6px;border-radius:4px;font-size:12.5px;color:#ccc}
+.rail .ri.on{background:#04395e}
+.rail .ri .n{color:var(--mut);font:11px "SF Mono",monospace;width:14px;flex:none;margin-top:1px}
+.rail .grp{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:12px 6px 4px}
+.art{flex:1;overflow:hidden;padding:20px 34px;position:relative}
+.art .col{max-width:860px}
+.art h2{margin:14px 0 6px;color:#e7e7e7}
+.rp-h{overflow:hidden}.rp-h>*{flex-shrink:0}
+.callout{border:1px solid #4b2a2a;background:#2a1f1f;border-left:3px solid #f14c4c;border-radius:3px;padding:9px 12px;margin:8px 0;font-size:13px}
+.callout.amber{border-color:#4d4321;background:#29261a;border-left-color:#cca700}
+.callout.green{border-color:#2c4a2f;background:#1c2a1d;border-left-color:#89d185}
+.callout.blue{border-color:#22405e;background:#1a2532;border-left-color:#4daafc}
+.callout.gray{border-color:#3a3a3a;background:#232323;border-left-color:#777}
+.callout .hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+.pcard{border:1px solid #333;border-radius:4px;background:#1b1b1b;overflow:hidden;margin-top:8px}
+.foot{display:flex;align-items:center;gap:10px;margin-top:10px;padding-top:10px;border-top:1px solid #333}
+.tray{position:absolute;left:0;right:0;bottom:0;background:#252526;border-top:1px solid #454545;padding:8px 34px;display:flex;align-items:center;gap:12px;font-size:12.5px}
+/* option C */
+.fl{width:470px;flex:none;border-right:1px solid #2b2b2b;display:flex;flex-direction:column;background:#1b1b1b}
+.fl-top{padding:10px 14px 8px;border-bottom:1px solid #2b2b2b}
+.chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}
+.chip{font-size:11.5px;border:1px solid #3a3a3a;border-radius:11px;padding:1px 9px;color:#bbb;white-space:nowrap}
+.chip.on{border-color:var(--acc);background:#0b2a45;color:#fff}
+.fgrp{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);padding:9px 14px 3px;display:flex;gap:6px;align-items:center}
+.fr{padding:7px 14px 8px;border-bottom:1px solid #262626;display:flex;flex-direction:column;gap:3px}
+.fr.sel{background:#04395e;box-shadow:inset 2px 0 0 var(--acc)}
+.fr .l1{display:flex;gap:7px;align-items:center}
+.fr .ti{color:#e7e7e7;font-weight:600;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fr .l2{color:var(--mut);font-size:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.fr .acts{display:flex;gap:6px;margin-top:3px}
+.fr.dim{opacity:.55}
+.rp{flex:1;display:flex;flex-direction:column;min-width:0}
+.rp-h{height:34px;flex:none;display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:1px solid #2b2b2b;font-size:12.5px;color:#ccc;white-space:nowrap}
+.strip{background:#252526;border:1px solid #333;border-radius:3px;padding:6px 9px;font-size:12px;color:#ccc;line-height:1.45}
+</style>
+<style>.wrap{max-width:1400px} section.moment .stage{max-width:1400px}</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">Second Look · reviewing surface · chosen option</div>
+  <h1>Ranked tree, with a send-review page</h1>
+  <p class="lede">The surface chosen in issue #5: a side-bar tree of parts in importance order with reviewed checkboxes and badges, VS Code’s own multi-file diff, findings as comment threads on the exact lines, and an overview tab with the story, the acceptance criteria and the checks. Sending the review uses a dedicated Send review page. The sample pull request is invented: acme/hookrelay #214, “Retry failed webhook deliveries with backoff”.</p>
+  <div id="screens" style="margin-top:26px"></div>
+</div>
+<script>
+/* ================= sample data ================= */
+const MS = 'Claude Code · sonnet-5 · prompts 0.4'
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+function hl(t){
+  if (t.startsWith('§')) return `<span class="ts">${esc(t.slice(1))}</span>`
+  const re=/(#.*$)|("""[^"]*?(?:"""|$)|"[^"\n]*"|'[^'\n]*')|\b(def|class|return|if|else|elif|not|is|None|True|False|from|import|while|try|except|and|or|for|in|assert|with|as|raise)\b|\b(\d+(?:\.\d+)?)\b|(@\w+)/g
+  let out='',i=0,m
+  while((m=re.exec(t))){ out+=esc(t.slice(i,m.index)); const c=m[1]?'tc':m[2]?'ts':m[3]?'tk':m[4]?'tn':'td'; out+=`<span class="${c}">${esc(m[0])}</span>`; i=re.lastIndex }
+  return out+esc(t.slice(i))
+}
+const RETRY = `+"""Retry policy for webhook deliveries.
++§
++§Honours the Retry-After header on 429 responses.
++§"""
++from dataclasses import dataclass
++
++MAX_ATTEMPTS = 5
++BASE_DELAY_S = 1.0
++MAX_DELAY_S = 60.0
++
++
++@dataclass(frozen=True)
++class RetryPolicy:
++    max_attempts: int = MAX_ATTEMPTS
++
++    def delay_for(self, attempt: int, retry_after: float | None = None) -> float:
++        if retry_after is not None:
++            return min(retry_after, MAX_DELAY_S)
++        return min(BASE_DELAY_S * 2 ** (attempt - 1), MAX_DELAY_S)
++
++    def should_retry(self, attempt: int, status: int | None) -> bool:
++        if attempt >= self.max_attempts:
++            return False
++        if status is None:  # connection error
++            return True
++        return status >= 400`
+const SENDER = ` def send_webhook(delivery: Delivery) -> None:
+-    client = build_client(timeout=settings.WEBHOOK_TIMEOUT_S)
+-    response = client.post(delivery.url, json=delivery.payload)
+-    response.raise_for_status()
++    client = build_client(timeout=settings.WEBHOOK_TIMEOUT_S, retries=3)
++    # Transport retries already cover read timeouts, so the policy
++    # below only deals with HTTP status errors.
++    policy = RetryPolicy()
++    attempt = 1
++    while True:
++        log.info("delivering %s attempt=%d", delivery.id, attempt)
++        try:
++            response = client.post(delivery.url, json=delivery.payload)
++            status = response.status_code
++        except httpx.ConnectError:
++            status = None
++        if status is not None and status < 400:
++            return
++        if not policy.should_retry(attempt, status):
++            dead_letter.put(delivery)
++            return
++        retry_after = _retry_after(response) if status == 429 else None
++        time.sleep(policy.delay_for(attempt, retry_after))
++        attempt += 1`
+const PYPROJECT = `   "pydantic>=2.7",
+-  "httpx>=0.27.0",
++  "httpx>=0.27.2",
+   "structlog>=24.1",`
+const CONFIG = ` # Seconds to wait for a webhook endpoint before giving up on one attempt.
+-WEBHOOK_TIMEOUT_S = 10
++WEBHOOK_TIMEOUT_S = 30
+ WEBHOOK_MAX_PAYLOAD_KB = 256`
+const TESTS = `+def test_backoff_schedule():
++    policy = RetryPolicy()
++    assert [policy.delay_for(n) for n in range(1, 6)] == [1, 2, 4, 8, 16]
++
++
++def test_retry_after_is_honoured():
++    assert RetryPolicy().delay_for(2, retry_after=7) == 7
++
++
++def test_gives_up_after_max_attempts():
++    assert not RetryPolicy().should_retry(5, 503)`
+const RETRY2 = `     def should_retry(self, attempt: int, status: int | None) -> bool:
+         if attempt >= self.max_attempts:
+             return False
+         if status is None:  # connection error
+             return True
+-        return status >= 400
++        return status == 429 or status >= 500`
+const SENDER2 = `             status = response.status_code
+-        except httpx.ConnectError:
++        except (httpx.ConnectError, httpx.ReadTimeout):
+             status = None`
+const TESTS2 = ` def test_gives_up_after_max_attempts():
+     assert not RetryPolicy().should_retry(5, 503)
++
++
++@pytest.mark.parametrize("status", [400, 401, 404, 422])
++def test_no_retry_on_client_errors(status):
++    assert not RetryPolicy().should_retry(1, status)
++
++
++def test_retries_429():
++    assert RetryPolicy().should_retry(1, 429)`
+const HTTPCORE = [
+ [128,'        retries_left = self._retries'],
+ [129,'        delays = exponential_backoff(factor=RETRIES_BACKOFF_FACTOR)'],
+ [130,''],
+ [131,'        while True:'],
+ [132,'            try:'],
+ [133,'                ...  # open the TCP / TLS connection'],
+ [134,'                return stream'],
+ [135,'            except (ConnectError, ConnectTimeout):', true],
+ [136,'                if retries_left <= 0:'],
+ [137,'                    raise'],
+ [138,'                retries_left -= 1'],
+]
+const PARTS = [
+ {id:'p1',name:'RetryPolicy and backoff schedule',imp:'must',why:'Decides which failed deliveries are retried; new code that send_webhook and the worker both call.',files:'retry.py',d:'+26',f:2,sig:['new code','2 callers','no tests before this PR']},
+ {id:'p2',name:'Retry loop in send_webhook',imp:'must',why:'Every delivery now runs through this loop; the comment it relies on about httpx retries is refuted.',files:'sender.py, pyproject.toml',d:'+20 −3',f:2,sig:['changed hot path','11 callers','claim in the change']},
+ {id:'p3',name:'Delivery timeout 10 s → 30 s',imp:'worth',why:'Triples how long a dead endpoint holds a worker; neither the description nor the issue mentions it.',files:'config.py',d:'+1 −1',f:1,u:true,sig:['config default','used by 3 modules']},
+ {id:'p4',name:'Retry policy tests',imp:'worth',why:'Shows what is proven: backoff and Retry-After are tested, 4xx handling is not.',files:'test_retry.py',d:'+11',f:0,sig:['new tests']},
+ {id:'p5',name:'Changelog entry',imp:'context',why:'Release note only; it promises jitter that the code does not add.',files:'CHANGELOG.md',d:'+3',f:1,sig:['docs only']},
+ {id:'n1',name:'Rename http_client.py → transport.py',imp:'noise',nz:'confirmed',why:'Moved or renamed: 98% identical, only import paths differ.',files:'transport.py',d:'+2 −2'},
+ {id:'n2',name:'uv.lock',imp:'noise',nz:'confirmed',why:'Lockfile: every changed entry follows from the httpx bump in pyproject.toml.',files:'uv.lock',d:'+14 −9'},
+]
+const IMP = {must:'must review',worth:'worth reviewing',context:'context',noise:'noise'}
+const imp = (l, nz) => `<span class="pl ${l}">${IMP[l]}${nz?' · '+nz:''}</span>`
+const vd = v => `<span class="pl ${v.replace(/\s/g,'')}">${{verified:'✓ verified',refuted:'✕ refuted',unverifiable:'? unverifiable','not checked':'○ not checked',met:'✓ met',notmet:'✕ not met',manual:'◐ needs manual check'}[v]||v}</span>`
+const stamp = (t) => `<span class="stamp">${t||MS}</span>`
+const src = s => `<span class="src">${s}</span>`
+const CRIT = [
+ {n:1,t:'Failed deliveries are retried up to 5 times with exponential backoff.',v:'met',code:'retry.py:7, 19',tests:'test_backoff_schedule · test_gives_up_after_max_attempts',man:'—'},
+ {n:2,t:'Client errors (4xx) are not retried, except 429.',v:'notmet',code:'retry.py:26 retries every status ≥ 400',tests:'none',man:'—'},
+ {n:3,t:'Each attempt is logged with its attempt number.',v:'met',code:'sender.py:25',tests:'none',man:'log excerpt in the PR description'},
+ {n:4,t:'A delivery that runs out of retries goes to the dead-letter queue.',v:'manual',code:'sender.py:34',tests:'none',man:'not reported in the PR'},
+]
+const ASKS = ['Explain this part','Check a claim','Find what it affects']
+
+/* ================= shared VS Code pieces ================= */
+const I = {
+ files:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 3H7a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7z"/><path d="M14 3v4h4"/><path d="M4 7v13a1 1 0 0 0 1 1h9"/></svg>',
+ search:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="14" cy="10" r="6"/><path d="M9.5 14.5 4 20"/></svg>',
+ scm:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="5" r="2"/><circle cx="7" cy="19" r="2"/><circle cx="17" cy="8" r="2"/><path d="M7 7v10M17 10c0 4-10 3-10 7"/></svg>',
+ run:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 5v14l11-7z"/></svg>',
+ ext:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="10" width="6" height="6"/><rect x="10" y="10" width="6" height="6"/><rect x="4" y="16" width="6" height="4" transform="translate(0 0)"/><rect x="14" y="3" width="6" height="6" transform="rotate(10 17 6)"/></svg>',
+ gh:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="19" r="2"/><path d="M6 7v10M18 17V9a3 3 0 0 0-3-3h-4"/><path d="m13 4-2 2 2 2"/></svg>',
+ sl:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><path d="m9 12 2 2 4-4"/></svg>',
+ acct:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="9" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg>',
+ gear:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>',
+}
+function act(on, badge){
+  const items=[['files'],['search'],['scm'],['run'],['ext'],['gh'],['sl',badge]]
+  return `<div class="vs-act">${items.map(([k,b])=>`<div class="ai ${k===on?'on':''}">${I[k]}${b?`<span class="bdg">${b}</span>`:''}</div>`).join('')}<div class="grow"></div><div class="ai">${I.acct}</div><div class="ai">${I.gear}</div></div>`
+}
+function frame({side='', sideW=310, tabs='', bread='', ed='', panel='', status='', actOn='sl', badge='', overlay=''}){
+  return `<div class="vs">
+  <div class="vs-title"><div class="dots"><i></i><i></i><i></i></div><div class="vs-cc">${I.search.replace('<svg','<svg width="13" height="13"')} hookrelay</div></div>
+  <div class="vs-body">${act(actOn,badge)}
+    ${side?`<div class="vs-side" style="width:${sideW}px">${side}</div>`:''}
+    <div class="vs-main"><div class="vs-tabs">${tabs}</div>${bread?`<div class="vs-bread">${bread}</div>`:''}<div class="vs-ed">${ed}${overlay}</div>${panel}</div>
+  </div>
+  <div class="vs-status"><span class="rem">⎇ retry-backoff</span><span>↻ 0 ↓ 0 ↑</span><span>⊗ 0 ⚠ 0</span>${status}</div>
+</div>`
+}
+const tab = (t, on, icon='') => `<div class="vs-tab ${on?'on':''}">${icon}${t}<span class="x">${on?'×':''}</span></div>`
+const slIcon = `<span style="color:#4daafc;display:inline-flex;width:15px;height:15px">${I.sl}</span>`
+const pyIcon = `<span style="color:#3b8eea;font:700 10px monospace">py</span>`
+const mdIcon = `<span style="color:#519aba;font:700 10px monospace">M↓</span>`
+const sbar = (msg, right=MS) => `<span class="sp"></span><span>${msg}</span><span>${right}</span>`
+
+function diffLines(spec, start, opts={}){
+  let o=start[0], n=start[1]
+  const th=opts.threads||{}, lens=opts.lens||{}, hiN=opts.hi||[], hbN=opts.hb||[]
+  return spec.split('\n').map(raw=>{
+    const k=raw[0], txt=raw.slice(1)
+    let on='', nn='', cls=''
+    if(k==='+'){nn=n++;cls='add'} else if(k==='-'){on=o++;cls='del'} else {on=o++;nn=n++}
+    const extra = (nn!==''&&hiN.includes(nn))?' hl':(nn!==''&&hbN.includes(nn))?' hb':''
+    const row = `${lens[nn]&&cls!=='del'?`<div class="lens">${lens[nn]}</div>`:''}<div class="dl ${cls}${extra}"><span class="g">${on}</span><span class="g">${nn}</span><span class="s">${k===' '?'':k}</span><span class="c">${hl(txt)}</span></div>`
+    return row + (cls!=='del'&&th[nn]?th[nn]:'')
+  }).join('')
+}
+const mdh = (st, path, add, del, extra='') => `<div class="mdh"><span>⌄</span><span class="st ${st}">${st}</span>${pyIcon}<span>${path.split('/').pop()}</span><span class="p">${path}</span><span class="add">${add}</span><span class="del">${del}</span><span style="flex:1"></span>${extra}</div>`
+const hunk = t => `<div class="dl hunk"><span class="g"></span><span class="g"></span><span class="s"></span><span class="c">${esc(t)}</span></div>`
+
+function thread({tone='red', title, chips='', body, actions='', who='sl', collapsed=false}){
+  const av = who==='sl'?'<span class="av sl">SL</span>':who==='me'?'<span class="av me">you</span>':'<span class="av au">dk</span>'
+  if (collapsed) return `<div class="th ${tone}"><div class="th-h" style="border-bottom:0">${av}<b>${title}</b><span style="color:#999">${collapsed}</span><span class="sp"></span>${chips}<span style="color:#888">⌄ expand</span></div></div>`
+  return `<div class="th ${tone}"><div class="th-h">${av}<b>${title}</b><span class="sp"></span>${chips}<span style="color:#888">⌃ ×</span></div><div class="th-b">${body}${actions?`<div class="th-row">${actions}</div>`:''}</div></div>`
+}
+function hcodeBlock(rows){
+  return `<div class="code">${rows.map(([n,t,h])=>`<div class="${h?'hi':''}"><span class="ln">${n}</span>${hl(t)}</div>`).join('')}</div>`
+}
+
+/* ---- findings content, reused ---- */
+const F1body = `<p><b>Acceptance criterion 2 is not met.</b> <span class="mono">should_retry</span> returns true for every status ≥ 400, so a 401 or 404 is retried five times. Issue #198 asks for no retries on 4xx except 429. No test covers it.</p>
+<div class="th-row">${vd('refuted')} ${src('the change · retry.py:26')} ${src('issue text · #198')} ${stamp()}</div>`
+const F2body = `<p><b>Claim:</b> “Transport retries already cover read timeouts” <span style="color:#888">— comment in the change (sender.py:20) and the PR description</span></p>
+<p>httpcore 1.0.5, which the project pins, retries only <span class="mono">ConnectError</span> and <span class="mono">ConnectTimeout</span> while opening a connection. A read timeout raises <span class="mono">httpx.ReadTimeout</span>, which the loop does not catch: the delivery fails with no retry and no dead-letter entry.</p>
+${hcodeBlock(HTTPCORE.slice(6,10))}
+<div class="th-row">${vd('refuted')} ${src('library source · httpcore 1.0.5 · _sync/connection.py:135 · fetched by you 10:42')} ${stamp()}</div>`
+const F5body = `<p><b>Claim:</b> “httpx 0.27.2 fixes the pool leak on timeouts that #188 hit.” <span style="color:#888">— PR description</span></p>
+<p>${vd('not checked')} Checking this needs the source of <b>httpx 0.27.2</b>, the version uv.lock pins: the claim is about httpx internals, and nothing in the change or CI shows it.</p>`
+const F5acts = `<span class="btn">⤓ Fetch httpx 0.27.2 source (0.6 MB)</span><span class="btn sec">Leave unchecked</span><span class="cap2">Downloaded by Second Look itself, read-only, never by the agent</span>`
+const F3body = `<p><b>Unexplained change.</b> Neither the description nor issue #198 mentions raising the timeout. With 5 attempts, a dead endpoint can now hold a worker for about 2.5 minutes instead of 50 seconds.</p><div class="th-row">${src('description + issue text')} ${stamp()}</div>`
+const F4body = `<p><b>Described but not found:</b> the description and CHANGELOG say the backoff “adds jitter”; <span class="mono">delay_for</span> has none.</p><div class="th-row">${src('the change')} ${stamp()}</div>`
+const D1 = 'should_retry returns True for any status ≥ 400, so a 401 or 404 is retried five times. #198 asks for no retries on 4xx except 429. Could this be `status == 429 or status >= 500`, with a test?'
+const D2 = 'The comment says transport retries cover read timeouts, but httpcore 1.0.5 only retries ConnectError/ConnectTimeout (_sync/connection.py:135). Should the loop also catch httpx.ReadTimeout?'
+const D3 = 'Why raise the timeout from 10 to 30 s? It is not in the description, and with 5 attempts a dead endpoint now holds a worker ~2.5 min.'
+
+/* ================= OPTION A: ranked tree ================= */
+function treeA({sel='', loading=false, revisit=false, pending=0, findingsSec=false}){
+  const rows = (ids) => ids.map(id=>{
+    const p=PARTS.find(x=>x.id===id)
+    const changed = revisit && ['p1','p2','p4'].includes(id)
+    const checked = revisit ? ['p3','p5','n1','n2'].includes(id) : (pending? ['n1','n2','p4'].includes(id): false)
+    let badges=''
+    if(loading && (id==='p2')) badges+='<span class="spin"></span>'
+    else if(p.f && !(revisit && ['p1','p2'].includes(id))) badges+=`<span class="num red">${p.f}</span>`
+    if(p.u) badges+='<span class="u">?</span>'
+    if(changed) badges+='<span class="dot" title="changed since your last look"></span>'
+    if(p.nz) badges+=`<span class="pl noise">${loading&&id==='n2'?'checking…':p.nz}</span>`
+    return `<div class="tr tall ${sel===id?'sel':''}" style="padding-left:26px"><span class="cb ${checked?'on':''}"></span><div class="two"><span class="lab" style="${p.imp==='noise'?'color:#8b8b8b':''}">${p.name}</span><span class="desc">${p.why}</span></div>${badges}</div>`
+  }).join('')
+  const grp = (l, ids) => `<div class="tr" style="padding-left:6px"><span class="tw">⌄</span>${imp(l)}<span class="desc">${ids.length}</span></div>${rows(ids)}`
+  return `<div class="vs-sideh">Second Look<span class="sp"></span><span style="color:#999">⟳ ⋯</span></div>
+  <div class="vs-sec"><span class="tw">⌄</span>#214 Retry failed webhook deliveries…<span class="sp"></span></div>
+  <div style="padding:4px 12px 8px 20px;font-size:12px;color:#aaa;line-height:1.45">${revisit?'<span class="pl changed">2 new commits since your last look</span><br>':''}dana-k → main · closes #198 · ${loading?'<span class="spin" style="vertical-align:-2px"></span> claims 2 of 6':'7 parts · 5 findings'}<br><span class="lk">Open overview</span> · <span class="lk">Story</span> · <span class="lk">Criteria ${loading?'…':'2 / 4'}</span></div>
+  ${pending?`<div class="vs-sec"><span class="tw">⌄</span>Pending review<span class="sp"></span><span class="cnt">${pending}</span></div>
+   <div class="tr" style="padding-left:22px">✎ <span class="lab">retry.py:26</span><span class="desc">should_retry returns True…</span></div>
+   <div class="tr" style="padding-left:22px">✎ <span class="lab">sender.py:20</span><span class="desc">The comment says transport…</span></div>
+   <div class="tr" style="padding-left:22px">✎ <span class="lab">config.py:2</span><span class="desc">Why raise the timeout…</span></div>
+   <div style="padding:6px 22px"><span class="btn">Submit review…</span> <span class="desc" style="font-size:11px;color:#888;margin-left:6px">nothing is sent until you submit</span></div>`:''}
+  <div class="vs-sec"><span class="tw">⌄</span>Parts · reading order<span class="sp"></span><span class="cnt">${revisit?'4 / 7':pending?'3 / 7':'0 / 7'}</span></div>
+  ${grp('must',['p1','p2'])}${grp('worth',['p3','p4'])}${grp('context',['p5'])}${grp('noise',['n1','n2'])}
+  <div class="vs-sec"><span class="tw">›</span>Checks · on merge commit 9f3c2e1<span class="sp"></span><span style="color:#89d185">✓ 3</span></div>`
+}
+function A_first(){
+  const ed = `<div class="wv">
+   <h1>Retry failed webhook deliveries with backoff</h1>
+   <div class="meta">acme/hookrelay #214 · dana-k · closes #198 · head 7c41d0e</div>
+   <div class="stages"><span class="stg done">story</span><span class="stg done">parts ranked</span><span class="stg done">noise checks</span><span class="stg"><span class="spin"></span> claims 2 of 6</span><span class="stg wait">criteria — waiting on claims</span><span class="stg done">CI</span></div>
+   <h2>Story ${stamp()}</h2>
+   <div class="story">This change makes webhook delivery retry failed sends instead of dropping them. Start with <span class="pt">RetryPolicy</span>, the new rule for what to retry and how long to wait, then read the <span class="pt">retry loop in send_webhook</span> that uses it on every delivery. The <span class="pt">timeout change</span> and the <span class="pt">tests</span> come next. The rename of http_client.py and the lockfile are noise.</div>
+   <h2>Acceptance criteria · issue #198</h2>
+   <table class="t"><tr><th>#</th><th>Criterion</th><th>Verdict</th><th>Code</th><th>Tests</th><th>Manual check</th></tr>
+   ${CRIT.map(c=>`<tr><td>${c.n}</td><td>${c.t}</td><td><span class="spin"></span></td><td><span class="skel" style="width:80px"></span></td><td><span class="skel" style="width:90px"></span></td><td><span class="skel" style="width:60px"></span></td></tr>`).join('')}</table>
+   <h2>Checks</h2><div class="ci"><span class="ok">✓ pytest · 212 passed</span><span class="ok">✓ ruff</span><span class="ok">✓ mypy</span><span style="color:#888">ran on merge commit 9f3c2e1</span></div>
+  </div>`
+  return frame({side:treeA({loading:true}), tabs:tab('Second Look: #214 overview',true,slIcon), ed, badge:'…',
+    status:sbar('<span class="spin"></span> Second Look: checking claims 2 of 6 · most important parts first')})
+}
+function A_part(){
+  const banner = `<div style="padding:8px 14px;border-bottom:1px solid #333;background:#1b1b1b;display:flex;flex-direction:column;gap:5px">
+   <div style="display:flex;gap:8px;align-items:center">${imp('must')}<b style="color:#e7e7e7">RetryPolicy and backoff schedule</b><span style="color:#888">· part 1 of 7</span><span style="flex:1"></span><span class="cb"></span><span style="font-size:12px">Reviewed</span></div>
+   <div style="font-size:12.5px;color:#ccc">Why this matters: decides which failed deliveries are retried; new code that send_webhook and the worker both call. <span style="color:#888">Signals: new code · 2 callers · no tests before this PR</span> ${stamp()}</div>
+   <div style="display:flex;gap:6px">${ASKS.map(a=>`<span class="btn sec">${a}</span>`).join('')}</div></div>`
+  const ed = banner + mdh('A','src/hookrelay/delivery/retry.py','+26','−0') + `<div>${diffLines(RETRY.split('\n').slice(12).join('\n'),[0,13],{
+    lens:{17:'<span class="ok">✓ verified</span> “Honours Retry-After on 429” (docstring, line 3) · the change'},
+    hi:[26], threads:{19:thread({tone:'amber',title:'Described but not found · jitter',collapsed:'the description promises jitter; delay_for has none',body:''}),
+    26:thread({title:'Finding · acceptance criterion 2',body:F1body,actions:'<span class="btn">Draft comment</span><span class="btn sec">Open criteria</span><span class="btn ghost">Dismiss</span>'})}})}</div>`
+  return frame({side:treeA({sel:'p1'}), tabs:tab('Second Look: #214 overview',false,slIcon)+tab('RetryPolicy and backoff schedule (1 file)',true,slIcon), bread:'Second Look › must review › RetryPolicy and backoff schedule', ed:`<div style="height:100%;overflow:hidden">${ed}</div>`,
+    status:sbar('Second Look: 0 of 7 parts reviewed')})
+}
+function A_claim(){
+  const ed = mdh('M','src/hookrelay/delivery/sender.py','+20','−3') + hunk('@@ -18,4 +18,21 @@ def send_webhook') + diffLines(SENDER.split('\n').slice(1,7).join('\n'),[19,19],{hi:[20,21],threads:{21:thread({title:'Claim refuted',body:F2body,actions:'<span class="btn">Draft comment</span><span class="btn sec">Open httpcore/_sync/connection.py</span><span class="btn ghost">Dismiss</span>'})}})
+    + mdh('M','pyproject.toml','+1','−1') + diffLines(PYPROJECT,[11,11],{hb:[12],threads:{12:thread({tone:'gray',title:'Claim not checked · library source needed',body:F5body,actions:F5acts})}})
+  return frame({side:treeA({sel:'p2'}), tabs:tab('Second Look: #214 overview',false,slIcon)+tab('Retry loop in send_webhook (2 files)',true,slIcon), ed:`<div style="height:100%;overflow:hidden">${ed}</div>`,
+    status:sbar('Second Look: library cache · httpcore 1.0.5 (fetched by you)')})
+}
+function critTable(focus){
+  return `<table class="t"><tr><th>#</th><th>Criterion</th><th>Verdict</th><th>Code</th><th>Tests</th><th>Manual check</th></tr>
+  ${CRIT.map(c=>`<tr class="${c.n===focus?'focus':''}"><td>${c.n}</td><td>${c.t}</td><td>${vd(c.v)}</td><td class="mono" style="font-size:11.5px"><span class="lk">${c.code}</span></td><td style="font-size:12px">${c.tests==='none'?'<span style="color:#f48771">none</span>':c.tests}</td><td style="font-size:12px">${c.man}</td></tr>`).join('')}</table>`
+}
+function A_criteria(){
+  const ed = `<div class="wv">
+   <div class="meta" style="margin-bottom:8px"><span class="lk">Story</span> · <b style="color:#fff">Acceptance criteria</b> · <span class="lk">Unexplained changes</span> · <span class="lk">Checks</span></div>
+   <h2 style="margin-top:0">Acceptance criteria · issue #198 <span style="font-weight:400;color:#999;font-size:12px">2 met · 1 not met · 1 needs a manual check</span> ${stamp()}</h2>
+   ${critTable(2)}
+   <h2>Unexplained changes ${stamp()}</h2>
+   <div class="callout amber" style="margin:4px 0"><div class="hd"><span class="pl unexpl">? in the code, not explained</span><b>Delivery timeout 10 s → 30 s</b><span class="lk mono" style="font-size:12px">config.py:2</span></div>Neither the description nor issue #198 mentions it.</div>
+   <div class="callout amber" style="margin:4px 0"><div class="hd"><span class="pl unexpl">? described, not in the code</span><b>“adds jitter to the backoff”</b><span class="lk" style="font-size:12px">description, CHANGELOG</span></div>delay_for has no jitter.</div>
+   <h2>Checks</h2><div class="ci"><span class="ok">✓ pytest · 212 passed</span><span class="ok">✓ ruff</span><span class="ok">✓ mypy</span><span style="color:#888">ran on merge commit 9f3c2e1 · no-mistakes report: none at head 7c41d0e</span></div>
+  </div>`
+  return frame({side:treeA({}), tabs:tab('Second Look: #214 overview',true,slIcon)+tab('RetryPolicy and backoff schedule (1 file)',false,slIcon), ed, status:sbar('Second Look: criteria 2 of 4 met')})
+}
+function A_comments(){
+  const draft = `<div class="th"><div class="th-h"><span class="av me">you</span><b>Draft comment · from finding</b><span class="sp"></span><span class="pl worth" style="background:#2f2a14">pending review</span></div><div class="th-b">
+   <div class="ta mono" style="font-size:12px">${esc(D1)}</div>
+   <div class="th-row"><span class="btn">Add to pending review</span><span class="btn sec">Discard draft</span><span class="cap2">Drafted from the finding; edit freely. Lines: retry.py:26</span></div></div></div>`
+  const ed = mdh('A','src/hookrelay/delivery/retry.py','+26','−0') + `<div>${diffLines(RETRY.split('\n').slice(14).join('\n'),[0,15],{hi:[26],threads:{26:draft}})}</div>`
+  const qp = `<div class="qp"><div class="in">Submit review on acme/hookrelay #214 (3 comments)</div>
+   <div class="it on"><b>Request changes</b><span class="d">3 comments · criterion 2 not met</span></div>
+   <div class="it"><b>Comment</b><span class="d">send the comments without a verdict</span></div>
+   <div class="it"><b>Approve</b><span class="d">approve with the comments</span></div>
+   <div class="it" style="color:#888;font-size:12px">Nothing reaches GitHub until you choose one. Esc to keep drafting.</div></div>`
+  return frame({side:treeA({sel:'p1',pending:3}), tabs:tab('Second Look: #214 overview',false,slIcon)+tab('RetryPolicy and backoff schedule (1 file)',true,slIcon), bread:'Second Look › must review › RetryPolicy and backoff schedule', ed:`<div style="height:100%;overflow:hidden">${ed}</div>`, overlay:qp, badge:'3',
+    status:sbar('Second Look: 3 draft comments in your pending review')})
+}
+function A_revisit(){
+  const ed = `<div style="padding:7px 14px;border-bottom:1px solid #333;background:#132233;font-size:12.5px;display:flex;gap:8px;align-items:center"><span class="pl changed">since your last look</span>7c41d0e → b9e2f10 · 2 commits by dana-k · showing only what changed since you last looked<span style="flex:1"></span><span class="lk">Show whole PR</span></div>`
+   + mdh('M','src/hookrelay/delivery/retry.py','+1','−1') + hunk('@@ -21,6 +21,6 @@ class RetryPolicy') + diffLines(RETRY2,[21,21],{threads:{26:thread({tone:'green',title:'Resolved by the new commit · criterion 2',chips:'<span class="pl resolved">✓ resolved</span>',body:`<p>Criterion 2 is now met: 4xx except 429 is no longer retried, and <span class="mono">test_no_retry_on_client_errors</span> proves it.</p><div class="th-row">${vd('met')} ${src('the change · retry.py:26')} ${stamp()}</div>`})}})
+   + mdh('M','src/hookrelay/delivery/sender.py','+1','−1') + diffLines(SENDER2,[28,28],{})
+   + mdh('M','tests/test_retry.py','+8','−0') + diffLines(TESTS2.split('\n').slice(0,6).join('\n'),[10,10],{})
+  const toast = `<div class="toast"><div style="display:flex;gap:8px;align-items:center">${slIcon}<b>2 new commits since your last look</b></div><div style="color:#ccc">3 parts changed, so their reviewed marks were cleared. 2 findings resolved; dana-k replied to your comment on config.py.</div><div style="display:flex;gap:6px;justify-content:flex-end"><span class="btn sec">Open reply</span><span class="btn">Review changes</span></div></div>`
+  return frame({side:treeA({revisit:true,sel:'p1'}), tabs:tab('Since your last look: 3 parts',true,slIcon), ed:`<div style="height:100%;overflow:hidden">${ed}</div>`, overlay:toast, badge:'3',
+    status:sbar('Second Look: 4 of 7 reviewed · 3 changed since your last look')})
+}
+
+/* ================= OPTION B: story reader ================= */
+function railB({cur='p1', loading=false, revisit=false, done=[]}){
+  const order = ['p1','p2','p3','p4','p5']
+  return `<div class="rail"><div style="font-size:11px;color:#999;text-transform:uppercase;letter-spacing:.06em;margin:0 6px 8px">Reading order</div>
+   <div class="ri ${cur==='story'?'on':''}"><span class="n">▸</span>Story</div>
+   ${order.map((id,i)=>{const p=PARTS.find(x=>x.id===id);const ch=revisit&&['p1','p2','p4'].includes(id);const d=done.includes(id)||(revisit&&!ch);return `<div class="ri ${cur===id?'on':''}"><span class="n">${i+1}</span><div style="flex:1"><div style="display:flex;gap:5px;align-items:center">${d?'<span style="color:#89d185">✓</span>':''}${p.name}</div><div style="display:flex;gap:4px;margin-top:2px">${imp(p.imp)}${ch?'<span class="pl changed">changed</span>':''}${loading&&id==='p2'?'<span class="spin"></span>':p.f&&!(revisit&&id!=='p3')?`<span class="num red">${p.f}</span>`:''}</div></div></div>`}).join('')}
+   <div class="grp">Skipped as noise · confirmed</div>
+   <div class="ri" style="color:#888"><span class="n">–</span>${revisit?'<span style="color:#89d185">✓</span> ':''}Rename http_client.py → transport.py</div>
+   <div class="ri" style="color:#888"><span class="n">–</span>${revisit?'<span style="color:#89d185">✓</span> ':''}uv.lock ${loading?'<span class="spin"></span>':''}</div>
+   <div class="grp">Then</div>
+   <div class="ri ${cur==='crit'?'on':''}"><span class="n">✓</span>Does it do what #198 asked?</div>
+   <div class="ri ${cur==='send'?'on':''}"><span class="n">✉</span>Send your review</div></div>`
+}
+function frameB(rail, art, opts={}){
+  return frame({tabs:tab('Review #214 · Retry failed webhook deliveries',true,slIcon), ed:`<div class="vs-split">${rail}<div class="art">${art}</div></div>`, ...opts})
+}
+function B_first(){
+  const art = `<div class="col">
+   <div class="meta" style="color:#999;font-size:12px">acme/hookrelay #214 · dana-k · closes #198</div>
+   <h1 style="font-size:22px;margin:2px 0 6px;color:#eee">Retry failed webhook deliveries with backoff</h1>
+   <div class="stages"><span class="stg done">story</span><span class="stg done">parts ranked</span><span class="stg done">noise checks</span><span class="stg"><span class="spin"></span> claims 2 of 6</span><span class="stg wait">criteria</span><span class="stg done">CI ✓ 3</span></div>
+   <h2 style="font-size:16px">The story ${stamp()}</h2>
+   <div class="story" style="font-size:14.5px;line-height:1.65">This change makes webhook delivery retry failed sends instead of dropping them. <b>1.</b> Start with <span class="pt">RetryPolicy</span>, the new rule for what to retry and how long to wait. <b>2.</b> Then the <span class="pt">retry loop in send_webhook</span>, which every delivery now runs through. <b>3.</b> The <span class="pt">timeout change</span> and <b>4.</b> the <span class="pt">tests</span> come next; <b>5.</b> the changelog is context. A rename and the lockfile were checked and skipped as noise.</div>
+   <h2 style="font-size:16px">Part 1 · RetryPolicy and backoff schedule ${imp('must')}</h2>
+   <p style="color:#ccc">Why this matters: decides which failed deliveries are retried; new code that send_webhook and the worker both call.</p>
+   <div class="callout red"><div class="hd">${vd('refuted')}<b>1 finding ready</b> · acceptance criterion 2 not met</div><span style="color:#ccc">More may arrive while you read; part 1 was checked first.</span></div>
+   <div class="callout gray"><div class="hd"><span class="spin"></span><b>Checking 4 more claims</b> in parts 2 and 3…</div><span class="skel" style="width:60%"></span></div>
+   <div class="foot"><span class="btn" style="font-size:13px;padding:5px 14px">Start reading part 1 →</span><span class="kbd">J</span><span style="color:#888;font-size:12px">next part · </span><span class="kbd">K</span><span style="color:#888;font-size:12px">previous</span></div>
+  </div>`
+  return frameB(railB({cur:'story',loading:true}), art, {badge:'…',status:sbar('<span class="spin"></span> Second Look: checking claims 2 of 6')})
+}
+function B_part(){
+  const art = `<div class="col" style="max-width:900px">
+   <div style="display:flex;gap:8px;align-items:center;font-size:12px;color:#999">Part 1 of 5 ${imp('must')} <span>Signals: new code · 2 callers · no tests before this PR</span> ${stamp()}</div>
+   <h1 style="font-size:20px;margin:4px 0;color:#eee">RetryPolicy and backoff schedule</h1>
+   <p style="color:#ccc;font-size:13.5px">Why this matters: decides which failed deliveries are retried; new code that send_webhook and the worker both call.</p>
+   <div class="pcard">${mdh('A','src/hookrelay/delivery/retry.py','+26','−0','<span class="lk" style="font-size:12px">Open in editor ↗</span>')}
+   ${diffLines(RETRY.split('\n').slice(11).join('\n'),[0,12],{lens:{16:'<span class="ok">✓ verified</span> “Honours Retry-After on 429” · the change'},hi:[26]})}
+   <div class="callout red" style="margin:6px 10px 10px">${F1body}<div class="th-row" style="margin-top:6px"><span class="btn">Draft comment</span><span class="btn ghost">Dismiss</span></div></div></div>
+   <div class="callout amber"><div class="hd"><span class="pl unexpl">? described, not in the code</span><b>“adds jitter to the backoff”</b></div>The description and CHANGELOG promise jitter; delay_for has none.</div>
+   <div class="foot">${ASKS.map(a=>`<span class="btn sec">${a}</span>`).join('')}<span style="flex:1"></span><span class="cb"></span><span style="font-size:12.5px">Reviewed</span><span class="btn" style="padding:5px 14px">Mark reviewed · next part →</span></div>
+  </div>`
+  return frameB(railB({cur:'p1'}), art, {status:sbar('Second Look: part 1 of 5 · 0 reviewed')})
+}
+function B_claim(){
+  const art = `<div class="col" style="max-width:920px">
+   <div style="display:flex;gap:8px;align-items:center;font-size:12px;color:#999">Part 2 of 5 ${imp('must')} ${stamp()}</div>
+   <h1 style="font-size:20px;margin:4px 0;color:#eee">Retry loop in send_webhook</h1>
+   <div class="callout red" style="padding:10px 12px"><div class="hd">${vd('refuted')}<b>“Transport retries already cover read timeouts”</b><span style="color:#999;font-size:12px">— comment in the change, sender.py:20, and the PR description</span></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px">
+     <div><div class="cap2" style="margin-bottom:3px"><b style="color:#ccc">The change says</b> · sender.py</div>${hcodeBlock([[19,'    client = build_client(timeout=..., retries=3)'],[20,'    # Transport retries already cover read timeouts, so the policy',true],[21,'    # below only deals with HTTP status errors.',true],[29,'        except httpx.ConnectError:',true],[30,'            status = None']])}</div>
+     <div><div class="cap2" style="margin-bottom:3px"><b style="color:#ccc">The library does</b> · httpcore 1.0.5 · _sync/connection.py</div>${hcodeBlock(HTTPCORE.slice(3,11))}</div>
+    </div>
+    <p style="margin-top:8px;color:#ddd">Only connection errors are retried. A read timeout raises httpx.ReadTimeout, which the loop does not catch, so the delivery fails with no retry and no dead-letter entry.</p>
+    <div class="th-row">${src('library source · httpcore 1.0.5 · fetched by you 10:42')} <span class="btn">Draft comment</span><span class="btn sec">Open library file</span></div></div>
+   <div class="callout gray"><div class="hd">${vd('not checked')}<b>“httpx 0.27.2 fixes the pool leak on timeouts that #188 hit.”</b><span style="color:#999;font-size:12px">— PR description · pyproject.toml:12</span></div>
+    <p style="color:#ccc">To check this, Second Look needs the source of <b>httpx 0.27.2</b>, the version uv.lock pins; nothing in the change or CI shows it.</p><div class="th-row" style="margin-top:6px">${F5acts}</div></div>
+   <div class="callout amber"><div class="hd">${vd('unverifiable')}<b>“Delivery order per endpoint is unchanged.”</b> ${src('model memory')}</div>Order depends on the queue worker, which is outside this change.</div>
+   <div class="pcard">${mdh('M','src/hookrelay/delivery/sender.py','+20','−3')}${diffLines(SENDER.split('\n').slice(0,10).join('\n'),[18,18],{hi:[20,21]})}</div>
+  </div>`
+  return frameB(railB({cur:'p2',done:['p1']}), art, {status:sbar('Second Look: part 2 of 5 · 1 reviewed')})
+}
+function B_criteria(){
+  const card = c => `<div style="border:1px solid #333;border-radius:4px;padding:10px 12px;background:${c.v==='notmet'?'#2a1f1f':'#1b1b1b'};display:flex;flex-direction:column;gap:5px">
+    <div style="display:flex;gap:8px;align-items:center"><span style="font:700 12px monospace;color:#888">${c.n}</span>${vd(c.v)}<span style="flex:1"></span>${c.v==='notmet'?'<span class="btn">Draft comment</span>':c.v==='manual'?'<span class="btn sec">Ask the author for evidence</span>':''}</div>
+    <div style="color:#eee;font-size:13.5px">${c.t}</div>
+    <div style="display:grid;grid-template-columns:70px 1fr;gap:2px 8px;font-size:12px;color:#bbb"><span style="color:#888">Code</span><span class="mono lk">${c.code}</span><span style="color:#888">Tests</span><span>${c.tests==='none'?'<span style="color:#f48771">none</span>':c.tests}</span><span style="color:#888">Manual</span><span>${c.man}</span></div></div>`
+  const art = `<div class="col" style="max-width:940px">
+   <div style="font-size:12px;color:#999">After the parts ${stamp()}</div>
+   <h1 style="font-size:20px;margin:4px 0 10px;color:#eee">Does it do what issue #198 asked?</h1>
+   <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${CRIT.map(card).join('')}</div>
+   <h2 style="font-size:15px">Changes nobody asked for, and promises nobody kept</h2>
+   <div class="callout amber"><div class="hd"><span class="pl unexpl">? in the code, not explained</span><b>Delivery timeout 10 s → 30 s</b> <span class="lk">part 3</span></div>Neither the description nor the issue mentions it.</div>
+   <div class="callout amber"><div class="hd"><span class="pl unexpl">? described, not in the code</span><b>Jitter in the backoff</b> <span class="lk">part 1</span></div>Promised in the description and CHANGELOG; not implemented.</div>
+   <div class="ci" style="margin-top:10px"><span class="ok">✓ pytest · 212 passed</span><span class="ok">✓ ruff</span><span class="ok">✓ mypy</span><span style="color:#888">ran on merge commit 9f3c2e1</span></div>
+  </div>`
+  return frameB(railB({cur:'crit',done:['p1','p2','p3','p4','p5']}), art, {status:sbar('Second Look: 5 of 5 parts reviewed')})
+}
+function B_comments(){
+  const dc = (where, txt, from, on) => `<div style="border:1px solid ${on?'#0078d4':'#333'};border-radius:4px;background:#1b1b1b;padding:9px 11px;display:flex;flex-direction:column;gap:6px">
+   <div style="display:flex;gap:8px;align-items:center;font-size:12px"><span class="av me">you</span><span class="mono lk">${where}</span><span style="color:#888">from ${from}</span><span style="flex:1"></span><span class="lk">Show code</span><span style="color:#888">Discard</span></div>
+   <div class="${on?'ta':''} mono" style="font-size:12px;color:#ddd;${on?'':'padding:0 2px'}">${esc(txt)}</div></div>`
+  const art = `<div class="col" style="max-width:900px">
+   <h1 style="font-size:20px;margin:0 0 4px;color:#eee">Send your review</h1>
+   <p style="color:#aaa">3 draft comments, all drafted from findings and edited by you. They go to GitHub as one review, and only when you press Submit.</p>
+   <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">${dc('retry.py:26',D1,'criterion 2 not met',true)}${dc('sender.py:20',D2,'refuted claim')}${dc('config.py:2',D3,'unexplained change')}</div>
+   <div style="margin-top:10px;border:1px dashed #444;border-radius:4px;padding:9px 11px;color:#999;font-size:12.5px">+ Add a comment on the whole pull request</div>
+   <div class="foot" style="flex-wrap:wrap"><span style="font-size:12.5px;color:#ccc">Submit as</span>
+    <span class="chip on">Request changes</span><span class="chip">Comment</span><span class="chip">Approve</span><span style="flex:1"></span><span class="btn" style="padding:5px 16px">Submit review to GitHub</span></div>
+  </div>`
+  return frameB(railB({cur:'send',done:['p1','p2','p3','p4','p5']}), art, {badge:'3',status:sbar('Second Look: 3 drafts · nothing sent yet')})
+}
+function B_revisit(){
+  const art = `<div class="col" style="max-width:920px">
+   <div class="callout blue" style="padding:10px 14px"><div class="hd"><span class="pl changed">since your last look</span><b style="font-size:14px">Two commits since you reviewed on Tuesday at 16:20</b></div>
+    <p style="color:#ddd;margin:2px 0 6px">dana-k pushed “Do not retry 4xx except 429” and “Catch ReadTimeout”. Read these 3 parts again; the other 4 are unchanged and keep your reviewed marks.</p>
+    <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="pl resolved">✓ criterion 2 now met</span><span class="pl resolved">✓ read-timeout claim resolved</span><span class="pl unexpl">? timeout change still unexplained · dana-k replied</span></div></div>
+   <h2 style="font-size:15px">1 · RetryPolicy and backoff schedule <span class="pl changed">changed</span></h2>
+   <div class="pcard">${mdh('M','src/hookrelay/delivery/retry.py','+1','−1')}${diffLines(RETRY2.split('\n').slice(3).join('\n'),[24,24],{})}</div>
+   <h2 style="font-size:15px">2 · Retry loop in send_webhook <span class="pl changed">changed</span></h2>
+   <div class="pcard">${mdh('M','src/hookrelay/delivery/sender.py','+1','−1')}${diffLines(SENDER2,[28,28],{})}</div>
+   <h2 style="font-size:15px">Reply on your comment · config.py:2</h2>
+   <div class="callout gray"><div style="display:flex;gap:8px;align-items:flex-start"><span class="av au">dk</span><div><b>dana-k</b> <span style="color:#888;font-size:12px">2 h ago</span><p style="margin:2px 0 0;color:#ddd">Our largest customer's endpoint routinely takes ~20 s; 10 s was dropping their events. I'll add it to the description.</p></div></div></div>
+  </div>`
+  return frameB(railB({cur:'story',revisit:true}), art, {badge:'3',status:sbar('Second Look: 3 parts changed since your last look')})
+}
+
+/* ================= OPTION C: findings triage ================= */
+function partsC(sel, revisit){
+  return `<div class="vs-sideh">Second Look<span class="sp"></span><span style="color:#999">⋯</span></div>
+  <div class="vs-sec"><span class="tw">⌄</span>Parts<span class="sp"></span><span class="cnt">${revisit?'4 / 7':'0 / 7'}</span></div>
+  ${PARTS.map(p=>{const ch=revisit&&['p1','p2','p4'].includes(p.id), ok=revisit&&!ch; return `<div class="tr ${sel===p.id?'sel':''}" style="padding-left:10px"><span style="width:3px;height:16px;background:${{must:'#f14c4c',worth:'#cca700',context:'#777',noise:'#3a3a3a'}[p.imp]}"></span><span class="cb ${ok?'on':''}"></span><span class="lab" style="${p.imp==='noise'?'color:#888':''}">${p.name}</span><span class="sp"></span>${ch?'<span class="dot"></span>':''}${p.f&&!(revisit&&['p1','p2'].includes(p.id))?`<span class="num red">${p.f}</span>`:''}</div>`}).join('')}
+  <div class="vs-sec"><span class="tw">›</span>Checks<span class="sp"></span><span style="color:#89d185">✓ 3</span></div>`
+}
+const FROWS = {
+ f1:{t:'Criterion 2 not met: 4xx responses are retried',v:'refuted',part:'RetryPolicy',at:'retry.py:26',s:'the change + issue text'},
+ f2:{t:'“Transport retries already cover read timeouts”',v:'refuted',part:'send_webhook',at:'sender.py:20',s:'library · httpcore 1.0.5'},
+ f3:{t:'Unexplained: delivery timeout 10 s → 30 s',v:'unexpl',part:'Timeout',at:'config.py:2',s:'description + issue'},
+ f4:{t:'Described, not found: jitter in the backoff',v:'unexpl',part:'RetryPolicy',at:'description',s:'the change'},
+ f5:{t:'“httpx 0.27.2 fixes the pool leak on timeouts”',v:'not checked',part:'send_webhook',at:'pyproject.toml:12',s:'needs library source'},
+ f6:{t:'“Delivery order per endpoint is unchanged”',v:'unverifiable',part:'send_webhook',at:'description',s:'model memory'},
+ f7:{t:'“Honours Retry-After on 429”',v:'verified',part:'RetryPolicy',at:'retry.py:17',s:'the change'},
+ f8:{t:'“Backoff caps at 60 s”',v:'verified',part:'RetryPolicy',at:'retry.py:9',s:'the change'},
+}
+function frow(id, o={}){
+  const f=FROWS[id]
+  const pill = f.v==='unexpl'?'<span class="pl unexpl">? unexplained</span>':vd(f.v)
+  return `<div class="fr ${o.sel?'sel':''} ${o.dim?'dim':''}"><div class="l1">${pill}<span class="ti">${f.t}</span></div>
+   <div class="l2"><span>${f.part}</span><span class="mono lk">${f.at}</span>${src(f.s)}${o.extra||''}</div>
+   ${o.acts?`<div class="acts">${o.acts}</div>`:''}</div>`
+}
+function listC({sel='', filt='All', top='', loading=false, rows}){
+  const chips = ['All 8','Needs you 5','Criteria 4','Claims 6','Verified 2']
+  return `<div class="fl"><div class="fl-top">
+   <div style="display:flex;gap:8px;align-items:center"><b style="color:#eee">#214 · Retry failed webhook deliveries</b><span style="flex:1"></span>${stamp()}</div>
+   ${top||`<div class="strip" style="margin-top:7px"><b>Story:</b> retries failed webhook sends with backoff. Read RetryPolicy, then the loop in send_webhook; the rename and lockfile are noise. <span class="lk">Read the full story</span></div>`}
+   <div class="chips">${chips.map(c=>`<span class="chip ${c.startsWith(filt)?'on':''}">${c}</span>`).join('')}</div></div>
+   <div style="overflow:hidden;flex:1">${rows}</div></div>`
+}
+function frameC(list, right, opts={}){
+  return frame({side:partsC(opts.selPart, opts.revisit), sideW:215, tabs:tab('Findings · #214',true,slIcon)+(opts.tab2?tab(opts.tab2,false,pyIcon):''), ed:`<div class="vs-split">${list}<div class="rp">${right}</div></div>`, ...opts})
+}
+function C_first(){
+  const rows = `<div class="fgrp">Needs a decision <span class="num gray">2</span></div>${frow('f1',{sel:true})}${frow('f3')}
+   <div class="fgrp">Arriving <span class="spin"></span></div>
+   ${[1,2,3].map(()=>`<div class="fr"><span class="skel" style="width:70%;margin:3px 0"></span><span class="skel" style="width:45%;margin:3px 0"></span></div>`).join('')}
+   <div class="fgrp">Verified <span class="num gray">1</span></div>${frow('f8',{dim:true})}`
+  const top = `<div class="stages" style="margin:7px 0 0"><span class="stg done">story</span><span class="stg done">parts</span><span class="stg done">noise</span><span class="stg"><span class="spin"></span> claims 2 of 6</span><span class="stg wait">criteria</span><span class="stg done">CI</span></div>`
+  const right = `<div class="rp-h">${vd('refuted')}<b>Criterion 2 not met</b><span style="color:#888">· RetryPolicy and backoff schedule · must review</span></div>
+   <div style="overflow:hidden">${mdh('A','src/hookrelay/delivery/retry.py','+26','−0')}${diffLines(RETRY.split('\n').slice(15).join('\n'),[0,16],{hi:[26],threads:{26:thread({title:'Finding · acceptance criterion 2',body:F1body,actions:'<span class="btn">Draft comment</span><span class="btn ghost">Dismiss</span>'})}})}</div>`
+  return frameC(listC({rows,top}), right, {badge:'…',selPart:'p1',status:sbar('<span class="spin"></span> Second Look: 3 findings so far · checking claims 2 of 6')})
+}
+function C_part(){
+  const top = `<div style="margin-top:7px;border:1px solid #333;border-radius:3px;padding:8px 10px;background:#202020">
+   <div style="display:flex;gap:6px;align-items:center">${imp('must')}<b style="color:#eee">RetryPolicy and backoff schedule</b><span style="flex:1"></span><span class="cb"></span><span style="font-size:12px">Reviewed</span></div>
+   <div style="font-size:12px;color:#bbb;margin-top:3px">Why this matters: decides which failed deliveries are retried; new code that send_webhook and the worker both call.</div>
+   <div style="display:flex;gap:5px;margin-top:6px">${ASKS.map(a=>`<span class="btn sec" style="font-size:11px">${a}</span>`).join('')}</div></div>`
+  const rows = `<div class="fgrp">In this part · needs a decision</div>${frow('f1',{sel:true,acts:'<span class="btn">Draft comment</span><span class="btn sec">Open criteria</span><span class="btn ghost">Dismiss</span>'})}${frow('f4',{acts:'<span class="btn sec">Draft comment</span><span class="btn ghost">Dismiss</span>'})}
+   <div class="fgrp">In this part · verified</div>${frow('f7',{dim:true})}${frow('f8',{dim:true})}
+   <div class="fgrp" style="color:#e2c08d">No finding points at</div><div class="fr"><div class="l2">Lines 1-15 and 21-25 of retry.py · <span class="lk">read them too</span></div></div>`
+  const right = `<div class="rp-h">Part filter: <b>RetryPolicy and backoff schedule</b><span style="color:#888">· 1 file</span></div>
+   <div style="overflow:hidden">${mdh('A','src/hookrelay/delivery/retry.py','+26','−0')}${diffLines(RETRY.split('\n').slice(6).join('\n'),[0,7],{hi:[26],lens:{17:'<span class="ok">✓ verified</span> “Honours Retry-After on 429”'}})}</div>`
+  return frameC(listC({rows,top,filt:'All'}), right, {selPart:'p1',status:sbar('Second Look: part 1 of 7 · 2 findings to decide')})
+}
+function C_claim(){
+  const rows = `<div class="fgrp">Needs a decision <span class="num gray">5</span></div>${frow('f1')}${frow('f2',{sel:true,acts:'<span class="btn">Draft comment</span><span class="btn sec">Open library file</span><span class="btn ghost">Dismiss</span>'})}${frow('f3')}
+   ${frow('f5',{acts:'<span class="btn">⤓ Fetch httpx 0.27.2 (0.6 MB)</span><span class="btn sec">Leave unchecked</span>',extra:''})}
+   <div class="fr" style="padding-top:0"><div class="l2" style="font-size:11.5px">Why: the claim is about httpx internals and nothing in the change or CI shows it. Second Look downloads it itself, read-only; the agent never fetches.</div></div>
+   ${frow('f6')}`
+  const right = `<div class="rp-h">${vd('refuted')}<b>Claim · “Transport retries already cover read timeouts”</b></div>
+   <div style="overflow:hidden;padding:0">
+    <div style="padding:6px 14px;font-size:12px;color:#999">The change · sender.py · claim made in a comment and the PR description</div>
+    ${diffLines(SENDER.split('\n').slice(4,17).join('\n'),[21,19],{hi:[20,21,29]})}
+    <div class="mdh" style="margin-top:6px"><span>⌄</span>${pyIcon}<span>httpcore 1.0.5 · _sync/connection.py</span><span class="p">read-only · fetched by you 10:42</span></div>
+    <div style="padding:4px 0">${HTTPCORE.map(([n,t,h])=>`<div class="dl ${h?'hl':''}" style="${h?'background:rgba(244,135,113,.12)':''}"><span class="g"></span><span class="g">${n}</span><span class="s"></span><span class="c">${hl(t)}</span></div>`).join('')}</div>
+    <div style="padding:6px 14px;font-size:12.5px;color:#ddd">Only connection errors are retried; httpx.ReadTimeout reaches send_webhook uncaught, so the delivery fails with no retry and no dead-letter entry. ${stamp()}</div>
+   </div>`
+  return frameC(listC({rows,filt:'Needs'}), right, {selPart:'p2',tab2:'connection.py (httpcore 1.0.5)',status:sbar('Second Look: library cache · httpcore 1.0.5')})
+}
+function C_criteria(){
+  const rows = `<div class="fgrp">Issue #198 · 2 of 4 met</div>${CRIT.map(c=>`<div class="fr ${c.n===2?'sel':''}"><div class="l1">${vd(c.v)}<span class="ti">${c.n}. ${c.t}</span></div><div class="l2"><span>code <span class="mono lk">${c.code.split(' ')[0]}</span></span><span>tests ${c.tests==='none'?'<span style="color:#f48771">none</span>':c.tests.split(' ')[0]}</span><span>manual ${c.man==='—'?'—':c.man.split(' ').slice(0,2).join(' ')+'…'}</span></div></div>`).join('')}
+   <div class="fgrp">Unexplained changes</div>${frow('f3')}${frow('f4')}`
+  const right = `<div class="rp-h">${vd('notmet')}<b>Criterion 2 · Client errors (4xx) are not retried, except 429</b></div>
+   <div style="padding:10px 14px;overflow:hidden">
+    <div class="cap2" style="margin-bottom:4px"><b style="color:#ccc">Issue #198</b> · “Webhook deliveries are lost on transient failures”</div>
+    <div class="strip" style="font-size:12.5px">- [ ] Failed deliveries are retried up to 5 times with exponential backoff.<br><span style="background:#4b1f1f;padding:0 3px">- [ ] Client errors (4xx) are not retried, except 429.</span><br>- [ ] Each attempt is logged with its attempt number.<br>- [ ] A delivery that runs out of retries goes to the dead-letter queue.</div>
+    <div class="cap2" style="margin:10px 0 4px"><b style="color:#ccc">Code</b> · retry.py</div>
+    ${hcodeBlock([[21,'    def should_retry(self, attempt: int, status: int | None) -> bool:'],[22,'        if attempt >= self.max_attempts:'],[23,'            return False'],[24,'        if status is None:  # connection error'],[25,'            return True'],[26,'        return status >= 400',true]])}
+    <div class="cap2" style="margin:10px 0 4px"><b style="color:#ccc">Tests</b></div><div style="color:#f48771;font-size:12.5px">No test exercises a 4xx response.</div>
+    <div class="cap2" style="margin:10px 0 4px"><b style="color:#ccc">Manual check</b></div><div style="color:#bbb;font-size:12.5px">None reported in the PR.</div>
+    <div style="margin-top:12px;display:flex;gap:6px"><span class="btn">Draft comment</span><span class="btn sec">Open in diff</span></div></div>`
+  return frameC(listC({rows,filt:'Criteria'}), right, {selPart:'p1',status:sbar('Second Look: criteria 2 of 4 met')})
+}
+function C_comments(){
+  const rows = `<div class="fgrp">Drafted <span class="num blue">3</span></div>${frow('f1',{extra:'<span class="pl changed">✎ draft</span>'})}${frow('f2',{extra:'<span class="pl changed">✎ draft</span>'})}${frow('f3',{extra:'<span class="pl changed">✎ draft</span>'})}
+   <div class="fgrp">Dismissed <span class="num gray">1</span></div>${frow('f4',{dim:true,extra:'<span style="color:#888">“changelog wording, minor”</span>'})}
+   <div class="fgrp">Left open <span class="num gray">2</span></div>${frow('f5',{dim:true})}${frow('f6',{dim:true})}`
+  const dc = (where, txt, on) => `<div style="border:1px solid ${on?'#0078d4':'#333'};border-radius:3px;background:#1b1b1b;padding:7px 9px;display:flex;flex-direction:column;gap:5px"><div style="display:flex;gap:6px;align-items:center;font-size:12px"><span class="av me">you</span><span class="mono lk">${where}</span><span style="flex:1"></span><span style="color:#888">Discard</span></div><div class="${on?'ta':''} mono" style="font-size:11.5px;color:#ddd">${esc(txt)}</div></div>`
+  const right = `<div class="rp-h">✉ <b>Pending review</b><span style="color:#888">· 3 comments · nothing sent yet</span></div>
+   <div style="padding:10px 14px;display:flex;flex-direction:column;gap:7px;overflow:hidden">${dc('retry.py:26',D1,true)}${dc('sender.py:20',D2)}${dc('config.py:2',D3)}
+   <div style="border:1px dashed #444;border-radius:3px;padding:7px 9px;color:#999;font-size:12px">Summary comment (optional): Thanks! Two blockers: 4xx retries and read timeouts.</div>
+   <div class="foot" style="flex-wrap:wrap"><span class="chip on">Request changes</span><span class="chip">Comment</span><span class="chip">Approve</span><span style="flex:1"></span><span class="btn" style="padding:5px 14px">Submit review to GitHub</span></div></div>`
+  return frameC(listC({rows,filt:'All'}), right, {badge:'3',status:sbar('Second Look: 3 drafts · 1 dismissed · 2 open')})
+}
+function C_revisit(){
+  const top = `<div class="strip" style="margin-top:7px;border-left:3px solid #4daafc"><span class="pl changed">since your last look</span> 2 commits by dana-k · 7c41d0e → b9e2f10 · 3 parts changed</div>`
+  const rows = `<div class="fgrp">Resolved by new commits <span class="num gray">2</span></div>${frow('f1',{extra:'<span class="pl resolved">✓ resolved · now met</span>'})}${frow('f2',{extra:'<span class="pl resolved">✓ resolved</span>'})}
+   <div class="fgrp">Still open <span class="num gray">2</span></div>${frow('f3',{sel:true,extra:'<span class="pl changed">1 reply</span>'})}${frow('f4')}
+   <div class="fgrp">New since your last look <span class="num blue">1</span></div>
+   <div class="fr"><div class="l1">${vd('verified')}<span class="ti">“4xx except 429 is not retried” (new commit message)</span></div><div class="l2"><span>RetryPolicy</span><span class="mono lk">retry.py:26</span>${src('the change + tests')}</div></div>
+   <div class="fgrp">Changed code no finding points at</div><div class="fr"><div class="l2">tests/test_retry.py +8 · <span class="lk">read it</span></div></div>`
+  const right = `<div class="rp-h">${'<span class="pl unexpl">? unexplained</span>'}<b>Delivery timeout 10 s → 30 s</b><span style="color:#888">· your comment has a reply</span></div>
+   <div style="overflow:hidden">${mdh('M','src/hookrelay/config.py','+1','−1')}${diffLines(CONFIG,[1,1],{hi:[2],threads:{2:`<div class="th"><div class="th-h"><span class="av me">you</span><b>Your comment · sent Tuesday</b></div><div class="th-b"><p class="mono" style="font-size:12px">${esc(D3)}</p><div style="display:flex;gap:8px;align-items:flex-start;border-top:1px solid #383838;padding-top:6px"><span class="av au">dk</span><div><b>dana-k</b> <span style="color:#888;font-size:12px">2 h ago</span><p>Our largest customer's endpoint routinely takes ~20 s; 10 s was dropping their events. I'll add it to the description.</p></div></div><div class="ta" style="min-height:30px;color:#888">Reply…</div><div class="th-row"><span class="btn sec">Add reply to pending review</span><span class="btn ghost">Resolve</span></div></div></div>`}})}</div>`
+  return frameC(listC({rows,top,filt:'All'}), right, {badge:'1',selPart:'p3',revisit:true,status:sbar('Second Look: 2 resolved · 2 open · 1 new')})
+}
+
+
+/* ===== chosen: A, with the story reader's send page ===== */
+function A_send(){
+  const dc = (where, txt, from, on) => `<div style="border:1px solid ${on?'#0078d4':'#333'};border-radius:4px;background:#1b1b1b;padding:9px 11px;display:flex;flex-direction:column;gap:6px">
+   <div style="display:flex;gap:8px;align-items:center;font-size:12px"><span class="av me">you</span><span class="mono lk">${where}</span><span style="color:#888">from ${from}</span><span style="flex:1"></span><span class="lk">Show code</span><span style="color:#888">Discard</span></div>
+   <div class="${on?'ta':''} mono" style="font-size:12px;color:#ddd;${on?'':'padding:0 2px'}">${esc(txt)}</div></div>`
+  const ed = `<div class="wv" style="padding:20px 34px"><div style="max-width:860px">
+   <h1 style="font-size:20px">Send your review</h1>
+   <p style="color:#aaa">3 draft comments, all drafted from findings and edited by you. They go to GitHub as one review, and only when you press Submit.</p>
+   <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">${dc('retry.py:26',D1,'criterion 2 not met',true)}${dc('sender.py:20',D2,'refuted claim')}${dc('config.py:2',D3,'unexplained change')}</div>
+   <div style="margin-top:10px;border:1px dashed #444;border-radius:4px;padding:9px 11px;color:#999;font-size:12.5px">+ Add a comment on the whole pull request</div>
+   <div class="foot" style="flex-wrap:wrap"><span style="font-size:12.5px;color:#ccc">Submit as</span>
+    <span class="chip on">Request changes</span><span class="chip">Comment</span><span class="chip">Approve</span><span style="flex:1"></span><span class="btn" style="padding:5px 16px">Submit review to GitHub</span></div>
+  </div></div>`
+  return frame({side:treeA({pending:3}), tabs:tab('Second Look: #214 overview',false,slIcon)+tab('RetryPolicy and backoff schedule (1 file)',false,slIcon)+tab('Send review · #214',true,slIcon), ed, badge:'3',
+    status:sbar('Second Look: 3 drafts · nothing sent yet')})
+}
+const SCREENS = [
+ ['First open, results still arriving','The overview tab shows the story as soon as it is ready, with chips for each stage still running; the tree already ranks the parts and shows spinners where claims are still being checked. The most important part is checked first.',A_first],
+ ['Reading a must-review part','Selecting a part opens VS Code’s multi-file diff for just that part. A banner above it gives the importance, the one-line reason, the signals, the three asks and the reviewed checkbox. Findings are comment threads on the exact lines; verified claims are quiet lines above the code.',A_part],
+ ['A refuted claim, its evidence, and a library-fetch offer','The refuted claim is a thread on the comment that makes it, with the library source at the pinned version as evidence. A claim that needs library source the companion does not have offers the fetch, with its reason, for the reviewer to start.',A_claim],
+ ['Acceptance criteria','The overview tab lists each criterion with its verdict, code, tests and manual checks, then unexplained changes in both directions, then CI on the merge commit.',A_criteria],
+ ['Drafting a comment','A finding becomes a draft comment in its thread; the reviewer edits it and adds it to the pending review, which collects in its own side-bar section.',A_comments_draft],
+ ['Sending the review','Submit review… opens a Send review page (taken from the story reader option): every draft listed for one last pass, then Request changes, Comment or Approve, and one Submit button. Nothing reaches GitHub before that press.',A_send],
+ ['Second visit: since your last look','New commits clear the reviewed marks of the parts they touched, mark them with a dot, show only what changed since the last look, and say which findings were resolved and who replied.',A_revisit],
+]
+function A_comments_draft(){
+  const html = A_comments()
+  return html.replace(/<div class="qp">[\s\S]*?Esc to keep drafting\.<\/div><\/div>/, '')
+}
+const W = 1280, H = 800
+function fit(stage){ const s = stage.clientWidth / W; stage.style.height = (H*s)+'px'; const vs = stage.firstElementChild; if (vs) vs.style.transform = `scale(${s})` }
+const ro = new ResizeObserver(es => es.forEach(e => fit(e.target)))
+document.getElementById('screens').innerHTML = SCREENS.map(([t,d,f],i)=>`<section class="moment" id="s${i+1}"><div class="mhead"><span class="num">${i+1}</span><h2>${t}</h2></div><p class="mdesc">${d}</p><div class="stage">${f()}</div></section>`).join('')
+document.querySelectorAll('.stage').forEach(s => { fit(s); ro.observe(s) })
+</script>
+</body>
+</html>
