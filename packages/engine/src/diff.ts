@@ -30,15 +30,19 @@ const BINARY_FILES =
   /^Binary files (a\/.+|\/dev\/null|"a\/(?:[^"\\]|\\.)*") and (b\/.+|\/dev\/null|"b\/(?:[^"\\]|\\.)*") differ$/;
 const OLD_PATH = /^--- (a\/.+|\/dev\/null|"a\/(?:[^"\\]|\\.)*")$/;
 const NEW_PATH = /^\+\+\+ (b\/.+|\/dev\/null|"b\/(?:[^"\\]|\\.)*")$/;
-const HUNK_HEADER = /^@@ -(\d+)(?:,(\d))? \+(\d+)(?:,(\d+))? @@ ?(.*)$/;
+const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@ ?(.*)$/;
 
 /** Bytes for the escapes git writes inside a C-quoted path. */
 const ESCAPED_BYTES: Readonly<Record<string, number>> = {
   '"': 0x22,
   '\\': 0x5c,
+  a: 0x07,
+  b: 0x08,
+  f: 0x0c,
   n: 0x0a,
   r: 0x0d,
   t: 0x09,
+  v: 0x0b,
 };
 
 const utf8Encoder = new TextEncoder();

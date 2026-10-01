@@ -1,0 +1,21 @@
+diff --git a/src/block.ts b/src/block.ts
+index 12a3b4c..56c7d8e 100644
+--- a/src/block.ts
++++ b/src/block.ts
+@@ -3,12 +3,14 @@
+ context one
+ context two
+ context three
+ context four
+ context five
+ context six
+ context seven
+ context eight
+ context nine
+-old line one
+-old line two
++new line one
++new line two
++new line three
++new line four
+ context ten

@@ -124,6 +124,15 @@ describe('parseDiff', () => {
     expect(renamed.hunks).toHaveLength(0);
   });
 
+  it('decodes control-byte letter escapes in quoted paths', () => {
+    const { files } = parseDiff(fixture('quoted-control.diff'));
+    const file = files[0]!;
+    expect(file.path).toBe('tmp/w\u0007x\u0008y\u000bz\u000c.log');
+    expect(file.changeKind).toBe('modification');
+    expect(file.additions).toBe(1);
+    expect(file.deletions).toBe(1);
+  });
+
   it('parses a copied file like a rename, with a copy change kind', () => {
     const { files } = parseDiff(fixture('copy.diff'));
     const file = files[0]!;
@@ -164,6 +173,20 @@ describe('parseDiff', () => {
     const markerLine = newSide.hunks[0]!.lines[2]!;
     expect(markerLine.kind).toBe('addition');
     expect(markerLine.endsWithoutNewline).toBe(true);
+  });
+
+  it('parses a hunk whose old-side count has more than one digit', () => {
+    const { files } = parseDiff(fixture('wide-hunk.diff'));
+    const file = files[0]!;
+    const hunk = file.hunks[0]!;
+    expect(hunk.oldStart).toBe(3);
+    expect(hunk.oldLines).toBe(12);
+    expect(hunk.newLines).toBe(14);
+    expect(file.deletions).toBe(2);
+    expect(file.additions).toBe(4);
+    expect(hunk.lines).toHaveLength(16);
+    const deletions = hunk.lines.filter((line) => line.kind === 'deletion');
+    expect(deletions.map((line) => line.oldLineNumber)).toEqual([12, 13]);
   });
 
   it('parses a large lockfile-sized patch without losing lines', () => {
