@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { REVIEW_RESULT_VERSION, type ReviewResult } from '@second-look/engine';
+import { REVIEW_RESULT_VERSION, type NoiseAssessment, type ReviewResult } from '@second-look/engine';
 import { ProtocolError, isReviewResult, parseReviewResult } from '../src/index.js';
 
 function sampleResult(): ReviewResult {
@@ -13,6 +13,7 @@ function sampleResult(): ReviewResult {
       description: 'A description of any length, kept in full.',
       base: 'master',
       head: 'update-deps',
+      headSha: 'f00dcafe1234567890abcdef1234567890abcdef12',
     },
     parts: [
       {
@@ -45,6 +46,13 @@ function sampleResult(): ReviewResult {
         ],
         additions: 1,
         deletions: 1,
+        noise: {
+          label: 'lockfile',
+          rule: 'lockfile-name',
+          state: 'claimed',
+          blindSpot:
+            'Only known lockfile names are matched; a lockfile renamed or hand-written under another name is missed.',
+        },
       },
     ],
   };
@@ -58,7 +66,7 @@ describe('isReviewResult', () => {
 
   it('rejects results of any other version', () => {
     const value = sampleResult() as unknown as { version: number };
-    value.version = 2;
+    value.version = 3;
     expect(isReviewResult(value)).toBe(false);
   });
 
@@ -82,6 +90,60 @@ describe('isReviewResult', () => {
     };
     value.parts[0]!.changeKind = 'copy';
     expect(isReviewResult(value)).toBe(true);
+  });
+
+  it('accepts every noise label with its state and blind spot, and the none verdict', () => {
+    const assessments: NoiseAssessment[] = [
+      {
+        label: 'moved or renamed',
+        rule: 'rename-identical',
+        state: 'confirmed',
+        blindSpot: 'Identical content proves only the move.',
+      },
+      {
+        label: 'snapshot',
+        rule: 'snapshot-name',
+        state: 'claimed',
+        blindSpot: 'Only known snapshot names are matched.',
+      },
+      { label: 'none', note: 'no rule applied' },
+    ];
+    for (const noise of assessments) {
+      const value = JSON.parse(JSON.stringify(sampleResult())) as {
+        parts: { noise: NoiseAssessment }[];
+      };
+      value.parts[0]!.noise = noise;
+      expect(isReviewResult(value), JSON.stringify(noise)).toBe(true);
+    }
+  });
+
+  it('rejects a part whose noise assessment is missing or malformed', () => {
+    const cases: unknown[] = [
+      undefined,
+      { label: 'none' }, // 'none' must say no rule applied
+      { label: 'none', note: 'something else' },
+      { label: 'mystery' }, // unknown label
+      { label: 'lockfile', rule: 'lockfile-name', state: 'claimed' }, // no blind spot
+      {
+        label: 'lockfile',
+        rule: 'lockfile-name',
+        state: 'claimed',
+        blindSpot: '', // the blind spot must say something
+      },
+      { label: 'lockfile', rule: 'made-up-rule', state: 'claimed', blindSpot: 'x' },
+      { label: 'lockfile', rule: 'lockfile-name', state: 'proved', blindSpot: 'x' },
+    ];
+    for (const noise of cases) {
+      const value = JSON.parse(JSON.stringify(sampleResult())) as {
+        parts: Record<string, unknown>[];
+      };
+      if (noise === undefined) {
+        delete value.parts[0]!['noise'];
+      } else {
+        value.parts[0]!['noise'] = noise;
+      }
+      expect(isReviewResult(value), JSON.stringify(noise)).toBe(false);
+    }
   });
 
   it('rejects a part whose numbers are not integers', () => {
@@ -108,6 +170,6 @@ describe('parseReviewResult', () => {
 
 describe('the versioned protocol is shared with the engine', () => {
   it('uses the same version constant', () => {
-    expect(REVIEW_RESULT_VERSION).toBe(1);
+    expect(REVIEW_RESULT_VERSION).toBe(2);
   });
 });

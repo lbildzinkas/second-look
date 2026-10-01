@@ -2,6 +2,9 @@ import {
   REVIEW_RESULT_VERSION,
   type ChangeKind,
   type DiffLineKind,
+  type NoiseLabel,
+  type NoiseRule,
+  type NoiseState,
   type ReviewResult,
 } from '@second-look/engine';
 
@@ -14,6 +17,28 @@ const CHANGE_KINDS: readonly ChangeKind[] = [
 ];
 
 const LINE_KINDS: readonly DiffLineKind[] = ['context', 'addition', 'deletion'];
+
+const NOISE_LABELS: readonly NoiseLabel[] = [
+  'lockfile',
+  'generated',
+  'vendored',
+  'moved or renamed',
+  'snapshot',
+  'fixture',
+];
+
+const NOISE_RULES: readonly NoiseRule[] = [
+  'rename-identical',
+  'snapshot-name',
+  'fixture-path',
+  'linguist-generated',
+  'linguist-vendored',
+  'lockfile-name',
+  'generated-name',
+  'generated-header',
+];
+
+const NOISE_STATES: readonly NoiseState[] = ['confirmed', 'claimed'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -62,6 +87,27 @@ function isHunk(value: unknown): boolean {
   return Array.isArray(value['lines']) && value['lines'].every(isDiffLine);
 }
 
+function isNonEmptyString(value: unknown): value is string {
+  return isString(value) && value.length > 0;
+}
+
+function isNoiseAssessment(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const label = value['label'];
+  if (!isString(label)) return false;
+  if (label === 'none') {
+    // The plain statement that no rule applied, per ADR 0001.
+    return value['note'] === 'no rule applied';
+  }
+  if (!NOISE_LABELS.includes(label as NoiseLabel)) return false;
+  const rule = value['rule'];
+  if (!isString(rule) || !NOISE_RULES.includes(rule as NoiseRule)) return false;
+  const state = value['state'];
+  if (!isString(state) || !NOISE_STATES.includes(state as NoiseState)) return false;
+  // Every label carries a one-line blind spot, so it cannot be empty.
+  return isNonEmptyString(value['blindSpot']);
+}
+
 function isPart(value: unknown): boolean {
   if (!isRecord(value)) return false;
   if (!isString(value['path'])) return false;
@@ -81,7 +127,9 @@ function isPart(value: unknown): boolean {
     return false;
   }
   if (!isNumber(value['additions']) || !isNumber(value['deletions'])) return false;
-  return Array.isArray(value['hunks']) && value['hunks'].every(isHunk);
+  if (!Array.isArray(value['hunks']) || !value['hunks'].every(isHunk)) return false;
+  // The engine sets the noise assessment on every part before printing.
+  return isNoiseAssessment(value['noise']);
 }
 
 function isPullRequestSummary(value: unknown): boolean {

@@ -26,8 +26,8 @@ describe('runCli review', () => {
     expect(code).toBe(0);
     expect(err.text).toBe('');
     const result = JSON.parse(out.text) as { version: number; parts: unknown[] };
-    expect(result.version).toBe(1);
-    expect(result.parts).toHaveLength(8);
+    expect(result.version).toBe(2);
+    expect(result.parts).toHaveLength(11);
   });
 
   it('accepts the token as a flag instead of the environment', async () => {
@@ -40,7 +40,7 @@ describe('runCli review', () => {
     );
     expect(code).toBe(0);
     const result = JSON.parse(out.text) as { version: number };
-    expect(result.version).toBe(1);
+    expect(result.version).toBe(2);
   });
 
   it('never writes the token to stdout or stderr', async () => {

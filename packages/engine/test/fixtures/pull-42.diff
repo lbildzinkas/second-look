@@ -53,6 +53,37 @@ index 1111111..2222222 100644
 diff --git a/scripts/run.sh b/scripts/run.sh
 old mode 100644
 new mode 100755
+diff --git a/src/util/formatting.ts b/src/util/format.ts
+similarity index 100%
+rename from src/util/formatting.ts
+rename to src/util/format.ts
+index 55aa11bb..55aa11bb 100644
+diff --git a/src/__snapshots__/review.test.ts.snap b/src/__snapshots__/review.test.ts.snap
+index 77cc22dd..88dd33ee 100644
+--- a/src/__snapshots__/review.test.ts.snap
++++ b/src/__snapshots__/review.test.ts.snap
+@@ -3,5 +3,9 @@
+ exports[`review orders the parts by importance > keeps the story first`] = `Story first
+ `;
+ 
+-exports[`review orders the parts by importance > sinks the lockfile`] = `Lockfile last
++exports[`review orders the parts by importance > sinks the lockfile`] = `Lockfile last
++after the story
+ `;
++
++exports[`review labels noise > keeps snapshots visible`] = `Snapshot visible
++`;
+diff --git a/src/generated/options.json b/src/generated/options.json
+new file mode 100644
+index 0000000..99aa88bb
+--- /dev/null
++++ b/src/generated/options.json
+@@ -0,0 +1,5 @@
++{
++  "emitBanner": false,
++  "theme": "compact",
++  "timezone": "UTC"
++}
 diff --git a/package-lock.json b/package-lock.json
 index 4f3a2b1c..9c8d7e6f 100644
 --- a/package-lock.json

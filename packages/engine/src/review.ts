@@ -1,6 +1,7 @@
 import { validateCoverage } from './coverage.js';
 import { parseDiff } from './diff.js';
 import { GitHubClient, parsePullRequestUrl } from './github.js';
+import { applyNoiseRules } from './noise.js';
 import { REVIEW_RESULT_VERSION } from './protocol.js';
 import type { ReviewResult } from './protocol.js';
 
@@ -17,7 +18,10 @@ export interface ReviewOptions {
 /**
  * Reviews one pull request: fetches its metadata and full diff, parses the
  * diff into files and hunks, proves every changed line belongs to exactly
- * one part, and returns the typed, versioned result.
+ * one part, labels the noise in every part with its state and blind spot
+ * (reading the repository's linguist attributes at the head commit, with
+ * no checkout), sinks the noise parts to the bottom, and returns the
+ * typed, versioned result.
  *
  * The description is kept exactly as GitHub stores it, never truncated, and
  * the diff comes from the diff media type so large files keep every line.
@@ -39,6 +43,7 @@ export async function reviewPullRequest(
     client.getPullRequestSummary(ref),
     client.getPullRequestDiff(ref),
   ]);
+  const gitAttributes = await client.getGitAttributesAt(ref, pullRequest.headSha);
 
   const parsed = parseDiff(diffText);
   const coverage = validateCoverage(parsed, parsed.files);
@@ -52,6 +57,6 @@ export async function reviewPullRequest(
   return {
     version: REVIEW_RESULT_VERSION,
     pullRequest,
-    parts: parsed.files,
+    parts: applyNoiseRules(parsed.files, gitAttributes),
   };
 }
