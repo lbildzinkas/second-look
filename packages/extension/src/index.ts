@@ -1,0 +1,134 @@
+import {
+  REVIEW_RESULT_VERSION,
+  type ChangeKind,
+  type DiffLineKind,
+  type ReviewResult,
+} from '@second-look/engine';
+
+const CHANGE_KINDS: readonly ChangeKind[] = [
+  'addition',
+  'deletion',
+  'modification',
+  'rename',
+  'copy',
+];
+
+const LINE_KINDS: readonly DiffLineKind[] = ['context', 'addition', 'deletion'];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === 'string';
+}
+
+function isNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
+
+function isOptionalString(value: unknown): value is string | undefined {
+  return value === undefined || isString(value);
+}
+
+function isOptionalNumber(value: unknown): value is number | undefined {
+  return value === undefined || isNumber(value);
+}
+
+function isDiffLine(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (!isString(value['text'])) return false;
+  const kind = value['kind'];
+  if (!isString(kind) || !LINE_KINDS.includes(kind as DiffLineKind)) return false;
+  return (
+    isOptionalNumber(value['oldLineNumber']) &&
+    isOptionalNumber(value['newLineNumber']) &&
+    (value['endsWithoutNewline'] === undefined ||
+      typeof value['endsWithoutNewline'] === 'boolean')
+  );
+}
+
+function isHunk(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (
+    !isNumber(value['oldStart']) ||
+    !isNumber(value['oldLines']) ||
+    !isNumber(value['newStart']) ||
+    !isNumber(value['newLines'])
+  ) {
+    return false;
+  }
+  if (!isOptionalString(value['heading'])) return false;
+  return Array.isArray(value['lines']) && value['lines'].every(isDiffLine);
+}
+
+function isPart(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (!isString(value['path'])) return false;
+  if (!isOptionalString(value['previousPath'])) return false;
+  const changeKind = value['changeKind'];
+  if (!isString(changeKind) || !CHANGE_KINDS.includes(changeKind as ChangeKind)) {
+    return false;
+  }
+  if (typeof value['isBinary'] !== 'boolean') return false;
+  if (
+    typeof value['oldMissingFinalNewline'] !== 'boolean' ||
+    typeof value['newMissingFinalNewline'] !== 'boolean'
+  ) {
+    return false;
+  }
+  if (!isOptionalString(value['oldMode']) || !isOptionalString(value['newMode'])) {
+    return false;
+  }
+  if (!isNumber(value['additions']) || !isNumber(value['deletions'])) return false;
+  return Array.isArray(value['hunks']) && value['hunks'].every(isHunk);
+}
+
+function isPullRequestSummary(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  return (
+    isString(value['url']) &&
+    isNumber(value['number']) &&
+    isString(value['title']) &&
+    isString(value['author']) &&
+    isString(value['description']) &&
+    isString(value['base']) &&
+    isString(value['head'])
+  );
+}
+
+/**
+ * Checks that a value read over the protocol is a review result of the
+ * version this extension understands. The engine and the extension share
+ * the protocol types, so this guard only proves what JSON cannot: that the
+ * bytes really carry that shape.
+ */
+export function isReviewResult(value: unknown): value is ReviewResult {
+  if (!isRecord(value)) return false;
+  if (value['version'] !== REVIEW_RESULT_VERSION) return false;
+  if (!isPullRequestSummary(value['pullRequest'])) return false;
+  return Array.isArray(value['parts']) && value['parts'].every(isPart);
+}
+
+/** Error thrown by {@link parseReviewResult} when the JSON is not a review result. */
+export class ProtocolError extends Error {
+  constructor() {
+    super(
+      `the engine's output is not a review result of version ${REVIEW_RESULT_VERSION}`,
+    );
+    this.name = 'ProtocolError';
+  }
+}
+
+/**
+ * Reads the JSON the engine printed and returns it as a review result,
+ * throwing {@link ProtocolError} when it does not match the shared,
+ * versioned protocol.
+ */
+export function parseReviewResult(json: string): ReviewResult {
+  const value: unknown = JSON.parse(json);
+  if (!isReviewResult(value)) {
+    throw new ProtocolError();
+  }
+  return value;
+}

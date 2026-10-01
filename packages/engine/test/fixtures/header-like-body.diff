@@ -1,0 +1,23 @@
+diff --git a/build.lua b/build.lua
+index 12a3b4c..56c7d8e 100644
+--- a/build.lua
++++ b/build.lua
+@@ -1,3 +1,3 @@
+ keep one
+--- a/vendored.patch
++++ b/vendored.patch
+ keep two
+diff --git a/gen.txt b/gen.txt
+new file mode 100644
+index 0000000..3334444
+--- /dev/null
++++ b/gen.txt
+@@ -0,0 +1 @@
++++ b/generated.txt
+diff --git a/tail.txt b/tail.txt
+deleted file mode 100644
+index 5556666..0000000
+--- a/tail.txt
++++ /dev/null
+@@ -1 +0,0 @@
+--- /dev/null
