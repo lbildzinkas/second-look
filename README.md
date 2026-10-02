@@ -9,7 +9,7 @@ Second Look is a VS Code companion for human pull request review: it ranks the c
 
 The repository is a TypeScript workspace with three packages:
 
-- `packages/engine` — the engine: a separate local process that fetches a pull request, parses its full diff into files and hunks, reads the changed files' syntax trees from read-only copies of the change, and offers its result two ways: printed as typed, versioned JSON by the review command, and over a JSON-RPC protocol on stdio by the serve command (ADR 0005). It also reads portable PDB files, the .NET debug files that record each source file's hash and Source Link URL.
+- `packages/engine` — the engine: a separate local process that fetches a pull request, parses its full diff into files and hunks, reads the changed files' syntax trees from read-only copies of the change, and offers its result two ways: printed as typed, versioned JSON by the review command, and over a JSON-RPC protocol on stdio by the serve command (ADR 0005). It also reads portable PDB files, the .NET debug files that record each source file's hash and Source Link URL. It drives the reviewer's installed coding agent, Pi first, through one adapter interface (ADR 0004).
 - `packages/extension` — the VS Code extension: a thin client that starts the engine as its own process, talks the JSON-RPC protocol to it after a version handshake, and shows the result as the ranked review tree, with each part readable in the editor's multi-file diff over read-only copies.
 - `packages/evaluation` — the evaluation: runs the engine offline over recorded pull requests and scores it against a stored baseline; see [its README](packages/evaluation/README.md).
 
@@ -56,6 +56,32 @@ The engine also keeps a read-only copy of the base version (the merge base the d
 Each changed file is parsed with a tree-sitter grammar bundled as WASM — Python, C#, TypeScript, TSX, JavaScript, Go, Rust and Java. Every hunk names the entities (functions, classes, methods and the like) its changed lines touch, each with whether it is public by its language's visibility rules and whether the hunk adds it, removes it, changes its declaration or only its body, and each part says whether its change is confirmed formatting-only: the base and head syntax trees must match, nesting included, so a Python dedent that moves a statement out of a block is not formatting-only. Files in other languages still flow through at file level, and their part lists the checks that could not run and why. The result records the time spent parsing in `parseTimeMs`.
 
 The token is passed in by the caller (`--token` or `GITHUB_TOKEN`), is used only for the GitHub request, and is never written to disk or logs. Tests run against recorded responses and never touch the network.
+
+## Probing the reviewer's coding agent
+
+The engine does its model work through the coding agent the reviewer already has installed and signed in, never through a model API of its own (ADR 0004). One adapter interface, documented in `packages/engine/src/agent.ts`, runs an agent non-interactively with the companion's own prompt and a JSON schema for the answer. It first probes the installed version for what it supports. The first adapter drives Pi.
+
+Every Pi run is locked down. Pi has no sandbox of its own, so the strongest mechanism it offers is used:
+
+- File-reading tools only (`--tools read,grep,find,ls`): no shell and no network.
+- Pi's project trust off (`--no-approve`), and extensions, skills, prompt templates, themes and context files such as `AGENTS.md` and `CLAUDE.md` off, so nothing from the pull request configures the agent.
+- No session file, no startup network, and the companion's own system prompt. The prompt goes on stdin.
+- The companion's guard, loaded as Pi's one extension (`packages/engine/src/pi-guard.ts`), checks every tool call before it runs. It confines every path to the read-only copy, symbolic links included, and refuses URLs and credential paths by name: SSH keys, cloud credentials, the GitHub login, agents' own logins.
+- The GitHub token variables are removed from the agent's environment.
+
+A Pi version whose help lacks any of these flags is never run. The agent signs in with its own login: the companion never reads or stores it, and the agent inherits the engine's environment minus the GitHub token.
+
+Pull request text reaches the agent inside a marked untrusted block, with Unicode tag characters, zero-width characters and bidirectional controls stripped. HTML comments, which GitHub hides from the reviewer, are kept but delimited. Each answer is checked against its schema. An invalid answer is retried once, then reported as a failure, never guessed. Every result is stamped with the agent, its version, the model, the effort, the run date, and the tokens and cost when the agent reports them. Runs have a timeout and a concurrency limit, and a run that times out keeps what it wrote.
+
+The probe command runs the one fixed prompt that exists so far. It is a setup check, not a review prompt, and the contract tests use it: no product prompt lands without its evaluation (ADR 0006). With Pi installed and signed in:
+
+```sh
+GITHUB_TOKEN="$(gh auth token)" node packages/engine/dist/main.js \
+  probe https://github.com/{owner}/{repo}/pull/{number} \
+  --target README.md --target ~/.ssh/id_ed25519 --target https://example.com/
+```
+
+It prints what the installed Pi supports and, for each target, the agent's schema-checked answer and the run's stamp. The credential path and the URL come back refused. `--model` and `--effort` pick the model and effort level. `--agent-timeout` (seconds, default 300) and `--agent-concurrency` (default 2) set the pacing. Tests drive the adapter through a contract suite against a fake Pi executable and never call a model.
 
 ## Reading a package's portable PDBs
 
