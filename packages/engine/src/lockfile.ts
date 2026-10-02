@@ -246,13 +246,11 @@ function uvEdges(entry: TomlTable): readonly string[] | undefined {
   return edges;
 }
 
-/** uv.lock records the project itself with a virtual or editable source. */
+/** uv.lock records the project itself with a virtual source or an editable path of ".". */
 function uvProjectEntry(entry: TomlTable): boolean {
   const source = entry['source'];
-  return (
-    isTomlTable(source) &&
-    (source['virtual'] !== undefined || source['editable'] !== undefined)
-  );
+  if (!isTomlTable(source)) return false;
+  return source['virtual'] !== undefined || source['editable'] === '.';
 }
 
 /** pyproject.toml's [project] tables, as uv reads direct dependencies. */

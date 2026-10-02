@@ -413,6 +413,69 @@ source = { registry = "https://pypi.org/simple" }
     expect(check.outcome).toBe('unexplained');
     expect(check.blindSpot).toContain('the app entry (content changed)');
   });
+
+  it('stays claimed and names a hand-edited workspace member', () => {
+    const workspaceLock = (specifier: string, anyioVersion: string, tampered: boolean): string => `
+version = 1
+
+[[package]]
+name = "app"
+version = "0.1.0"
+source = { virtual = "." }
+
+[package.metadata]
+requires-dist = [
+    { name = "anyio", specifier = "${specifier}" },
+]
+
+[[package]]
+name = "member-a"
+version = "0.1.0"
+source = { editable = "packages/member-a" }
+dependencies = [
+    { name = "anyio" },${tampered ? '\n    { name = "smuggled" },' : ''}
+]
+
+[[package]]
+name = "anyio"
+version = "${anyioVersion}"
+source = { registry = "https://pypi.org/simple" }
+`;
+    const check = confirmed(
+      format('uv.lock'),
+      side(workspaceLock('>=4.3', '4.3.0', false), [pyproject('>=4.3')]),
+      side(workspaceLock('>=4.4', '4.4.0', true), [pyproject('>=4.4')]),
+    );
+    expect(check.outcome).toBe('unexplained');
+    expect(check.blindSpot).toContain('member-a@0.1.0 (content changed)');
+  });
+
+  it('confirms a bump when the project records itself as editable', () => {
+    const editableLock = (specifier: string, anyioVersion: string): string => `
+version = 1
+
+[[package]]
+name = "app"
+version = "0.1.0"
+source = { editable = "." }
+
+[package.metadata]
+requires-dist = [
+    { name = "anyio", specifier = "${specifier}" },
+]
+
+[[package]]
+name = "anyio"
+version = "${anyioVersion}"
+source = { registry = "https://pypi.org/simple" }
+`;
+    const check = confirmed(
+      format('uv.lock'),
+      side(editableLock('>=4.3', '4.3.0'), [pyproject('>=4.3')]),
+      side(editableLock('>=4.4', '4.4.0'), [pyproject('>=4.4')]),
+    );
+    expect(check.outcome).toBe('confirmed');
+  });
 });
 
 describe('poetry.lock', () => {
