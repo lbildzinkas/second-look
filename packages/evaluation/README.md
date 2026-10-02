@@ -13,7 +13,7 @@ A case is one folder, named after the case:
 | `case.json` | `formatVersion` (1), `id`, `source` (the pull request URL), `recordedAt`, `prompts` (the prompt ids the case is tied to; empty for a model-free case), `pullRequest` (the metadata and the full description, as the review result carries them), `gitAttributes` (the root `.gitattributes` at the head commit, or null), `baseCommit` and `headCommit`. |
 | `change.diff` | The full diff. |
 | `base/`, `head/` | The content the review reads from each version: every changed file, and on the head side every file that names the change's entities, so the name-based reference counts come out as in the live review. |
-| `expected.json` | The expected results, written by hand. |
+| `expected.json` | The expected results, written by hand — or, for a seeded case, in full by the seed command. |
 
 `expected.json` has three fields:
 

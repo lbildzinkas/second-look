@@ -3,7 +3,7 @@ import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { filesNaming, lockfileManifests, parseDiff, pathInCopy, reviewChange } from '@second-look/engine';
-import type { NoiseAssessment, Part, PullRequestSummary } from '@second-look/engine';
+import type { Part, PullRequestSummary } from '@second-look/engine';
 import { CASE_FORMAT_VERSION, caseInput, loadCase } from './case.js';
 import type { CaseRecord, ExpectedNoise, ExpectedResults } from './case.js';
 import { copyFiles, exists } from './record.js';
