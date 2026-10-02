@@ -6,6 +6,9 @@ export const NO_RULE_APPLIED: NoiseAssessment = { label: 'none', note: 'no rule 
 /** A minimal well-formed part the tests shape further. */
 export function part(path: string, overrides: Partial<Part> = {}): Part {
   return {
+    // The engine names every part before printing; a part that keeps its
+    // path as its name is the plain case.
+    name: path,
     path,
     changeKind: 'modification',
     isBinary: false,
@@ -24,6 +27,13 @@ export function part(path: string, overrides: Partial<Part> = {}): Part {
         { check: 'entities', reason: 'the tests do not parse syntax trees' },
         { check: 'formatting-only', reason: 'the tests do not parse syntax trees' },
       ],
+    },
+    signals: {
+      novelty: 'changed',
+      role: 'code',
+      changedLines: 1,
+      publicSurface: [],
+      references: { basis: 'name-based', names: [], files: 0 },
     },
     ...overrides,
   };

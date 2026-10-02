@@ -17,13 +17,20 @@ Usage:
 
 The review command fetches a pull request's metadata and full diff, parses
 the diff into files and hunks, and prints a typed, versioned review result
-as JSON with one part per changed file. Each part carries a noise label
-(lockfile, generated, vendored, moved or renamed, snapshot, fixture) with
-its state — confirmed or claimed — and a one-line blind spot, or says that
-no rule applied; noise parts sink to the bottom of the result, except
-snapshots and fixtures, which are labelled but never sunk. The labels read
+as JSON. Each file carries a noise label (lockfile, generated, vendored,
+moved or renamed, snapshot, fixture) with its state — confirmed or claimed
+— and a one-line blind spot, or says that no rule applied. The labels read
 the repository's linguist attributes at the head commit, without a
 checkout.
+
+The hunks are grouped into parts named after the entities they touch, and
+the run fails unless every changed line is in exactly one part. Each part
+gets plain signals — new versus changed code, test versus code, size,
+public surface change, and a name-based count of other files mentioning
+its entity names — and a fixed rule ranks it must review, worth reviewing
+or context with a one-line reason, at most a third of the parts at must
+review. Noise parts sink to the bottom, except snapshots and fixtures,
+which are labelled but ranked with the rest.
 
 It keeps read-only copies of the base and head versions, downloaded as
 archives, in a per-pull-request cache: --cache-dir, else the

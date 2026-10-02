@@ -85,3 +85,14 @@ index c6d216d..daaf105 100644
    }
  }
  
+diff --git a/tests/test_fresh.py b/tests/test_fresh.py
+new file mode 100644
+index 0000000..5b1c0de
+--- /dev/null
++++ b/tests/test_fresh.py
+@@ -0,0 +1,5 @@
++from app.fresh import fresh
++
++
++def test_fresh():
++    assert fresh() == 1
