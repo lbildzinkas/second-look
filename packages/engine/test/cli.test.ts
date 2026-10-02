@@ -147,6 +147,17 @@ describe('runCli serve', () => {
       'second-look-engine: serve takes the GitHub token with each request, not on the command line\n',
     );
   });
+
+  it('refuses an agent it cannot drive, like review does', async () => {
+    const { out, err } = streams();
+    const code = await runCli(['serve', '--agent', 'codex'], {}, { out, err });
+
+    expect(code).toBe(1);
+    expect(out.text).toBe('');
+    expect(err.text).toBe(
+      'second-look-engine: unknown agent "codex": choose pi or claude-code\n',
+    );
+  });
 });
 
 describe('redactToken', () => {
