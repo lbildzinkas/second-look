@@ -16,3 +16,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      # The extension integration test runs in CI only, under xvfb; the
+      # default checks exclude it so no local run launches anything that
+      # could open a VS Code window on a developer machine.
+      - run: xvfb-run -a npm run test:integration

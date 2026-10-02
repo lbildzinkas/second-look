@@ -5,11 +5,11 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type * as vscode from 'vscode';
-import { REVIEW_COMMAND, REVIEW_TREE_VIEW, activate } from '../src/extension.js';
-import { mixedResult } from './results.js';
-import { stub, stubContext, type StubTreeView } from './vscode-stub.js';
+import { REVIEW_COMMAND, REVIEW_TREE_VIEW, activate } from '../../src/extension.js';
+import { mixedResult } from '../results.js';
+import { stub, stubContext, type StubTreeView } from '../vscode-stub.js';
 
-const FAKE_ENGINE = fileURLToPath(new URL('./fixtures/fake-engine.mjs', import.meta.url));
+const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.meta.url));
 const PR_URL = 'https://github.com/example-org/example-repo/pull/42';
 const TOKEN = 'ghp_test-token-do-not-print';
 

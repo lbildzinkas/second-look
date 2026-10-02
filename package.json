@@ -13,6 +13,7 @@
     "build": "tsc -b",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "check": "npm run build && tsc -p tsconfig.test.json && npm run lint && npm test"
   },
   "devDependencies": {

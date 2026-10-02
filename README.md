@@ -27,6 +27,12 @@ CI runs the same on every pull request and on every push to `master`.
 
 Individual steps: `npm run build`, `npm run lint`, `npm test`.
 
+The extension integration test is the one exception: it never runs in
+`npm test` or `npm run check`, so no local run can launch anything that
+opens a VS Code window on a developer machine. CI runs it on Linux under
+xvfb, and anyone who wants it locally opts in with
+`npm run test:integration`.
+
 ## Running the review command
 
 Build first (`npm run build`), then give the engine a GitHub token through the environment and point it at any public pull request:
