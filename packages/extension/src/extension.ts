@@ -60,6 +60,32 @@ function isSubmitKind(value: unknown): value is SubmitKind {
   return value === 'comment' || value === 'approve' || value === 'request changes';
 }
 
+/** Whether a value is a part of the reviewed change. */
+function isPart(value: unknown): value is Part {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as Part).path === 'string' &&
+    Array.isArray((value as Part).hunks)
+  );
+}
+
+/**
+ * The part a command's argument carries: the tree's element, unwrapped,
+ * or the part itself, the way a tree item's own click command passes it.
+ * Anything else reads as absent.
+ */
+function carriedPart(arg: unknown): Part | undefined {
+  if (typeof arg !== 'object' || arg === null) {
+    return undefined;
+  }
+  const node = arg as { part?: unknown };
+  if (node.part !== undefined) {
+    return isPart(node.part) ? node.part : undefined;
+  }
+  return isPart(arg) ? arg : undefined;
+}
+
 /**
  * The side-bar tree: importance groups in order with the reason beside
  * each part and the signals in its tooltip, the noise last, and the
@@ -244,9 +270,15 @@ class ReviewSession {
     this.comments.add(reply);
   }
 
-  /** Starts a comment on a whole part, gathered in the pending review. */
-  commentOnPart(part: Part): void {
-    if (this.result === undefined) {
+  /**
+   * Starts a comment on a whole part, gathered in the pending review.
+   * The editor's context menu passes the tree's element, so the part is
+   * read out of whatever the argument carries; with nothing usable, or
+   * no review to comment on, the reviewer is told what is missing.
+   */
+  commentOnPart(arg?: unknown): void {
+    const part = carriedPart(arg);
+    if (part === undefined || this.result === undefined) {
       vscode.window.showWarningMessage(
         'Review a pull request first, then comment on its parts.',
       );
@@ -428,8 +460,8 @@ export function activate(
     vscode.commands.registerCommand(ADD_COMMENT_COMMAND, (reply?: vscode.CommentReply) =>
       reply === undefined ? undefined : session.addComment(reply),
     ),
-    vscode.commands.registerCommand(COMMENT_ON_PART_COMMAND, (part?: Part) =>
-      part === undefined ? undefined : session.commentOnPart(part),
+    vscode.commands.registerCommand(COMMENT_ON_PART_COMMAND, (arg?: unknown) =>
+      session.commentOnPart(arg),
     ),
     vscode.commands.registerCommand(DISCARD_COMMENT_COMMAND, (thread?: vscode.CommentThread) =>
       thread === undefined ? undefined : session.discardComment(thread),

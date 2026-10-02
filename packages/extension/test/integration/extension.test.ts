@@ -551,6 +551,34 @@ describe('the pending review and sending it', () => {
     expect(stub.commentControllers[0]!.threads).toHaveLength(0);
   });
 
+  it('starts a part comment from the context menu, which passes the tree element', async () => {
+    const view = await reviewWithFakeEngine({ result: mixedResult(), logName: 'context-part.log' });
+
+    // The view's context menu hands the command the tree's element — the
+    // node carrying the part — rather than the part itself.
+    const provider = providerOf(view);
+    const node = provider
+      .getChildren()
+      .flatMap((section) => provider.getChildren(section))
+      .find((child) => provider.getTreeItem(child).label === 'src/retry.py');
+    await registeredCommands().get(COMMENT_ON_PART_COMMAND)!(node);
+
+    const thread = stub.commentControllers[0]!.threads.at(-1)!;
+    expect(thread.uri.toString()).toBe(head('src/retry.py').toString());
+    expect(thread.label).toBe('src/retry.py (part)');
+
+    await registeredCommands().get(ADD_COMMENT_COMMAND)!({ thread, text: 'written from the context menu' });
+    stub.quickPickResult = { submit: 'comment' };
+    stub.inputBoxResult = '';
+    await registeredCommands().get(SUBMIT_REVIEW_COMMAND)!() as Promise<void>;
+
+    const sent = engineRequests('context-part.log').find((request) => request.method === 'sendReview');
+    expect(sent?.params?.['review']).toMatchObject({
+      submit: 'comment',
+      comments: [{ kind: 'part', path: 'src/retry.py', body: 'written from the context menu' }],
+    });
+  });
+
   it('keeps every comment when the send fails', async () => {
     const view = await reviewWithFakeEngine({
       result: mixedResult(),
