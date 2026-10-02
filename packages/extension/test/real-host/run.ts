@@ -356,6 +356,10 @@ export async function run(): Promise<void> {
       );
 
     // The whole change opens in one multi-file diff, in the tree's order.
+    // The host names a multi-file diff editor's tab after its title plus the
+    // number of files it holds, so the label settling on every part's count
+    // is the whole change reading as one diff.
+    const wholeChangeTab = `Retry failed webhook sends (#42) (${review.parts.length} files)`;
     await withTimeout(
       vscode.commands.executeCommand(OPEN_ALL_PARTS_COMMAND),
       'the open-all-parts command',
@@ -364,7 +368,7 @@ export async function run(): Promise<void> {
       waitFor('the whole-change diff editor tab', () =>
         vscode.window.tabGroups.all
           .flatMap((group) => group.tabs)
-          .some((tab) => tab.label === 'Retry failed webhook sends (#42)')
+          .some((tab) => tab.label === wholeChangeTab)
           ? true
           : undefined,
       ),
