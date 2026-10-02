@@ -13,7 +13,7 @@ The repository is a TypeScript workspace with three packages:
 - `packages/extension` — the VS Code extension: a thin client that starts the engine as its own process, talks the JSON-RPC protocol to it after a version handshake, and shows the result as the ranked review tree, with each part readable in the editor's multi-file diff over read-only copies.
 - `packages/evaluation` — the evaluation: runs the engine offline over recorded pull requests and scores it against a stored baseline; see [its README](packages/evaluation/README.md).
 
-The protocol types live in `packages/engine/src/protocol.ts` and `packages/engine/src/rpc.ts`, carry their versions, and are shared by both packages.
+The protocol types live in `packages/engine/src/protocol.ts` and `packages/engine/src/rpc.ts`, carry their versions, and are shared by all three packages.
 
 ## Building and testing
 
