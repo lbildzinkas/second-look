@@ -60,25 +60,32 @@ function under(dir: string, name: string): string {
  * fingerprint of its whole entry, so a hand-edited hash is a change too),
  * the dependency edges the lock file itself records, fingerprints of the
  * entries no package name covers (npm's root entry and legacy mirror),
- * and npm's workspace member records, which the pull request's own file
- * changes help explain.
+ * and npm's workspace member records with the keys their node_modules
+ * link stubs point at, which the pull request's own file changes help
+ * explain.
  */
 interface LockIndex {
   versions: Map<string, Map<string, Set<string>>>;
   edges: Map<string, Set<string>>;
   roots: Map<string, string>;
   members: Map<string, MemberRecord>;
+  links: Set<string>;
 }
 
 /** An npm workspace member's lock record, with the fields a member bump must not move. */
 interface MemberRecord {
   readonly fingerprint: string;
-  readonly link: boolean;
   readonly identity: string;
 }
 
 function emptyIndex(): LockIndex {
-  return { versions: new Map(), edges: new Map(), roots: new Map(), members: new Map() };
+  return {
+    versions: new Map(),
+    edges: new Map(),
+    roots: new Map(),
+    members: new Map(),
+    links: new Set(),
+  };
 }
 
 function recordEntry(index: LockIndex, name: string, version: string, fingerprint: string): void {
@@ -158,6 +165,7 @@ function npmNameFromKey(key: string): string | undefined {
 function recordNpmEntry(index: LockIndex, name: string, raw: Record<string, unknown>): void {
   const version = raw['version'];
   recordEntry(index, name, typeof version === 'string' ? version : '', stableStringify(raw));
+  if (raw['link'] === true && typeof raw['resolved'] === 'string') index.links.add(raw['resolved']);
   for (const table of NPM_LOCK_TABLES) {
     const dependencies = raw[table];
     if (!isRecord(dependencies)) continue;
@@ -186,7 +194,6 @@ function readNpmLock(text: string): LockIndex | undefined {
         } else {
           index.members.set(key, {
             fingerprint: stableStringify(raw),
-            link: raw['link'] === true,
             identity: stableStringify([raw['link'], raw['resolved'], raw['integrity']]),
           });
         }
@@ -541,7 +548,7 @@ const CLOSURE_BLIND_SPOT =
 const NPM_FORMAT: LockfileFormat = {
   name: 'package-lock.json',
   manifestName: 'package.json',
-  blindSpot: `Parse-only: the resolver is not re-run and hashes are not re-checked against the registry; a workspace member's record is accepted only when the pull request also changes that member's package.json and its link, resolved and integrity stay put; ${CLOSURE_BLIND_SPOT}.`,
+  blindSpot: `Parse-only: the resolver is not re-run and hashes are not re-checked against the registry; a workspace member's record is accepted only when the pull request also changes that member's package.json, its own resolved and integrity stay put, and the lock's local link to it stays; ${CLOSURE_BLIND_SPOT}.`,
   readLock: readNpmLock,
   manifestsIn: manifestBeside('package.json'),
   readManifests: readNpmManifests,
@@ -714,8 +721,9 @@ function changedRoots(oldIndex: LockIndex, newIndex: LockIndex): ChangedEntry[] 
 
 /**
  * Changed npm workspace member records: one stays explained only when the
- * pull request also changes that member's package.json and the record
- * keeps its link, resolved and integrity as a local link.
+ * pull request also changes that member's package.json, its own link,
+ * resolved and integrity did not change, and the lock still links it
+ * locally through its node_modules stub.
  */
 function changedMembers(
   oldIndex: LockIndex,
@@ -733,7 +741,7 @@ function changedMembers(
     const explained =
       before !== undefined &&
       after !== undefined &&
-      after.link &&
+      newIndex.links.has(key) &&
       before.identity === after.identity &&
       memberManifestChanged(key);
     if (explained) continue;

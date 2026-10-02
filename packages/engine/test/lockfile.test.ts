@@ -241,23 +241,29 @@ describe('package-lock.json', () => {
       packages: {
         '': { name: 'app', dependencies: { 'left-pad': leftPadSpec } },
         'packages/web': web,
+        'node_modules/web': { resolved: 'packages/web', link: true },
         'node_modules/left-pad': { version: leftPadVersion },
       },
     });
 
   it('stays claimed and names a member record rewritten as a registry tarball', () => {
-    const linked = { name: 'web', version: '1.0.0', link: true };
-    const tarball = {
-      name: 'web',
-      version: '1.0.0',
-      resolved: 'https://evil.example/web/-/web-1.0.0.tgz',
-      integrity: 'sha512-evil',
-    };
     const check = confirmLockfileChange(
       format('package-lock.json'),
       'package-lock.json',
-      side(memberLock(linked, '1.3.0', '^1.3.0'), [manifest('^1.3.0')]),
-      side(memberLock(tarball, '2.0.0', '^2.0.0'), [manifest('^2.0.0')]),
+      side(memberLock({ name: 'web', version: '1.0.0' }, '1.3.0', '^1.3.0'), [manifest('^1.3.0')]),
+      side(
+        memberLock(
+          {
+            name: 'web',
+            version: '1.0.0',
+            resolved: 'https://evil.example/web/-/web-1.0.0.tgz',
+            integrity: 'sha512-evil',
+          },
+          '2.0.0',
+          '^2.0.0',
+        ),
+        [manifest('^2.0.0')],
+      ),
       () => true,
     );
     expect(check.outcome).toBe('unexplained');
@@ -268,12 +274,8 @@ describe('package-lock.json', () => {
     const check = confirmLockfileChange(
       format('package-lock.json'),
       'package-lock.json',
-      side(memberLock({ name: 'web', version: '1.0.0', link: true }, '1.3.0', '^1.3.0'), [
-        manifest('^1.3.0'),
-      ]),
-      side(memberLock({ name: 'web', version: '1.1.0', link: true }, '1.3.0', '^1.3.0'), [
-        manifest('^1.3.0'),
-      ]),
+      side(memberLock({ name: 'web', version: '1.0.0' }, '1.3.0', '^1.3.0'), [manifest('^1.3.0')]),
+      side(memberLock({ name: 'web', version: '1.1.0' }, '1.3.0', '^1.3.0'), [manifest('^1.3.0')]),
       (key) => key === 'packages/web',
     );
     expect(check.outcome).toBe('confirmed');
@@ -284,12 +286,8 @@ describe('package-lock.json', () => {
     const check = confirmLockfileChange(
       format('package-lock.json'),
       'package-lock.json',
-      side(memberLock({ name: 'web', version: '1.0.0', link: true }, '1.3.0', '^1.3.0'), [
-        manifest('^1.3.0'),
-      ]),
-      side(memberLock({ name: 'web', version: '9.9.9', link: true }, '2.0.0', '^2.0.0'), [
-        manifest('^2.0.0'),
-      ]),
+      side(memberLock({ name: 'web', version: '1.0.0' }, '1.3.0', '^1.3.0'), [manifest('^1.3.0')]),
+      side(memberLock({ name: 'web', version: '9.9.9' }, '2.0.0', '^2.0.0'), [manifest('^2.0.0')]),
       () => false,
     );
     expect(check.outcome).toBe('unexplained');
