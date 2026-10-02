@@ -31,6 +31,21 @@ const MULTI_HUNK_DIFF = [
   '',
 ].join('\n');
 
+/** The old side's last line, mid-hunk, ends without a newline; additions follow. */
+const MARKER_MID_HUNK_DIFF = [
+  'diff --git a/tail.txt b/tail.txt',
+  'index 1111111..2222222 100644',
+  '--- a/tail.txt',
+  '+++ b/tail.txt',
+  '@@ -1,2 +1,3 @@',
+  ' top',
+  '-end',
+  '\\ No newline at end of file',
+  '+new middle',
+  '+new end',
+  '',
+].join('\n');
+
 /** A comment on one line of one.txt or two.txt. */
 function lineComment(
   path: string,
@@ -88,6 +103,21 @@ describe('positionComments', () => {
     expect(onHead!.position).toBe(9);
   });
 
+  it('counts a no-newline marker mid-hunk as its own position, shifting the lines after it', () => {
+    // The marker follows the deleted line it annotates: that line keeps
+    // position 2, the marker takes the slot below it, and the additions
+    // start at position 4 — one more than a marker-less patch would say.
+    const [annotated, firstAfter, lastAfter] = positionComments(MARKER_MID_HUNK_DIFF, [
+      lineComment('tail.txt', 'base', 2),
+      lineComment('tail.txt', 'head', 2),
+      lineComment('tail.txt', 'head', 3),
+    ]);
+
+    expect(annotated!.position).toBe(2);
+    expect(firstAfter!.position).toBe(4);
+    expect(lastAfter!.position).toBe(5);
+  });
+
   it('maps a comment on a whole part to the file, with no position', () => {
     expect(positionComments(MULTI_HUNK_DIFF, [{ kind: 'part', path: 'two.txt', body: 'whole part' }])).toEqual([
       { path: 'two.txt', body: 'whole part', subjectType: 'file' },
@@ -141,7 +171,7 @@ describe('positionComments', () => {
 
     it('maps a comment on the file whose last line lacks a final newline', () => {
       // notes.txt ends without a newline; the added "last line" is the
-      // third body line, and the marker after it takes no position.
+      // third body line, with the marker taking the slot after it.
       const [added] = positionComments(diff, [lineComment('notes.txt', 'head', 2)]);
 
       expect(added!.position).toBe(3);
