@@ -79,7 +79,7 @@ Claude Code runs under its own lockdown, built from the flags it offers (`packag
 - No session file (`--no-session-persistence`), permission prompts denied rather than asked (`--permission-prompts none`), and the companion's own system prompt. The prompt goes on stdin.
 - The GitHub token variables are removed from the agent's environment, as for Pi.
 
-A Claude Code version whose help lacks any of these flags is never run. Each run's stamp reports which login it used — the stored subscription sign-in, an OAuth token or cloud credentials from the environment — and warns when an inherited `ANTHROPIC_API_KEY` silently overrides the subscription. The key itself is never read, printed or copied: only its presence is checked.
+A Claude Code version whose help lacks any of these flags is never run. Each run's stamp reports which login it used — the stored subscription sign-in, an OAuth token or cloud credentials from the environment — and warns when an inherited `ANTHROPIC_API_KEY` silently overrides the subscription. The key itself is never read, printed or copied: only its presence is checked. Anthropic's terms are unclear on third-party tools driving a reviewer's own Claude Code (ADR 0004).
 
 The VS Code settings pick the agent, the model and a label for the account or subscription it bills; the status bar shows them, and warns about an inherited API key when Claude Code is the agent. Every result is stamped, so the reviewer can always tell which agent and model said what.
 
