@@ -1,0 +1,21 @@
+{
+  "formatVersion": 1,
+  "id": "seeded-typescript",
+  "source": "https://github.com/example-org/example-repo/pull/9721",
+  "recordedAt": "2026-10-02T19:44:10.885Z",
+  "prompts": [],
+  "pullRequest": {
+    "url": "https://github.com/example-org/example-repo/pull/9721",
+    "number": 9721,
+    "title": "Update packages/engine/src/rank.ts",
+    "author": "contributor-login",
+    "description": "Updates packages/engine/src/rank.ts.",
+    "base": "master",
+    "head": "update-rank",
+    "baseCommit": "5f42711fa070e7cdc8d2147ad27ef87d945088f3",
+    "headSha": "3d299297160ba83641c1e53a8f3e2d72e16e2d40"
+  },
+  "gitAttributes": null,
+  "baseCommit": "5f42711fa070e7cdc8d2147ad27ef87d945088f3",
+  "headCommit": "3d299297160ba83641c1e53a8f3e2d72e16e2d40"
+}

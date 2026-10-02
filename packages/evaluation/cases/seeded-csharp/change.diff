@@ -1,0 +1,13 @@
+diff --git a/src/GuardClauses/GuardAgainstOutOfRangeExtensions.cs b/src/GuardClauses/GuardAgainstOutOfRangeExtensions.cs
+index ef74293..0030b60 100644
+--- a/src/GuardClauses/GuardAgainstOutOfRangeExtensions.cs
++++ b/src/GuardClauses/GuardAgainstOutOfRangeExtensions.cs
+@@ -30,7 +30,7 @@ public static partial class GuardClauseExtensions
+         string? message = null,
+         Func<Exception>? exceptionCreator = null)
+     {
+-        Guard.Against.Negative<int>(maxLength - minLength, parameterName: "min or max length",
++        Guard.Against.Negative<int>(maxLength + minLength, parameterName: "min or max length",
+             message: "Min length must be equal or less than max length.", exceptionCreator: exceptionCreator);
+         Guard.Against.StringTooShort(input, minLength, nameof(minLength), exceptionCreator: exceptionCreator);
+         Guard.Against.StringTooLong(input, maxLength, nameof(maxLength), exceptionCreator: exceptionCreator);

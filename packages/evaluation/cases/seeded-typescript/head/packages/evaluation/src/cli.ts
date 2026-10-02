@@ -15,7 +15,6 @@ import {
   mappingProblems,
 } from './prompts.js';
 import { recordCase } from './record.js';
-import { seedCase } from './seed.js';
 import { NO_AGENT, runEvaluation } from './run.js';
 import type { ResultRow, RunResults } from './run.js';
 
@@ -24,8 +23,6 @@ const USAGE = `second-look-eval — the evaluation of the Second Look engine
 Usage:
   second-look-eval record <pull-request-url> [--cases <dir>] [--id <name>]
                           [--token <token>] [--cache-dir <dir>]
-  second-look-eval seed <mutant.diff> --source <dir> --id <name>
-                        [--cases <dir>]
   second-look-eval run [--cases <dir>]... [--model-free] [--changed-since <ref>]
                        [--baseline <file>] [--write-baseline <file>]
                        [--runs <dir>]
@@ -35,16 +32,6 @@ its metadata, description, full diff, and the base and head content the
 review reads. Label the case by hand in its expected.json. Cases go to
 --cases, else the first folder of SECOND_LOOK_EVAL_CASES, so a private
 case is kept outside the repository unless a folder in it is named.
-
-The seed command wraps one mutant as a case offline: the mutant is a
-unified diff (mutmut show, or a Stryker mutant applied by hand and diffed)
-against the un-mutated code in --source, a clean export of the mutated
-project at the base commit. The wrapped pull request carries neutral
-wording — its title, branch and description name only the changed files,
-never what the edit does — and the expected.json is written in full: no
-noise on the changed files, the part holding the fault as the important
-part. Cases go to --cases, else the first folder of SECOND_LOOK_EVAL_CASES;
-public cases come only from public code.
 
 The run command reviews every case offline and scores it: coverage,
 noise-label precision and recall per class and state, the median and
@@ -102,7 +89,6 @@ export async function runCli(
         cases: { type: 'string', multiple: true },
         id: { type: 'string' },
         token: { type: 'string' },
-        source: { type: 'string' },
         'cache-dir': { type: 'string' },
         'model-free': { type: 'boolean' },
         'changed-since': { type: 'string' },
@@ -133,22 +119,6 @@ export async function runCli(
         ...(deps.fetch ? { fetch: deps.fetch } : {}),
       });
       streams.out.write(`recorded ${folder}; label it by hand in its expected.json\n`);
-      return 0;
-    }
-    if (command === 'seed') {
-      if (!url) throw new Error('seed needs the mutant diff file');
-      const casesFolder = values.cases?.[0] ?? privateFolders[0];
-      if (!values.source) throw new Error('seed needs --source: the un-mutated code the diff applies to');
-      if (!values.id) throw new Error('seed needs --id: the seeded case\'s name');
-      if (!casesFolder) throw new Error('name a cases folder with --cases or SECOND_LOOK_EVAL_CASES');
-      const folder = await seedCase(await readFile(url, 'utf8'), {
-        sourceDir: values.source,
-        casesFolder,
-        id: values.id,
-      });
-      streams.out.write(
-        `seeded ${folder}; its expected.json marks the part holding the fault\n`,
-      );
       return 0;
     }
     if (command !== 'run') {

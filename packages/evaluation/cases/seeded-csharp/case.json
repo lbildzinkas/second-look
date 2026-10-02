@@ -1,0 +1,21 @@
+{
+  "formatVersion": 1,
+  "id": "seeded-csharp",
+  "source": "https://github.com/example-org/example-repo/pull/2257",
+  "recordedAt": "2026-10-02T19:44:23.824Z",
+  "prompts": [],
+  "pullRequest": {
+    "url": "https://github.com/example-org/example-repo/pull/2257",
+    "number": 2257,
+    "title": "Update src/GuardClauses/GuardAgainstOutOfRangeExtensions.cs",
+    "author": "contributor-login",
+    "description": "Updates src/GuardClauses/GuardAgainstOutOfRangeExtensions.cs.",
+    "base": "master",
+    "head": "update-guardagainstoutofrangeextensions",
+    "baseCommit": "d4c1f3ddbaab5c269205e257a86f79552eaa7264",
+    "headSha": "ae305c32d51430643a5946c61041d031e46fb078"
+  },
+  "gitAttributes": null,
+  "baseCommit": "d4c1f3ddbaab5c269205e257a86f79552eaa7264",
+  "headCommit": "ae305c32d51430643a5946c61041d031e46fb078"
+}

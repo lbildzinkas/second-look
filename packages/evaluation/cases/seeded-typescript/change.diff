@@ -1,0 +1,13 @@
+diff --git a/packages/engine/src/rank.ts b/packages/engine/src/rank.ts
+index 4077057..cafe159 100644
+--- a/packages/engine/src/rank.ts
++++ b/packages/engine/src/rank.ts
+@@ -63,7 +63,7 @@ function score(signals: PartSignals): { points: number; cited: string[] } {
+     points += 1;
+     cited.push('new code');
+   } else if (referring > 0) {
+-    points += referring >= MANY_REFERENCES ? 2 : 1;
++    points += referring < MANY_REFERENCES ? 2 : 1;
+     const verb = signals.novelty === 'removed' ? 'removes' : 'changes';
+     cited.push(`${verb} code named in ${files(referring)} (name-based)`);
+   }

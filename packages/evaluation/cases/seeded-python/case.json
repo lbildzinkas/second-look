@@ -1,0 +1,21 @@
+{
+  "formatVersion": 1,
+  "id": "seeded-python",
+  "source": "https://github.com/example-org/example-repo/pull/9207",
+  "recordedAt": "2026-10-02T19:44:45.757Z",
+  "prompts": [],
+  "pullRequest": {
+    "url": "https://github.com/example-org/example-repo/pull/9207",
+    "number": 9207,
+    "title": "Update src/tomli/_re.py",
+    "author": "contributor-login",
+    "description": "Updates src/tomli/_re.py.",
+    "base": "master",
+    "head": "update-re",
+    "baseCommit": "5044bde60e53e323491859ef00bda94c2a5dd780",
+    "headSha": "1e50276c12e61769acba02eaaa6294b013ffbb22"
+  },
+  "gitAttributes": null,
+  "baseCommit": "5044bde60e53e323491859ef00bda94c2a5dd780",
+  "headCommit": "1e50276c12e61769acba02eaaa6294b013ffbb22"
+}

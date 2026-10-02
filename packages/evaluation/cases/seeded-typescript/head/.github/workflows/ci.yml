@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      # The model-free evaluation cases, scored against the stored
+      # baseline; the step fails when any score drops.
+      - run: npm run eval
+      # The extension integration tests run in CI only, under xvfb; the
+      # default checks exclude them so no local run launches anything that
+      # could open a VS Code window on a developer machine. The real-host
+      # test downloads a VS Code and runs the extension inside it.
+      - run: xvfb-run -a npm run test:integration
+      - run: xvfb-run -a npm run test:real-host

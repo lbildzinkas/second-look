@@ -23,7 +23,7 @@ A case is one folder, named after the case:
 
 Any of the three may be left out: the omitted field simply counts nothing, so an `expected.json` written before a field existed keeps running.
 
-The repository's cases live in `cases/`. `example-42` and `example-7` are invented pull requests, recorded from the engine's test fixtures. `canary-python` and `canary-csharp` are hand-made canaries for the companion's core promise: a change whose docstring overclaims how a pinned library behaves (`httpx` 0.27.2, `Microsoft.IO.RecyclableMemoryStream` 1.2.2), with nothing in the description that gives the answer away. Each records its claim, the refuted verdict with evidence at the pinned version, and that a library fetch should be offered; the evaluation presses the fetch when the review offers one. `seeded-typescript`, `seeded-python` and `seeded-csharp` are seeded bugs: mutants wrapped as pull requests that never existed, described below.
+The repository's cases live in `cases/`. `example-42` and `example-7` are invented pull requests, recorded from the engine's test fixtures. `canary-python` and `canary-csharp` are hand-made canaries for the companion's core promise: a change whose docstring overclaims how a pinned library behaves (`httpx` 0.27.2, `Microsoft.IO.RecyclableMemoryStream` 1.2.2), with nothing in the description that gives the answer away. Each records its claim, the refuted verdict with evidence at the pinned version, and that a library fetch should be offered; the evaluation presses the fetch when the review offers one.
 
 ### Recording a case
 
@@ -65,41 +65,6 @@ Each run gets its own folder under `--runs` (default: `evaluation/` in the engin
 
 The repository's baseline is `baseline.json`. CI runs `npm run eval` on every pull request: the model-free cases against that baseline. When a change improves a score, or adds a case, rewrite it with `--model-free --write-baseline packages/evaluation/baseline.json` in the same pull request.
 
-## Seeded cases
-
-A seeded case wraps a made fault — a mutant from a mutation tool — as a recorded pull request that never existed, and is scored by the rank position of the part holding the fault. The committed ones each mutate public, permissively licensed code: `seeded-typescript` is a StrykerJS mutant of this repository's `packages/engine/src/rank.ts`, `seeded-python` a mutmut mutant of tomli's `src/tomli/_re.py`, and `seeded-csharp` a Stryker.NET mutant of GuardClauses' `src/GuardClauses/GuardAgainstOutOfRangeExtensions.cs`.
-
-```sh
-node packages/evaluation/dist/main.js seed <mutant.diff> --source <export> --id <name> [--cases <folder>]
-```
-
-`--source` is the un-mutated code the diff applies to, a clean export of the base commit (`git archive <commit> | tar -x -C <export>`); a working checkout also runs, but its build output and dependencies count as files naming the change. The wrapped pull request is neutral by construction: title, branch and description name only the changed files (`Update src/foo.py`, `update-foo`), never what the edit does; the number and the commits are hashes of the diff, so the same mutant wraps the same way twice. The command writes `expected.json` in full — no noise on the changed files, the mutant's part as the important one — reviews the full mutated tree, copies what the review reads, then replays the case offline and refuses it unless it gives the same parts.
-
-To obtain the mutant diff, keep the run small — one file of one public project, local, never a large codebase:
-
-- **mutmut** (Python): configure it over one module of a small public project and run `mutmut run`; `mutmut show <mutant>` prints the mutant as a diff, but with hunk line numbers that fit its own copy, so apply the one shown edit by hand in the export and `git diff`.
-- **StrykerJS and Stryker.NET**: run the tool scoped to one file, read the report's mutation (`mutatorName`, location, `replacement`), apply that one edit in the export and `git diff`.
-
-Choose mutants from the mutators that tend to resemble real faults: boundary and operator mutations such as a flipped comparison or a sign change, and method-name swaps such as `ljust`→`rjust`. Skip the mechanical ones no human writes — substituting `None` or `""`, `and False`. Prefer survivors, which behave like faults a CI let through; mutmut's only survivor in scope here was mechanical, so `seeded-python` takes a killed mutant chosen for its shape instead.
-
-Realism caveats, worth stating beside any number these cases produce:
-
-- A mutant is one machine-made edit; real changes carry intent, tests and a description around the fault.
-- The wrapped pull request is deliberately bland, and its uniform wording is itself a tell a reader could learn.
-- The mutant set is what the tools generate, not the distribution of historical faults; whether a mutant survived depends on the mutated project's own tests.
-- A seeded case measures whether the review ranks the fault's part where a reviewer reads first, not whether the review finds the fault; the part is known before the review runs.
-
-Public and private follow the recorded cases' rule: a case committed here may only mutate public code — this repository, or permissively licensed public projects such as tomli (MIT) and GuardClauses (MIT). Seed a private project only into a folder outside the repository.
-
-### Reverting a fix
-
-The same recipe has a real-history variant: revert a public bug fix and seed the revert, so the fault is a bug that truly existed, at its true location.
-
-1. Choose a small fix in a public repository whose diff, undone, still reads like a fault.
-2. Export the tree at the fix commit: `git archive <fix> | tar -x -C <export>`; this is the base the revert applies to.
-3. Reverse the fix into a diff: `git -C <repo> diff <fix> <fix>^ > revert.diff`.
-4. `seed revert.diff --source <export> --id <name>`, and check the written `importantParts`: the reverted lines are the fault's own, but a fix that also touched unrelated lines needs the extra parts named by hand.
-
 ## Prompts and their cases
 
 `prompts.json` registers each prompt with its `id`, `version` and source `files` (relative to the repository root); a case ties itself to prompts through its `prompts` field. Every prompt a case names must be registered, and every registered prompt must have a case, or the run refuses to start. `--changed-since <ref>` runs only the cheap subset: the cases tied to the prompts whose files this branch changed since the ref.
@@ -109,7 +74,6 @@ Any model judge — a prompt that scores another prompt's output — must first 
 ## Trying it by hand
 
 1. Run `npm run eval` and read the report: on the canary cases the coverage, noise and rank checks pass, while every claim check fails as an expected failure, because the review reports no claims yet.
-2. Seed a few mutants of the companion's own code: export it (`git archive HEAD | tar -x -C /tmp/sl`), flip one comparison the way StrykerJS reports it, `git diff` the edit, and `seed <diff> --source /tmp/sl --cases <folder> --id <name>`; run the evaluation and read the seeded cases' rank scores.
-3. Record a case from a public pull request into a folder of your own, and write its `expected.json`.
-4. Run `node packages/evaluation/dist/main.js run --cases <folder> --write-baseline <folder>/baseline.json`.
-5. Break a noise rule locally — for example, remove `package-lock.json` from the lockfile names in `packages/engine/src/noise.ts` — then `npm run build` and `npm run eval`: the lockfile recall of `example-42` drops and the run exits 1.
+2. Record a case from a public pull request into a folder of your own, and write its `expected.json`.
+3. Run `node packages/evaluation/dist/main.js run --cases <folder> --write-baseline <folder>/baseline.json`.
+4. Break a noise rule locally — for example, remove `package-lock.json` from the lockfile names in `packages/engine/src/noise.ts` — then `npm run build` and `npm run eval`: the lockfile recall of `example-42` drops and the run exits 1.

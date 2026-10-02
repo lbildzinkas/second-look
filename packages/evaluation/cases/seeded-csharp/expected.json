@@ -1,0 +1,11 @@
+{
+  "noise": {
+    "src/GuardClauses/GuardAgainstOutOfRangeExtensions.cs": {
+      "label": "none"
+    }
+  },
+  "importantParts": [
+    "GuardClauseExtensions.LengthOutOfRange in src/GuardClauses/GuardAgainstOutOfRangeExtensions.cs"
+  ],
+  "claims": []
+}
