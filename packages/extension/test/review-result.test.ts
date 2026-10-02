@@ -70,6 +70,14 @@ describe('isReviewResult', () => {
     expect(isReviewResult(value)).toBe(false);
   });
 
+  it('rejects a summary missing the head commit SHA', () => {
+    const value = JSON.parse(JSON.stringify(sampleResult())) as {
+      pullRequest: Record<string, unknown>;
+    };
+    delete value.pullRequest['headSha'];
+    expect(isReviewResult(value)).toBe(false);
+  });
+
   it('rejects values that are not review results', () => {
     expect(isReviewResult(null)).toBe(false);
     expect(isReviewResult('review')).toBe(false);

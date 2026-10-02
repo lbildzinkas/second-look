@@ -14,11 +14,11 @@ export interface LinguistAttributes {
 
 /** One parsed line of a `.gitattributes` file. */
 interface AttributeLine {
-  /** The line's path pattern, without any trailing slash. */
+  /** The line's path pattern, without any trailing slash or leading anchor slash. */
   pattern: string;
   /** True when the pattern ended with a slash, so it names a directory tree. */
   directory: boolean;
-  /** True when the pattern contains a slash and so anchors to the root. */
+  /** True when a leading or interior slash anchors the pattern to the root. */
   anchored: boolean;
   /** Values of the two attributes this reader cares about, when set. */
   values: Partial<Record<'generated' | 'vendored', boolean | 'unset'>>;
@@ -55,11 +55,11 @@ function splitAttributeLine(line: string): { pattern: string; rest: string } | u
     }
     return { pattern: trimmed.slice(0, end + 1), rest: trimmed.slice(end + 1) };
   }
-  const spaceAt = trimmed.indexOf(' ');
-  if (spaceAt === -1) {
+  const wsAt = trimmed.search(/\s/);
+  if (wsAt === -1) {
     return undefined; // A pattern with no attributes sets nothing.
   }
-  return { pattern: trimmed.slice(0, spaceAt), rest: trimmed.slice(spaceAt + 1) };
+  return { pattern: trimmed.slice(0, wsAt), rest: trimmed.slice(wsAt + 1) };
 }
 
 /** Reads one attribute token: bare or `=true` sets, `=false` clears. */
@@ -123,14 +123,19 @@ function parseAttributeLines(source: string): AttributeLine[] {
     if (values.generated === undefined && values.vendored === undefined) {
       continue;
     }
-    const bare = pattern.endsWith('/') ? pattern.slice(0, -1) : pattern;
-    if (bare === '') {
+    const directory = pattern.endsWith('/');
+    let body = directory ? pattern.slice(0, -1) : pattern;
+    const anchored = body.startsWith('/') || body.includes('/');
+    if (body.startsWith('/')) {
+      body = body.slice(1); // A leading slash anchors; it is not matched.
+    }
+    if (body === '') {
       continue;
     }
     lines.push({
-      pattern: bare,
-      directory: pattern.endsWith('/'),
-      anchored: pattern.includes('/'),
+      pattern: body,
+      directory,
+      anchored,
       values,
     });
   }
@@ -183,7 +188,10 @@ function patternToRegExp(pattern: string): RegExp {
         source += '\\[';
         continue;
       }
-      source += pattern.slice(i, end + 1).replace(/\\/g, '\\\\');
+      const cls = pattern.slice(i, end + 1);
+      // Wildmatch negates a class with '!', not '^'.
+      const negated = cls.startsWith('[!') ? `[^${cls.slice(2)}` : cls;
+      source += negated.replace(/\\/g, '\\\\');
       i = end;
       continue;
     }
@@ -192,24 +200,45 @@ function patternToRegExp(pattern: string): RegExp {
   return new RegExp(`^${source}$`);
 }
 
+/** The final path segment: what a slash-free pattern matches. */
+function basenameOf(path: string): string {
+  return path.split('/').pop() ?? path;
+}
+
+/** Every directory prefix of a path: for a/b/file.ts, a and a/b. */
+function directoryPrefixes(path: string): string[] {
+  const segments = path.split('/');
+  const prefixes: string[] = [];
+  for (let count = 1; count < segments.length; count++) {
+    prefixes.push(segments.slice(0, count).join('/'));
+  }
+  return prefixes;
+}
+
 /**
  * Reads the linguist attributes that apply to one path from a root
  * `.gitattributes` file, as git would: later matching lines take
  * precedence, a bare attribute or `=true` sets it, `=false` clears it, and
  * a `-` prefix unsets it. Patterns without a slash match the path's
- * basename anywhere; patterns with one anchor to the repository root.
+ * basename anywhere; a leading or interior slash anchors the pattern to
+ * the repository root; a trailing slash matches the directory tree and
+ * everything below it.
  */
 export function linguistAttributesFor(path: string, source: string): LinguistAttributes {
   const states: { generated: AttributeValue; vendored: AttributeValue } = {
     generated: undefined,
     vendored: undefined,
   };
-  const basename = path.split('/').pop() ?? path;
+  const basename = basenameOf(path);
   for (const line of parseAttributeLines(source)) {
     let matches: boolean;
     if (line.directory) {
-      // A trailing slash matches the directory and everything below it.
-      matches = path === line.pattern || path.startsWith(`${line.pattern}/`);
+      // A trailing slash matches the directory and so everything below
+      // it: every directory prefix of the path is tested the same way a
+      // pattern without one tests the path itself.
+      matches = directoryPrefixes(path).some(
+        (prefix) => patternToRegExp(line.pattern).test(line.anchored ? prefix : basenameOf(prefix)),
+      );
     } else {
       const subject = line.anchored ? path : basename;
       matches = patternToRegExp(line.pattern).test(subject);

@@ -141,7 +141,8 @@ function isPullRequestSummary(value: unknown): boolean {
     isString(value['author']) &&
     isString(value['description']) &&
     isString(value['base']) &&
-    isString(value['head'])
+    isString(value['head']) &&
+    isString(value['headSha'])
   );
 }
 
