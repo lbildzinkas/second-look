@@ -64,11 +64,12 @@ class ReviewTreeProvider implements vscode.TreeDataProvider<TreeNode> {
 }
 
 /**
- * Runs the review: asks for the pull request URL, signs in with VS Code's
- * built-in GitHub login, and hands the request to the engine with the
- * token from that sign-in — the token travels with the request and is
- * never stored. Progress shows while the engine works, and an engine
- * failure reads as its plain message.
+ * Runs the review: asks for the pull request URL unless the command
+ * already carries one as its argument, signs in with VS Code's built-in
+ * GitHub login, and hands the request to the engine with the token from
+ * that sign-in — the token travels with the request and is never stored.
+ * Progress shows while the engine works, and an engine failure reads as
+ * its plain message.
  */
 class ReviewSession {
   private readonly tree: ReviewTreeProvider;
@@ -86,12 +87,15 @@ class ReviewSession {
     this.spawnEngine = deps.spawnEngine;
   }
 
-  async reviewPullRequest(): Promise<void> {
-    const url = await vscode.window.showInputBox({
-      prompt: 'GitHub pull request URL',
-      placeHolder: 'https://github.com/{owner}/{repo}/pull/{number}',
-      ignoreFocusOut: true,
-    });
+  async reviewPullRequest(urlArg?: string): Promise<void> {
+    const url =
+      urlArg !== undefined && urlArg.trim() !== ''
+        ? urlArg
+        : await vscode.window.showInputBox({
+            prompt: 'GitHub pull request URL',
+            placeHolder: 'https://github.com/{owner}/{repo}/pull/{number}',
+            ignoreFocusOut: true,
+          });
     if (url === undefined || url.trim() === '') {
       return;
     }
@@ -147,8 +151,14 @@ class ReviewSession {
  * Activates the companion: registers the review command and the review
  * tree. Nothing here runs anything from the workspace — the engine is
  * started from the companion's own install and only ever reads GitHub.
+ *
+ * Returns the review tree's data provider, so a test running in a real
+ * editor can read the tree the command filled.
  */
-export function activate(context: vscode.ExtensionContext, deps: ExtensionDeps = {}): void {
+export function activate(
+  context: vscode.ExtensionContext,
+  deps: ExtensionDeps = {},
+): vscode.TreeDataProvider<TreeSection | TreePart> {
   const tree = new ReviewTreeProvider();
   const treeView = vscode.window.createTreeView(REVIEW_TREE_VIEW, {
     treeDataProvider: tree,
@@ -157,8 +167,11 @@ export function activate(context: vscode.ExtensionContext, deps: ExtensionDeps =
   context.subscriptions.push(
     treeView,
     { dispose: () => session.dispose() },
-    vscode.commands.registerCommand(REVIEW_COMMAND, () => session.reviewPullRequest()),
+    vscode.commands.registerCommand(REVIEW_COMMAND, (url?: string) =>
+      session.reviewPullRequest(url),
+    ),
   );
+  return tree;
 }
 
 /** Runs at shutdown; the engine stops through the subscriptions activate recorded. */

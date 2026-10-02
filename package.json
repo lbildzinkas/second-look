@@ -14,11 +14,13 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:real-host": "npm run build && tsc -p packages/extension/test/real-host && node packages/extension/test/real-host/dist/real-host/launch.js",
     "check": "npm run build && tsc -p tsconfig.test.json && npm run lint && npm test"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
     "@types/node": "^22.19.27",
+    "@vscode/test-electron": "^3.1.0",
     "eslint": "^9.39.2",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.48.0",

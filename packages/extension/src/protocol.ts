@@ -67,8 +67,6 @@ const FORMATTING_STATUSES: readonly FormattingOnlyStatus[] = [
 
 const SYNTAX_CHECKS: readonly SyntaxCheck[] = ['entities', 'formatting-only'];
 
-const IMPORTANCES: readonly Importance[] = IMPORTANCE_ORDER;
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -174,7 +172,7 @@ function isNoiseAssessment(value: unknown): boolean {
 function isPartRank(value: unknown): value is PartRank {
   if (!isRecord(value)) return false;
   const importance = value['importance'];
-  if (!isString(importance) || !IMPORTANCES.includes(importance as Importance)) {
+  if (!isString(importance) || !IMPORTANCE_ORDER.includes(importance as Importance)) {
     return false;
   }
   // The importance is always shown with its one-line reason (the glossary).
