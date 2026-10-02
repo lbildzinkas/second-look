@@ -44,8 +44,8 @@ Plain checks come first; each is computed per case and over the whole run (the `
 
 - `coverage` — the share of the diff's changed lines that belong to exactly one part; a review that fails covers none.
 - `noise-precision:<class>` and `noise-recall:<class>` — per noise class and state, such as `lockfile:claimed`, `moved or renamed:confirmed` or `none`, over the hand-labelled files.
-- `rank-median` — the median 1-based position of the known important parts in the ranked parts (lower is better); a part the result lacks counts as one past the last.
-- `rank-top-3` — the share of the known important parts among the first three.
+- `rank-median` — the median 1-based position of the known important parts in the ranked parts (lower is better); a part the result lacks counts as one past the last. A case whose review gives fewer than three parts is skipped: there every position is fixed by the part count, not by how the review ranked.
+- `rank-top-3` — the share of the known important parts among the first three, over the same cases `rank-median` counts.
 - `claims-found`, `claims-verdict:<kind>`, `claims-evidence` and `claims-fetch-offered` — over the hand-labelled claims: whether the review reported each claim (by exact text), gave it the expected verdict with the expected evidence (file, line, source), and offered a library fetch for the pinned library. The evaluation presses every offered fetch, as the reviewer would, and library-source evidence counts only behind a pressed fetch ([ADR 0003](../../docs/adr/0003-library-source-only-on-reviewer-request.md)). The engine reports no claims yet, so these checks fail as expected failures: the report marks them, the baseline stores them at their failing values, and the claim steps land when they start to measure something.
 
 A score with nothing to count is left out rather than given a value.
@@ -67,13 +67,14 @@ The repository's baseline is `baseline.json`. CI runs `npm run eval` on every pu
 
 ## Seeded cases
 
-A seeded case wraps a made fault — a mutant from a mutation tool — as a recorded pull request that never existed, and is scored by the rank position of the part holding the fault. The committed ones each mutate public, permissively licensed code: `seeded-typescript` is a StrykerJS mutant of this repository's `packages/engine/src/rank.ts`, `seeded-python` a mutmut mutant of tomli's `src/tomli/_re.py`, and `seeded-csharp` a Stryker.NET mutant of GuardClauses' `src/GuardClauses/GuardAgainstOutOfRangeExtensions.cs`.
+A seeded case wraps a made fault — a mutant from a mutation tool — as a recorded pull request that never existed, and is scored by the rank position of the part holding the fault. Each committed one wraps its mutant in a realistic change from the same public project — a docs or glossary wording, a test touch — so the ranking has other parts to put beside the fault: `seeded-typescript` is a StrykerJS mutant of this repository's `packages/engine/src/rank.ts`, `seeded-python` a mutmut mutant of tomli's `src/tomli/_re.py`, and `seeded-csharp` a Stryker.NET mutant of GuardClauses' `src/GuardClauses/GuardAgainstOutOfRangeExtensions.cs`.
 
 ```sh
-node packages/evaluation/dist/main.js seed <mutant.diff> --source <export> --id <name> [--cases <folder>]
+node packages/evaluation/dist/main.js seed <mutant.diff> --source <export> --id <name> \
+  [--cases <folder>] [--fault <path>]
 ```
 
-`--source` is the un-mutated code the diff applies to, a clean export of the base commit (`git archive <commit> | tar -x -C <export>`); a working checkout also runs, but its build output and dependencies count as files naming the change. The wrapped pull request is neutral by construction: title, branch and description name only the changed files (`Update src/foo.py`, `update-foo`), never what the edit does; the number and the commits are hashes of the diff, so the same mutant wraps the same way twice. The command writes `expected.json` in full — no noise on the changed files, the mutant's part as the important one — reviews the full mutated tree, copies what the review reads, then replays the case offline and refuses it unless it gives the same parts.
+`--source` is the un-mutated code the diff applies to, a clean export of the base commit (`git archive <commit> | tar -x -C <export>`); a working checkout also runs, but its build output and dependencies count as files naming the change. The wrapped pull request is neutral by construction: title, branch and description name only the changed files (`Update src/foo.py`, `update-foo`), never what the edit does; the number and the commits are hashes of the diff, so the same mutant wraps the same way twice. The command writes `expected.json` in full — no noise on the changed files, the parts holding the fault as the important ones — reviews the full mutated tree, copies what the review reads, then replays the case offline and refuses it unless it gives the same parts. A diff that wraps the mutant with benign edits from the same project names the mutated file with `--fault`, and only that file's parts are marked important; without `--fault` every part is, the starting point the revert-the-fix recipe labels by hand.
 
 To obtain the mutant diff, keep the run small — one file of one public project, local, never a large codebase:
 
@@ -85,11 +86,13 @@ Choose mutants from the mutators that tend to resemble real faults: boundary and
 Realism caveats, worth stating beside any number these cases produce:
 
 - A mutant is one machine-made edit; real changes carry intent, tests and a description around the fault.
+- The benign edits wrapped around each committed mutant are written for the wrap in the style of the same project, not taken from its history.
 - The wrapped pull request is deliberately bland, and its uniform wording is itself a tell a reader could learn.
 - The mutant set is what the tools generate, not the distribution of historical faults; whether a mutant survived depends on the mutated project's own tests.
 - A seeded case measures whether the review ranks the fault's part where a reviewer reads first, not whether the review finds the fault; the part is known before the review runs.
+- The rank scores skip any case whose review gives fewer than three parts, there every position being fixed by the part count rather than by how the review ranked; that is why the committed seeded cases wrap each mutant with enough benign edits to make the ranking a real one.
 
-Public and private follow the recorded cases' rule: a case committed here may only mutate public code — this repository, or permissively licensed public projects such as tomli (MIT) and GuardClauses (MIT). Seed a private project only into a folder outside the repository.
+Public and private follow the recorded cases' rule: a case committed here may only mutate public code — this repository, or permissively licensed public projects such as tomli (MIT) and GuardClauses (MIT) — and a case that copies a third-party project's files carries that project's license beside them, in a `LICENSE` file naming the project and the commit the copies were taken from. Seed a private project only into a folder outside the repository.
 
 ### Reverting a fix
 
@@ -108,8 +111,8 @@ Any model judge — a prompt that scores another prompt's output — must first 
 
 ## Trying it by hand
 
-1. Run `npm run eval` and read the report: on the canary cases the coverage, noise and rank checks pass, while every claim check fails as an expected failure, because the review reports no claims yet.
-2. Seed a few mutants of the companion's own code: export it (`git archive HEAD | tar -x -C /tmp/sl`), flip one comparison the way StrykerJS reports it, `git diff` the edit, and `seed <diff> --source /tmp/sl --cases <folder> --id <name>`; run the evaluation and read the seeded cases' rank scores.
+1. Run `npm run eval` and read the report: on the canary cases the coverage and noise checks pass (their reviews give one part, too few for the rank scores to count), while every claim check fails as an expected failure, because the review reports no claims yet.
+2. Seed a few mutants of the companion's own code: export it (`git archive HEAD | tar -x -C /tmp/sl`), flip one comparison the way StrykerJS reports it, wrap it with a benign docs or test touch from the same export, `git diff` the edits, and `seed <diff> --source /tmp/sl --cases <folder> --id <name> --fault <mutated path>`; run the evaluation and read the seeded cases' rank scores.
 3. Record a case from a public pull request into a folder of your own, and write its `expected.json`.
 4. Run `node packages/evaluation/dist/main.js run --cases <folder> --write-baseline <folder>/baseline.json`.
 5. Break a noise rule locally — for example, remove `package-lock.json` from the lockfile names in `packages/engine/src/noise.ts` — then `npm run build` and `npm run eval`: the lockfile recall of `example-42` drops and the run exits 1.

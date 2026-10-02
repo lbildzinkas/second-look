@@ -1,6 +1,12 @@
 {
   "noise": {
+    "README.md": {
+      "label": "none"
+    },
     "src/tomli/_re.py": {
+      "label": "none"
+    },
+    "tests/test_misc.py": {
       "label": "none"
     }
   },

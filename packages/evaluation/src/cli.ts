@@ -25,7 +25,7 @@ Usage:
   second-look-eval record <pull-request-url> [--cases <dir>] [--id <name>]
                           [--token <token>] [--cache-dir <dir>]
   second-look-eval seed <mutant.diff> --source <dir> --id <name>
-                        [--cases <dir>]
+                        [--cases <dir>] [--fault <path>]
   second-look-eval run [--cases <dir>]... [--model-free] [--changed-since <ref>]
                        [--baseline <file>] [--write-baseline <file>]
                        [--runs <dir>]
@@ -39,12 +39,17 @@ case is kept outside the repository unless a folder in it is named.
 The seed command wraps one mutant as a case offline: the mutant is a
 unified diff (mutmut show, or a Stryker mutant applied by hand and diffed)
 against the un-mutated code in --source, a clean export of the mutated
-project at the base commit. The wrapped pull request carries neutral
-wording — its title, branch and description name only the changed files,
-never what the edit does — and the expected.json is written in full: no
-noise on the changed files, the part holding the fault as the important
-part. Cases go to --cases, else the first folder of SECOND_LOOK_EVAL_CASES;
-public cases come only from public code.
+project at the base commit. The diff may wrap the mutant with benign
+edits from the same project, so the ranking has other parts to put
+beside the fault; --fault then names the mutated file, and only that
+file's parts are marked important. Without --fault every part is, the
+starting point the revert-the-fix recipe labels by hand. The wrapped
+pull request carries neutral wording — its title, branch and description
+name only the changed files, never what the edit does — and the
+expected.json is written in full: no noise on the changed files, the
+part holding the fault as the important part. Cases go to --cases, else
+the first folder of SECOND_LOOK_EVAL_CASES; public cases come only from
+public code.
 
 The run command reviews every case offline and scores it: coverage,
 noise-label precision and recall per class and state, the median and
@@ -103,6 +108,7 @@ export async function runCli(
         id: { type: 'string' },
         token: { type: 'string' },
         source: { type: 'string' },
+        fault: { type: 'string' },
         'cache-dir': { type: 'string' },
         'model-free': { type: 'boolean' },
         'changed-since': { type: 'string' },
@@ -145,6 +151,7 @@ export async function runCli(
         sourceDir: values.source,
         casesFolder,
         id: values.id,
+        ...(values.fault ? { faultPath: values.fault } : {}),
       });
       streams.out.write(
         `seeded ${folder}; its expected.json marks the part holding the fault\n`,

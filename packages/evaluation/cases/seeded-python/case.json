@@ -1,21 +1,21 @@
 {
   "formatVersion": 1,
   "id": "seeded-python",
-  "source": "https://github.com/example-org/example-repo/pull/9207",
-  "recordedAt": "2026-10-02T19:44:45.757Z",
+  "source": "https://github.com/example-org/example-repo/pull/8714",
+  "recordedAt": "2026-10-02T20:08:11.763Z",
   "prompts": [],
   "pullRequest": {
-    "url": "https://github.com/example-org/example-repo/pull/9207",
-    "number": 9207,
-    "title": "Update src/tomli/_re.py",
+    "url": "https://github.com/example-org/example-repo/pull/8714",
+    "number": 8714,
+    "title": "Update 3 files",
     "author": "contributor-login",
-    "description": "Updates src/tomli/_re.py.",
+    "description": "Updates 3 files.",
     "base": "master",
-    "head": "update-re",
-    "baseCommit": "5044bde60e53e323491859ef00bda94c2a5dd780",
-    "headSha": "1e50276c12e61769acba02eaaa6294b013ffbb22"
+    "head": "update-3-files",
+    "baseCommit": "b046ea6a86d11bfe7d9c07b503e9cf7e00a26fad",
+    "headSha": "c08b7549533f1729fd51d067abf0afce3619ea72"
   },
   "gitAttributes": null,
-  "baseCommit": "5044bde60e53e323491859ef00bda94c2a5dd780",
-  "headCommit": "1e50276c12e61769acba02eaaa6294b013ffbb22"
+  "baseCommit": "b046ea6a86d11bfe7d9c07b503e9cf7e00a26fad",
+  "headCommit": "c08b7549533f1729fd51d067abf0afce3619ea72"
 }

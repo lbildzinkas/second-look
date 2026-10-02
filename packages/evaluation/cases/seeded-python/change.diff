@@ -1,3 +1,16 @@
+diff --git a/README.md b/README.md
+index 270d9d4..8585579 100644
+--- a/README.md
++++ b/README.md
+@@ -171,7 +171,7 @@ The `tomli.loads` function returns a plain `dict` that is populated with builtin
+ Preserving comments requires a custom type to be returned so will not be supported,
+ at least not by the `tomli.loads` and `tomli.load` functions.
+ 
+-Look into [TOML Kit](https://github.com/sdispater/tomlkit) if preservation of style is what you need.
++Look into [TOML Kit](https://github.com/sdispater/tomlkit) if preservation of style or comments is what you need.
+ 
+ ### Is there a `dumps`, `write` or `encode` function?<a name="is-there-a-dumps-write-or-encode-function"></a>
+ 
 diff --git a/src/tomli/_re.py b/src/tomli/_re.py
 index fc374ed..ede4976 100644
 --- a/src/tomli/_re.py
@@ -11,3 +24,26 @@ index fc374ed..ede4976 100644
      if offset_sign_str:
          tz: tzinfo | None = cached_tz(
              offset_hour_str, offset_minute_str, offset_sign_str
+diff --git a/tests/test_misc.py b/tests/test_misc.py
+index c2f6bb7..6b93738 100644
+--- a/tests/test_misc.py
++++ b/tests/test_misc.py
+@@ -25,6 +25,7 @@ class TestMiscellaneous(unittest.TestCase):
+             with open(file_path, "rb") as bin_f:
+                 actual = tomllib.load(bin_f)
+         self.assertEqual(actual, expected)
++        self.assertEqual(list(actual), ["one", "two", "arr"])
+ 
+     def test_incorrect_load(self):
+         content = "one=1"
+@@ -44,6 +45,10 @@ class TestMiscellaneous(unittest.TestCase):
+                 ),
+             )
+ 
++    def test_loads_preserves_key_order(self):
++        doc = "z=2 a=1"
++        self.assertEqual(list(tomllib.loads(doc)), ["z", "a"])
++
+     def test_parse_float(self):
+         doc = """
+               val=0.1

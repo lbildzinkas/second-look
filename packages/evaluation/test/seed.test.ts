@@ -28,6 +28,10 @@ const REPORT = `from shop import total
 def line(prices):
     return f"total: {total(prices)}"
 `;
+const README = `# Shop
+
+Totals price lists.
+`;
 /** The mutant: the compound assignment flips, so prices are subtracted. */
 const SHOP_MUTANT_DIFF = `diff --git a/src/shop.py b/src/shop.py
 index 1111111..2222222 100644
@@ -43,6 +47,37 @@ index 1111111..2222222 100644
          return amount
 `;
 const SHOP_MUTATED = SHOP.replace('amount += price', 'amount -= price');
+/** The same mutant wrapped with benign edits from the same project. */
+const WRAPPED_DIFF = `diff --git a/src/shop.py b/src/shop.py
+index 1111111..3333333 100644
+--- a/src/shop.py
++++ b/src/shop.py
+@@ -1,6 +1,6 @@
+ def total(prices):
+     amount = 0
+     for price in prices:
+-        amount += price
++        amount -= price
+     if amount > 0:
+         return amount
+diff --git a/src/report.py b/src/report.py
+index 4444444..5555555 100644
+--- a/src/report.py
++++ b/src/report.py
+@@ -4,2 +4,2 @@
+ def line(prices):
+-    return f"total: {total(prices)}"
++    return f"sum: {total(prices)}"
+diff --git a/README.md b/README.md
+index 6666666..7777777 100644
+--- a/README.md
++++ b/README.md
+@@ -1,3 +1,3 @@
+ # Shop
+ 
+-Totals price lists.
++Totals a list of prices.
+`;
 
 let scratch: string;
 let source: string;
@@ -56,6 +91,7 @@ beforeEach(() => {
   mkdirSync(casesFolder, { recursive: true });
   writeFileSync(join(source, 'src', 'shop.py'), SHOP);
   writeFileSync(join(source, 'src', 'report.py'), REPORT);
+  writeFileSync(join(source, 'README.md'), README);
 });
 
 afterEach(() => {
@@ -114,6 +150,59 @@ describe('seedCase', () => {
     expect(expected['claims']).toEqual([]);
   });
 
+  it('wraps a mutant with benign edits, marking only the fault part important', async () => {
+    const folder = await seedCase(WRAPPED_DIFF, {
+      sourceDir: source,
+      casesFolder,
+      id: 'wrapped-shop',
+      faultPath: 'src/shop.py',
+      now: new Date('2026-10-01T00:00:00Z'),
+    });
+
+    const record = JSON.parse(readFileSync(join(folder, 'case.json'), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    expect(record.pullRequest).toMatchObject({
+      title: 'Update 3 files',
+      description: 'Updates 3 files.',
+      head: 'update-3-files',
+    });
+    expect(readFileSync(join(folder, 'head', 'src', 'shop.py'), 'utf8')).toBe(SHOP_MUTATED);
+    expect(readFileSync(join(folder, 'base', 'src', 'report.py'), 'utf8')).toBe(REPORT);
+    expect(readFileSync(join(folder, 'head', 'README.md'), 'utf8')).toBe(
+      README.replace('Totals price lists.', 'Totals a list of prices.'),
+    );
+
+    const expected = JSON.parse(readFileSync(join(folder, 'expected.json'), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    expect(expected['noise']).toEqual({
+      'README.md': { label: 'none' },
+      'src/report.py': { label: 'none' },
+      'src/shop.py': { label: 'none' },
+    });
+    expect(expected['importantParts']).toEqual(['total in src/shop.py']);
+  });
+
+  it('marks every part important when no fault path is given', async () => {
+    const folder = await seedCase(WRAPPED_DIFF, {
+      sourceDir: source,
+      casesFolder,
+      id: 'unmarked-shop',
+    });
+    const expected = JSON.parse(readFileSync(join(folder, 'expected.json'), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    expect(expected['importantParts']).toEqual([
+      'total in src/shop.py',
+      'line in src/report.py',
+      'README.md',
+    ]);
+  });
+
   it('gives the same mutant the same wrapped pull request', async () => {
     const folders = [
       await seedCase(SHOP_MUTANT_DIFF, { sourceDir: source, casesFolder, id: 'one' }),
@@ -129,10 +218,11 @@ describe('seedCase', () => {
   });
 
   it('writes a case whose rank scores measure the fault part', async () => {
-    const folder = await seedCase(SHOP_MUTANT_DIFF, {
+    const folder = await seedCase(WRAPPED_DIFF, {
       sourceDir: source,
       casesFolder,
       id: 'seeded-shop',
+      faultPath: 'src/shop.py',
     });
     const evaluationCase = await loadCase(folder);
     const review = await reviewChange(await caseInput(evaluationCase));
@@ -144,6 +234,22 @@ describe('seedCase', () => {
     expect(byName['noise-recall:none']).toBe(1);
     expect(byName['rank-median']).toBe(1);
     expect(byName['rank-top-3']).toBe(1);
+  });
+
+  it('writes a lone-mutant case too small for the rank scores to count', async () => {
+    const folder = await seedCase(SHOP_MUTANT_DIFF, {
+      sourceDir: source,
+      casesFolder,
+      id: 'seeded-shop',
+    });
+    const evaluationCase = await loadCase(folder);
+    const review = await reviewChange(await caseInput(evaluationCase));
+    const diff = readFileSync(join(folder, 'change.diff'), 'utf8');
+    const scores = scoresOf(tallyCase(diff, evaluationCase.expected, review.parts));
+    const byName = Object.fromEntries(scores.map((score) => [score.name, score.value]));
+    expect(byName['coverage']).toBe(1);
+    expect(byName['rank-median']).toBeUndefined();
+    expect(byName['rank-top-3']).toBeUndefined();
   });
 
   it('derives a clean branch name from a file whose stem starts wide', async () => {
@@ -170,6 +276,17 @@ describe('seedCase', () => {
     await expect(
       seedCase(stranger, { sourceDir: source, casesFolder, id: 'stranger' }),
     ).rejects.toThrow('the mutant diff does not apply to src/shop.py');
+  });
+
+  it('refuses a fault path the diff does not change', async () => {
+    await expect(
+      seedCase(SHOP_MUTANT_DIFF, {
+        sourceDir: source,
+        casesFolder,
+        id: 'stranger',
+        faultPath: 'src/other.py',
+      }),
+    ).rejects.toThrow('the diff does not change the fault path: src/other.py');
   });
 
   it('refuses a binary mutant and a case name already taken', async () => {
@@ -217,6 +334,29 @@ describe('the seed command', () => {
     expect(seeded.code).toBe(0);
     expect(seeded.out).toContain(`seeded ${join(casesFolder, 'mine')}`);
     expect(existsSync(join(casesFolder, 'mine', 'case.json'))).toBe(true);
+  });
+
+  it('passes the fault path through, marking only the fault part important', async () => {
+    const diffFile = join(scratch, 'wrapped.diff');
+    writeFileSync(diffFile, WRAPPED_DIFF);
+    const seeded = await cli([
+      'seed',
+      diffFile,
+      '--source',
+      source,
+      '--cases',
+      casesFolder,
+      '--id',
+      'wrapped',
+      '--fault',
+      'src/shop.py',
+    ]);
+    expect(seeded.err).toBe('');
+    expect(seeded.code).toBe(0);
+    const expected = JSON.parse(
+      readFileSync(join(casesFolder, 'wrapped', 'expected.json'), 'utf8'),
+    ) as Record<string, unknown>;
+    expect(expected['importantParts']).toEqual(['total in src/shop.py']);
   });
 
   it('refuses to seed without a source, an id or a cases folder', async () => {

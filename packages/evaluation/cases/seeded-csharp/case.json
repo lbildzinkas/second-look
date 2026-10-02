@@ -1,21 +1,21 @@
 {
   "formatVersion": 1,
   "id": "seeded-csharp",
-  "source": "https://github.com/example-org/example-repo/pull/2257",
-  "recordedAt": "2026-10-02T19:44:23.824Z",
+  "source": "https://github.com/example-org/example-repo/pull/8480",
+  "recordedAt": "2026-10-02T20:08:11.985Z",
   "prompts": [],
   "pullRequest": {
-    "url": "https://github.com/example-org/example-repo/pull/2257",
-    "number": 2257,
-    "title": "Update src/GuardClauses/GuardAgainstOutOfRangeExtensions.cs",
+    "url": "https://github.com/example-org/example-repo/pull/8480",
+    "number": 8480,
+    "title": "Update 3 files",
     "author": "contributor-login",
-    "description": "Updates src/GuardClauses/GuardAgainstOutOfRangeExtensions.cs.",
+    "description": "Updates 3 files.",
     "base": "master",
-    "head": "update-guardagainstoutofrangeextensions",
-    "baseCommit": "d4c1f3ddbaab5c269205e257a86f79552eaa7264",
-    "headSha": "ae305c32d51430643a5946c61041d031e46fb078"
+    "head": "update-3-files",
+    "baseCommit": "f5c9cb376f43ab24aadf6c4f02692d5b44f3def1",
+    "headSha": "35593668f35bb9b7cea1c2c0a5f0599d56179796"
   },
   "gitAttributes": null,
-  "baseCommit": "d4c1f3ddbaab5c269205e257a86f79552eaa7264",
-  "headCommit": "ae305c32d51430643a5946c61041d031e46fb078"
+  "baseCommit": "f5c9cb376f43ab24aadf6c4f02692d5b44f3def1",
+  "headCommit": "35593668f35bb9b7cea1c2c0a5f0599d56179796"
 }

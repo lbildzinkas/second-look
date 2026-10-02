@@ -11,7 +11,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "canary-csharp",
@@ -24,7 +24,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "canary-csharp",
@@ -37,33 +37,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
-    },
-    {
-      "case": "canary-csharp",
-      "name": "rank-median",
-      "value": 1,
-      "better": "lower",
-      "companionVersion": "0.1.0",
-      "promptVersions": {},
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
-    },
-    {
-      "case": "canary-csharp",
-      "name": "rank-top-3",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {},
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "canary-csharp",
@@ -77,7 +51,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "canary-csharp",
@@ -91,7 +65,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "canary-csharp",
@@ -105,7 +79,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "canary-csharp",
@@ -119,7 +93,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "canary-python",
@@ -132,7 +106,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "canary-python",
@@ -145,7 +119,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "canary-python",
@@ -158,33 +132,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
-    },
-    {
-      "case": "canary-python",
-      "name": "rank-median",
-      "value": 1,
-      "better": "lower",
-      "companionVersion": "0.1.0",
-      "promptVersions": {},
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
-    },
-    {
-      "case": "canary-python",
-      "name": "rank-top-3",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {},
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "canary-python",
@@ -198,7 +146,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "canary-python",
@@ -212,7 +160,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "canary-python",
@@ -226,7 +174,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "canary-python",
@@ -240,7 +188,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "example-42",
@@ -253,7 +201,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "example-42",
@@ -266,7 +214,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "example-42",
@@ -279,7 +227,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "example-42",
@@ -292,7 +240,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "example-42",
@@ -305,7 +253,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "example-42",
@@ -318,7 +266,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "example-42",
@@ -331,7 +279,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "example-42",
@@ -344,7 +292,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "example-42",
@@ -357,7 +305,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "example-42",
@@ -370,7 +318,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "example-42",
@@ -383,7 +331,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "example-42",
@@ -396,7 +344,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "example-42",
@@ -409,7 +357,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "example-7",
@@ -422,7 +370,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "example-7",
@@ -435,7 +383,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "example-7",
@@ -448,7 +396,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "example-7",
@@ -461,7 +409,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "example-7",
@@ -474,7 +422,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "seeded-csharp",
@@ -487,7 +435,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "seeded-csharp",
@@ -500,7 +448,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "seeded-csharp",
@@ -513,7 +461,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "seeded-csharp",
@@ -526,7 +474,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "seeded-csharp",
@@ -539,7 +487,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "seeded-python",
@@ -552,7 +500,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "seeded-python",
@@ -565,7 +513,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "seeded-python",
@@ -578,7 +526,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "seeded-python",
@@ -591,7 +539,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "seeded-python",
@@ -604,7 +552,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "seeded-typescript",
@@ -617,7 +565,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "seeded-typescript",
@@ -630,7 +578,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "seeded-typescript",
@@ -643,7 +591,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "seeded-typescript",
@@ -656,7 +604,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "seeded-typescript",
@@ -669,7 +617,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "(all)",
@@ -682,7 +630,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "(all)",
@@ -695,7 +643,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "(all)",
@@ -708,7 +656,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "(all)",
@@ -721,7 +669,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "(all)",
@@ -734,7 +682,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "(all)",
@@ -747,7 +695,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "(all)",
@@ -760,7 +708,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "(all)",
@@ -773,7 +721,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "(all)",
@@ -786,7 +734,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "(all)",
@@ -799,7 +747,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "(all)",
@@ -812,12 +760,12 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "(all)",
       "name": "rank-median",
-      "value": 1,
+      "value": 2,
       "better": "lower",
       "companionVersion": "0.1.0",
       "promptVersions": {},
@@ -825,12 +773,12 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "(all)",
       "name": "rank-top-3",
-      "value": 0.6666666666666666,
+      "value": 0.5714285714285714,
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {},
@@ -838,7 +786,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "(all)",
@@ -852,7 +800,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "(all)",
@@ -866,7 +814,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "(all)",
@@ -880,7 +828,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     },
     {
       "case": "(all)",
@@ -894,7 +842,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-02T19:44:51.055Z"
+      "runDate": "2026-10-02T20:08:53.375Z"
     }
   ],
   "failures": []

@@ -16,6 +16,12 @@ export interface SeedOptions {
   casesFolder: string;
   /** The case's name; required, so no folder is seeded by accident. */
   id: string;
+  /**
+   * The diff path holding the mutant, for a diff that wraps the mutant
+   * with benign edits from the same project; only that file's parts are
+   * the important ones.
+   */
+  faultPath?: string;
   /** The seeding time; the clock when not given. */
   now?: Date;
 }
@@ -28,12 +34,16 @@ const SEEDED_AUTHOR = 'contributor-login';
  * Wraps one mutant as a recorded case: the mutant, a unified diff against
  * the un-mutated code in `sourceDir`, becomes a pull request whose title,
  * branch and description say only which files changed, never what the edit
- * does — a reviewer reads the diff, not a hint. The case's `expected.json`
- * is written in full: every changed file carries no noise, and the known
- * important parts are the ones holding the mutant, so the rank scores
- * measure whether a review puts the fault where a reviewer reads first.
- * The case is then replayed offline and refused unless it gives the same
- * parts as the review of the full mutated tree. Returns the case folder.
+ * does — a reviewer reads the diff, not a hint. A diff may wrap the mutant
+ * with benign edits from the same project, so the ranking has other parts
+ * to put beside the fault; `faultPath` then names the mutated file. The
+ * case's `expected.json` is written in full: every changed file carries no
+ * noise, and the known important parts are the ones holding the fault —
+ * every part when no `faultPath` is given, the starting point the
+ * revert-the-fix recipe labels by hand — so the rank scores measure
+ * whether a review puts the fault where a reviewer reads first. The case
+ * is then replayed offline and refused unless it gives the same parts as
+ * the review of the full mutated tree. Returns the case folder.
  */
 export async function seedCase(diff: string, options: SeedOptions): Promise<string> {
   if (!CASE_ID.test(options.id) || options.id === '.' || options.id === '..') {
@@ -46,6 +56,9 @@ export async function seedCase(diff: string, options: SeedOptions): Promise<stri
   if (files.length === 0) throw new Error('the mutant diff changes no file');
   if (files.some((file) => file.isBinary)) {
     throw new Error('the mutant diff changes a binary file; mutants are text edits');
+  }
+  if (options.faultPath !== undefined && !files.some((file) => file.path === options.faultPath)) {
+    throw new Error(`the diff does not change the fault path: ${options.faultPath}`);
   }
 
   // The mutated head tree the review reads: the source with the mutant
@@ -118,7 +131,10 @@ export async function seedCase(diff: string, options: SeedOptions): Promise<stri
             .sort()
             .map((path) => [path, { label: 'none' } as const]),
         ),
-        importantParts: live.parts.map((part) => part.name ?? part.path),
+        importantParts: (options.faultPath === undefined
+          ? live.parts
+          : live.parts.filter((part) => part.path === options.faultPath)
+        ).map((part) => part.name ?? part.path),
         claims: [],
       };
       await writeFile(join(folder, 'case.json'), `${JSON.stringify(record, null, 2)}\n`);

@@ -1,3 +1,16 @@
+diff --git a/README.md b/README.md
+index 562ecf8..8a4ee03 100644
+--- a/README.md
++++ b/README.md
+@@ -62,7 +62,7 @@ public class Order
+ - **Guard.Against.OutOfSQLDateRange** (throws if DateTime input is outside the valid range of SQL Server DateTime values)
+ - **Guard.Against.Zero** (throws if number input is zero)
+ - **Guard.Against.Expression** (use any expression you define)
+-- **Guard.Against.InvalidFormat** (define allowed format with a regular expression or func)
++- **Guard.Against.InvalidFormat** (throws if string input does not match a regular expression or func you define)
+ - **Guard.Against.NotFound** (similar to Null but for use with an id/key lookup; throws a `NotFoundException`)
+ 
+ ## Extending with your own Guard Clauses
 diff --git a/src/GuardClauses/GuardAgainstOutOfRangeExtensions.cs b/src/GuardClauses/GuardAgainstOutOfRangeExtensions.cs
 index ef74293..0030b60 100644
 --- a/src/GuardClauses/GuardAgainstOutOfRangeExtensions.cs
@@ -11,3 +24,32 @@ index ef74293..0030b60 100644
              message: "Min length must be equal or less than max length.", exceptionCreator: exceptionCreator);
          Guard.Against.StringTooShort(input, minLength, nameof(minLength), exceptionCreator: exceptionCreator);
          Guard.Against.StringTooLong(input, maxLength, nameof(maxLength), exceptionCreator: exceptionCreator);
+diff --git a/test/GuardClauses.UnitTests/GuardAgainstStringLengthOutOfRange.cs b/test/GuardClauses.UnitTests/GuardAgainstStringLengthOutOfRange.cs
+index 96a042a..e6b2929 100644
+--- a/test/GuardClauses.UnitTests/GuardAgainstStringLengthOutOfRange.cs
++++ b/test/GuardClauses.UnitTests/GuardAgainstStringLengthOutOfRange.cs
+@@ -10,9 +10,9 @@ public class GuardAgainstStringLengthOutOfRange
+     public void DoesNothingGivenNonEmptyString()
+     {
+         Guard.Against.LengthOutOfRange("a", 1, 4, "string");
++        Guard.Against.LengthOutOfRange("ab", 1, 4, "string");
+         Guard.Against.LengthOutOfRange("abc", 1, 4, "string");
+-        Guard.Against.LengthOutOfRange("a", 1, 4, "string");
+-        Guard.Against.LengthOutOfRange("a", 1, 4, "string");
++        Guard.Against.LengthOutOfRange("abcd", 1, 4, "string");
+         Guard.Against.LengthOutOfRange("a", 1, 4, "string");
+     }
+     [Fact]
+@@ -96,4 +96,12 @@ public class GuardAgainstStringLengthOutOfRange
+         var actual = Guard.Against.LengthOutOfRange("abc", 2, 5, "string");
+         Assert.Equal(expected, actual);
+     }
++
++    [Fact]
++    public void ReturnsExpectedValueWhenGivenStringAtMinLength()
++    {
++        var expected = "ab";
++        var actual = Guard.Against.LengthOutOfRange("ab", 2, 5, "string");
++        Assert.Equal(expected, actual);
++    }
+ }

@@ -10,9 +10,9 @@ public class GuardAgainstStringLengthOutOfRange
     public void DoesNothingGivenNonEmptyString()
     {
         Guard.Against.LengthOutOfRange("a", 1, 4, "string");
-        Guard.Against.LengthOutOfRange("ab", 1, 4, "string");
         Guard.Against.LengthOutOfRange("abc", 1, 4, "string");
-        Guard.Against.LengthOutOfRange("abcd", 1, 4, "string");
+        Guard.Against.LengthOutOfRange("a", 1, 4, "string");
+        Guard.Against.LengthOutOfRange("a", 1, 4, "string");
         Guard.Against.LengthOutOfRange("a", 1, 4, "string");
     }
     [Fact]
@@ -94,14 +94,6 @@ public class GuardAgainstStringLengthOutOfRange
     {
         var expected = "abc";
         var actual = Guard.Against.LengthOutOfRange("abc", 2, 5, "string");
-        Assert.Equal(expected, actual);
-    }
-
-    [Fact]
-    public void ReturnsExpectedValueWhenGivenStringAtMinLength()
-    {
-        var expected = "ab";
-        var actual = Guard.Against.LengthOutOfRange("ab", 2, 5, "string");
         Assert.Equal(expected, actual);
     }
 }

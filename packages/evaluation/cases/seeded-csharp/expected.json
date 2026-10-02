@@ -1,6 +1,12 @@
 {
   "noise": {
+    "README.md": {
+      "label": "none"
+    },
     "src/GuardClauses/GuardAgainstOutOfRangeExtensions.cs": {
+      "label": "none"
+    },
+    "test/GuardClauses.UnitTests/GuardAgainstStringLengthOutOfRange.cs": {
       "label": "none"
     }
   },

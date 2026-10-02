@@ -17,7 +17,7 @@ The protocol types live in `packages/engine/src/protocol.ts` and `packages/engin
 
 ## Building and testing
 
-Requires Node 20 or later. Install once, then one command type-checks, lints and tests everything:
+Requires Node 20 or later. One command installs, type-checks, lints and tests everything:
 
 ```sh
 npm ci        # install all workspace dependencies

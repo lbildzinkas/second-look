@@ -21,7 +21,7 @@ A few sentences at the top of a review that tell what the change does, in the or
 _Avoid_: Walkthrough, tour, summary
 
 **Part**:
-A named group of related edits within one file; every changed line belongs to exactly one part.
+A named group of related edits; every changed line belongs to exactly one part.
 _Avoid_: Chunk, section, group, file
 
 **Importance**:

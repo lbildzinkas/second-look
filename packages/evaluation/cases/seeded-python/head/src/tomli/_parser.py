@@ -4,11 +4,8 @@
 
 from __future__ import annotations
 
-# Defer loading regular expressions until we actually need them in
-# parse_value().
-__lazy_modules__ = ["tomli._re"]
-
 import sys
+from types import MappingProxyType
 
 from ._re import (
     RE_DATETIME,
@@ -18,9 +15,6 @@ from ._re import (
     match_to_localtime,
     match_to_number,
 )
-
-if sys.version_info < (3, 15):  # pragma: no cover
-    from types import MappingProxyType as frozendict
 
 TYPE_CHECKING = False
 if TYPE_CHECKING:
@@ -39,13 +33,6 @@ if TYPE_CHECKING:
 # level, as it allows more nesting than pure Python, but still seems a far
 # lower number than where mypyc binaries crash.
 MAX_INLINE_NESTING: Final = sys.getrecursionlimit()
-
-# Pathologically excessive number of parts in a key runs into quadratic
-# behavior (e.g. in Flags.is_).
-# Even if keys aren't currently parsed using recursion, they name a
-# recursive structure, so it makes sense to limit it using getrecursionlimit()
-# and RecursionError.
-MAX_KEY_PARTS: Final = sys.getrecursionlimit()
 
 ASCII_CTRL: Final = frozenset(chr(i) for i in range(32)) | frozenset(chr(127))
 
@@ -67,7 +54,7 @@ BARE_KEY_CHARS: Final = frozenset(
 KEY_INITIAL_CHARS: Final = BARE_KEY_CHARS | frozenset("\"'")
 HEXDIGIT_CHARS: Final = frozenset("abcdef" "ABCDEF" "0123456789")
 
-BASIC_STR_ESCAPE_REPLACEMENTS: Final = frozendict(
+BASIC_STR_ESCAPE_REPLACEMENTS: Final = MappingProxyType(
     {
         "\\b": "\u0008",  # backspace
         "\\t": "\u0009",  # tab
@@ -488,10 +475,6 @@ def parse_key(src: str, pos: Pos) -> tuple[Pos, Key]:
         pos = skip_chars(src, pos, TOML_WS)
         pos, key_part = parse_key_part(src, pos)
         key += (key_part,)
-        if len(key) > MAX_KEY_PARTS:
-            raise RecursionError(
-                f"TOML key has more than the allowed {MAX_KEY_PARTS} parts"
-            )
         pos = skip_chars(src, pos, TOML_WS)
 
 
