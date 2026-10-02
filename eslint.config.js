@@ -16,4 +16,13 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // The fake engine fixture is plain Node script with no types to read.
+    files: ['packages/extension/test/fixtures/*.mjs'],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+      },
+    },
+  },
 );

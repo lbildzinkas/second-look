@@ -1,12 +1,23 @@
 {
-  "name": "@second-look/extension",
-  "description": "Second Look VS Code extension: the reviewer-facing companion client for the engine.",
+  "name": "second-look-extension",
+  "displayName": "Second Look",
+  "description": "The reviewer's companion: ranks a pull request by what matters, so the human reviews it faster and better.",
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
   "type": "module",
+  "publisher": "lbildzinkas",
   "engines": {
-    "node": ">=20"
+    "node": ">=20",
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited"
+    }
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -16,11 +27,31 @@
       "default": "./dist/index.js"
     }
   },
+  "contributes": {
+    "commands": [
+      {
+        "command": "second-look.reviewPullRequest",
+        "title": "Review pull request",
+        "category": "Second Look"
+      }
+    ],
+    "views": {
+      "explorer": [
+        {
+          "id": "second-look.reviewTree",
+          "name": "Second Look"
+        }
+      ]
+    }
+  },
   "scripts": {
     "build": "tsc -b",
     "test": "vitest run"
   },
   "dependencies": {
     "@second-look/engine": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.90.0"
   }
 }

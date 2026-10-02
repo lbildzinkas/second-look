@@ -155,6 +155,40 @@ describe('isReviewResult', () => {
     expect(isReviewResult(value)).toBe(true);
   });
 
+  it('accepts a part without a rank, until the engine ranks parts', () => {
+    expect(sampleResult().parts[0]!.rank).toBeUndefined();
+    expect(isReviewResult(sampleResult())).toBe(true);
+  });
+
+  it('accepts a part ranked with an importance, its reason and the signals the reason cites', () => {
+    const value = JSON.parse(JSON.stringify(sampleResult())) as {
+      parts: { rank: unknown }[];
+    };
+    value.parts[0]!.rank = {
+      importance: 'must review',
+      reason: 'New code the send path now runs on every delivery.',
+      signals: ['new code', '2 callers'],
+    };
+    expect(isReviewResult(value)).toBe(true);
+  });
+
+  it('rejects a rank whose importance, reason or signals do not carry their shape', () => {
+    const cases: unknown[] = [
+      { importance: 'urgent', reason: 'Because.', signals: ['new code'] },
+      { importance: 'must review', reason: '', signals: ['new code'] },
+      { importance: 'must review', reason: 'Because.', signals: ['new code', ''] },
+      { importance: 'must review', reason: 'Because.', signals: 'new code' },
+      { importance: 'must review', reason: 'Because.' },
+    ];
+    for (const rank of cases) {
+      const value = JSON.parse(JSON.stringify(sampleResult())) as {
+        parts: { rank: unknown }[];
+      };
+      value.parts[0]!.rank = rank;
+      expect(isReviewResult(value), JSON.stringify(rank)).toBe(false);
+    }
+  });
+
   it('accepts every noise label with its state and blind spot, and the none verdict', () => {
     const assessments: NoiseAssessment[] = [
       {

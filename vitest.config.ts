@@ -12,6 +12,8 @@ export default defineConfig({
       '@second-look/engine': fileURLToPath(
         new URL('./packages/engine/src/index.ts', import.meta.url),
       ),
+      // The extension's VS Code API is a test double outside the editor.
+      vscode: fileURLToPath(new URL('./packages/extension/test/vscode-stub.ts', import.meta.url)),
     },
   },
 });

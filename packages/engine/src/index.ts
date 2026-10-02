@@ -1,4 +1,6 @@
 export * from './protocol.js';
+export * from './rpc.js';
+export * from './server.js';
 export * from './diff.js';
 export * from './coverage.js';
 export * from './gitattributes.js';
