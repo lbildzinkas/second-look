@@ -5,10 +5,12 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import * as vscode from 'vscode';
 import {
+  ADD_COMMENT_COMMAND,
   CHANGE_SCHEME,
   OPEN_ALL_PARTS_COMMAND,
   OPEN_PART_COMMAND,
   REVIEW_COMMAND,
+  SUBMIT_REVIEW_COMMAND,
 } from 'second-look-extension';
 import { mixedResult } from '../results.js';
 
@@ -374,6 +376,73 @@ export async function run(): Promise<void> {
       ),
       'the whole-change diff editor tab',
     );
+
+    // Writing a comment: the thread the editor would raise on a line of
+    // the diff, with the text submitted into it, becomes one pending
+    // comment.
+    const thread = {
+      uri: retryHead.document.uri,
+      range: new vscode.Range(4, 0, 4, 0),
+      comments: [],
+      canReply: true,
+      collapsibleState: vscode.CommentThreadCollapsibleState.Expanded,
+      dispose: (): void => undefined,
+    } as unknown as vscode.CommentThread;
+    await withTimeout(
+      vscode.commands.executeCommand(ADD_COMMENT_COMMAND, {
+        thread,
+        text: 'this retry loop needs a cap',
+      }),
+      'the add-comment command',
+    );
+    ok(thread.comments.length === 1, 'the comment shows in its thread');
+    const withPending = await renderedTree(provider);
+    deepStrictEqual(withPending[0], {
+      label: 'Pending review',
+      tooltip: 'The comments you wrote, sent to GitHub as one review on submit.',
+    });
+    deepStrictEqual(withPending[1], {
+      label: 'src/retry.py:5',
+      description: 'this retry loop needs a cap',
+      tooltip: 'this retry loop needs a cap',
+      contextValue: 'comment',
+    });
+
+    // Sending: the submit kind and the overall comment are given here, so
+    // no prompt opens in the test host. The engine receives one send with
+    // the gathered comment, and the pending review empties again.
+    await withTimeout(
+      vscode.commands.executeCommand(SUBMIT_REVIEW_COMMAND, 'comment', 'Sent by the real-host test.'),
+      'the submit-review command',
+    );
+    const sent = waitFor('the send request in the engine log', () => {
+      const logged = readFileSync(join(workDir, 'engine.log'), 'utf8')
+        .split('\n')
+        .filter((line) => line !== '')
+        .map((line) => JSON.parse(line) as EngineRequest);
+      return logged.find((request) => request.method === 'sendReview');
+    });
+    deepStrictEqual(await sent, {
+      method: 'sendReview',
+      params: {
+        url: PR_URL,
+        token: TOKEN,
+        review: {
+          submit: 'comment',
+          body: 'Sent by the real-host test.',
+          comments: [
+            {
+              kind: 'line',
+              path: 'src/retry.py',
+              side: 'head',
+              line: 5,
+              body: 'this retry loop needs a cap',
+            },
+          ],
+        },
+      },
+    });
+    deepStrictEqual(await renderedTree(provider), EXPECTED_TREE);
   } finally {
     delete process.env['SECOND_LOOK_ENGINE_ENTRY'];
     delete process.env['FAKE_ENGINE_RESULT'];
