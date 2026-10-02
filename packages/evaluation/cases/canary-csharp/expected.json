@@ -16,7 +16,7 @@
         "kind": "refuted",
         "evidence": {
           "file": "src/RecyclableMemoryStream.cs",
-          "line": 510,
+          "line": 411,
           "source": "library source at the pinned version"
         }
       },
