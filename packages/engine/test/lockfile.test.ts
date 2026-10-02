@@ -169,6 +169,67 @@ describe('package-lock.json', () => {
     expect(check.blindSpot).toContain('the packages/web entry (added)');
   });
 
+  it('stays claimed and names a legacy mirror change the manifest does not explain', () => {
+    const lockV2 = (mirrorVersion: string): string =>
+      JSON.stringify({
+        name: 'app',
+        lockfileVersion: 2,
+        packages: {
+          '': { name: 'app', dependencies: { 'left-pad': '^1.3.0' } },
+          'node_modules/left-pad': {
+            version: '1.3.0',
+            resolved: 'https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz',
+          },
+          'node_modules/mkdirp': { version: '1.0.4' },
+        },
+        dependencies: {
+          'left-pad': {
+            version: mirrorVersion,
+            resolved: 'https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz',
+            integrity: 'sha512-x',
+          },
+          mkdirp: { version: '1.0.4', resolved: 'y', integrity: 'z' },
+        },
+      });
+    const check = confirmed(
+      format('package-lock.json'),
+      side(lockV2('1.3.0'), [manifest('^1.3.0')]),
+      side(lockV2('9.9.9'), [manifest('^1.3.0')]),
+    );
+    expect(check.outcome).toBe('unexplained');
+    expect(check.blindSpot).toContain('the dependencies mirror entry (content changed)');
+  });
+
+  it('confirms a bump that regenerates the legacy mirror with it', () => {
+    const regenerated = (leftPadVersion: string): string =>
+      JSON.stringify({
+        name: 'app',
+        lockfileVersion: 2,
+        packages: {
+          '': { name: 'app', dependencies: { 'left-pad': `^${leftPadVersion}` } },
+          'node_modules/left-pad': {
+            version: leftPadVersion,
+            resolved: `https://registry.npmjs.org/left-pad/-/left-pad-${leftPadVersion}.tgz`,
+          },
+          'node_modules/mkdirp': { version: '1.0.4' },
+        },
+        dependencies: {
+          'left-pad': {
+            version: leftPadVersion,
+            resolved: `https://registry.npmjs.org/left-pad/-/left-pad-${leftPadVersion}.tgz`,
+            integrity: 'sha512-x',
+          },
+          mkdirp: { version: '1.0.4', resolved: 'y', integrity: 'z' },
+        },
+      });
+    const check = confirmed(
+      format('package-lock.json'),
+      side(regenerated('1.3.0'), [manifest('^1.3.0')]),
+      side(regenerated('2.0.0'), [manifest('^2.0.0')]),
+    );
+    expect(check.outcome).toBe('confirmed');
+  });
+
   it('reads the v1 nested-entries form too', () => {
     const check = confirmed(
       format('package-lock.json'),

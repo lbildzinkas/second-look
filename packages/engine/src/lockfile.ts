@@ -169,6 +169,8 @@ function readNpmLock(text: string): LockIndex | undefined {
       }
       recordNpmEntry(index, name, raw);
     }
+    const mirror = doc['dependencies'];
+    if (isRecord(mirror)) index.roots.set('dependencies mirror', stableStringify(mirror));
     return index;
   }
   const dependencies = doc['dependencies'];
