@@ -1,6 +1,9 @@
+import { DEFAULT_AGENT_SETTINGS, type AgentSettings } from './agent.js';
 import { defaultCacheDir } from './cache.js';
 import { readFile } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
+import { piAdapter, type PiAdapterOptions } from './pi.js';
+import { runAgentProbe } from './probe.js';
 import { reviewPullRequest } from './review.js';
 import { readPackagePdbs } from './symbols.js';
 import { runRpcServer } from './server.js';
@@ -12,6 +15,9 @@ const USAGE = `second-look-engine — the engine of the Second Look reviewer's c
 
 Usage:
   second-look-engine review <pull-request-url> [--token <token>] [--cache-dir <dir>]
+  second-look-engine probe <pull-request-url> [--target <path-or-url>]...
+      [--model <model>] [--effort <level>] [--agent-timeout <seconds>]
+      [--agent-concurrency <n>] [--token <token>] [--cache-dir <dir>]
   second-look-engine pdb <package-file>
   second-look-engine serve
 
@@ -41,6 +47,17 @@ The GitHub token is passed in by the caller, either with --token or through
 the GITHUB_TOKEN environment variable. It is used only for the GitHub
 request, and is never written to disk or logs.
 
+The probe command checks the reviewer's installed coding agent (Pi) on a
+pull request: it takes the read-only head copy, asks the agent, locked down,
+to read each target (the copy's root by default), and prints what the
+installed version supports, each answer checked against its schema, and the
+stamp of each run: agent, version, model, effort, run date, tokens and cost.
+The agent runs with file-reading tools only, confined to the copy: a
+credential path or a URL comes back refused. It signs in with its own login;
+the GitHub token never reaches it. Each run stops after --agent-timeout
+seconds (default ${DEFAULT_AGENT_SETTINGS.timeoutMs / 1000}), at most --agent-concurrency (default
+${DEFAULT_AGENT_SETTINGS.concurrency}) at once, and a timed-out run keeps what it wrote.
+
 The pdb command is a debug command: given a NuGet package or symbols
 package (or a single .pdb or assembly), it reads every portable PDB in it,
 standalone or embedded in an assembly, and prints as JSON each source
@@ -64,7 +81,12 @@ export interface CliStreams {
 
 export interface CliDeps {
   fetch?: typeof fetch;
+  /** How the probe starts Pi; tests point it at a fake agent. */
+  pi?: Pick<PiAdapterOptions, 'command' | 'guardPath'>;
 }
+
+/** Flags that take a value, beyond --token and --cache-dir. */
+const AGENT_FLAGS = ['--target', '--model', '--effort', '--agent-timeout', '--agent-concurrency'];
 
 /**
  * Runs the command line. Returns the process exit code: 0 on success,
@@ -79,6 +101,7 @@ export async function runCli(
   const positional: string[] = [];
   let tokenFlag: string | undefined;
   let cacheDirFlag: string | undefined;
+  const agentFlags: Record<string, string[]> = {};
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
     if (arg === '--help' || arg === '-h') {
@@ -103,6 +126,15 @@ export async function runCli(
       cacheDirFlag = value;
       continue;
     }
+    if (AGENT_FLAGS.includes(arg)) {
+      const value = argv[++i];
+      if (value === undefined) {
+        streams.err.write(`second-look-engine: ${arg} needs a value\n`);
+        return 1;
+      }
+      (agentFlags[arg] ??= []).push(value);
+      continue;
+    }
     positional.push(arg);
   }
 
@@ -114,12 +146,12 @@ export async function runCli(
   if (command === 'serve') {
     return serve(streams, tokenFlag !== undefined, deps, cacheDirFlag ?? defaultCacheDir(env));
   }
-  if (command !== 'review') {
+  if (command !== 'review' && command !== 'probe') {
     streams.err.write(`${USAGE}\n`);
     return 1;
   }
   if (!url) {
-    streams.err.write('second-look-engine: review needs a pull request URL\n');
+    streams.err.write(`second-look-engine: ${command} needs a pull request URL\n`);
     return 1;
   }
 
@@ -129,6 +161,34 @@ export async function runCli(
       'second-look-engine: no GitHub token; pass one with --token or the GITHUB_TOKEN environment variable\n',
     );
     return 1;
+  }
+
+  if (command === 'probe') {
+    const settings = agentSettings(agentFlags);
+    if (typeof settings === 'string') {
+      streams.err.write(`second-look-engine: ${settings}\n`);
+      return 1;
+    }
+    try {
+      const report = await runAgentProbe(url, {
+        token,
+        fetch: deps.fetch,
+        cacheDir: cacheDirFlag ?? defaultCacheDir(env),
+        adapter: piAdapter({ ...deps.pi, env }),
+        targets: agentFlags['--target'] ?? [],
+        settings,
+      });
+      streams.out.write(`${JSON.stringify(report, null, 2)}\n`);
+      if (!report.agent.usable) {
+        streams.err.write(`second-look-engine: ${report.agent.reason}\n`);
+        return 1;
+      }
+      return 0;
+    } catch (error) {
+      const message = redactToken(error instanceof Error ? error.message : String(error), token);
+      streams.err.write(`second-look-engine: ${message}\n`);
+      return 1;
+    }
   }
 
   try {
@@ -147,6 +207,29 @@ export async function runCli(
     streams.err.write(`second-look-engine: ${message}\n`);
     return 1;
   }
+}
+
+/** Reads the agent settings from their flags; a string is the problem with them. */
+function agentSettings(flags: Record<string, string[]>): AgentSettings | string {
+  const last = (name: string): string | undefined => flags[name]?.at(-1);
+  const settings: AgentSettings = { ...DEFAULT_AGENT_SETTINGS };
+  const timeout = last('--agent-timeout');
+  if (timeout !== undefined) {
+    const seconds = Number(timeout);
+    if (!(seconds > 0)) return '--agent-timeout needs a number of seconds above zero';
+    settings.timeoutMs = Math.round(seconds * 1000);
+  }
+  const concurrency = last('--agent-concurrency');
+  if (concurrency !== undefined) {
+    const count = Number(concurrency);
+    if (!Number.isInteger(count) || count < 1) return '--agent-concurrency needs a whole number of at least 1';
+    settings.concurrency = count;
+  }
+  const model = last('--model');
+  const effort = last('--effort');
+  if (model) settings.model = model;
+  if (effort) settings.effort = effort;
+  return settings;
 }
 
 /** Prints every portable PDB in a package file, with its documents. */
