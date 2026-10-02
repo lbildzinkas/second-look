@@ -14,6 +14,12 @@ export interface StubCommand {
   handler: (...args: unknown[]) => unknown;
 }
 
+/** A command the extension executed through the editor's command registry. */
+export interface StubExecutedCommand {
+  id: string;
+  args: unknown[];
+}
+
 /** A tree view the extension created, with what it revealed. */
 export interface StubTreeView {
   id: string;
@@ -26,10 +32,34 @@ export interface StubSession {
   accessToken: string;
 }
 
+/** A file system provider the extension registered, with its options. */
+export interface StubFileSystemProvider {
+  scheme: string;
+  provider: unknown;
+  options?: { isCaseSensitive?: boolean; isReadonly?: boolean | StubMarkdownString };
+}
+
+/** A decoration type the extension created, with the style it asked for. */
+export interface StubDecorationType extends StubDisposable {
+  options: Record<string, unknown>;
+}
+
+/** The MarkdownString of a readonly file system's reason. */
+export class StubMarkdownString {
+  constructor(readonly value: string) {}
+}
+
 /** Everything the double recorded, and everything a test can program. */
 export interface StubState {
   commands: StubCommand[];
+  executedCommands: StubExecutedCommand[];
   treeViews: StubTreeView[];
+  fileSystemProviders: StubFileSystemProvider[];
+  decorationTypes: StubDecorationType[];
+  /** The editors currently visible; tests set these and fire the change. */
+  visibleTextEditors: unknown[];
+  /** The file contents behind `file:` URIs, keyed by path. */
+  files: Map<string, Uint8Array>;
   /** What showInputBox resolves with; undefined reads as dismissed. */
   inputBoxResult: string | undefined;
   warningMessages: string[];
@@ -41,11 +71,20 @@ export interface StubState {
   /** When set, getSession rejects, as cancelling the editor's sign-in flow does. */
   cancelSignIn: boolean;
   reset(): void;
+  /** Fires the visible-editors change the way the editor does. */
+  fireVisibleTextEditors(editors: unknown[]): void;
 }
+
+const visibleEditorListeners = new Set<(editors: unknown[]) => void>();
 
 export const stub: StubState = {
   commands: [],
+  executedCommands: [],
   treeViews: [],
+  fileSystemProviders: [],
+  decorationTypes: [],
+  visibleTextEditors: [],
+  files: new Map(),
   inputBoxResult: undefined,
   warningMessages: [],
   errorMessages: [],
@@ -55,7 +94,13 @@ export const stub: StubState = {
   cancelSignIn: false,
   reset() {
     stub.commands = [];
+    stub.executedCommands = [];
     stub.treeViews = [];
+    stub.fileSystemProviders = [];
+    stub.decorationTypes = [];
+    stub.visibleTextEditors = [];
+    visibleEditorListeners.clear();
+    stub.files = new Map();
     stub.inputBoxResult = undefined;
     stub.warningMessages = [];
     stub.errorMessages = [];
@@ -63,6 +108,12 @@ export const stub: StubState = {
     stub.sessionRequests = [];
     stub.session = undefined;
     stub.cancelSignIn = false;
+  },
+  fireVisibleTextEditors(editors: unknown[]) {
+    stub.visibleTextEditors = editors;
+    for (const listener of visibleEditorListeners) {
+      listener(editors);
+    }
   },
 };
 
@@ -73,6 +124,7 @@ export class TreeItem {
   tooltip?: string;
   contextValue?: string;
   collapsibleState?: number;
+  command?: { command: string; title: string; arguments?: unknown[] };
   constructor(label?: string, collapsibleState?: number) {
     this.label = label;
     this.collapsibleState = collapsibleState;
@@ -100,6 +152,190 @@ export class EventEmitter<T> {
   }
 }
 
+/**
+ * A URI double: the components an extension builds URIs from, compared by
+ * their string form. Unlike the editor's, it does not percent-encode.
+ */
+export class Uri {
+  constructor(
+    readonly scheme: string,
+    readonly authority: string,
+    readonly path: string,
+    readonly query = '',
+    readonly fragment = '',
+  ) {}
+
+  static from(components: {
+    scheme: string;
+    authority?: string;
+    path?: string;
+    query?: string;
+    fragment?: string;
+  }): Uri {
+    return new Uri(
+      components.scheme,
+      components.authority ?? '',
+      components.path ?? '',
+      components.query,
+      components.fragment,
+    );
+  }
+
+  static file(path: string): Uri {
+    return new Uri('file', '', path.startsWith('/') ? path : `/${path}`);
+  }
+
+  static parse(value: string): Uri {
+    const match = /^([A-Za-z][A-Za-z0-9+.-]*):(\/\/([^/?#]*))?([^?#]*)(\?([^#]*))?(#(.*))?$/.exec(
+      value,
+    );
+    if (match === null) {
+      throw new Error(`not a URI: ${value}`);
+    }
+    return new Uri(match[1]!, match[3] ?? '', match[4] ?? '', match[6] ?? '', match[8] ?? '');
+  }
+
+  /** The file system path of a `file:` URI; other schemes read the path. */
+  get fsPath(): string {
+    if (this.scheme !== 'file') return this.path;
+    return process.platform === 'win32' ? this.path.replace(/^\//, '').replace(/\//g, '\\') : this.path;
+  }
+
+  with(change: { scheme?: string; authority?: string; path?: string }): Uri {
+    return new Uri(
+      change.scheme ?? this.scheme,
+      change.authority ?? this.authority,
+      change.path ?? this.path,
+      this.query,
+      this.fragment,
+    );
+  }
+
+  toString(): string {
+    const authority = this.authority !== '' ? `${this.authority}` : '';
+    const query = this.query !== '' ? `?${this.query}` : '';
+    const fragment = this.fragment !== '' ? `#${this.fragment}` : '';
+    return `${this.scheme}://${authority}${this.path}${query}${fragment}`;
+  }
+
+  toJSON(): { scheme: string; authority: string; path: string; query: string; fragment: string } {
+    return {
+      scheme: this.scheme,
+      authority: this.authority,
+      path: this.path,
+      query: this.query,
+      fragment: this.fragment,
+    };
+  }
+}
+
+/** A position in a text document, 0-based. */
+export class Position {
+  constructor(readonly line: number, readonly character: number) {}
+}
+
+/** A range in a text document, 0-based. */
+export class Range {
+  readonly start: Position;
+  readonly end: Position;
+  constructor(start: Position, end: Position);
+  constructor(startLine: number, startCharacter: number, endLine: number, endCharacter: number);
+  constructor(
+    startOrLine: Position | number,
+    startCharacterOrEnd: Position | number,
+    endLine?: number,
+    endCharacter?: number,
+  ) {
+    if (startOrLine instanceof Position && startCharacterOrEnd instanceof Position) {
+      this.start = startOrLine;
+      this.end = startCharacterOrEnd;
+    } else {
+      this.start = new Position(startOrLine as number, startCharacterOrEnd as number);
+      this.end = new Position(endLine ?? 0, endCharacter ?? 0);
+    }
+  }
+}
+
+/** The file types a file system can report. */
+export const FileType = {
+  Unknown: 0,
+  File: 1,
+  Directory: 2,
+  SymbolicLink: 64,
+} as const;
+
+/** The permissions a file can carry. */
+export const FilePermission = {
+  Readonly: 1,
+} as const;
+
+/** How an editor can reveal a range. */
+export const TextEditorRevealType = {
+  Default: 0,
+  InCenter: 1,
+  InCenterIfOutsideViewport: 2,
+  AtTop: 3,
+} as const;
+
+/** The error a file system reports, with the case a test checks. */
+export class FileSystemError extends Error {
+  readonly code: string;
+  constructor(message: string, code: string) {
+    super(message);
+    this.name = 'FileSystemError';
+    this.code = code;
+  }
+  static FileNotFound(messageOrUri?: string | Uri): FileSystemError {
+    return new FileSystemError(text(messageOrUri, 'not found'), 'FileNotFound');
+  }
+  static FileIsADirectory(messageOrUri?: string | Uri): FileSystemError {
+    return new FileSystemError(text(messageOrUri, 'is a directory'), 'FileIsADirectory');
+  }
+  static FileNotADirectory(messageOrUri?: string | Uri): FileSystemError {
+    return new FileSystemError(text(messageOrUri, 'not a directory'), 'FileNotADirectory');
+  }
+  static NoPermissions(messageOrUri?: string | Uri): FileSystemError {
+    return new FileSystemError(text(messageOrUri, 'no permissions'), 'NoPermissions');
+  }
+  static Unavailable(messageOrUri?: string | Uri): FileSystemError {
+    return new FileSystemError(text(messageOrUri, 'unavailable'), 'Unavailable');
+  }
+}
+
+function text(messageOrUri: string | Uri | undefined, fallback: string): string {
+  if (messageOrUri === undefined) return fallback;
+  return typeof messageOrUri === 'string' ? messageOrUri : messageOrUri.toString();
+}
+
+/** The double behind `file:` URIs: the contents a test planted. */
+const plantedFiles = {
+  async stat(uri: Uri): Promise<{ type: number; ctime: number; mtime: number; size: number }> {
+    const content = stub.files.get(uri.path);
+    if (content === undefined) throw FileSystemError.FileNotFound(uri);
+    return { type: FileType.File, ctime: 0, mtime: 0, size: content.byteLength };
+  },
+  async readFile(uri: Uri): Promise<Uint8Array> {
+    const content = stub.files.get(uri.path);
+    if (content === undefined) throw FileSystemError.FileNotFound(uri);
+    return content;
+  },
+  async readDirectory(): Promise<[string, number][]> {
+    return [];
+  },
+  async writeFile(uri: Uri, content: Uint8Array): Promise<void> {
+    stub.files.set(uri.path, content);
+  },
+};
+
+async function providerFor(uri: Uri): Promise<unknown> {
+  if (uri.scheme === 'file') return plantedFiles;
+  const registered = stub.fileSystemProviders.find((entry) => entry.scheme === uri.scheme);
+  if (registered === undefined) {
+    throw FileSystemError.Unavailable(`no file system provider for ${uri.scheme}`);
+  }
+  return registered.provider;
+}
+
 export const commands = {
   registerCommand(id: string, handler: (...args: unknown[]) => unknown): StubDisposable {
     // The real registry serves one handler per command id and rejects a
@@ -109,6 +345,10 @@ export const commands = {
     }
     stub.commands.push({ id, handler });
     return { dispose: () => undefined };
+  },
+  executeCommand(id: string, ...args: unknown[]): PromiseLike<unknown> {
+    stub.executedCommands.push({ id, args });
+    return Promise.resolve(undefined);
   },
 };
 
@@ -145,6 +385,69 @@ export const window = {
     };
     stub.treeViews.push(view);
     return view;
+  },
+  get visibleTextEditors(): unknown[] {
+    return stub.visibleTextEditors;
+  },
+  onDidChangeVisibleTextEditors(listener: (editors: unknown[]) => void): StubDisposable {
+    visibleEditorListeners.add(listener);
+    return { dispose: () => visibleEditorListeners.delete(listener) };
+  },
+  createTextEditorDecorationType(options: Record<string, unknown>): StubDecorationType {
+    const type: StubDecorationType = { options, dispose: () => undefined };
+    stub.decorationTypes.push(type);
+    return type;
+  },
+};
+
+export const MarkdownString = StubMarkdownString;
+
+export const workspace = {
+  registerFileSystemProvider(
+    scheme: string,
+    provider: unknown,
+    options?: { isCaseSensitive?: boolean; isReadonly?: boolean | StubMarkdownString },
+  ): StubDisposable {
+    stub.fileSystemProviders.push({ scheme, provider, options });
+    return {
+      dispose: () => {
+        stub.fileSystemProviders = stub.fileSystemProviders.filter(
+          (entry) => entry.provider !== provider,
+        );
+      },
+    };
+  },
+  fs: {
+    stat(uri: Uri): PromiseLike<{ type: number; ctime: number; mtime: number; size: number }> {
+      return providerFor(uri).then((provider) =>
+        (provider as { stat(uri: Uri): PromiseLike<never> }).stat(uri),
+      );
+    },
+    readFile(uri: Uri): PromiseLike<Uint8Array> {
+      return providerFor(uri).then((provider) =>
+        (provider as { readFile(uri: Uri): PromiseLike<Uint8Array> }).readFile(uri),
+      );
+    },
+    readDirectory(uri: Uri): PromiseLike<[string, number][]> {
+      return providerFor(uri).then((provider) =>
+        (provider as { readDirectory(uri: Uri): PromiseLike<[string, number][]> }).readDirectory(
+          uri,
+        ),
+      );
+    },
+    writeFile(uri: Uri, content: Uint8Array): PromiseLike<void> {
+      return providerFor(uri).then((provider) =>
+        (
+          provider as {
+            writeFile(
+              uri: Uri,
+              content: Uint8Array,
+              options: { create: boolean; overwrite: boolean },
+            ): PromiseLike<void>;
+          }
+        ).writeFile(uri, content, { create: true, overwrite: true }),
+      );
+    },
   },
 };
 

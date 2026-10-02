@@ -34,8 +34,34 @@
         "command": "second-look.reviewPullRequest",
         "title": "Review pull request",
         "category": "Second Look"
+      },
+      {
+        "command": "second-look.openPart",
+        "title": "Open part in the diff editor",
+        "category": "Second Look"
+      },
+      {
+        "command": "second-look.openAllParts",
+        "title": "Open all parts in order",
+        "category": "Second Look"
       }
     ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "second-look.openAllParts",
+          "when": "view == second-look.reviewTree",
+          "group": "navigation",
+          "icon": "$(diff-multiple)"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "second-look.openPart",
+          "when": "false"
+        }
+      ]
+    },
     "views": {
       "explorer": [
         {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildTree, NOISE, NOT_RANKED_YET } from '../src/tree.js';
+import { buildTree, NOISE, NOT_RANKED_YET, partsInReadingOrder } from '../src/tree.js';
 import { mixedResult, part, result } from './results.js';
 
 describe('buildTree', () => {
@@ -55,7 +55,7 @@ describe('buildTree', () => {
     const sections = buildTree(mixedResult());
 
     expect(sections.at(-1)!.label).toBe(NOISE);
-    expect(sections.at(-1)!.parts).toEqual([
+    expect(sections.at(-1)!.parts.map(({ part: _part, ...shown }) => shown)).toEqual([
       {
         label: 'uv.lock',
         description: 'lockfile · claimed',
@@ -68,6 +68,32 @@ describe('buildTree', () => {
         tooltip: 'Identical content proves only the move.',
         kind: 'noise',
       },
+    ]);
+    // Every row carries the part it opens in the diff editor.
+    expect(sections.at(-1)!.parts.map((node) => node.part)).toEqual(
+      mixedResult().parts.slice(5),
+    );
+  });
+
+  it('gives every reading part its payload, but the placeholder none', () => {
+    const sections = buildTree(mixedResult());
+
+    const every = [...sections.flatMap((section) => section.parts)];
+    expect(every).toHaveLength(7);
+    expect(every.every((node) => node.part?.path === node.label)).toBe(true);
+  });
+
+  it('lists the parts in the order the reviewer reads them, noise last', () => {
+    const reading = partsInReadingOrder(mixedResult());
+
+    expect(reading.map((part) => part.path)).toEqual([
+      'src/retry.py',
+      'src/settings.ts',
+      'CHANGELOG.md',
+      'src/legacy.ts',
+      '__tests__/retry.test.ts.snap',
+      'uv.lock',
+      'transport.py',
     ]);
   });
 
