@@ -15,7 +15,7 @@
  */
 
 import { readdir, readFile } from 'node:fs/promises';
-import { basename, dirname } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 import { pathInCopy } from './archive.js';
 import type { NoiseAssessment, Part } from './protocol.js';
 import { isTomlTable, parseToml } from './toml.js';
@@ -880,7 +880,11 @@ async function readSide(
   const lockAbsolute = pathInCopy(copyRoot, lockPath);
   const lock = lockAbsolute === undefined ? null : await readTextOrNull(lockAbsolute);
   const list: ListDir = async (relativeDir) => {
-    const absolute = pathInCopy(copyRoot, relativeDir);
+    // The copy root itself is the repository root's directory, which
+    // pathInCopy's containment guard would reject (it admits only strict
+    // children), so resolve it directly; deeper directories stay guarded.
+    const absolute =
+      relativeDir === '.' || relativeDir === '' ? resolve(copyRoot) : pathInCopy(copyRoot, relativeDir);
     if (absolute === undefined) return [];
     try {
       return (await readdir(absolute)).filter((name) => !name.startsWith('.'));

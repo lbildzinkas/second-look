@@ -1,9 +1,13 @@
 import childProcess from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { LockfileFormat } from '../src/lockfile.js';
-import { confirmLockfileChange, lockfileFormatFor } from '../src/lockfile.js';
+import { confirmLockfileChange, confirmLockfileNoise, lockfileFormatFor } from '../src/lockfile.js';
 import type { LockfileSide } from '../src/lockfile.js';
+import type { Part } from '../src/protocol.js';
 
 function format(name: string): LockfileFormat {
   const found = lockfileFormatFor(name);
@@ -1144,5 +1148,103 @@ describe('the checks spawn no process', () => {
       syncBuiltinESMExports();
     }
     for (const spy of spies) expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+describe('manifest discovery inside the copies', () => {
+  /** A versionless project: the central props owns the version. */
+  const project = `<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" />
+  </ItemGroup>
+</Project>
+`;
+  const props = (json: string): string => `<Project>
+  <ItemGroup>
+    <PackageReference Update="Newtonsoft.Json" Version="${json}" />
+  </ItemGroup>
+</Project>
+`;
+  const lock = (json: string): string => `
+{
+  "version": 1,
+  "dependencies": {
+    "net8.0": {
+      "Newtonsoft.Json": {
+        "type": "Direct",
+        "requested": "[${json}, 14.0.0)",
+        "resolved": "${json}",
+        "contentHash": "HrC5BXdl00IP9zeV+0Z848QWPAoCr9P3bDEZguI="
+      }
+    }
+  },
+  "libraries": {
+    "Newtonsoft.Json/${json}": {
+      "type": "package",
+      "sha512": "sha512-${json}"
+    }
+  }
+}
+`;
+
+  /** One side's copy of the repository, as the archive reader materializes it. */
+  function copyWith(files: Record<string, string>): string {
+    const root = mkdtempSync(join(tmpdir(), 'second-look-copies-'));
+    for (const [relative, text] of Object.entries(files)) {
+      const absolute = join(root, ...relative.split('/'));
+      mkdirSync(dirname(absolute), { recursive: true });
+      writeFileSync(absolute, text);
+    }
+    return root;
+  }
+
+  /** A part the lock file checks read: only its path and text-ness matter. */
+  function lockfilePart(path: string): Part {
+    return {
+      path,
+      changeKind: 'modification',
+      isBinary: false,
+      oldMissingFinalNewline: false,
+      newMissingFinalNewline: false,
+      hunks: [],
+      additions: 0,
+      deletions: 0,
+      syntax: { formattingOnly: { status: 'not-checked', reason: '' }, checksNotRun: [] },
+    };
+  }
+
+  /** Runs the discovery-driven check on a central-version bump 13.0.1 → 13.0.3. */
+  async function assess(lockPath: string): Promise<{ state: string; rule: string }> {
+    const files = (json: string): Record<string, string> => ({
+      [lockPath]: lock(json),
+      [dirname(lockPath) === '.' ? 'App.csproj' : `${dirname(lockPath)}/App.csproj`]: project,
+      'Directory.Packages.props': props(json),
+    });
+    const base = copyWith(files('13.0.1'));
+    const head = copyWith(files('13.0.3'));
+    try {
+      const overrides = await confirmLockfileNoise([lockfilePart(lockPath)], { base, head });
+      const assessment = overrides.get(lockPath);
+      expect(assessment).toBeDefined();
+      return { state: assessment!.state, rule: assessment!.rule };
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+      rmSync(head, { recursive: true, force: true });
+    }
+  }
+
+  it('reads a repository-root Directory.Packages.props from beside a nested packages.lock.json', async () => {
+    const assessment = await assess('src/packages.lock.json');
+    expect(assessment.state).toBe('confirmed');
+    expect(assessment.rule).toBe('lockfile-follows-manifest');
+  });
+
+  it('lists the copy root for a root-level packages.lock.json', async () => {
+    const assessment = await assess('packages.lock.json');
+    expect(assessment.state).toBe('confirmed');
+    expect(assessment.rule).toBe('lockfile-follows-manifest');
   });
 });
