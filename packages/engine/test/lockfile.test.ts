@@ -299,12 +299,11 @@ describe('package-lock.json', () => {
   });
 
   it('runs no check when adversarial nesting overflows the reader', () => {
-    let nested: unknown = [];
-    for (let i = 0; i < 50_000; i++) nested = [nested];
-    const deep = JSON.stringify({
-      lockfileVersion: 3,
-      packages: { 'node_modules/left-pad': { version: '1.3.0', pad: nested } },
-    });
+    // Built by concatenation: JSON.stringify of a structure this deep overflows
+    // the stack itself, before the reader under test ever runs.
+    const deep =
+      `{"lockfileVersion":3,"packages":{"node_modules/left-pad":{"version":"1.3.0","pad":` +
+      `${'['.repeat(50_000)}${']'.repeat(50_000)}}}}`;
     const check = confirmed(
       format('package-lock.json'),
       side(deep, [manifest('^1.3.0')]),
