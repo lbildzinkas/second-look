@@ -75,6 +75,12 @@ function range(run: LineRun): vscode.Range {
   return new vscode.Range(run.startLine, 0, run.endLine, Number.MAX_SAFE_INTEGER);
 }
 
+/** Collects the runs one side of a file must mark, across its parts. */
+function addPending(pending: Map<string, vscode.Range[]>, uri: vscode.Uri, runs: LineRun[]): void {
+  const key = uri.toString();
+  pending.set(key, [...(pending.get(key) ?? []), ...runs.map(range)]);
+}
+
 /** One entry of the diff editor's change list: label, original, modified. */
 export type ChangeTriple = [label: vscode.Uri, original: vscode.Uri, modified: vscode.Uri];
 
@@ -150,10 +156,10 @@ export class PartMarker {
     for (const { part, file } of entries) {
       const marking = partMarking(part);
       if (marking.additions.length > 0) {
-        pending.set(file.modified.toString(), marking.additions.map(range));
+        addPending(pending, file.modified, marking.additions);
       }
       if (marking.deletions.length > 0) {
-        pending.set(file.original.toString(), marking.deletions.map(range));
+        addPending(pending, file.original, marking.deletions);
       }
       if (reveal === undefined && marking.reveal !== undefined) {
         reveal = {
