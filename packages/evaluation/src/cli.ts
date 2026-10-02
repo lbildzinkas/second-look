@@ -46,8 +46,9 @@ file's parts are marked important. Without --fault every part is, the
 starting point the revert-the-fix recipe labels by hand. The wrapped
 pull request carries neutral wording — its title, branch and description
 name only the changed files, never what the edit does — and the
-expected.json is written in full: no noise on the changed files, the
-part holding the fault as the important part. Cases go to --cases, else
+expected.json is written in full: each changed file's noise as the live
+review assessed it, the part holding the fault as the important part.
+Cases go to --cases, else
 the first folder of SECOND_LOOK_EVAL_CASES; public cases come only from
 public code.
 

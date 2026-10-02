@@ -3,9 +3,9 @@ import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { filesNaming, parseDiff, pathInCopy, reviewChange } from '@second-look/engine';
-import type { Part, PullRequestSummary } from '@second-look/engine';
+import type { NoiseAssessment, Part, PullRequestSummary } from '@second-look/engine';
 import { CASE_FORMAT_VERSION, caseInput, loadCase } from './case.js';
-import type { CaseRecord, ExpectedResults } from './case.js';
+import type { CaseRecord, ExpectedNoise, ExpectedResults } from './case.js';
 import { copyFiles, exists } from './record.js';
 
 /** Options the seed command passes to {@link seedCase}. */
@@ -37,8 +37,10 @@ const SEEDED_AUTHOR = 'contributor-login';
  * does — a reviewer reads the diff, not a hint. A diff may wrap the mutant
  * with benign edits from the same project, so the ranking has other parts
  * to put beside the fault; `faultPath` then names the mutated file. The
- * case's `expected.json` is written in full: every changed file carries no
- * noise, and the known important parts are the ones holding the fault —
+ * case's `expected.json` is written in full: every changed file carries
+ * the noise the live review assessed it with — `none` for ordinary code,
+ * a wrap's lockfile or rename the label the review gave it — and the
+ * known important parts are the ones holding the fault —
  * every part when no `faultPath` is given, the starting point the
  * revert-the-fix recipe labels by hand — so the rank scores measure
  * whether a review puts the fault where a reviewer reads first. The case
@@ -129,7 +131,7 @@ export async function seedCase(diff: string, options: SeedOptions): Promise<stri
         noise: Object.fromEntries(
           [...new Set(live.parts.map((part) => part.path))]
             .sort()
-            .map((path) => [path, { label: 'none' } as const]),
+            .map((path) => [path, expectedNoiseOf(live.parts.find((part) => part.path === path)!)]),
         ),
         importantParts: (options.faultPath === undefined
           ? live.parts
@@ -153,6 +155,17 @@ export async function seedCase(diff: string, options: SeedOptions): Promise<stri
   } finally {
     await rm(mutated, { recursive: true, force: true });
   }
+}
+
+/**
+ * The expected noise of a changed file, as the live review assessed it:
+ * `none`, or the label with the state the review gave it. The review
+ * assesses every part, and its rules read only the file, so every part
+ * of one file carries the same assessment.
+ */
+function expectedNoiseOf(part: Part): ExpectedNoise {
+  const noise = part.noise!;
+  return noise.label === 'none' ? { label: 'none' } : { label: noise.label, state: noise.state };
 }
 
 /**

@@ -78,6 +78,34 @@ index 6666666..7777777 100644
 -Totals price lists.
 +Totals a list of prices.
 `;
+const LOCKFILE = `{
+  "lockfileVersion": 2,
+  "packages": {}
+}
+`;
+/** The same mutant wrapped with a lockfile touch, a noise-rule file. */
+const LOCKFILE_WRAP_DIFF = `diff --git a/src/shop.py b/src/shop.py
+index 1111111..3333333 100644
+--- a/src/shop.py
++++ b/src/shop.py
+@@ -1,6 +1,6 @@
+ def total(prices):
+     amount = 0
+     for price in prices:
+-        amount += price
++        amount -= price
+     if amount > 0:
+         return amount
+diff --git a/package-lock.json b/package-lock.json
+index 8888888..9999999 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -1,3 +1,3 @@
+ {
+-  "lockfileVersion": 2,
++  "lockfileVersion": 3,
+   "packages": {}
+`;
 
 let scratch: string;
 let source: string;
@@ -92,6 +120,7 @@ beforeEach(() => {
   writeFileSync(join(source, 'src', 'shop.py'), SHOP);
   writeFileSync(join(source, 'src', 'report.py'), REPORT);
   writeFileSync(join(source, 'README.md'), README);
+  writeFileSync(join(source, 'package-lock.json'), LOCKFILE);
 });
 
 afterEach(() => {
@@ -181,6 +210,24 @@ describe('seedCase', () => {
     expect(expected['noise']).toEqual({
       'README.md': { label: 'none' },
       'src/report.py': { label: 'none' },
+      'src/shop.py': { label: 'none' },
+    });
+    expect(expected['importantParts']).toEqual(['total in src/shop.py']);
+  });
+
+  it("records a wrap's noise-rule file with the label the live review gave it", async () => {
+    const folder = await seedCase(LOCKFILE_WRAP_DIFF, {
+      sourceDir: source,
+      casesFolder,
+      id: 'lockfile-wrap',
+      faultPath: 'src/shop.py',
+    });
+    const expected = JSON.parse(readFileSync(join(folder, 'expected.json'), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    expect(expected['noise']).toEqual({
+      'package-lock.json': { label: 'lockfile', state: 'claimed' },
       'src/shop.py': { label: 'none' },
     });
     expect(expected['importantParts']).toEqual(['total in src/shop.py']);
