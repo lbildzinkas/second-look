@@ -11,6 +11,7 @@ import {
   type ReviewResult,
 } from '@second-look/engine';
 import { ProtocolError, isReviewResult } from './protocol.js';
+import type { AgentSettings } from './agent-settings.js';
 
 /**
  * Creates the engine process this client talks to. Tests inject their own
@@ -39,15 +40,28 @@ export function engineEntryPath(): string {
   return join(dirname(manifest), 'dist', 'main.js');
 }
 
+/** The agent the engine runs: the one the settings chose, with its model. */
+export type EngineAgent = Pick<AgentSettings, 'agent' | 'model'>;
+
 /**
- * Starts the engine as a separate local process speaking JSON-RPC on stdio.
+ * The serve command line for the chosen agent: `--agent` by name and, when
+ * the settings name a model, `--model` too. Nothing else is passed — no
+ * token ever travels on the command line.
+ */
+function serveArguments(agent: EngineAgent): string[] {
+  return ['serve', '--agent', agent.agent, ...(agent.model === '' ? [] : ['--model', agent.model])];
+}
+
+/**
+ * Starts the engine as a separate local process speaking JSON-RPC on stdio,
+ * serving with the agent and model the settings chose.
  *
  * `ELECTRON_RUN_AS_NODE` matters inside the editor: there `process.execPath`
  * is the editor's own binary, which only runs plain Node code when it is
  * told to act as Node. Outside the editor the flag is simply ignored.
  */
-export function spawnEngineProcess(): ChildProcessWithoutNullStreams {
-  return spawn(process.execPath, [engineEntryPath(), 'serve'], {
+export function spawnEngineProcess(agent: EngineAgent): ChildProcessWithoutNullStreams {
+  return spawn(process.execPath, [engineEntryPath(), ...serveArguments(agent)], {
     env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
@@ -139,7 +153,7 @@ export class EngineClient {
   private nextId = 1;
   private handshaken = false;
 
-  constructor(spawnEngine: SpawnEngine = spawnEngineProcess) {
+  constructor(spawnEngine: SpawnEngine) {
     this.spawnEngine = spawnEngine;
   }
 
