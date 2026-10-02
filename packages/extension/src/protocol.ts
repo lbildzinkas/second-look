@@ -43,6 +43,8 @@ const NOISE_RULES: readonly NoiseRule[] = [
   'linguist-generated',
   'linguist-vendored',
   'lockfile-name',
+  'lockfile-follows-manifest',
+  'lockfile-unexplained',
   'generated-name',
   'generated-header',
 ];

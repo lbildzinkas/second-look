@@ -213,6 +213,18 @@ describe('isReviewResult', () => {
         state: 'claimed',
         blindSpot: 'Only known snapshot names are matched.',
       },
+      {
+        label: 'lockfile',
+        rule: 'lockfile-follows-manifest',
+        state: 'confirmed',
+        blindSpot: 'Parse-only: the resolver is not re-run.',
+      },
+      {
+        label: 'lockfile',
+        rule: 'lockfile-unexplained',
+        state: 'claimed',
+        blindSpot: 'Entries the manifest change does not explain: left-pad@2.0.0.',
+      },
       { label: 'none', note: 'no rule applied' },
     ];
     for (const noise of assessments) {

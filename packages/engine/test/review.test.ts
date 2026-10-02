@@ -5,7 +5,15 @@ import { removeCopy } from '../src/cache.js';
 import { REVIEW_RESULT_VERSION } from '../src/protocol.js';
 import type { Part } from '../src/protocol.js';
 import { fetchChange, reviewChange, reviewPullRequest } from '../src/review.js';
-import { PR_7_URL, PR_URL, fixtureFetch, pull7, temporaryCacheDir } from './helpers.js';
+import {
+  PR_7_URL,
+  PR_8_URL,
+  PR_URL,
+  fixtureFetch,
+  pull7,
+  pull8,
+  temporaryCacheDir,
+} from './helpers.js';
 
 let cacheDir: string;
 
@@ -112,6 +120,46 @@ describe('reviewPullRequest', () => {
     });
     const roundTripped: unknown = JSON.parse(JSON.stringify(result));
     expect(roundTripped).toEqual(result);
+  });
+
+  it('confirms lock file noise the manifest change explains, and names what it does not', async () => {
+    const result = await reviewPullRequest(PR_8_URL, {
+      token: 'test-token',
+      fetch: fixtureFetch(pull8()).fetch,
+      cacheDir,
+    });
+    const byPath = new Map(result.parts.map((part) => [part.path, part]));
+
+    // The bump follows from package.json's left-pad entry: confirmed, with
+    // its blind spots stated.
+    expect(byPath.get('package-lock.json')!.noise).toEqual({
+      label: 'lockfile',
+      rule: 'lockfile-follows-manifest',
+      state: 'confirmed',
+      blindSpot: expect.stringContaining('not re-checked'),
+    });
+    // The hand-edited rich entry no pyproject.toml change explains: the
+    // label stays claimed and names the entry.
+    expect(byPath.get('poetry.lock')!.noise).toEqual({
+      label: 'lockfile',
+      rule: 'lockfile-unexplained',
+      state: 'claimed',
+      blindSpot: expect.stringContaining('rich 13.7.1 → 99.0.0'),
+    });
+    // A lock file no check exists for stays claimed, saying so plainly.
+    expect(byPath.get('yarn.lock')!.noise).toEqual({
+      label: 'lockfile',
+      rule: 'lockfile-name',
+      state: 'claimed',
+      blindSpot: expect.stringContaining('no check for this lockfile'),
+    });
+    // The manifest change itself stays a readable part, and the noise sinks.
+    expect(result.parts.map((part) => part.path)).toEqual([
+      'package.json',
+      'package-lock.json',
+      'poetry.lock',
+      'yarn.lock',
+    ]);
   });
 
   it('rejects input that is not a pull request URL', async () => {

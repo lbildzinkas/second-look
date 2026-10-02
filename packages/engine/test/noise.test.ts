@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { applyNoiseRules, assessNoise } from '../src/noise.js';
-import type { ChangeKind, Hunk, Part } from '../src/protocol.js';
+import type { ChangeKind, Hunk, NoiseAssessment, Part } from '../src/protocol.js';
 
 /** A minimal part for the rules to judge; only what a rule reads matters. */
 function part(
@@ -459,5 +459,67 @@ describe('applyNoiseRules', () => {
       expect(noise.blindSpot).not.toContain('\n');
       expect(['confirmed', 'claimed']).toContain(noise.state);
     }
+  });
+
+  it('attaches a parse-only check result only where the name rule’s claim stands', () => {
+    const checked: NoiseAssessment = {
+      label: 'lockfile',
+      rule: 'lockfile-follows-manifest',
+      state: 'confirmed',
+      blindSpot: 'Parse-only: the resolver is not re-run.',
+    };
+    const overrides = new Map([['package-lock.json', checked]]);
+
+    // A plain lock file part takes the check's assessment, confirmed.
+    expect(applyNoiseRules([part({ path: 'package-lock.json' })], null, overrides)[0]!.noise).toEqual(checked);
+    // A renamed lock file with edits still matches the name rule, so the
+    // check's assessment replaces the claim under the new path.
+    expect(
+      applyNoiseRules(
+        [
+          part({
+            path: 'package-lock.json',
+            previousPath: 'npm-lock.json',
+            changeKind: 'rename',
+            hunks: [hunk(['-  "version": "1.0.0"', '+  "version": "1.0.1"'])],
+          }),
+        ],
+        null,
+        overrides,
+      )[0]!.noise,
+    ).toEqual(checked);
+
+    // A rule that outranks the name rule keeps its own label: a pure
+    // rename stays proved by identical content, a snapshot keeps the
+    // never-sunk snapshot label, and the repository's own linguist
+    // declaration keeps the vendored label.
+    expect(
+      applyNoiseRules(
+        [part({ path: 'package-lock.json', previousPath: 'npm-lock.json', changeKind: 'rename' })],
+        null,
+        overrides,
+      )[0]!.noise,
+    ).toEqual({
+      label: 'moved or renamed',
+      rule: 'rename-identical',
+      state: 'confirmed',
+      blindSpot: expect.any(String),
+    });
+    expect(
+      applyNoiseRules([part({ path: '__snapshots__/package-lock.json' })], null, overrides)[0]!.noise,
+    ).toEqual({
+      label: 'snapshot',
+      rule: 'snapshot-name',
+      state: 'claimed',
+      blindSpot: expect.any(String),
+    });
+    expect(
+      applyNoiseRules([part({ path: 'package-lock.json' })], 'package-lock.json linguist-vendored', overrides)[0]!.noise,
+    ).toEqual({
+      label: 'vendored',
+      rule: 'linguist-vendored',
+      state: 'claimed',
+      blindSpot: expect.any(String),
+    });
   });
 });

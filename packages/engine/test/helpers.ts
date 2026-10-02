@@ -8,6 +8,7 @@ import type { ChangeKind, DiffLine, Part } from '../src/protocol.js';
 
 export const PR_URL = 'https://github.com/example-org/example-repo/pull/42';
 export const PR_7_URL = 'https://github.com/example-org/example-repo/pull/7';
+export const PR_8_URL = 'https://github.com/example-org/example-repo/pull/8';
 
 const GITATTRIBUTES_URL =
   'https://api.github.com/repos/example-org/example-repo/contents/.gitattributes';
@@ -114,6 +115,24 @@ export function pull7(): PullFixture {
     mergeBase: '6666666666666666666666666666666666666666',
     base: fixtureTree('pull-7/base'),
     head: fixtureTree('pull-7/head'),
+  };
+}
+
+/**
+ * Pull request 8: a package.json bump its package-lock.json follows
+ * (confirmed noise), a hand-edited poetry.lock entry with an unchanged
+ * pyproject.toml (claimed noise, the entry named), and a yarn.lock no
+ * check exists for (claimed noise, no check for this lockfile).
+ */
+export function pull8(): PullFixture {
+  return {
+    number: 8,
+    json: 'pull-8.json',
+    diff: 'pull-8.diff',
+    headSha: '8888888888888888888888888888888888888888',
+    mergeBase: '7777777777777777777777777777777777777776',
+    base: fixtureTree('pull-8/base'),
+    head: fixtureTree('pull-8/head'),
   };
 }
 
