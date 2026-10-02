@@ -1,13 +1,19 @@
 import { defaultCacheDir } from './cache.js';
 import { readFile } from 'node:fs/promises';
+import { createInterface } from 'node:readline';
 import { reviewPullRequest } from './review.js';
 import { readPackagePdbs } from './symbols.js';
+import { runRpcServer } from './server.js';
+import { redactToken } from './rpc.js';
+
+export { redactToken };
 
 const USAGE = `second-look-engine — the engine of the Second Look reviewer's companion
 
 Usage:
   second-look-engine review <pull-request-url> [--token <token>] [--cache-dir <dir>]
   second-look-engine pdb <package-file>
+  second-look-engine serve
 
 The review command fetches a pull request's metadata and full diff, parses
 the diff into files and hunks, and prints a typed, versioned review result
@@ -32,15 +38,13 @@ The pdb command is a debug command: given a NuGet package or symbols
 package (or a single .pdb or assembly), it reads every portable PDB in it,
 standalone or embedded in an assembly, and prints as JSON each source
 document with its hash algorithm, its hash and its Source Link URL, plus
-each PDB's Source Link map. It reads only the local file.`;
+each PDB's Source Link map. It reads only the local file.
 
-/** Replaces every occurrence of the token so no output can leak it. */
-export function redactToken(text: string, token: string | undefined): string {
-  if (!token) {
-    return text;
-  }
-  return text.split(token).join('[REDACTED]');
-}
+The serve command starts the engine as a JSON-RPC server on stdio, one
+JSON-RPC message per line. The protocol starts with a version handshake,
+and the GitHub token then arrives with each review request — never on the
+command line, where any process could read it — and is used only for that
+request.`;
 
 export interface WriteDestination {
   write(chunk: string): boolean;
@@ -100,6 +104,9 @@ export async function runCli(
     return runPdb(positional[1], streams);
   }
   const url = positional[1];
+  if (command === 'serve') {
+    return serve(streams, tokenFlag !== undefined, deps, cacheDirFlag ?? defaultCacheDir(env));
+  }
   if (command !== 'review') {
     streams.err.write(`${USAGE}\n`);
     return 1;
@@ -150,4 +157,40 @@ async function runPdb(path: string | undefined, streams: CliStreams): Promise<nu
     streams.err.write(`second-look-engine: ${message}\n`);
     return 1;
   }
+}
+
+/**
+ * Serves the JSON-RPC protocol on this process's stdio until stdin ends.
+ * The GitHub token arrives with each review request, so a token on the
+ * command line is refused: any process on the machine could read it there.
+ */
+async function serve(
+  streams: CliStreams,
+  tokenFlagGiven: boolean,
+  deps: CliDeps,
+  cacheDir: string,
+): Promise<number> {
+  if (tokenFlagGiven) {
+    streams.err.write(
+      'second-look-engine: serve takes the GitHub token with each request, not on the command line\n',
+    );
+    return 1;
+  }
+  const lines = createInterface({ input: process.stdin });
+  const iterator = lines[Symbol.asyncIterator]();
+  await runRpcServer(
+    {
+      readLine: async () => {
+        const next = await iterator.next();
+        return next.done ? null : (next.value as string);
+      },
+    },
+    {
+      writeLine: (line) => {
+        process.stdout.write(`${line}\n`);
+      },
+    },
+    { cacheDir, ...(deps.fetch ? { fetch: deps.fetch } : {}) },
+  );
+  return 0;
 }

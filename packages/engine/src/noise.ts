@@ -1,6 +1,6 @@
 import type { LinguistAttributes } from './gitattributes.js';
 import { linguistAttributesFor } from './gitattributes.js';
-import type { NoiseAssessment, NoiseLabel, Part } from './protocol.js';
+import type { LabelledNoise, NoiseAssessment, Part } from './protocol.js';
 
 /**
  * The noise rules: each file gets one label — lockfile, generated,
@@ -114,6 +114,24 @@ const SINKING_LABELS: ReadonlySet<string> = new Set([
   'moved or renamed',
 ]);
 
+/**
+ * Whether a noise assessment carries a rule's label, as opposed to the
+ * plain statement that no rule applied. Readers narrow with it before
+ * reading the label's state or blind spot.
+ */
+export function isLabelledNoise(noise: NoiseAssessment): noise is LabelledNoise {
+  return noise.label !== 'none';
+}
+
+/**
+ * Whether a noise assessment sinks its part below the parts a reviewer
+ * must read. Snapshots and fixtures never sink, because a change there is
+ * a behaviour change; readers use this to keep one rule, not two.
+ */
+export function noiseSinks(noise: NoiseAssessment): boolean {
+  return isLabelledNoise(noise) && SINKING_LABELS.has(noise.label);
+}
+
 /** The assessment carried by every part no rule covers (ADR 0001). */
 const NO_RULE_APPLIED: NoiseAssessment = { label: 'none', note: 'no rule applied' };
 
@@ -134,9 +152,6 @@ function hasAnySuffix(name: string, suffixes: readonly string[]): boolean {
 function hasDirectory(path: string, directories: ReadonlySet<string>): boolean {
   return path.split('/').slice(0, -1).some((segment) => directories.has(segment));
 }
-
-/** The assessment a matched rule attaches: the labelled variant of NoiseAssessment. */
-type LabelledNoise = Extract<NoiseAssessment, { label: NoiseLabel }>;
 
 /**
  * A rename whose diff shows no other change — no edited lines, no mode

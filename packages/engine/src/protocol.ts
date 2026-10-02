@@ -13,6 +13,34 @@ export const REVIEW_RESULT_VERSION = 2 as const;
 /** Version 2 added the head commit's SHA and each part's noise assessment. */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
+/**
+ * The level a part is given for review: **must review**, **worth
+ * reviewing**, or **context** (the glossary's importance), always with a
+ * one-line reason.
+ */
+export type Importance = 'must review' | 'worth reviewing' | 'context';
+
+/** The importance levels in the order a reviewer reads them. */
+export const IMPORTANCE_ORDER: readonly Importance[] = [
+  'must review',
+  'worth reviewing',
+  'context',
+];
+
+/**
+ * A part's ranking: its importance, the one-line reason beside it, and
+ * the plain signals the reason cites. Absent while the engine does not
+ * rank parts yet; a reader then shows the part ungrouped rather than
+ * guessing an importance for it.
+ */
+export interface PartRank {
+  importance: Importance;
+  /** One line saying why the part has this importance. */
+  reason: string;
+  /** The plain, model-free facts about the part that the reason cites. */
+  signals: string[];
+}
+
 /** How one file changed, as told by its diff header. */
 export type ChangeKind =
   /** A newly added file. */
@@ -124,6 +152,12 @@ export type NoiseRule =
 export type NoiseState = 'confirmed' | 'claimed';
 
 /**
+ * A noise assessment some rule attached, as opposed to the plain "none"
+ * verdict: a label with its rule, state and blind spot.
+ */
+export type LabelledNoise = Extract<NoiseAssessment, { rule: NoiseRule }>;
+
+/**
  * What the noise rules decided about one part: a label with its state and
  * one-line blind spot, or the plain statement that no rule applied — the
  * companion states the miss instead of staying silent (ADR 0001).
@@ -179,6 +213,12 @@ export interface Part {
   noise?: NoiseAssessment;
   /** What the syntax trees tell about this file's change. */
   syntax: PartSyntax;
+  /**
+   * The part's ranking. The engine does not rank parts yet, so this is
+   * absent until ranking lands; readers show unranked parts in their own
+   * section instead of placing them anywhere.
+   */
+  rank?: PartRank;
 }
 
 /** A check the syntax pass runs on each changed file. */

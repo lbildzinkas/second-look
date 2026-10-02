@@ -1,4 +1,6 @@
 export * from './protocol.js';
+export * from './rpc.js';
+export * from './server.js';
 export * from './diff.js';
 export * from './coverage.js';
 export * from './gitattributes.js';
@@ -13,4 +15,4 @@ export * from './pdb.js';
 export * from './sourcelink.js';
 export * from './zip.js';
 export * from './symbols.js';
-export { redactToken, runCli } from './cli.js';
+export { runCli } from './cli.js';

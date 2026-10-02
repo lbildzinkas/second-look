@@ -136,6 +136,19 @@ describe('runCli review', () => {
   });
 });
 
+describe('runCli serve', () => {
+  it('refuses a token on the command line, where any process could read it', async () => {
+    const { out, err } = streams();
+    const code = await runCli(['serve', '--token', TOKEN], {}, { out, err });
+
+    expect(code).toBe(1);
+    expect(out.text).toBe('');
+    expect(err.text).toBe(
+      'second-look-engine: serve takes the GitHub token with each request, not on the command line\n',
+    );
+  });
+});
+
 describe('redactToken', () => {
   it('replaces every occurrence', () => {
     expect(redactToken(`a ${TOKEN} b ${TOKEN} c`, TOKEN)).toBe(

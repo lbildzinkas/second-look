@@ -9,10 +9,10 @@ Second Look is a VS Code companion for human pull request review: it ranks the c
 
 The repository is a TypeScript workspace with two packages:
 
-- `packages/engine` — the engine: a separate local process that fetches a pull request, parses its full diff into files and hunks, reads the changed files' syntax trees from read-only copies of the change, and prints a typed, versioned review result as JSON (ADR 0005). It also reads portable PDB files, the .NET debug files that record each source file's hash and Source Link URL.
-- `packages/extension` — the VS Code extension: a thin client that reads the engine's result over the shared protocol types.
+- `packages/engine` — the engine: a separate local process that fetches a pull request, parses its full diff into files and hunks, reads the changed files' syntax trees from read-only copies of the change, and offers its result two ways: printed as typed, versioned JSON by the review command, and over a JSON-RPC protocol on stdio by the serve command (ADR 0005). It also reads portable PDB files, the .NET debug files that record each source file's hash and Source Link URL.
+- `packages/extension` — the VS Code extension: a thin client that starts the engine as its own process, talks the JSON-RPC protocol to it after a version handshake, and shows the result as the ranked review tree.
 
-The protocol types live in `packages/engine/src/protocol.ts`, carry a `version` field, and are shared by both packages.
+The protocol types live in `packages/engine/src/protocol.ts` and `packages/engine/src/rpc.ts`, carry their versions, and are shared by both packages.
 
 ## Building and testing
 
@@ -26,6 +26,13 @@ npm run check # build (type check) + lint + unit tests
 CI runs the same on every pull request and on every push to `master`.
 
 Individual steps: `npm run build`, `npm run lint`, `npm test`.
+
+The extension integration tests are the one exception: they never run in
+`npm test` or `npm run check`, so no local run can launch anything that
+opens a VS Code window on a developer machine. CI runs them on Linux
+under xvfb: the fast stub-based test (`npm run test:integration`) and the
+real-host test (`npm run test:real-host`), which downloads a real VS Code
+and runs the extension in it end to end against a fake engine process.
 
 ## Running the review command
 
@@ -57,3 +64,14 @@ node packages/engine/dist/main.js pdb dapper.nupkg
 ```
 
 Malformed input — a Windows PDB, a truncated file, corrupt compressed data — fails with a clear error and exit code 1. Tests read PDBs from public packages stored under `packages/engine/test/fixtures/pdb`.
+
+## Reviewing a pull request in VS Code
+
+The extension adds a **Second Look: Review pull request** command and a review tree in the Explorer side bar. To try it from source, build first (`npm run build`), then open the repository in VS Code and press F5 (the "Run the companion extension" configuration starts a development host with the extension loaded). In the development host:
+
+1. Run **Second Look: Review pull request** from the Command Palette.
+2. Paste a GitHub pull request URL, such as `https://github.com/{owner}/{repo}/pull/{number}`.
+3. Sign in with VS Code's built-in GitHub login when it asks.
+4. Read the tree: the parts grouped by importance in order — must review, worth reviewing, context — each with its reason beside it and its signals in its tooltip, and the noise last with its label and whether it was confirmed or only claimed. Until the engine ranks parts, unranked parts sit in their own plain section above the noise, and the tree shows whatever the engine returns.
+
+The extension starts the engine as a separate process and speaks JSON-RPC to it over stdio, starting with a version handshake. The GitHub token comes from VS Code's authentication API, travels with each review request, and is never stored by the companion. Progress shows in the tree while the engine works, and an engine failure reads as a plain message. The extension declares limited support for untrusted workspaces and runs nothing from the workspace: the engine is started from the extension's own install and only ever reads GitHub.
