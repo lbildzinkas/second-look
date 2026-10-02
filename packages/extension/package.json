@@ -44,6 +44,26 @@
         "command": "second-look.openAllParts",
         "title": "Open all parts in order",
         "category": "Second Look"
+      },
+      {
+        "command": "second-look.submitReview",
+        "title": "Submit review…",
+        "category": "Second Look"
+      },
+      {
+        "command": "second-look.addComment",
+        "title": "Add comment",
+        "category": "Second Look"
+      },
+      {
+        "command": "second-look.commentOnPart",
+        "title": "Comment on this part…",
+        "category": "Second Look"
+      },
+      {
+        "command": "second-look.discardComment",
+        "title": "Discard comment",
+        "category": "Second Look"
       }
     ],
     "menus": {
@@ -53,12 +73,55 @@
           "when": "view == second-look.reviewTree",
           "group": "navigation",
           "icon": "$(diff-multiple)"
+        },
+        {
+          "command": "second-look.submitReview",
+          "when": "view == second-look.reviewTree",
+          "group": "navigation",
+          "icon": "$(rocket)"
         }
       ],
       "commandPalette": [
         {
           "command": "second-look.openPart",
           "when": "false"
+        },
+        {
+          "command": "second-look.addComment",
+          "when": "false"
+        },
+        {
+          "command": "second-look.commentOnPart",
+          "when": "false"
+        },
+        {
+          "command": "second-look.discardComment",
+          "when": "false"
+        }
+      ],
+      "comments/commentThread/context": [
+        {
+          "command": "second-look.addComment",
+          "when": "commentController == second-look",
+          "group": "inline"
+        }
+      ],
+      "comments/commentThread/title": [
+        {
+          "command": "second-look.discardComment",
+          "when": "commentThread == second-look-pending"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "second-look.commentOnPart",
+          "when": "view == second-look.reviewTree && viewItem == part",
+          "group": "navigation"
+        },
+        {
+          "command": "second-look.commentOnPart",
+          "when": "view == second-look.reviewTree && viewItem == noise",
+          "group": "navigation"
         }
       ]
     },

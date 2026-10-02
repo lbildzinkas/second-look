@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { GitHubClient, parsePullRequestUrl } from '../src/github.js';
-import { PR_URL, fixtureFetch } from './helpers.js';
+import { PR_URL, SENT_REVIEW_URL, fixtureFetch } from './helpers.js';
 
 const recordedJson = JSON.parse(
   readFileSync(fileURLToPath(new URL('./fixtures/pull-42.json', import.meta.url)), 'utf8'),
@@ -131,5 +131,36 @@ describe('GitHubClient against recorded responses', () => {
     await expect(
       denied.getGitAttributesAt(ref, 'forbidden00000000000000000000000000000'),
     ).rejects.toThrow();
+  });
+
+  it('submits one review: every comment in one POST, answered with its link', async () => {
+    const transport = fixtureFetch();
+    const client = new GitHubClient({ token: 'test-token', fetch: transport.fetch });
+    const sent = await client.submitReview(ref, {
+      commitId: 'f00dcafe1234567890abcdef1234567890abcdef',
+      submit: 'request changes',
+      body: 'One deliberate pass over the change.',
+      comments: [
+        { path: 'src/settings.ts', body: 'why remove this?', position: 2 },
+        { path: 'README.md', body: 'reads well now', subjectType: 'file' },
+      ],
+    });
+
+    expect(sent).toEqual({ url: SENT_REVIEW_URL });
+    expect(transport.requests).toHaveLength(1);
+    expect(transport.requests[0]).toMatchObject({
+      url: 'https://api.github.com/repos/example-org/example-repo/pulls/42/reviews',
+      method: 'POST',
+      authorization: 'token test-token',
+    });
+    expect(transport.requests[0]!.body).toEqual({
+      commit_id: 'f00dcafe1234567890abcdef1234567890abcdef',
+      body: 'One deliberate pass over the change.',
+      event: 'REQUEST_CHANGES',
+      comments: [
+        { path: 'src/settings.ts', position: 2, body: 'why remove this?' },
+        { path: 'README.md', subject_type: 'file', body: 'reads well now' },
+      ],
+    });
   });
 });
