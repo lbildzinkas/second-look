@@ -59,10 +59,10 @@ function under(dir: string, name: string): string {
  * One lock file read by package name: the versions present (each with a
  * fingerprint of its whole entry, so a hand-edited hash is a change too),
  * the dependency edges the lock file itself records, fingerprints of the
- * entries no package name covers (npm's root entry and legacy mirror),
- * and npm's workspace member records with the keys their node_modules
- * link stubs point at, which the pull request's own file changes help
- * explain.
+ * entries no package name covers (npm's root entry and legacy mirror,
+ * and NuGet's libraries section), and npm's workspace member records
+ * with the keys their node_modules link stubs point at, which the pull
+ * request's own file changes help explain.
  */
 interface LockIndex {
   versions: Map<string, Map<string, Set<string>>>;
@@ -290,7 +290,7 @@ function isIncludeGroup(item: TomlValue): boolean {
   return keys.length === 1 && keys[0] === 'include-group' && typeof item['include-group'] === 'string';
 }
 
-/** pyproject.toml's [project] tables, as uv reads direct dependencies. */
+/** pyproject.toml's [project], [dependency-groups] and [tool.uv] tables, where uv records direct dependencies. */
 function readPep621Manifests(texts: readonly string[]): Map<string, string> | undefined {
   const specs = new Map<string, string>();
   for (const text of texts) {
@@ -737,7 +737,7 @@ function changedEntries(oldIndex: LockIndex, newIndex: LockIndex): ChangedEntry[
   return changed;
 }
 
-/** Changed entries no package name covers: npm's root entry and legacy mirror. */
+/** Changed entries no package name covers: npm's root entry and legacy mirror, and NuGet's libraries section. */
 function changedRoots(oldIndex: LockIndex, newIndex: LockIndex): ChangedEntry[] {
   const keys = [...new Set([...oldIndex.roots.keys(), ...newIndex.roots.keys()])].sort();
   const changed: ChangedEntry[] = [];
