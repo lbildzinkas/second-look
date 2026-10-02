@@ -1,9 +1,12 @@
+import { readFile } from 'node:fs/promises';
 import { reviewPullRequest } from './review.js';
+import { readPackagePdbs } from './symbols.js';
 
 const USAGE = `second-look-engine — the engine of the Second Look reviewer's companion
 
 Usage:
   second-look-engine review <pull-request-url> [--token <token>]
+  second-look-engine pdb <package-file>
 
 The review command fetches a pull request's metadata and full diff, parses
 the diff into files and hunks, and prints a typed, versioned review result
@@ -17,7 +20,13 @@ checkout.
 
 The GitHub token is passed in by the caller, either with --token or through
 the GITHUB_TOKEN environment variable. It is used only for the GitHub
-request, and is never written to disk or logs.`;
+request, and is never written to disk or logs.
+
+The pdb command is a debug command: given a NuGet package or symbols
+package (or a single .pdb or assembly), it reads every portable PDB in it,
+standalone or embedded in an assembly, and prints as JSON each source
+document with its hash algorithm, its hash and its Source Link URL, plus
+each PDB's Source Link map. It reads only the local file.`;
 
 /** Replaces every occurrence of the token so no output can leak it. */
 export function redactToken(text: string, token: string | undefined): string {
@@ -71,6 +80,9 @@ export async function runCli(
   }
 
   const command = positional[0];
+  if (command === 'pdb') {
+    return runPdb(positional[1], streams);
+  }
   const url = positional[1];
   if (command !== 'review') {
     streams.err.write(`${USAGE}\n`);
@@ -98,6 +110,23 @@ export async function runCli(
       error instanceof Error ? error.message : String(error),
       token,
     );
+    streams.err.write(`second-look-engine: ${message}\n`);
+    return 1;
+  }
+}
+
+/** Prints every portable PDB in a package file, with its documents. */
+async function runPdb(path: string | undefined, streams: CliStreams): Promise<number> {
+  if (!path) {
+    streams.err.write('second-look-engine: pdb needs a package file\n');
+    return 1;
+  }
+  try {
+    const pdbs = readPackagePdbs(path, await readFile(path));
+    streams.out.write(`${JSON.stringify({ package: path, pdbs }, null, 2)}\n`);
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     streams.err.write(`second-look-engine: ${message}\n`);
     return 1;
   }
