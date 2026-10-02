@@ -1066,6 +1066,23 @@ describe('packages.lock.json', () => {
     expect(check.outcome).toBe('confirmed');
   });
 
+  it('takes the central version from a PackageReference Update in the props', () => {
+    const props = (json: string): string => `
+<Project>
+  <ItemGroup>
+    <PackageReference Update="Newtonsoft.Json" Version="${json}" />
+  </ItemGroup>
+</Project>
+`;
+    const withoutVersion = project('13.0.3').replace(' Version="13.0.3"', '');
+    const check = confirmed(
+      format('packages.lock.json'),
+      side(lock('13.0.3', '4.7.0'), [withoutVersion, props('13.0.3')]),
+      side(lock('13.0.1', '4.7.0'), [withoutVersion, props('13.0.1')]),
+    );
+    expect(check.outcome).toBe('confirmed');
+  });
+
   it('stays claimed and names a hand-edited libraries section', () => {
     const withLibraries = (sha: string): string => `
 {

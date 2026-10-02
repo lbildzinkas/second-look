@@ -529,7 +529,7 @@ async function nugetManifestsIn(dir: string, list: ListDir): Promise<readonly st
 }
 
 const PACKAGE_TAGS = /<Package(?:Reference|Version)\b[^>]*>/g;
-const INCLUDE_ATTRIBUTE = /\bInclude="([^"]*)"/;
+const INCLUDE_ATTRIBUTE = /\b(?:Include|Update)="([^"]*)"/;
 const VERSION_ATTRIBUTE = /\bVersion="([^"]*)"/;
 const VERSION_OVERRIDE_ATTRIBUTE = /\bVersionOverride="([^"]*)"/;
 
