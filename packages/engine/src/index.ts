@@ -15,4 +15,4 @@ export * from './pdb.js';
 export * from './sourcelink.js';
 export * from './zip.js';
 export * from './symbols.js';
-export { redactToken, runCli } from './cli.js';
+export { runCli } from './cli.js';

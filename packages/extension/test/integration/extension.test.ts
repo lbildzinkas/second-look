@@ -176,6 +176,7 @@ describe('the review command, end to end against a fake engine', () => {
       },
     ]);
     expect(view.revealed).toHaveLength(1);
+    expect(stub.errorMessages).toEqual([]);
 
     // The engine, a separate process, got the handshake first and then
     // the URL and the token from the sign-in, with nothing stored.

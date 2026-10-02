@@ -132,8 +132,9 @@ export const window = {
       id,
       provider: options.treeDataProvider,
       revealed,
-      reveal: (element: unknown, revealOptions?: unknown): void => {
+      reveal: (element: unknown, revealOptions?: unknown): Promise<void> => {
         revealed.push({ element, options: revealOptions });
+        return Promise.resolve();
       },
       dispose: (): void => undefined,
     };
