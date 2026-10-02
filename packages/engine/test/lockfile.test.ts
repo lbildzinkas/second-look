@@ -230,6 +230,72 @@ describe('package-lock.json', () => {
     expect(check.outcome).toBe('confirmed');
   });
 
+  const memberLock = (
+    web: Record<string, unknown>,
+    leftPadVersion: string,
+    leftPadSpec: string,
+  ): string =>
+    JSON.stringify({
+      name: 'app',
+      lockfileVersion: 3,
+      packages: {
+        '': { name: 'app', dependencies: { 'left-pad': leftPadSpec } },
+        'packages/web': web,
+        'node_modules/left-pad': { version: leftPadVersion },
+      },
+    });
+
+  it('stays claimed and names a member record rewritten as a registry tarball', () => {
+    const linked = { name: 'web', version: '1.0.0', link: true };
+    const tarball = {
+      name: 'web',
+      version: '1.0.0',
+      resolved: 'https://evil.example/web/-/web-1.0.0.tgz',
+      integrity: 'sha512-evil',
+    };
+    const check = confirmLockfileChange(
+      format('package-lock.json'),
+      'package-lock.json',
+      side(memberLock(linked, '1.3.0', '^1.3.0'), [manifest('^1.3.0')]),
+      side(memberLock(tarball, '2.0.0', '^2.0.0'), [manifest('^2.0.0')]),
+      () => true,
+    );
+    expect(check.outcome).toBe('unexplained');
+    expect(check.blindSpot).toContain('the packages/web entry (content changed)');
+  });
+
+  it('confirms a member bump whose package.json this pull request also changes', () => {
+    const check = confirmLockfileChange(
+      format('package-lock.json'),
+      'package-lock.json',
+      side(memberLock({ name: 'web', version: '1.0.0', link: true }, '1.3.0', '^1.3.0'), [
+        manifest('^1.3.0'),
+      ]),
+      side(memberLock({ name: 'web', version: '1.1.0', link: true }, '1.3.0', '^1.3.0'), [
+        manifest('^1.3.0'),
+      ]),
+      (key) => key === 'packages/web',
+    );
+    expect(check.outcome).toBe('confirmed');
+    expect(check.blindSpot).toContain("member's package.json");
+  });
+
+  it('stays claimed and names a member record change without its package.json in the pull request', () => {
+    const check = confirmLockfileChange(
+      format('package-lock.json'),
+      'package-lock.json',
+      side(memberLock({ name: 'web', version: '1.0.0', link: true }, '1.3.0', '^1.3.0'), [
+        manifest('^1.3.0'),
+      ]),
+      side(memberLock({ name: 'web', version: '9.9.9', link: true }, '2.0.0', '^2.0.0'), [
+        manifest('^2.0.0'),
+      ]),
+      () => false,
+    );
+    expect(check.outcome).toBe('unexplained');
+    expect(check.blindSpot).toContain('the packages/web entry (content changed)');
+  });
+
   it('runs no check when adversarial nesting overflows the reader', () => {
     let nested: unknown = [];
     for (let i = 0; i < 50_000; i++) nested = [nested];

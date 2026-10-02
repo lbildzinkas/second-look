@@ -58,17 +58,27 @@ function under(dir: string, name: string): string {
 /**
  * One lock file read by package name: the versions present (each with a
  * fingerprint of its whole entry, so a hand-edited hash is a change too),
- * the dependency edges the lock file itself records, and fingerprints of
- * the entries no package name covers (npm's root and workspace keys).
+ * the dependency edges the lock file itself records, fingerprints of the
+ * entries no package name covers (npm's root entry and legacy mirror),
+ * and npm's workspace member records, which the pull request's own file
+ * changes help explain.
  */
 interface LockIndex {
   versions: Map<string, Map<string, Set<string>>>;
   edges: Map<string, Set<string>>;
   roots: Map<string, string>;
+  members: Map<string, MemberRecord>;
+}
+
+/** An npm workspace member's lock record, with the fields a member bump must not move. */
+interface MemberRecord {
+  readonly fingerprint: string;
+  readonly link: boolean;
+  readonly identity: string;
 }
 
 function emptyIndex(): LockIndex {
-  return { versions: new Map(), edges: new Map(), roots: new Map() };
+  return { versions: new Map(), edges: new Map(), roots: new Map(), members: new Map() };
 }
 
 function recordEntry(index: LockIndex, name: string, version: string, fingerprint: string): void {
@@ -171,7 +181,15 @@ function readNpmLock(text: string): LockIndex | undefined {
       if (!isRecord(raw)) return undefined;
       const name = npmNameFromKey(key);
       if (name === undefined) {
-        index.roots.set(key, stableStringify(raw));
+        if (key === '') {
+          index.roots.set(key, stableStringify(raw));
+        } else {
+          index.members.set(key, {
+            fingerprint: stableStringify(raw),
+            link: raw['link'] === true,
+            identity: stableStringify([raw['link'], raw['resolved'], raw['integrity']]),
+          });
+        }
         continue;
       }
       recordNpmEntry(index, name, raw);
@@ -523,7 +541,7 @@ const CLOSURE_BLIND_SPOT =
 const NPM_FORMAT: LockfileFormat = {
   name: 'package-lock.json',
   manifestName: 'package.json',
-  blindSpot: `Parse-only: the resolver is not re-run and hashes are not re-checked against the registry; ${CLOSURE_BLIND_SPOT}.`,
+  blindSpot: `Parse-only: the resolver is not re-run and hashes are not re-checked against the registry; a workspace member's record is accepted only when the pull request also changes that member's package.json and its link, resolved and integrity stay put; ${CLOSURE_BLIND_SPOT}.`,
   readLock: readNpmLock,
   manifestsIn: manifestBeside('package.json'),
   readManifests: readNpmManifests,
@@ -679,7 +697,7 @@ function changedEntries(oldIndex: LockIndex, newIndex: LockIndex): ChangedEntry[
   return changed;
 }
 
-/** Changed entries no package name covers: npm's root and workspace keys. */
+/** Changed entries no package name covers: npm's root entry and legacy mirror. */
 function changedRoots(oldIndex: LockIndex, newIndex: LockIndex): ChangedEntry[] {
   const keys = [...new Set([...oldIndex.roots.keys(), ...newIndex.roots.keys()])].sort();
   const changed: ChangedEntry[] = [];
@@ -688,6 +706,38 @@ function changedRoots(oldIndex: LockIndex, newIndex: LockIndex): ChangedEntry[] 
     const after = newIndex.roots.get(key);
     if (before === after) continue;
     const name = key === '' ? 'the root entry' : `the ${key} entry`;
+    const note = before === undefined ? 'added' : after === undefined ? 'removed' : 'content changed';
+    changed.push({ name, display: `${name} (${note})` });
+  }
+  return changed;
+}
+
+/**
+ * Changed npm workspace member records: one stays explained only when the
+ * pull request also changes that member's package.json and the record
+ * keeps its link, resolved and integrity as a local link.
+ */
+function changedMembers(
+  oldIndex: LockIndex,
+  newIndex: LockIndex,
+  memberManifestChanged: (key: string) => boolean,
+): ChangedEntry[] {
+  const keys = [...new Set([...oldIndex.members.keys(), ...newIndex.members.keys()])].sort();
+  const changed: ChangedEntry[] = [];
+  for (const key of keys) {
+    const before = oldIndex.members.get(key);
+    const after = newIndex.members.get(key);
+    if (before !== undefined && after !== undefined && before.fingerprint === after.fingerprint) {
+      continue;
+    }
+    const explained =
+      before !== undefined &&
+      after !== undefined &&
+      after.link &&
+      before.identity === after.identity &&
+      memberManifestChanged(key);
+    if (explained) continue;
+    const name = `the ${key} entry`;
     const note = before === undefined ? 'added' : after === undefined ? 'removed' : 'content changed';
     changed.push({ name, display: `${name} (${note})` });
   }
@@ -716,6 +766,7 @@ export function confirmLockfileChange(
   lockName: string,
   oldSide: LockfileSide,
   newSide: LockfileSide,
+  memberManifestChanged: (key: string) => boolean = () => false,
 ): LockfileCheck {
   const oldLock = oldSide.lock;
   const oldIndex =
@@ -756,6 +807,7 @@ export function confirmLockfileChange(
   if (changedDirects.length === 0) {
     unexplained.push(...changedRoots(oldIndex, newIndex));
   }
+  unexplained.push(...changedMembers(oldIndex, newIndex, memberManifestChanged));
   if (unexplained.length === 0) {
     return { outcome: 'confirmed', blindSpot: format.blindSpot };
   }
@@ -811,8 +863,9 @@ function assessmentFor(
   lockName: string,
   oldSide: LockfileSide,
   newSide: LockfileSide,
+  memberManifestChanged?: (key: string) => boolean,
 ): NoiseAssessment {
-  const check = confirmLockfileChange(format, lockName, oldSide, newSide);
+  const check = confirmLockfileChange(format, lockName, oldSide, newSide, memberManifestChanged);
   if (check.outcome === 'confirmed') {
     return {
       label: 'lockfile',
@@ -842,6 +895,11 @@ export async function confirmLockfileNoise(
   copies: { readonly base: string; readonly head: string },
 ): Promise<Map<string, NoiseAssessment>> {
   const overrides = new Map<string, NoiseAssessment>();
+  const changedPaths = new Set<string>();
+  for (const part of parts) {
+    changedPaths.add(part.path);
+    changedPaths.add(part.previousPath ?? part.path);
+  }
   await Promise.all(
     parts
       .filter((part) => !part.isBinary && lockfileFormatFor(part.path) !== undefined)
@@ -851,9 +909,12 @@ export async function confirmLockfileNoise(
           readSide(copies.base, part.previousPath ?? part.path, format),
           readSide(copies.head, part.path, format),
         ]);
+        const lockDir = dirname(part.path);
         overrides.set(
           part.path,
-          assessmentFor(format, basename(part.path), oldSide, newSide),
+          assessmentFor(format, basename(part.path), oldSide, newSide, (key) =>
+            changedPaths.has(under(lockDir, `${key}/package.json`)),
+          ),
         );
       }),
   );
