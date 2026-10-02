@@ -1,4 +1,4 @@
-import type { DiffLine, Hunk, Part } from './protocol.js';
+import type { DiffLine, Hunk, Part, PartSyntax } from './protocol.js';
 
 /** The result of parsing a whole pull request diff. */
 export interface ParsedDiff {
@@ -198,6 +198,7 @@ export function parseDiff(diff: string): ParsedDiff {
         hunks: [],
         additions: 0,
         deletions: 0,
+        syntax: syntaxNotYetRun(),
       },
       inBinaryPatch: false,
     };
@@ -440,6 +441,7 @@ export function parseDiff(diff: string): ParsedDiff {
         newLines: match[4] === undefined ? 1 : Number(match[4]),
         heading: match[5] === '' ? undefined : match[5],
         lines: [],
+        entities: [],
       };
       part.hunks.push(hunk);
       oldLine = hunk.oldStart;
@@ -463,6 +465,18 @@ export function parseDiff(diff: string): ParsedDiff {
     finishFile(current);
   }
   return { files };
+}
+
+/** A parsed file's syntax state before the syntax pass reads its copies. */
+function syntaxNotYetRun(): PartSyntax {
+  const reason = 'the syntax pass has not run on this file';
+  return {
+    formattingOnly: { status: 'not-checked', reason },
+    checksNotRun: [
+      { check: 'entities', reason },
+      { check: 'formatting-only', reason },
+    ],
+  };
 }
 
 /** Applies the header paths to a finished file, in precedence order. */

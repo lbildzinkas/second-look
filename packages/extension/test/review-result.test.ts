@@ -13,8 +13,22 @@ function sampleResult(): ReviewResult {
       description: 'A description of any length, kept in full.',
       base: 'master',
       head: 'update-deps',
-      headSha: 'f00dcafe1234567890abcdef1234567890abcdef12',
+      baseCommit: '0123456789abcdef0123456789abcdef01234567',
+      headSha: 'f00dcafe1234567890abcdef1234567890abcdef',
     },
+    copies: {
+      base: {
+        commit: '4242424242424242424242424242424242424242',
+        path: '/cache/pull-42/4242424242424242424242424242424242424242',
+        reused: false,
+      },
+      head: {
+        commit: 'f00dcafe1234567890abcdef1234567890abcdef',
+        path: '/cache/pull-42/f00dcafe1234567890abcdef1234567890abcdef',
+        reused: true,
+      },
+    },
+    parseTimeMs: 1.25,
     parts: [
       {
         path: 'src/settings.ts',
@@ -42,6 +56,7 @@ function sampleResult(): ReviewResult {
               },
               { kind: 'addition', newLineNumber: 3, text: 'here' },
             ],
+            entities: [{ kind: 'method', name: 'Settings.load' }],
           },
         ],
         additions: 1,
@@ -52,6 +67,14 @@ function sampleResult(): ReviewResult {
           state: 'claimed',
           blindSpot:
             'Only known lockfile names are matched; a lockfile renamed or hand-written under another name is missed.',
+        },
+        syntax: {
+          language: 'typescript',
+          formattingOnly: {
+            status: 'structure-changed',
+            reason: 'the syntax tree changes at head line 3',
+          },
+          checksNotRun: [],
         },
       },
     ],
@@ -81,7 +104,39 @@ describe('isReviewResult', () => {
   it('rejects values that are not review results', () => {
     expect(isReviewResult(null)).toBe(false);
     expect(isReviewResult('review')).toBe(false);
-    expect(isReviewResult({ version: 1 })).toBe(false);
+    expect(isReviewResult({ version: 2 })).toBe(false);
+  });
+
+  it('rejects a part without its syntax findings', () => {
+    const value = JSON.parse(JSON.stringify(sampleResult())) as {
+      parts: { syntax?: unknown }[];
+    };
+    delete value.parts[0]!.syntax;
+    expect(isReviewResult(value)).toBe(false);
+  });
+
+  it('rejects an unknown formatting-only status or entity kind', () => {
+    const status = JSON.parse(JSON.stringify(sampleResult())) as {
+      parts: { syntax: { formattingOnly: { status: string } } }[];
+    };
+    status.parts[0]!.syntax.formattingOnly.status = 'probably';
+    expect(isReviewResult(status)).toBe(false);
+
+    const entity = JSON.parse(JSON.stringify(sampleResult())) as {
+      parts: { hunks: { entities: { kind: string }[] }[] }[];
+    };
+    entity.parts[0]!.hunks[0]!.entities[0]!.kind = 'widget';
+    expect(isReviewResult(entity)).toBe(false);
+  });
+
+  it('rejects a result without its copies or parse time', () => {
+    const noCopies = JSON.parse(JSON.stringify(sampleResult())) as { copies?: unknown };
+    delete noCopies.copies;
+    expect(isReviewResult(noCopies)).toBe(false);
+
+    const noParseTime = JSON.parse(JSON.stringify(sampleResult())) as { parseTimeMs?: unknown };
+    delete noParseTime.parseTimeMs;
+    expect(isReviewResult(noParseTime)).toBe(false);
   });
 
   it('rejects a part with an unknown change kind', () => {

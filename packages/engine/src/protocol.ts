@@ -31,6 +31,10 @@ export interface ReviewResult {
   /** Schema version; compare against {@link REVIEW_RESULT_VERSION}. */
   version: ReviewResultVersion;
   pullRequest: PullRequestSummary;
+  /** The read-only copies of the base and head versions the engine read. */
+  copies: ChangeCopies;
+  /** Time spent parsing syntax trees across all parts, in milliseconds. */
+  parseTimeMs: number;
   /**
    * One part per changed file at this step. Every changed line of the diff
    * belongs to exactly one part; the engine proves this before printing.
@@ -52,8 +56,34 @@ export interface PullRequestSummary {
   base: string;
   /** Name of the branch the change comes from. */
   head: string;
-  /** The head commit's full SHA; the commit noise attributes are read at. */
+  /** Commit at the tip of the base branch the pull request compares with. */
+  baseCommit: string;
+  /**
+   * The head commit's full SHA; the head copy is taken here and the noise
+   * attributes are read at it.
+   */
   headSha: string;
+}
+
+/**
+ * The read-only copies of the change, downloaded as archives into a
+ * per-pull-request cache. Nothing is checked out in the reviewer's
+ * workspace and nothing from the pull request runs.
+ */
+export interface ChangeCopies {
+  /** The base version: the merge base the diff is computed against. */
+  base: ChangeCopy;
+  /** The head version: the pull request's head commit. */
+  head: ChangeCopy;
+}
+
+/** One read-only copy of the repository at one commit. */
+export interface ChangeCopy {
+  commit: string;
+  /** Absolute path of the copy in the engine's cache. */
+  path: string;
+  /** True when an earlier run's copy at the same commit was reused. */
+  reused: boolean;
 }
 
 /**
@@ -147,6 +177,72 @@ export interface Part {
    * produces parts before any rule has run.
    */
   noise?: NoiseAssessment;
+  /** What the syntax trees tell about this file's change. */
+  syntax: PartSyntax;
+}
+
+/** A check the syntax pass runs on each changed file. */
+export type SyntaxCheck =
+  /** Naming the entities each hunk touches. */
+  | 'entities'
+  /** Confirming a change is formatting-only. */
+  | 'formatting-only';
+
+/** A check that could not run on a file, and why (ADR 0001). */
+export interface CheckNotRun {
+  check: SyntaxCheck;
+  reason: string;
+}
+
+/** The syntax pass's findings for one file. */
+export interface PartSyntax {
+  /** The grammar that parsed the file, when one applies. */
+  language?: string;
+  formattingOnly: FormattingOnly;
+  /**
+   * Checks that could not run on this file, each with its reason. When
+   * `entities` is listed, hunks fall back to file level: they name no
+   * entities.
+   */
+  checksNotRun: CheckNotRun[];
+}
+
+/** Outcome of the formatting-only check. */
+export type FormattingOnlyStatus =
+  /**
+   * The structural signatures of base and head match, nesting included:
+   * the change is confirmed formatting-only noise.
+   */
+  | 'confirmed'
+  /** The structure differs, so the change is not formatting-only. */
+  | 'structure-changed'
+  /** The check could not run; the reason says why. */
+  | 'not-checked';
+
+export interface FormattingOnly {
+  status: FormattingOnlyStatus;
+  /** One plain line saying why. */
+  reason: string;
+}
+
+/** The kind of a named code entity. */
+export type EntityKind =
+  | 'class'
+  | 'struct'
+  | 'interface'
+  | 'enum'
+  | 'trait'
+  | 'impl'
+  | 'type'
+  | 'function'
+  | 'method'
+  | 'property';
+
+/** A named code entity, such as a function, class or method. */
+export interface Entity {
+  kind: EntityKind;
+  /** Name qualified by its enclosing entities, outermost first: `Cart.total`. */
+  name: string;
 }
 
 /** One hunk of a unified diff: a run of changed lines with surrounding context. */
@@ -162,6 +258,13 @@ export interface Hunk {
   /** The section heading git writes after the @@ ranges, when present. */
   heading?: string;
   lines: DiffLine[];
+  /**
+   * The innermost entities the hunk's changed lines fall in, removed lines
+   * read from the base copy and added lines from the head copy, in order of
+   * first appearance. Empty when the hunk touches only top-level code or
+   * when the file is named at file level.
+   */
+  entities: Entity[];
 }
 
 export type DiffLineKind = 'context' | 'addition' | 'deletion';

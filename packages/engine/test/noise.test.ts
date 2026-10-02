@@ -28,6 +28,9 @@ function part(
     hunks: overrides.hunks ?? [],
     additions: additions.length,
     deletions: deletions.length,
+    // The noise rules never read the syntax findings; this is the neutral
+    // value for a part that has not been through the syntax pass.
+    syntax: { formattingOnly: { status: 'not-checked', reason: '' }, checksNotRun: [] },
   };
 }
 
@@ -38,6 +41,7 @@ function hunk(body: string[]): Hunk {
     oldLines: body.filter((line) => line.startsWith(' ') || line.startsWith('-')).length,
     newStart: 1,
     newLines: body.filter((line) => line.startsWith(' ') || line.startsWith('+')).length,
+    entities: [],
     lines: body.map((line) => ({
       kind: (line.startsWith('+')
         ? 'addition'
@@ -138,6 +142,7 @@ describe('assessNoise', () => {
       oldLines: 1,
       newStart: 3,
       newLines: 1,
+      entities: [],
       lines: [
         {
           kind: 'context',
@@ -158,6 +163,7 @@ describe('assessNoise', () => {
       oldLines: 1,
       newStart: 39,
       newLines: 1,
+      entities: [],
       lines: [
         {
           kind: 'context',

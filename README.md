@@ -9,7 +9,7 @@ Second Look is a VS Code companion for human pull request review: it ranks the c
 
 The repository is a TypeScript workspace with two packages:
 
-- `packages/engine` — the engine: a separate local process that fetches a pull request, parses its full diff into files and hunks, and prints a typed, versioned review result as JSON (ADR 0005). It also reads portable PDB files, the .NET debug files that record each source file's hash and Source Link URL.
+- `packages/engine` — the engine: a separate local process that fetches a pull request, parses its full diff into files and hunks, reads the changed files' syntax trees from read-only copies of the change, and prints a typed, versioned review result as JSON (ADR 0005). It also reads portable PDB files, the .NET debug files that record each source file's hash and Source Link URL.
 - `packages/extension` — the VS Code extension: a thin client that reads the engine's result over the shared protocol types.
 
 The protocol types live in `packages/engine/src/protocol.ts`, carry a `version` field, and are shared by both packages.
@@ -40,6 +40,10 @@ The engine package also installs a `second-look-engine` bin link once its
 build output exists (`npm ci` again after `npm run build`).
 
 The command fetches the pull request's metadata and full diff — the description is kept in full, never truncated, and the diff comes from the diff media type, so a large lockfile keeps every line — parses it into files and hunks, and prints a JSON review result with one part per changed file. Each part carries a noise label (lockfile, generated, vendored, moved or renamed, snapshot, fixture) that says whether it is confirmed or claimed and gives its one-line blind spot, or says no rule applied; noise parts sink to the bottom of the result, except snapshots and fixtures, which are labelled but never sunk. The labels read the repository's linguist attributes from its root `.gitattributes` at the head commit, without a checkout. Compare the file list, labels and line counts with the GitHub page.
+
+The engine also keeps a read-only copy of the base version (the merge base the diff is computed against) and the head version in a per-pull-request cache, at `<cache>/github.com/{owner}/{repo}/pull-{number}/{commit}`. The copies are downloaded as archives: nothing is checked out in the reviewer's workspace, nothing from the pull request runs, and no package manager is called. A later run at the same commits reuses them. The cache folder is `--cache-dir`, else `SECOND_LOOK_CACHE_DIR`, else the platform's per-user cache folder (`~/.cache/second-look`, `~/Library/Caches/second-look` or `%LOCALAPPDATA%\second-look\cache`); its files and folders are read-only, so remove it with `chmod -R u+w` first.
+
+Each changed file is parsed with a tree-sitter grammar bundled as WASM — Python, C#, TypeScript, TSX, JavaScript, Go, Rust and Java. Every hunk names the entities (functions, classes, methods and the like) its changed lines touch, and each part says whether its change is confirmed formatting-only: the base and head syntax trees must match, nesting included, so a Python dedent that moves a statement out of a block is not formatting-only. Files in other languages still flow through at file level, and their part lists the checks that could not run and why. The result records the time spent parsing in `parseTimeMs`.
 
 The token is passed in by the caller (`--token` or `GITHUB_TOKEN`), is used only for the GitHub request, and is never written to disk or logs. Tests run against recorded responses and never touch the network.
 

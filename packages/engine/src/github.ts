@@ -76,8 +76,43 @@ export class GitHubClient {
       description: data.body ?? '',
       base: data.base.ref,
       head: data.head.ref,
+      baseCommit: data.base.sha,
       headSha: data.head.sha,
     };
+  }
+
+  /**
+   * Finds the merge base of the base and head commits: the version the
+   * pull request's diff is computed against, so the base copy is taken
+   * there rather than at the moving tip of the base branch.
+   */
+  async getMergeBase(ref: PullRequestRef, base: string, head: string): Promise<string> {
+    const { data } = await this.octokit.repos.compareCommitsWithBasehead({
+      owner: ref.owner,
+      repo: ref.repo,
+      basehead: `${base}...${head}`,
+      per_page: 1,
+    });
+    return data.merge_base_commit.sha;
+  }
+
+  /**
+   * Streams the gzipped tarball of one commit. The archive is downloaded,
+   * never checked out, and the body is handed over unparsed so a large
+   * repository is never held in memory whole.
+   */
+  async downloadTarball(ref: PullRequestRef, commit: string): Promise<AsyncIterable<Uint8Array>> {
+    const response = await this.octokit.repos.downloadTarballArchive({
+      owner: ref.owner,
+      repo: ref.repo,
+      ref: commit,
+      request: { parseSuccessResponseBody: false },
+    });
+    const body: unknown = response.data;
+    if (body instanceof ReadableStream) {
+      return body as ReadableStream<Uint8Array>;
+    }
+    throw new Error(`the archive of ${commit} arrived without a body`);
   }
 
   /**

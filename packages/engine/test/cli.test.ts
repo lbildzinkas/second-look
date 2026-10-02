@@ -1,11 +1,13 @@
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { removeCopy } from '../src/cache.js';
 import { redactToken, runCli } from '../src/cli.js';
 import {
   CaptureStream,
   PR_URL,
   failingFetch,
   fixtureFetch,
+  temporaryCacheDir,
 } from './helpers.js';
 
 const TOKEN = 'ghp_test-token-do-not-print';
@@ -14,12 +16,22 @@ function streams(): { out: CaptureStream; err: CaptureStream } {
   return { out: new CaptureStream(), err: new CaptureStream() };
 }
 
+let cacheDir: string;
+
+beforeEach(() => {
+  cacheDir = temporaryCacheDir();
+});
+
+afterEach(async () => {
+  await removeCopy(cacheDir);
+});
+
 describe('runCli review', () => {
   it('prints a JSON review result for a pull request URL', async () => {
     const { out, err } = streams();
     const code = await runCli(
       ['review', PR_URL],
-      { GITHUB_TOKEN: TOKEN },
+      { GITHUB_TOKEN: TOKEN, SECOND_LOOK_CACHE_DIR: cacheDir },
       { out, err },
       { fetch: fixtureFetch().fetch },
     );
@@ -34,21 +46,25 @@ describe('runCli review', () => {
   it('accepts the token as a flag instead of the environment', async () => {
     const { out, err } = streams();
     const code = await runCli(
-      ['review', PR_URL, '--token', TOKEN],
+      ['review', PR_URL, '--token', TOKEN, '--cache-dir', cacheDir],
       {},
       { out, err },
       { fetch: fixtureFetch().fetch },
     );
     expect(code).toBe(0);
-    const result = JSON.parse(out.text) as { version: number };
+    const result = JSON.parse(out.text) as {
+      version: number;
+      copies: { head: { path: string } };
+    };
     expect(result.version).toBe(2);
+    expect(result.copies.head.path.startsWith(cacheDir)).toBe(true);
   });
 
   it('never writes the token to stdout or stderr', async () => {
     const { out, err } = streams();
     const code = await runCli(
       ['review', PR_URL],
-      { GITHUB_TOKEN: TOKEN },
+      { GITHUB_TOKEN: TOKEN, SECOND_LOOK_CACHE_DIR: cacheDir },
       { out, err },
       { fetch: fixtureFetch().fetch },
     );
@@ -61,7 +77,7 @@ describe('runCli review', () => {
     const { out, err } = streams();
     const code = await runCli(
       ['review', PR_URL],
-      { GITHUB_TOKEN: TOKEN },
+      { GITHUB_TOKEN: TOKEN, SECOND_LOOK_CACHE_DIR: cacheDir },
       { out, err },
       { fetch: failingFetch(new Error(`request to ${PR_URL} failed with ${TOKEN}`)) },
     );
@@ -84,12 +100,24 @@ describe('runCli review', () => {
     const { out, err } = streams();
     const code = await runCli(
       ['review', 'https://github.com/example-org/example-repo'],
-      { GITHUB_TOKEN: TOKEN },
+      { GITHUB_TOKEN: TOKEN, SECOND_LOOK_CACHE_DIR: cacheDir },
       { out, err },
       { fetch: fixtureFetch().fetch },
     );
     expect(code).toBe(1);
     expect(err.text).toContain('not a GitHub pull request URL');
+  });
+
+  it('asks for a value after --cache-dir', async () => {
+    const { out, err } = streams();
+    const code = await runCli(
+      ['review', PR_URL, '--cache-dir'],
+      { GITHUB_TOKEN: TOKEN },
+      { out, err },
+      {},
+    );
+    expect(code).toBe(1);
+    expect(err.text).toContain('--cache-dir needs a value');
   });
 
   it('prints usage with --help and asks for no token', async () => {

@@ -2,10 +2,13 @@ import {
   REVIEW_RESULT_VERSION,
   type ChangeKind,
   type DiffLineKind,
+  type EntityKind,
+  type FormattingOnlyStatus,
   type NoiseLabel,
   type NoiseRule,
   type NoiseState,
   type ReviewResult,
+  type SyntaxCheck,
 } from '@second-look/engine';
 
 const CHANGE_KINDS: readonly ChangeKind[] = [
@@ -40,6 +43,27 @@ const NOISE_RULES: readonly NoiseRule[] = [
 
 const NOISE_STATES: readonly NoiseState[] = ['confirmed', 'claimed'];
 
+const ENTITY_KINDS: readonly EntityKind[] = [
+  'class',
+  'struct',
+  'interface',
+  'enum',
+  'trait',
+  'impl',
+  'type',
+  'function',
+  'method',
+  'property',
+];
+
+const FORMATTING_STATUSES: readonly FormattingOnlyStatus[] = [
+  'confirmed',
+  'structure-changed',
+  'not-checked',
+];
+
+const SYNTAX_CHECKS: readonly SyntaxCheck[] = ['entities', 'formatting-only'];
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -50,6 +74,10 @@ function isString(value: unknown): value is string {
 
 function isNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
+
+function isOneOf<T extends string>(value: unknown, allowed: readonly T[]): value is T {
+  return isString(value) && allowed.includes(value as T);
 }
 
 function isOptionalString(value: unknown): value is string | undefined {
@@ -84,7 +112,37 @@ function isHunk(value: unknown): boolean {
     return false;
   }
   if (!isOptionalString(value['heading'])) return false;
-  return Array.isArray(value['lines']) && value['lines'].every(isDiffLine);
+  return (
+    Array.isArray(value['lines']) &&
+    value['lines'].every(isDiffLine) &&
+    Array.isArray(value['entities']) &&
+    value['entities'].every(isEntity)
+  );
+}
+
+function isEntity(value: unknown): boolean {
+  return isRecord(value) && isOneOf(value['kind'], ENTITY_KINDS) && isString(value['name']);
+}
+
+function isPartSyntax(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (!isOptionalString(value['language'])) return false;
+  const formattingOnly = value['formattingOnly'];
+  if (
+    !isRecord(formattingOnly) ||
+    !isOneOf(formattingOnly['status'], FORMATTING_STATUSES) ||
+    !isString(formattingOnly['reason'])
+  ) {
+    return false;
+  }
+  const checksNotRun = value['checksNotRun'];
+  return (
+    Array.isArray(checksNotRun) &&
+    checksNotRun.every(
+      (check) =>
+        isRecord(check) && isOneOf(check['check'], SYNTAX_CHECKS) && isString(check['reason']),
+    )
+  );
 }
 
 function isNonEmptyString(value: unknown): value is string {
@@ -128,6 +186,7 @@ function isPart(value: unknown): boolean {
   }
   if (!isNumber(value['additions']) || !isNumber(value['deletions'])) return false;
   if (!Array.isArray(value['hunks']) || !value['hunks'].every(isHunk)) return false;
+  if (!isPartSyntax(value['syntax'])) return false;
   // The engine sets the noise assessment on every part before printing.
   return isNoiseAssessment(value['noise']);
 }
@@ -142,7 +201,17 @@ function isPullRequestSummary(value: unknown): boolean {
     isString(value['description']) &&
     isString(value['base']) &&
     isString(value['head']) &&
+    isString(value['baseCommit']) &&
     isString(value['headSha'])
+  );
+}
+
+function isChangeCopy(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isString(value['commit']) &&
+    isString(value['path']) &&
+    typeof value['reused'] === 'boolean'
   );
 }
 
@@ -156,6 +225,14 @@ export function isReviewResult(value: unknown): value is ReviewResult {
   if (!isRecord(value)) return false;
   if (value['version'] !== REVIEW_RESULT_VERSION) return false;
   if (!isPullRequestSummary(value['pullRequest'])) return false;
+  const copies = value['copies'];
+  if (!isRecord(copies) || !isChangeCopy(copies['base']) || !isChangeCopy(copies['head'])) {
+    return false;
+  }
+  const parseTimeMs = value['parseTimeMs'];
+  if (typeof parseTimeMs !== 'number' || !Number.isFinite(parseTimeMs) || parseTimeMs < 0) {
+    return false;
+  }
   return Array.isArray(value['parts']) && value['parts'].every(isPart);
 }
 

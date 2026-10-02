@@ -16,7 +16,7 @@
   "updated_at": "2026-09-29T08:30:00Z",
   "head": {
     "ref": "update-deps",
-    "sha": "f00dcafe1234567890abcdef1234567890abcdef12"
+    "sha": "f00dcafe1234567890abcdef1234567890abcdef"
   },
   "base": {
     "ref": "master",
