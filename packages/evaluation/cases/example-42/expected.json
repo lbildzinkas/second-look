@@ -1,0 +1,16 @@
+{
+  "noise": {
+    "src/fresh.ts": { "label": "none" },
+    "README.md": { "label": "none" },
+    "src/legacy.ts": { "label": "none" },
+    "src/settings.ts": { "label": "none" },
+    "notes.txt": { "label": "none" },
+    "assets/logo.png": { "label": "none" },
+    "scripts/run.sh": { "label": "none" },
+    "src/__snapshots__/review.test.ts.snap": { "label": "snapshot", "state": "claimed" },
+    "src/util/format.ts": { "label": "moved or renamed", "state": "confirmed" },
+    "src/generated/options.json": { "label": "generated", "state": "claimed" },
+    "package-lock.json": { "label": "lockfile", "state": "claimed" }
+  },
+  "importantParts": ["scripts/run.sh", "src/settings.ts"]
+}

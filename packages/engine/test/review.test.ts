@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { removeCopy } from '../src/cache.js';
 import { REVIEW_RESULT_VERSION } from '../src/protocol.js';
 import type { Part } from '../src/protocol.js';
-import { reviewPullRequest } from '../src/review.js';
+import { fetchChange, reviewChange, reviewPullRequest } from '../src/review.js';
 import { PR_7_URL, PR_URL, fixtureFetch, pull7, temporaryCacheDir } from './helpers.js';
 
 let cacheDir: string;
@@ -122,6 +122,19 @@ describe('reviewPullRequest', () => {
         cacheDir,
       }),
     ).rejects.toThrow(/not a GitHub pull request URL/);
+  });
+
+  it('fetches once, then reviews the fetched change offline', async () => {
+    const transport = fixtureFetch(pull7());
+    const options = { token: 'test-token', fetch: transport.fetch, cacheDir };
+    const input = await fetchChange(PR_7_URL, options);
+    expect(input.gitAttributes).toBeNull();
+    expect(input.diff).toMatch(/^diff --git a\/app\/dedent\.py/);
+    const requests = transport.requests.length;
+
+    const offline = await reviewChange(input);
+    expect(transport.requests).toHaveLength(requests);
+    expect(offline.parts).toEqual((await reviewPullRequest(PR_7_URL, options)).parts);
   });
 });
 
