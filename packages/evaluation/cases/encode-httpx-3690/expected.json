@@ -1,0 +1,35 @@
+{
+  "noise": {
+    "src/ahttpx/_parsers.py": {
+      "label": "none"
+    },
+    "src/httpx/_parsers.py": {
+      "label": "none"
+    },
+    "src/ahttpx/_server.py": {
+      "label": "none"
+    },
+    "src/httpx/_server.py": {
+      "label": "none"
+    }
+  },
+  "importantParts": [
+    "ReadAheadParser.wait_ready, ReadAheadParser in src/ahttpx/_parsers.py",
+    "HTTPConnection.handle_requests in src/ahttpx/_server.py"
+  ],
+  "groups": [
+    [
+      "src/ahttpx/_parsers.py#1",
+      "src/ahttpx/_parsers.py#2",
+      "src/ahttpx/_server.py#1",
+      "src/ahttpx/_server.py#2",
+      "src/httpx/_parsers.py#1",
+      "src/httpx/_parsers.py#2",
+      "src/httpx/_server.py#1",
+      "src/httpx/_server.py#2"
+    ],
+    [
+      "src/httpx/_server.py#3"
+    ]
+  ]
+}

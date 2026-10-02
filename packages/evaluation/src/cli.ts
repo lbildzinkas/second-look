@@ -3,8 +3,14 @@ import { createRequire } from 'node:module';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { defaultCacheDir, redactToken } from '@second-look/engine';
-import { compareWithBaseline } from './baseline.js';
+import {
+  DEFAULT_AGENT_SETTINGS,
+  defaultCacheDir,
+  piAdapter,
+  redactToken,
+  type AgentSettings,
+} from '@second-look/engine';
+import { compareWithBaseline, mergeBaseline } from './baseline.js';
 import type { ScoreChange } from './baseline.js';
 import { loadCases } from './case.js';
 import {
@@ -16,7 +22,7 @@ import {
 } from './prompts.js';
 import { recordCase } from './record.js';
 import { seedCase } from './seed.js';
-import { NO_AGENT, runEvaluation } from './run.js';
+import { NO_AGENT, belowFullCoverage, runEvaluation } from './run.js';
 import type { ResultRow, RunResults } from './run.js';
 
 const USAGE = `second-look-eval — the evaluation of the Second Look engine
@@ -27,6 +33,8 @@ Usage:
   second-look-eval seed <mutant.diff> --source <dir> --id <name>
                         [--cases <dir>] [--fault <path>]
   second-look-eval run [--cases <dir>]... [--model-free] [--changed-since <ref>]
+                       [--agent pi [--model <model>] [--effort <level>]
+                        [--agent-timeout <seconds>]]
                        [--baseline <file>] [--write-baseline <file>]
                        [--runs <dir>]
 
@@ -54,17 +62,23 @@ public code.
 
 The run command reviews every case offline and scores it: coverage,
 noise-label precision and recall per class and state, the median and
-top-3 rank position of the known important parts, and the claim checks
-over the hand-labelled claims (found, verdict, evidence, fetch offered),
-which fail as expected failures while the engine reports no claims; the
-stored baseline records them at those failing values. It reads the cases in
+top-3 rank position of the known important parts, the grouping's
+pairwise hunk agreement with the hand labels, and the claim checks over
+the hand-labelled claims (found, verdict, evidence, fetch offered), which
+fail as expected failures while the engine reports no claims; the stored
+baseline records them at those failing values. It reads the cases in
 --cases (the repository's own cases when none is given) and in every
 folder of SECOND_LOOK_EVAL_CASES. --model-free keeps the cases tied to no
 prompt; --changed-since keeps the cases tied to the prompts this branch
-changed since the ref. Each run writes its stamped results and the trace
+changed since the ref. Without --agent no model is called. With --agent
+pi, the cases tied to the grouping prompt also run it through the
+reviewer's installed Pi, and those rows are stamped with the agent and
+model that answered. Each run writes its stamped results and the trace
 of every agent call to its own folder under --runs (default: the
-engine's cache folder). With --baseline it compares the stamped rows and
-exits 1 when a model-free score drops; --write-baseline stores the run.`;
+engine's cache folder). Coverage is a hard gate: the run exits 1 when any
+coverage is below 100%. With --baseline it compares the stamped rows and
+exits 1 when a model-free score drops; --write-baseline stores the run,
+keeping the stored rows of the cases, agents and models it did not run.`;
 
 const PACKAGE_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const REPOSITORY_CASES = join(PACKAGE_ROOT, 'cases');
@@ -116,6 +130,10 @@ export async function runCli(
         baseline: { type: 'string' },
         'write-baseline': { type: 'string' },
         runs: { type: 'string' },
+        agent: { type: 'string' },
+        model: { type: 'string' },
+        effort: { type: 'string' },
+        'agent-timeout': { type: 'string' },
       },
     });
     if (values.help) {
@@ -164,9 +182,10 @@ export async function runCli(
       return 1;
     }
 
-    const cases = await loadCases([...(values.cases ?? [REPOSITORY_CASES]), ...privateFolders]);
+    const folders = [...(values.cases ?? [REPOSITORY_CASES]), ...privateFolders];
+    const cases = await loadCases(folders);
     const registry = await loadRegistry(REGISTRY);
-    const problems = mappingProblems(registry, cases);
+    const problems = mappingProblems(registry, cases, { everyPromptHasACase: values.cases === undefined });
     if (problems.length > 0) throw new Error(problems.join('\n'));
     let selected = cases;
     if (values['model-free']) {
@@ -184,16 +203,23 @@ export async function runCli(
       return 0;
     }
 
+    const agent = agentOption(values, env);
     const run = await runEvaluation({
       cases: selected,
       registry,
       companionVersion: companionVersion(),
       runsFolder: values.runs ?? join(cacheDir, 'evaluation'),
+      ...(agent ? { agent } : {}),
     });
     streams.out.write(report(run.results));
     streams.out.write(`results and trace: ${run.folder}\n`);
 
-    let failed = false;
+    // Coverage is a hard gate: every changed line in exactly one part.
+    const uncovered = belowFullCoverage(run.results.rows);
+    for (const row of uncovered) {
+      streams.out.write(`COVERAGE below 100% ${row.case} (${row.agent}): ${format(row.value)}\n`);
+    }
+    let failed = uncovered.length > 0;
     if (values.baseline) {
       const stored = JSON.parse(await readFile(values.baseline, 'utf8')) as RunResults;
       const comparison = compareWithBaseline(run.results.rows, stored.rows);
@@ -209,19 +235,51 @@ export async function runCli(
           `${comparison.withoutBaseline.length} without a baseline, ` +
           `${comparison.unstamped} unstamped and not compared\n`,
       );
-      failed =
+      failed ||=
         comparison.drops.some((change) => modelFree(change.row)) ||
         comparison.missing.some(modelFree);
     }
-    if (values['write-baseline']) {
-      await writeFile(values['write-baseline'], `${JSON.stringify(run.results, null, 2)}\n`);
-      streams.out.write(`baseline written to ${values['write-baseline']}\n`);
+    const target = values['write-baseline'];
+    if (target) {
+      const stored = await readBaseline(target);
+      const merged = stored ? mergeBaseline(stored, run.results) : run.results;
+      await writeFile(target, `${JSON.stringify(merged, null, 2)}\n`);
+      streams.out.write(`baseline written to ${target}\n`);
     }
     return failed ? 1 : 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     streams.err.write(`second-look-eval: ${token ? redactToken(message, token) : message}\n`);
     return 1;
+  }
+}
+
+/** The agent a run drives, from its flags; none unless --agent names one. */
+function agentOption(
+  values: { agent?: string; model?: string; effort?: string; 'agent-timeout'?: string; 'model-free'?: boolean },
+  env: NodeJS.ProcessEnv,
+): { adapter: ReturnType<typeof piAdapter>; settings: AgentSettings } | undefined {
+  if (values.agent === undefined) return undefined;
+  if (values.agent !== 'pi') throw new Error(`--agent ${values.agent} is not supported; the one agent so far is pi`);
+  if (values['model-free']) throw new Error('--model-free runs no agent; leave out --agent');
+  const settings: AgentSettings = { ...DEFAULT_AGENT_SETTINGS };
+  if (values['agent-timeout'] !== undefined) {
+    const seconds = Number(values['agent-timeout']);
+    if (!(seconds > 0)) throw new Error('--agent-timeout needs a number of seconds above zero');
+    settings.timeoutMs = Math.round(seconds * 1000);
+  }
+  if (values.model) settings.model = values.model;
+  if (values.effort) settings.effort = values.effort;
+  return { adapter: piAdapter({ env }), settings };
+}
+
+/** A stored baseline, or undefined when the file does not exist yet. */
+async function readBaseline(path: string): Promise<RunResults | undefined> {
+  try {
+    return JSON.parse(await readFile(path, 'utf8')) as RunResults;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw error;
   }
 }
 
@@ -233,10 +291,14 @@ function format(value: number): string {
 function report(results: RunResults): string {
   const lines = results.rows.map((row) => {
     const note = row.note ? `  (${row.note})` : '';
-    return `${row.case}  ${row.name}  ${format(row.value)}${note}`;
+    const agent = row.agent === NO_AGENT ? '' : `  [${row.agent} ${row.agentVersion} ${row.model || 'unknown model'}]`;
+    return `${row.case}  ${row.name}  ${format(row.value)}${agent}${note}`;
   });
   for (const failure of results.failures) {
     lines.push(`FAILED ${failure.case}: ${failure.error}`);
+  }
+  for (const fallback of results.fallbacks ?? []) {
+    lines.push(`FELL BACK ${fallback.case} (${fallback.agent}): ${fallback.detail}`);
   }
   return `${lines.join('\n')}\n`;
 }

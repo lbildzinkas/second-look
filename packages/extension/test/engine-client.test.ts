@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { ProtocolError } from '../src/protocol.js';
-import { EngineClient } from '../src/engine-client.js';
+import { EngineClient, type ReviewStageUpdate } from '../src/engine-client.js';
 import { mixedResult } from './results.js';
 
 const FAKE_ENGINE = fileURLToPath(new URL('./fixtures/fake-engine.mjs', import.meta.url));
@@ -26,6 +26,8 @@ interface FakeEngineOptions {
   stallOn?: string;
   ignoreSigterm?: boolean;
   logName?: string;
+  stage?: unknown;
+  stageOnly?: boolean;
 }
 
 /** Starts the fake engine as a separate process, speaking real stdio. */
@@ -47,6 +49,8 @@ function fakeEngine(options: FakeEngineOptions = {}): ChildProcessWithoutNullStr
       ...(options.logName !== undefined
         ? { FAKE_ENGINE_LOG: join(workDir, options.logName) }
         : {}),
+      ...(options.stage !== undefined ? { FAKE_ENGINE_STAGE: JSON.stringify(options.stage) } : {}),
+      ...(options.stageOnly ? { FAKE_ENGINE_STAGE_ONLY: '1' } : {}),
     },
   });
 }
@@ -66,7 +70,7 @@ describe('EngineClient against a fake engine', () => {
     await client.initialize();
     const result = await client.review(PR_URL, TOKEN);
 
-    expect(result.version).toBe(3);
+    expect(result.version).toBe(4);
     expect(result.parts).toHaveLength(7);
 
     const requests = loggedRequests('round-trip.log') as {
@@ -242,8 +246,62 @@ describe('EngineClient against a fake engine', () => {
       await timedOut;
 
       await client.initialize();
-      expect(await client.review(PR_URL, TOKEN)).toMatchObject({ version: 3 });
+      expect(await client.review(PR_URL, TOKEN)).toMatchObject({ version: 4 });
       expect(spawns).toBe(2);
+      client.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('hands each stage of a review to its listener, then returns the final result', async () => {
+    const plain = mixedResult();
+    const final = { ...mixedResult(), grouping: { by: 'plain' } };
+    const client = new EngineClient(() =>
+      fakeEngine({ result: final, stage: { running: 'grouping related hunks with pi', timeoutMs: 1000, result: plain } }),
+    );
+    const stages: ReviewStageUpdate[] = [];
+
+    await client.initialize();
+    const result = await client.review(PR_URL, TOKEN, (stage) => stages.push(stage));
+
+    expect(stages).toEqual([{ running: 'grouping related hunks with pi', result: plain }]);
+    expect(result).toEqual(final);
+    client.dispose();
+  });
+
+  it('ignores a stage whose result is not a review result, and still returns the final one', async () => {
+    const client = new EngineClient(() =>
+      fakeEngine({ result: mixedResult(), stage: { running: 'grouping', timeoutMs: 1000, result: { version: 3 } } }),
+    );
+    const stages: ReviewStageUpdate[] = [];
+
+    await client.initialize();
+    expect(await client.review(PR_URL, TOKEN, (stage) => stages.push(stage))).toMatchObject({ version: 4 });
+    expect(stages).toEqual([]);
+    client.dispose();
+  });
+
+  it("gives a review the deadline its running stage names, then gives up with a plain message", async () => {
+    vi.useFakeTimers();
+    try {
+      const stage = { running: 'grouping related hunks with pi', timeoutMs: 600_000, result: mixedResult() };
+      const client = new EngineClient(() => fakeEngine({ result: mixedResult(), stage, stageOnly: true }));
+      await client.initialize();
+      let staged!: () => void;
+      const stageArrived = new Promise<void>((done) => (staged = done));
+      let settled = false;
+      const review = client.review(PR_URL, TOKEN, () => staged());
+      review.catch(() => undefined).finally(() => (settled = true));
+      await stageArrived;
+
+      // The review's own deadline has passed, but the stage named a longer one.
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(settled).toBe(false);
+
+      const timedOut = expect(review).rejects.toThrow('the engine did not answer in time');
+      await vi.advanceTimersByTimeAsync(600_000 + 30_000 - 120_000);
+      await timedOut;
       client.dispose();
     } finally {
       vi.useRealTimers();

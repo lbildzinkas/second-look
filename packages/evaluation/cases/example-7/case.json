@@ -3,7 +3,7 @@
   "id": "example-7",
   "source": "https://github.com/example-org/example-repo/pull/7",
   "recordedAt": "2026-10-02T00:00:00.000Z",
-  "prompts": [],
+  "prompts": ["grouping"],
   "pullRequest": {
     "url": "https://github.com/example-org/example-repo/pull/7",
     "number": 7,

@@ -6,6 +6,7 @@ import {
   ENGINE_PROTOCOL_VERSION,
   INITIALIZE_METHOD,
   REVIEW_METHOD,
+  REVIEW_STAGE_METHOD,
   type InitializeResult,
   type ReviewResult,
 } from '@second-look/engine';
@@ -61,11 +62,42 @@ const REVIEW_TIMEOUT_MS = 120_000;
 /** How long a stalled engine gets to die from SIGTERM before it is killed outright. */
 const KILL_GRACE_MS = 2_000;
 
+/** What a review stage notification gives on top of the deadline the engine names for its stage. */
+const STAGE_GRACE_MS = 30_000;
+
+/** A review stage starting: the stage now running, and the result so far. */
+export interface ReviewStageUpdate {
+  /** The stage now running, in words for the reviewer. */
+  running: string;
+  result: ReviewResult;
+}
+
 interface Pending {
   resolve(result: unknown): void;
   reject(error: Error): void;
   /** Clears the deadline when the request settles before it. */
   timer: ReturnType<typeof setTimeout>;
+  /** Moves the deadline: a stage notification names how long its stage may take. */
+  restart(timeoutMs: number): void;
+  /** Hears each stage notification of a review request. */
+  onStage?: (stage: ReviewStageUpdate) => void;
+}
+
+/**
+ * The stage a notification announces, when the line is a review stage
+ * notification carrying a review result of the version this extension
+ * reads; anything else is not one.
+ */
+function stageNotification(
+  value: unknown,
+): (ReviewStageUpdate & { id: number; timeoutMs: number }) | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const { method, params } = value as { method?: unknown; params?: unknown };
+  if (method !== REVIEW_STAGE_METHOD || typeof params !== 'object' || params === null) return undefined;
+  const { id, running, timeoutMs, result } = params as Record<string, unknown>;
+  if (typeof id !== 'number' || typeof running !== 'string') return undefined;
+  if (typeof timeoutMs !== 'number' || !(timeoutMs > 0) || !isReviewResult(result)) return undefined;
+  return { id, running, timeoutMs, result };
 }
 
 /** The id of a JSON-RPC response, when the line carries one. */
@@ -142,12 +174,20 @@ export class EngineClient {
    * Sends one review request with the token VS Code's GitHub sign-in gave
    * for it. The token travels with this request only; the client keeps no
    * copy. Rejects with the engine's plain message when the engine fails.
+   *
+   * A review can arrive in stages: each stage notification hands its
+   * result so far to `onStage` and gives the request the stage's own
+   * deadline; the returned result is the final one.
    */
-  async review(url: string, token: string): Promise<ReviewResult> {
+  async review(
+    url: string,
+    token: string,
+    onStage?: (stage: ReviewStageUpdate) => void,
+  ): Promise<ReviewResult> {
     if (!this.handshaken) {
       throw new Error('the engine has not completed its handshake yet');
     }
-    const result = await this.request(REVIEW_METHOD, { url, token }, REVIEW_TIMEOUT_MS);
+    const result = await this.request(REVIEW_METHOD, { url, token }, REVIEW_TIMEOUT_MS, onStage);
     if (!isReviewResult(result)) {
       throw new ProtocolError();
     }
@@ -162,12 +202,17 @@ export class EngineClient {
     this.handshaken = false;
   }
 
-  private async request(method: string, params: unknown, timeoutMs: number): Promise<unknown> {
+  private async request(
+    method: string,
+    params: unknown,
+    timeoutMs: number,
+    onStage?: (stage: ReviewStageUpdate) => void,
+  ): Promise<unknown> {
     const engine = this.ensureEngine();
     const id = this.nextId++;
     const message = { jsonrpc: '2.0' as const, id, method, params };
     return new Promise<unknown>((resolve, reject) => {
-      const timer = setTimeout(() => {
+      const expire = (): void => {
         this.pending.delete(id);
         reject(new Error('the engine did not answer in time'));
         this.dispose();
@@ -179,8 +224,18 @@ export class EngineClient {
           }
         }, KILL_GRACE_MS);
         engine.once('exit', () => clearTimeout(killer));
-      }, timeoutMs);
-      this.pending.set(id, { resolve, reject, timer });
+      };
+      const pending: Pending = {
+        resolve,
+        reject,
+        timer: setTimeout(expire, timeoutMs),
+        restart: (stageTimeoutMs) => {
+          clearTimeout(pending.timer);
+          pending.timer = setTimeout(expire, stageTimeoutMs);
+        },
+        ...(onStage ? { onStage } : {}),
+      };
+      this.pending.set(id, pending);
       engine.stdin.write(`${JSON.stringify(message)}\n`);
     });
   }
@@ -220,6 +275,14 @@ export class EngineClient {
       value = JSON.parse(line);
     } catch {
       return; // A line that is not JSON cannot answer a request; ignore it.
+    }
+    const stage = stageNotification(value);
+    if (stage !== undefined) {
+      const pending = this.pending.get(stage.id);
+      if (pending?.onStage === undefined) return;
+      pending.restart(stage.timeoutMs + STAGE_GRACE_MS);
+      pending.onStage({ running: stage.running, result: stage.result });
+      return;
     }
     const id = responseId(value);
     if (id === undefined) {

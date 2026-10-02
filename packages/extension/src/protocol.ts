@@ -11,6 +11,7 @@ import {
   type NoiseRule,
   type NoiseState,
   type Novelty,
+  type PartOrigin,
   type PartRank,
   type PartRole,
   type ReviewResult,
@@ -77,6 +78,8 @@ const FORMATTING_STATUSES: readonly FormattingOnlyStatus[] = [
 ];
 
 const SYNTAX_CHECKS: readonly SyntaxCheck[] = ['entities', 'formatting-only'];
+
+const ORIGINS: readonly PartOrigin[] = ['plain', 'agent', 'not grouped by the agent'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -217,7 +220,8 @@ function isPartRank(value: unknown): value is PartRank {
   return Array.isArray(value['signals']) && value['signals'].every(isNonEmptyString);
 }
 
-function isPart(value: unknown): boolean {
+/** One file's share of a part: the file's own fields and the hunks of it the part holds. */
+function isFileSlice(value: unknown): boolean {
   if (!isRecord(value)) return false;
   if (!isString(value['path'])) return false;
   if (!isOptionalString(value['previousPath'])) return false;
@@ -238,14 +242,50 @@ function isPart(value: unknown): boolean {
   if (!isNumber(value['additions']) || !isNumber(value['deletions'])) return false;
   if (!Array.isArray(value['hunks']) || !value['hunks'].every(isHunk)) return false;
   if (!isPartSyntax(value['syntax'])) return false;
-  // The engine sets the name, noise, signals and rank on every part
-  // before printing; the rank stays optional for a reader that meets a
-  // part without one, and when present it carries an importance, its
-  // reason and the signals the reason cites.
+  return isNoiseAssessment(value['noise']);
+}
+
+function isPart(value: unknown): boolean {
+  if (!isRecord(value) || !isFileSlice(value)) return false;
+  // The engine sets the name, noise, signals, origin and rank on every
+  // part before printing; the rank stays optional for a reader that meets
+  // a part without one, and when present it carries an importance, its
+  // reason and the signals the reason cites. A part across files lists
+  // its further files, each with its own noise.
   if (!isNonEmptyString(value['name'])) return false;
-  if (!isNoiseAssessment(value['noise'])) return false;
   if (!isPartSignals(value['signals'])) return false;
+  if (value['origin'] !== undefined && !isOneOf(value['origin'], ORIGINS)) return false;
+  const otherFiles = value['otherFiles'];
+  if (otherFiles !== undefined && !(Array.isArray(otherFiles) && otherFiles.every(isFileSlice))) {
+    return false;
+  }
   return value['rank'] === undefined || isPartRank(value['rank']);
+}
+
+function isAgentStamp(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isString(value['agent']) &&
+    isString(value['agentVersion']) &&
+    (value['model'] === null || isString(value['model'])) &&
+    (value['effort'] === null || isString(value['effort'])) &&
+    isString(value['runAt'])
+  );
+}
+
+/** Who grouped the parts, and what came of asking the agent when it was asked. */
+function isGrouping(value: unknown): boolean {
+  if (!isRecord(value) || !isOneOf(value['by'], ['plain', 'agent'] as const)) return false;
+  const agent = value['agent'];
+  if (agent === undefined) return value['by'] === 'plain';
+  return (
+    isRecord(agent) &&
+    isString(agent['promptVersion']) &&
+    isOneOf(agent['outcome'], ['grouped', 'fell back'] as const) &&
+    isString(agent['detail']) &&
+    isNumber(agent['leftOut']) &&
+    isAgentStamp(agent['stamp'])
+  );
 }
 
 function isPullRequestSummary(value: unknown): boolean {
@@ -290,6 +330,7 @@ export function isReviewResult(value: unknown): value is ReviewResult {
   if (typeof parseTimeMs !== 'number' || !Number.isFinite(parseTimeMs) || parseTimeMs < 0) {
     return false;
   }
+  if (!isGrouping(value['grouping'])) return false;
   return Array.isArray(value['parts']) && value['parts'].every(isPart);
 }
 

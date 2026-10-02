@@ -1,7 +1,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
-import { entitiesOf } from './parts.js';
-import type { Entity, Novelty, Part, PartRole, PartSignals } from './protocol.js';
+import { entitiesOf, filesOfPart } from './parts.js';
+import type { Entity, Hunk, Novelty, Part, FileSlice, PartRole, PartSignals } from './protocol.js';
 
 /** Files larger than this are not searched for names. */
 const MAX_SEARCH_BYTES = 1_000_000;
@@ -41,8 +41,17 @@ export function roleOf(path: string): PartRole {
   return inTestFolder || TEST_FILES.some((pattern) => pattern.test(name)) ? 'test' : 'code';
 }
 
-/** Whether the part's code is new, changed or removed; see {@link Novelty}. */
+/**
+ * Whether the part's code is new, changed or removed; see {@link Novelty}.
+ * A part across files is new or removed only when each of its files is.
+ */
 export function noveltyOf(part: Part): Novelty {
+  const novelties = new Set(filesOfPart(part).map(fileNovelty));
+  return novelties.size === 1 ? [...novelties][0]! : 'changed';
+}
+
+/** Whether one file's share of a part is new, changed or removed. */
+function fileNovelty(part: FileSlice): Novelty {
   if (part.changeKind === 'addition') return 'new';
   if (part.changeKind === 'deletion') return 'removed';
   const changes = part.hunks.flatMap((hunk) => hunk.entities.map((entity) => entity.change));
@@ -54,7 +63,7 @@ export function noveltyOf(part: Part): Novelty {
 
 /** The public entities the part adds, removes or redeclares, in order of first appearance. */
 export function publicSurfaceOf(part: Part): string[] {
-  const names = part.hunks
+  const names = hunksOf(part)
     .flatMap((hunk) => hunk.entities)
     .filter((entity) => entity.public && entity.change !== 'body')
     .map((entity) => entity.name);
@@ -71,9 +80,14 @@ function referenceName(entity: Entity): string {
   return /^__\w+__$/.test(own) && segments.length > 1 ? segments.at(-2)! : own;
 }
 
+/** Every hunk a part holds, across its files. */
+function hunksOf(part: Part): Hunk[] {
+  return filesOfPart(part).flatMap((file) => file.hunks);
+}
+
 /** The names the part's reference count searches for. */
 export function referenceNamesOf(part: Part): string[] {
-  return [...new Set(entitiesOf(part.hunks).map(referenceName))];
+  return [...new Set(entitiesOf(hunksOf(part)).map(referenceName))];
 }
 
 /**
@@ -106,19 +120,22 @@ export async function filesNaming(
 /**
  * Sets every part's signals: new versus changed code, test versus code,
  * size, public surface change, and how many other files in the head copy
- * mention its entity names, counted by name and labelled so.
+ * mention its entity names, counted by name and labelled so. A part across
+ * files is code when any of its files is, and its own files are not
+ * counted as other files.
  */
 export async function signalParts(parts: readonly Part[], headCopy: string): Promise<Part[]> {
   const namesByPart = parts.map(referenceNamesOf);
   const files = await filesNaming(headCopy, new Set(namesByPart.flat()));
   return parts.map((part, index) => {
     const names = namesByPart[index]!;
+    const own = filesOfPart(part);
     const referring = new Set(names.flatMap((name) => [...(files.get(name) ?? [])]));
-    referring.delete(part.path);
+    for (const file of own) referring.delete(file.path);
     const signals: PartSignals = {
       novelty: noveltyOf(part),
-      role: roleOf(part.path),
-      changedLines: part.additions + part.deletions,
+      role: own.some((file) => roleOf(file.path) === 'code') ? 'code' : 'test',
+      changedLines: own.reduce((sum, file) => sum + file.additions + file.deletions, 0),
       publicSurface: publicSurfaceOf(part),
       references: { basis: 'name-based', names, files: referring.size },
     };

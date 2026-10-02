@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import type { Part, ReviewResult } from '@second-look/engine';
+import { filesOfPart, type FileSlice, type Part, type ReviewResult } from '@second-look/engine';
 import { partFiles, type PartFile } from './change-copies.js';
 import { partsInReadingOrder } from './tree.js';
 
@@ -23,13 +23,13 @@ export interface PartMarking {
 }
 
 /**
- * Works out where a part's changed lines sit from its hunks: one run per
- * stretch of added lines on the head side and of deleted lines on the
+ * Works out where one file's share of a part sits from its hunks: one run
+ * per stretch of added lines on the head side and of deleted lines on the
  * base side, and the first hunk as the place to scroll to — on the head
  * side when the hunk has lines there, else on the base side. Binary files
  * and pure renames have no hunks, so they mark nothing and scroll nowhere.
  */
-export function partMarking(part: Part): PartMarking {
+export function partMarking(part: FileSlice): PartMarking {
   const additions: LineRun[] = [];
   const deletions: LineRun[] = [];
   for (const hunk of part.hunks) {
@@ -100,8 +100,14 @@ export async function openPartInDiffEditor(
   marker: PartMarker,
 ): Promise<void> {
   const files = partFiles(result.copies, part);
-  marker.mark(files.map((file) => ({ part, file })));
-  await vscode.commands.executeCommand(OPEN_CHANGES_COMMAND, part.path, changeTriples(files));
+  marker.mark(markedFiles(part, files));
+  const title = part.name ?? part.path;
+  await vscode.commands.executeCommand(OPEN_CHANGES_COMMAND, title, changeTriples(files));
+}
+
+/** Each of a part's files with its share of the part, to mark in the diff editor. */
+function markedFiles(part: Part, files: readonly PartFile[]): { part: FileSlice; file: PartFile }[] {
+  return filesOfPart(part).map((slice, index) => ({ part: slice, file: files[index]! }));
 }
 
 /**
@@ -116,7 +122,7 @@ export async function openWholeChangeInDiffEditor(
 ): Promise<void> {
   const parts = partsInReadingOrder(result);
   const files = parts.map((part) => partFiles(result.copies, part));
-  marker.mark(parts.flatMap((part, index) => files[index]!.map((file) => ({ part, file }))));
+  marker.mark(parts.flatMap((part, index) => markedFiles(part, files[index]!)));
   const title = `${result.pullRequest.title} (#${result.pullRequest.number})`;
   await vscode.commands.executeCommand(OPEN_CHANGES_COMMAND, title, changeTriples(files.flat()));
 }
@@ -146,8 +152,8 @@ export class PartMarker {
     );
   }
 
-  /** Marks these parts' lines; an earlier request's marks are replaced. */
-  mark(entries: ReadonlyArray<{ part: Part; file: PartFile }>): void {
+  /** Marks these files' shares of their parts; an earlier request's marks are replaced. */
+  mark(entries: ReadonlyArray<{ part: FileSlice; file: PartFile }>): void {
     for (const editor of vscode.window.visibleTextEditors) {
       editor.setDecorations(this.markedLines, []);
     }

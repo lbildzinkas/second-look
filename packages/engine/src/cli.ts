@@ -8,7 +8,7 @@ import type { PiAdapterOptions } from './pi.js';
 import { runAgentProbe } from './probe.js';
 import { reviewPullRequest } from './review.js';
 import { readPackagePdbs } from './symbols.js';
-import { runRpcServer } from './server.js';
+import { runRpcServer, type RpcServerDeps } from './server.js';
 import { redactToken } from './rpc.js';
 
 export { redactToken };
@@ -16,12 +16,15 @@ export { redactToken };
 const USAGE = `second-look-engine — the engine of the Second Look reviewer's companion
 
 Usage:
-  second-look-engine review <pull-request-url> [--token <token>] [--cache-dir <dir>]
+  second-look-engine review <pull-request-url> [--agent <pi|claude-code>]
+      [--model <model>] [--effort <level>] [--agent-timeout <seconds>]
+      [--token <token>] [--cache-dir <dir>]
   second-look-engine probe <pull-request-url> [--agent <pi|claude-code>] [--target <path-or-url>]...
       [--model <model>] [--effort <level>] [--agent-timeout <seconds>]
       [--agent-concurrency <n>] [--token <token>] [--cache-dir <dir>]
   second-look-engine pdb <package-file>
-  second-look-engine serve
+  second-look-engine serve [--agent <pi|claude-code>] [--model <model>]
+      [--effort <level>] [--agent-timeout <seconds>]
 
 The review command fetches a pull request's metadata and full diff, parses
 the diff into files and hunks, and prints a typed, versioned review result
@@ -39,6 +42,14 @@ its entity names — and a fixed rule ranks it must review, worth reviewing
 or context with a one-line reason, at most a third of the parts at must
 review. Noise parts sink to the bottom, except snapshots and fixtures,
 which are labelled but ranked with the rest.
+
+With --agent (pi or claude-code), the reviewer's installed agent then
+groups related hunks
+across files into parts — a function, its caller and its test — named by
+the entities they touch. Its answer is checked: hunks it leaves out go to
+a part marked "not grouped by the agent", and a missing or invalid answer
+keeps the plain grouping, with the reason in the result's grouping. The
+plain parts are announced on stderr while the agent works.
 
 It keeps read-only copies of the base and head versions, downloaded as
 archives, in a per-pull-request cache: --cache-dir, else the
@@ -74,7 +85,8 @@ The serve command starts the engine as a JSON-RPC server on stdio, one
 JSON-RPC message per line. The protocol starts with a version handshake,
 and the GitHub token then arrives with each review request — never on the
 command line, where any process could read it — and is used only for that
-request.`;
+request. Each review arrives in stages: the plain result first, in a
+review/stage notification, then the result with the agent's grouping.`;
 
 export interface WriteDestination {
   write(chunk: string): boolean;
@@ -87,9 +99,9 @@ export interface CliStreams {
 
 export interface CliDeps {
   fetch?: typeof fetch;
-  /** How the probe starts Pi; tests point it at a fake agent. */
+  /** How the probe and the agent stage start Pi; tests point it at a fake agent. */
   pi?: Pick<PiAdapterOptions, 'command' | 'guardPath'>;
-  /** How the probe starts Claude Code; tests point it at a fake agent. */
+  /** How the probe and the agent stage start Claude Code; tests point it at a fake agent. */
   claudeCode?: Pick<ClaudeCodeAdapterOptions, 'command'>;
 }
 
@@ -151,9 +163,25 @@ export async function runCli(
     return runPdb(positional[1], streams);
   }
   const url = positional[1];
-  if (command === 'serve') {
-    return serve(streams, tokenFlag !== undefined, deps, cacheDirFlag ?? defaultCacheDir(env));
+  const settings = agentSettings(agentFlags);
+  if (typeof settings === 'string') {
+    streams.err.write(`second-look-engine: ${settings}\n`);
+    return 1;
   }
+  // The agent is chosen once, before any command runs, so an unknown
+  // name is refused the same way everywhere; serve defaults to Pi.
+  let adapter;
+  try {
+    adapter = agentAdapter(agentFlags['--agent']?.at(-1) ?? 'pi', { pi: deps.pi, claudeCode: deps.claudeCode, env });
+  } catch (error) {
+    streams.err.write(`second-look-engine: ${error instanceof Error ? error.message : String(error)}\n`);
+    return 1;
+  }
+  if (command === 'serve') {
+    const agent = { adapter, settings };
+    return serve(streams, tokenFlag !== undefined, deps, cacheDirFlag ?? defaultCacheDir(env), agent);
+  }
+  const agentName = agentFlags['--agent']?.at(-1);
   if (command !== 'review' && command !== 'probe') {
     streams.err.write(`${USAGE}\n`);
     return 1;
@@ -172,18 +200,6 @@ export async function runCli(
   }
 
   if (command === 'probe') {
-    const settings = agentSettings(agentFlags);
-    if (typeof settings === 'string') {
-      streams.err.write(`second-look-engine: ${settings}\n`);
-      return 1;
-    }
-    let adapter;
-    try {
-      adapter = agentAdapter(agentFlags['--agent']?.at(-1) ?? 'pi', { pi: deps.pi, claudeCode: deps.claudeCode, env });
-    } catch (error) {
-      streams.err.write(`second-look-engine: ${error instanceof Error ? error.message : String(error)}\n`);
-      return 1;
-    }
     try {
       const report = await runAgentProbe(url, {
         token,
@@ -211,6 +227,17 @@ export async function runCli(
       token,
       fetch: deps.fetch,
       cacheDir: cacheDirFlag ?? defaultCacheDir(env),
+      ...(agentName
+        ? {
+            agentStage: {
+              adapter,
+              settings,
+              onStage: (stage) => {
+                streams.err.write(`second-look-engine: plain parts ready; ${stage.running}\n`);
+              },
+            },
+          }
+        : {}),
     });
     streams.out.write(`${JSON.stringify(result, null, 2)}\n`);
     return 0;
@@ -274,6 +301,7 @@ async function serve(
   tokenFlagGiven: boolean,
   deps: CliDeps,
   cacheDir: string,
+  agent: RpcServerDeps['agent'],
 ): Promise<number> {
   if (tokenFlagGiven) {
     streams.err.write(
@@ -295,7 +323,7 @@ async function serve(
         process.stdout.write(`${line}\n`);
       },
     },
-    { cacheDir, ...(deps.fetch ? { fetch: deps.fetch } : {}) },
+    { cacheDir, agent, ...(deps.fetch ? { fetch: deps.fetch } : {}) },
   );
   return 0;
 }

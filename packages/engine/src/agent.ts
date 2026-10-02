@@ -22,8 +22,9 @@
  * {@link GITHUB_TOKEN_VARIABLES} names the variables every adapter strips.
  *
  * {@link runAgentTasks} sits on top of any adapter: it checks each answer
- * against its schema, retries an invalid answer once and then reports the
- * failure — it never guesses an answer — and runs tasks at most
+ * against its schema and the task's own check, retries an invalid answer
+ * once and then reports the failure — it never guesses an answer — and
+ * runs tasks at most
  * `concurrency` at a time, each under its own timeout, keeping whatever
  * finished when another task times out.
  */
@@ -165,6 +166,11 @@ export interface AgentTask {
   instructions: string;
   prompt: string;
   schema: JsonSchema;
+  /**
+   * Checks a schema-valid answer further, such as that every id it names
+   * was offered; returns the problems, which count like schema problems.
+   */
+  check?: (answer: unknown) => string[];
 }
 
 /** Why a task produced no answer. */
@@ -222,7 +228,7 @@ function combineStamps(earlier: AgentStamp, later: AgentStamp): AgentStamp {
 }
 
 const RETRY_NOTE =
-  'Your previous answer was rejected because it did not match the schema:';
+  'Your previous answer was rejected because it did not meet the schema and rules:';
 
 async function runTask(
   adapter: AgentAdapter,
@@ -262,6 +268,7 @@ async function runTask(
     }
     const parsed = parseAnswer(outcome.text);
     problems = 'error' in parsed ? [parsed.error] : validateJson(parsed.value, task.schema);
+    if ('value' in parsed && problems.length === 0 && task.check) problems = task.check(parsed.value);
     if ('value' in parsed && problems.length === 0) {
       return { ok: true, answer: parsed.value, attempts: attempt, stamp: current };
     }
@@ -269,7 +276,7 @@ async function runTask(
   return {
     ok: false,
     reason: 'invalid-answer',
-    message: `the answer did not match its schema twice: ${problems.join('; ')}`,
+    message: `the answer was invalid twice: ${problems.join('; ')}`,
     attempts: 2,
     stamp: stamp!,
   };

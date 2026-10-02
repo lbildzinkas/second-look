@@ -234,3 +234,65 @@ describe('the claim checks', () => {
     expect(scores['claims-verdict:refuted']).toBeUndefined();
   });
 });
+
+describe('the grouping agreement', () => {
+  /** The diff's files with hunks, as parts that group them as given. */
+  function grouped(groups: string[][], leftOut: string[] = []): Part[] {
+    const files = parts({});
+    const fileOf = (path: string) => files.find((file) => file.path === path)!;
+    const partOf = (paths: string[], origin: Part['origin']): Part => {
+      const [first, ...rest] = paths.map(fileOf);
+      const others = rest.map(({ name: _name, ...file }) => file);
+      return { ...first!, name: paths.join(' + '), origin, ...(others.length > 0 ? { otherFiles: others } : {}) };
+    };
+    return [
+      ...groups.map((paths) => partOf(paths, 'agent')),
+      ...leftOut.map((path) => partOf([path], 'not grouped by the agent')),
+    ];
+  }
+
+  const LABELLED: ExpectedResults = {
+    ...EXPECTED,
+    groups: [['src/cart.ts#1', 'README.md#1'], ['package-lock.json#1']],
+  };
+
+  it('counts the labelled pairs the parts keep together or apart as the labels do', () => {
+    const agreed = tallyCase(DIFF, LABELLED, grouped([['src/cart.ts', 'README.md'], ['package-lock.json']]));
+    expect(agreed.pairs).toEqual({ total: 3, agreed: 3 });
+    expect(byName(scoresOf(agreed))['grouping-agreement']).toBe(1);
+    // Parts across files still cover every changed line exactly once.
+    expect(byName(scoresOf(agreed))['coverage']).toBe(1);
+
+    const apart = tallyCase(DIFF, LABELLED, grouped([['src/cart.ts'], ['README.md'], ['package-lock.json']]));
+    expect(apart.pairs).toEqual({ total: 3, agreed: 2 });
+
+    const merged = tallyCase(DIFF, LABELLED, grouped([['src/cart.ts', 'README.md', 'package-lock.json']]));
+    expect(merged.pairs).toEqual({ total: 3, agreed: 1 });
+  });
+
+  it('counts each hunk the agent left out as a part of its own', () => {
+    const tally = tallyCase(DIFF, LABELLED, grouped([['package-lock.json']], ['src/cart.ts', 'README.md']));
+    expect(tally.pairs).toEqual({ total: 3, agreed: 2 });
+  });
+
+  it('reads the noise of every file of a part across files, and finds an important file in it', () => {
+    const tally = tallyCase(DIFF, EXPECTED, grouped([['src/cart.ts', 'package-lock.json'], ['README.md']]));
+    // The lockfile sits in the cart part's further files, where it reads as
+    // no rule applied: a none prediction beside cart.ts's own.
+    expect(tally.noise.get('none')).toEqual({ expected: 1, predicted: 2, matched: 1 });
+    // Two parts are too few for the rank tally to count anything.
+    expect(tally.positions).toEqual([]);
+    // With a left-out hunk making a third part, the tally runs and finds a
+    // file inside a part across files by its path.
+    const ranked = tallyCase(
+      DIFF,
+      { noise: {}, importantParts: ['src/cart.ts'], claims: [] },
+      grouped([['src/cart.ts', 'package-lock.json'], ['README.md']], ['package-lock.json']),
+    );
+    expect(ranked.positions).toEqual([1]);
+  });
+
+  it('gives no agreement score to a case without labelled groups', () => {
+    expect(byName(scoresOf(tallyCase(DIFF, EXPECTED, parts({}))))['grouping-agreement']).toBeUndefined();
+  });
+});

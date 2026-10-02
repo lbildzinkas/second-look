@@ -30,6 +30,9 @@ interface FakeEngineOptions {
   result?: unknown;
   error?: string;
   logName: string;
+  /** A stage notification to send before the answer, which then waits this long. */
+  stage?: { running: string; timeoutMs: number; result: unknown };
+  answerDelayMs?: number;
 }
 
 function fakeEngine(options: FakeEngineOptions): ChildProcessWithoutNullStreams {
@@ -41,6 +44,10 @@ function fakeEngine(options: FakeEngineOptions): ChildProcessWithoutNullStreams 
         ? { FAKE_ENGINE_RESULT: JSON.stringify(options.result) }
         : {}),
       ...(options.error !== undefined ? { FAKE_ENGINE_ERROR: options.error } : {}),
+      ...(options.stage !== undefined ? { FAKE_ENGINE_STAGE: JSON.stringify(options.stage) } : {}),
+      ...(options.answerDelayMs !== undefined
+        ? { FAKE_ENGINE_ANSWER_DELAY_MS: String(options.answerDelayMs) }
+        : {}),
       FAKE_ENGINE_LOG: join(workDir, options.logName),
     },
   });
@@ -324,6 +331,95 @@ describe('the review command, end to end against a fake engine', () => {
 
     expect(stub.warningMessages).toEqual(['Sign in to GitHub to review a pull request.']);
     expect(stub.progressTitles).toEqual([]);
+  });
+});
+
+/** Waits until the condition holds, checking every few milliseconds. */
+async function until(what: string, condition: () => boolean): Promise<void> {
+  for (let waited = 0; !condition(); waited += 10) {
+    if (waited > 5_000) throw new Error(`timed out waiting for ${what}`);
+    await new Promise((done) => setTimeout(done, 10));
+  }
+}
+
+describe('a review arriving in stages', () => {
+  it('shows the plain tree first, names the running stage, then regroups in place keeping the selected part', async () => {
+    const plain = mixedResult();
+    const [retry, settings, ...rest] = plain.parts;
+    const { name: _name, signals: _signals, rank: _rank, ...settingsFile } = settings!;
+    const grouped = {
+      ...plain,
+      parts: [
+        { ...retry!, name: 'send, with the retry settings it reads', origin: 'agent', otherFiles: [settingsFile] },
+        ...rest,
+      ],
+      grouping: {
+        by: 'agent',
+        agent: {
+          promptVersion: '1',
+          outcome: 'grouped',
+          detail: 'every hunk was placed by the agent',
+          leftOut: 0,
+          stamp: { agent: 'pi', agentVersion: '0.86.1', model: 'zai/glm-4.6', effort: null, runAt: '2026-10-02T00:00:00.000Z' },
+        },
+      },
+    };
+    activate(stubContext() as unknown as vscode.ExtensionContext, {
+      spawnEngine: () =>
+        fakeEngine({
+          result: grouped,
+          stage: { running: 'grouping related hunks with pi', timeoutMs: 60_000, result: plain },
+          answerDelayMs: 500,
+          logName: 'staged.log',
+        }),
+    });
+    stub.inputBoxResult = PR_URL;
+    stub.session = { accessToken: TOKEN };
+    const reviewed = registeredCommands().get(REVIEW_COMMAND)!() as Promise<void>;
+    const view = stub.treeViews[0]!;
+
+    // The plain tree shows before any agent result, with the stage named.
+    await until('the plain tree', () => partClick(view, 'src/settings.ts') !== undefined);
+    expect(view.message).toBe('Plain parts shown; grouping related hunks with pi…');
+    expect(view.revealed).toHaveLength(1);
+
+    // The reviewer is on the settings part when the agent's parts arrive.
+    const provider = providerOf(view);
+    const settingsNode = provider
+      .getChildren()
+      .flatMap((section) => provider.getChildren(section))
+      .find((node) => provider.getTreeItem(node).label === 'src/settings.ts');
+    view.selection = [settingsNode];
+    await reviewed;
+
+    expect(renderedTree(view).map((node) => node.label)).toContain('send, with the retry settings it reads');
+    expect(renderedTree(view).map((node) => node.label)).not.toContain('src/settings.ts');
+    expect(view.message).toBe(
+      'Grouped by pi · zai/glm-4.6 (grouping prompt v1): every hunk was placed by the agent.',
+    );
+    // The part now holding the settings change is selected, without taking focus.
+    expect(view.revealed).toHaveLength(2);
+    expect(view.revealed[1]!.options).toEqual({ select: true, focus: false });
+    expect(provider.getTreeItem(view.selection[0]).label).toBe('send, with the retry settings it reads');
+    expect(stub.errorMessages).toEqual([]);
+
+    // Clicking the regrouped part opens both of its files.
+    const click = partClick(view, 'send, with the retry settings it reads')!;
+    await registeredCommands().get(click.command)!(...click.arguments);
+    const base = (path: string) => changeUri('base', plain.copies.base.commit, path);
+    const head = (path: string) => changeUri('head', plain.copies.head.commit, path);
+    expect(stub.executedCommands).toEqual([
+      {
+        id: 'vscode.changes',
+        args: [
+          'send, with the retry settings it reads',
+          [
+            [head('src/retry.py'), base('src/retry.py'), head('src/retry.py')],
+            [head('src/settings.ts'), base('src/settings.ts'), head('src/settings.ts')],
+          ],
+        ],
+      },
+    ]);
   });
 });
 

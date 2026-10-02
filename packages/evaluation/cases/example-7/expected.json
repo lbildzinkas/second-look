@@ -9,5 +9,12 @@
     "src/Greeter.cs": { "label": "none" }
   },
   "importantParts": ["Cart.total in web/cart.ts", "apply_discount in app/dedent.py"],
-  "claims": []
+  "claims": [],
+  "groups": [
+    ["app/fresh.py#1", "tests/test_fresh.py#1"],
+    ["app/reformat.py#1", "src/Greeter.cs#1"],
+    ["app/dedent.py#1"],
+    ["web/cart.ts#1"],
+    ["scripts/deploy.rb#1"]
+  ]
 }

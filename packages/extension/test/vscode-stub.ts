@@ -25,6 +25,10 @@ export interface StubTreeView {
   id: string;
   provider: unknown;
   revealed: { element: unknown; options?: unknown }[];
+  /** The selected nodes; a test selects a node by setting it. */
+  selection: unknown[];
+  /** The status line the extension shows above the tree. */
+  message?: string;
 }
 
 /** A sign-in session VS Code's authentication API returned. */
@@ -413,12 +417,15 @@ export const window = {
   },
   createTreeView(id: string, options: { treeDataProvider: unknown }): StubTreeView & StubDisposable {
     const revealed: { element: unknown; options?: unknown }[] = [];
-    const view = {
+    const view: StubTreeView & StubDisposable & { reveal(element: unknown, options?: unknown): Promise<void> } = {
       id,
       provider: options.treeDataProvider,
       revealed,
+      selection: [],
+      message: undefined,
       reveal: (element: unknown, revealOptions?: unknown): Promise<void> => {
         revealed.push({ element, options: revealOptions });
+        if ((revealOptions as { select?: boolean } | undefined)?.select) view.selection = [element];
         return Promise.resolve();
       },
       dispose: (): void => undefined,
