@@ -96,12 +96,15 @@ function recordEdge(index: LockIndex, name: string, dependency: string): void {
 
 /**
  * Reads a `[[package]]`-shaped TOML lock file (uv, poetry, Cargo), with
- * each format contributing its own dependency edges. Undefined when the
- * content is outside the format, so the check never guesses.
+ * each format contributing its own dependency edges and its own way of
+ * naming the project's entry, which mirrors the manifest rather than
+ * following from it. Undefined when the content is outside the format,
+ * so the check never guesses.
  */
 function readTomlPackages(
   text: string,
   edgesOf: (entry: TomlTable) => readonly string[] | undefined,
+  projectEntry?: (entry: TomlTable) => boolean,
 ): LockIndex | undefined {
   const doc = parseToml(text);
   if (doc === undefined) return undefined;
@@ -116,6 +119,10 @@ function readTomlPackages(
     const edges = edgesOf(entry);
     if (edges === undefined) return undefined;
     const normalized = pep503(name);
+    if (projectEntry !== undefined && projectEntry(entry)) {
+      index.roots.set(normalized, stableStringify(entry));
+      continue;
+    }
     recordEntry(index, normalized, typeof version === 'string' ? version : '', stableStringify(entry));
     for (const edge of edges) recordEdge(index, normalized, edge);
   }
@@ -237,6 +244,15 @@ function uvEdges(entry: TomlTable): readonly string[] | undefined {
     if (!collect(group)) return undefined;
   }
   return edges;
+}
+
+/** uv.lock records the project itself with a virtual or editable source. */
+function uvProjectEntry(entry: TomlTable): boolean {
+  const source = entry['source'];
+  return (
+    isTomlTable(source) &&
+    (source['virtual'] !== undefined || source['editable'] !== undefined)
+  );
 }
 
 /** pyproject.toml's [project] tables, as uv reads direct dependencies. */
@@ -374,6 +390,30 @@ function readCargoManifests(texts: readonly string[]): Map<string, string> | und
   return specs;
 }
 
+/** The package names the Cargo.toml files declare for the project itself. */
+function cargoProjectNames(texts: readonly string[]): Set<string> {
+  const names = new Set<string>();
+  for (const text of texts) {
+    const doc = parseToml(text);
+    if (doc === undefined) continue;
+    const pkg = doc['package'];
+    if (!isTomlTable(pkg)) continue;
+    const name = pkg['name'];
+    if (typeof name === 'string') names.add(pep503(name));
+  }
+  return names;
+}
+
+/** Cargo.lock records the project with no source, under its declared name. */
+function cargoProjectEntry(
+  names: ReadonlySet<string>,
+): (entry: TomlTable) => boolean {
+  return (entry) => {
+    const name = entry['name'];
+    return entry['source'] === undefined && typeof name === 'string' && names.has(pep503(name));
+  };
+}
+
 /** NuGet packages.lock.json lists direct and transitive entries per framework. */
 function readNugetLock(text: string): LockIndex | undefined {
   let doc: unknown;
@@ -468,7 +508,8 @@ export interface LockfileFormat {
   readonly manifestName: string;
   /** What a confirmed label of this format cannot see. */
   readonly blindSpot: string;
-  readLock(text: string): LockIndex | undefined;
+  /** Reads the lock file; the manifests' texts tell its own record of the project apart. */
+  readLock(text: string, manifests: readonly string[]): LockIndex | undefined;
   manifestsIn(lockDir: string, list: ListDir): Promise<readonly string[]>;
   readManifests(texts: readonly string[]): Map<string, string> | undefined;
 }
@@ -494,7 +535,7 @@ const UV_FORMAT: LockfileFormat = {
   name: 'uv.lock',
   manifestName: 'pyproject.toml',
   blindSpot: `Parse-only: the resolver is not re-run and hashes are not re-checked against the registry; ${CLOSURE_BLIND_SPOT}.`,
-  readLock: (text: string) => readTomlPackages(text, uvEdges),
+  readLock: (text: string) => readTomlPackages(text, uvEdges, uvProjectEntry),
   manifestsIn: manifestBeside('pyproject.toml'),
   readManifests: readPep621Manifests,
 };
@@ -512,7 +553,8 @@ const CARGO_FORMAT: LockfileFormat = {
   name: 'Cargo.lock',
   manifestName: 'Cargo.toml',
   blindSpot: `Parse-only: the resolver is not re-run and checksums are not re-checked against the registry; ${CLOSURE_BLIND_SPOT}.`,
-  readLock: (text: string) => readTomlPackages(text, cargoEdges),
+  readLock: (text: string, manifests: readonly string[]) =>
+    readTomlPackages(text, cargoEdges, cargoProjectEntry(cargoProjectNames(manifests))),
   manifestsIn: manifestBeside('Cargo.toml'),
   readManifests: readCargoManifests,
 };
@@ -678,12 +720,14 @@ export function confirmLockfileChange(
   newSide: LockfileSide,
 ): LockfileCheck {
   const oldLock = oldSide.lock;
-  const oldIndex = oldLock === null ? emptyIndex() : readSafely(() => format.readLock(oldLock));
+  const oldIndex =
+    oldLock === null ? emptyIndex() : readSafely(() => format.readLock(oldLock, oldSide.manifests));
   if (oldIndex === undefined) {
     return { outcome: 'no check', blindSpot: `no check for this lockfile: the base ${lockName} did not parse` };
   }
   const newLock = newSide.lock;
-  const newIndex = newLock === null ? emptyIndex() : readSafely(() => format.readLock(newLock));
+  const newIndex =
+    newLock === null ? emptyIndex() : readSafely(() => format.readLock(newLock, newSide.manifests));
   if (newIndex === undefined) {
     return { outcome: 'no check', blindSpot: `no check for this lockfile: the head ${lockName} did not parse` };
   }
