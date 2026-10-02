@@ -57,16 +57,18 @@ function under(dir: string, name: string): string {
 
 /**
  * One lock file read by package name: the versions present (each with a
- * fingerprint of its whole entry, so a hand-edited hash is a change too)
- * and the dependency edges the lock file itself records.
+ * fingerprint of its whole entry, so a hand-edited hash is a change too),
+ * the dependency edges the lock file itself records, and fingerprints of
+ * the entries no package name covers (npm's root and workspace keys).
  */
 interface LockIndex {
-  versions: Map<string, Map<string, string>>;
+  versions: Map<string, Map<string, Set<string>>>;
   edges: Map<string, Set<string>>;
+  roots: Map<string, string>;
 }
 
 function emptyIndex(): LockIndex {
-  return { versions: new Map(), edges: new Map() };
+  return { versions: new Map(), edges: new Map(), roots: new Map() };
 }
 
 function recordEntry(index: LockIndex, name: string, version: string, fingerprint: string): void {
@@ -75,7 +77,12 @@ function recordEntry(index: LockIndex, name: string, version: string, fingerprin
     versions = new Map();
     index.versions.set(name, versions);
   }
-  versions.set(version, fingerprint);
+  let fingerprints = versions.get(version);
+  if (fingerprints === undefined) {
+    fingerprints = new Set();
+    versions.set(version, fingerprints);
+  }
+  fingerprints.add(fingerprint);
 }
 
 function recordEdge(index: LockIndex, name: string, dependency: string): void {
@@ -125,7 +132,7 @@ const NPM_MANIFEST_TABLES = [
   'peerDependencies',
 ] as const;
 
-/** The package name of a `packages` key; the root and workspaces stay out. */
+/** The package name of a `packages` key; undefined for the root and workspace keys. */
 function npmNameFromKey(key: string): string | undefined {
   const at = key.lastIndexOf('node_modules/');
   return at < 0 ? undefined : key.slice(at + 'node_modules/'.length);
@@ -156,7 +163,10 @@ function readNpmLock(text: string): LockIndex | undefined {
     for (const [key, raw] of Object.entries(packages)) {
       if (!isRecord(raw)) return undefined;
       const name = npmNameFromKey(key);
-      if (name === undefined) continue;
+      if (name === undefined) {
+        index.roots.set(key, stableStringify(raw));
+        continue;
+      }
       recordNpmEntry(index, name, raw);
     }
     return index;
@@ -322,7 +332,7 @@ function cargoEdges(entry: TomlTable): readonly string[] | undefined {
   if (!Array.isArray(dependencies) || !dependencies.every((item) => typeof item === 'string')) {
     return undefined;
   }
-  return (dependencies as string[]).map((dependency) => dependency.split(/[ ?]/)[0]!);
+  return (dependencies as string[]).map((dependency) => pep503(dependency.split(/[ ?]/)[0]!));
 }
 
 /** The manifest sections of Cargo.toml that name direct dependencies. */
@@ -338,7 +348,7 @@ function readCargoManifests(texts: readonly string[]): Map<string, string> | und
       if (!isTomlTable(dependencies)) return false;
       for (const [name, spec] of Object.entries(dependencies)) {
         if (typeof spec !== 'string' && !isTomlTable(spec)) return false;
-        specs.set(name, typeof spec === 'string' ? spec : stableStringify(spec));
+        specs.set(pep503(name), typeof spec === 'string' ? spec : stableStringify(spec));
       }
     }
     return true;
@@ -563,13 +573,23 @@ interface ChangedEntry {
   readonly display: string;
 }
 
+/** True when both sides carry exactly the same fingerprints, whatever the order. */
+function fingerprintsEqual(before: ReadonlySet<string>, after: ReadonlySet<string>): boolean {
+  if (before.size !== after.size) return false;
+  for (const fingerprint of before) {
+    if (!after.has(fingerprint)) return false;
+  }
+  return true;
+}
+
 function versionMapsEqual(
-  oldVersions: ReadonlyMap<string, string>,
-  newVersions: ReadonlyMap<string, string>,
+  oldVersions: ReadonlyMap<string, ReadonlySet<string>>,
+  newVersions: ReadonlyMap<string, ReadonlySet<string>>,
 ): boolean {
   if (oldVersions.size !== newVersions.size) return false;
-  for (const [version, fingerprint] of oldVersions) {
-    if (newVersions.get(version) !== fingerprint) return false;
+  for (const [version, fingerprints] of oldVersions) {
+    const after = newVersions.get(version);
+    if (after === undefined || !fingerprintsEqual(fingerprints, after)) return false;
   }
   return true;
 }
@@ -577,8 +597,8 @@ function versionMapsEqual(
 /** How one changed entry is named: `name old → new`, or `name@version`. */
 function describeChange(
   name: string,
-  oldVersions: ReadonlyMap<string, string>,
-  newVersions: ReadonlyMap<string, string>,
+  oldVersions: ReadonlyMap<string, ReadonlySet<string>>,
+  newVersions: ReadonlyMap<string, ReadonlySet<string>>,
 ): string {
   const label = (version: string): string => (version === '' ? name : `${name}@${version}`);
   const removed = [...oldVersions.keys()].filter((version) => !newVersions.has(version));
@@ -596,8 +616,9 @@ function describeChange(
   const parts: string[] = [];
   for (const version of removed) parts.push(label(version));
   for (const version of added) parts.push(label(version));
-  for (const version of newVersions.keys()) {
-    if (oldVersions.has(version) && oldVersions.get(version) !== newVersions.get(version)) {
+  for (const [version, fingerprints] of newVersions) {
+    const before = oldVersions.get(version);
+    if (before !== undefined && !fingerprintsEqual(before, fingerprints)) {
       parts.push(`${label(version)} (content changed)`);
     }
   }
@@ -608,10 +629,25 @@ function changedEntries(oldIndex: LockIndex, newIndex: LockIndex): ChangedEntry[
   const names = [...new Set([...oldIndex.versions.keys(), ...newIndex.versions.keys()])].sort();
   const changed: ChangedEntry[] = [];
   for (const name of names) {
-    const oldVersions = oldIndex.versions.get(name) ?? new Map<string, string>();
-    const newVersions = newIndex.versions.get(name) ?? new Map<string, string>();
+    const oldVersions = oldIndex.versions.get(name) ?? new Map<string, Set<string>>();
+    const newVersions = newIndex.versions.get(name) ?? new Map<string, Set<string>>();
     if (versionMapsEqual(oldVersions, newVersions)) continue;
     changed.push({ name, display: describeChange(name, oldVersions, newVersions) });
+  }
+  return changed;
+}
+
+/** Changed entries no package name covers: npm's root and workspace keys. */
+function changedRoots(oldIndex: LockIndex, newIndex: LockIndex): ChangedEntry[] {
+  const keys = [...new Set([...oldIndex.roots.keys(), ...newIndex.roots.keys()])].sort();
+  const changed: ChangedEntry[] = [];
+  for (const key of keys) {
+    const before = oldIndex.roots.get(key);
+    const after = newIndex.roots.get(key);
+    if (before === after) continue;
+    const name = key === '' ? 'the root entry' : `the ${key} entry`;
+    const note = before === undefined ? 'added' : after === undefined ? 'removed' : 'content changed';
+    changed.push({ name, display: `${name} (${note})` });
   }
   return changed;
 }
@@ -664,6 +700,9 @@ export function confirmLockfileChange(
   const unexplained = changedEntries(oldIndex, newIndex).filter(
     (entry) => !explained.has(entry.name),
   );
+  if (changedDirects.length === 0) {
+    unexplained.push(...changedRoots(oldIndex, newIndex));
+  }
   if (unexplained.length === 0) {
     return { outcome: 'confirmed', blindSpot: format.blindSpot };
   }
