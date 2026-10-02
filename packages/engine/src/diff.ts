@@ -52,9 +52,10 @@ const utf8Decoder = new TextDecoder();
  * Decodes one path token of a diff header. Unquoted tokens pass through;
  * quoted tokens unwrap git's C quoting (core.quotePath), whose octal
  * escapes reassemble the path's UTF-8 bytes. Undefined for a malformed
- * quoted token.
+ * quoted token. Also used for the pattern token of a `.gitattributes`
+ * line, which uses the same quoting.
  */
-function decodePathToken(token: string): string | undefined {
+export function decodePathToken(token: string): string | undefined {
   if (!token.startsWith('"')) {
     return token;
   }

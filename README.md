@@ -39,6 +39,6 @@ GITHUB_TOKEN="$(gh auth token)" node packages/engine/dist/main.js \
 The engine package also installs a `second-look-engine` bin link once its
 build output exists (`npm ci` again after `npm run build`).
 
-The command fetches the pull request's metadata and full diff — the description is kept in full, never truncated, and the diff comes from the diff media type, so a large lockfile keeps every line — parses it into files and hunks, and prints a JSON review result with one part per changed file. Compare the file list and line counts with the GitHub page.
+The command fetches the pull request's metadata and full diff — the description is kept in full, never truncated, and the diff comes from the diff media type, so a large lockfile keeps every line — parses it into files and hunks, and prints a JSON review result with one part per changed file. Each part carries a noise label (lockfile, generated, vendored, moved or renamed, snapshot, fixture) that says whether it is confirmed or claimed and gives its one-line blind spot, or says no rule applied; noise parts sink to the bottom of the result, except snapshots and fixtures, which are labelled but never sunk. The labels read the repository's linguist attributes from its root `.gitattributes` at the head commit, without a checkout. Compare the file list, labels and line counts with the GitHub page.
 
 The token is passed in by the caller (`--token` or `GITHUB_TOKEN`), is used only for the GitHub request, and is never written to disk or logs. Tests run against recorded responses and never touch the network.

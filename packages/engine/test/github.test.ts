@@ -45,6 +45,7 @@ describe('GitHubClient against recorded responses', () => {
     expect(summary.author).toBe('reviewer-login');
     expect(summary.base).toBe('master');
     expect(summary.head).toBe('update-deps');
+    expect(summary.headSha).toBe('f00dcafe1234567890abcdef1234567890abcdef12');
     // The description arrives exactly as recorded, byte for byte, however
     // long it is; the engine never truncates it.
     expect(summary.description).toBe(recordedJson.body);
@@ -86,5 +87,49 @@ describe('GitHubClient against recorded responses', () => {
     await expect(
       client.getPullRequestSummary({ owner: 'other', repo: 'repo', number: 1 }),
     ).rejects.toThrow(/recorded responses only/);
+  });
+
+  it("reads the root .gitattributes at the head commit, without a checkout", async () => {
+    const transport = fixtureFetch();
+    const client = new GitHubClient({ token: 'test-token', fetch: transport.fetch });
+    const attributes = await client.getGitAttributesAt(
+      ref,
+      'f00dcafe1234567890abcdef1234567890abcdef12',
+    );
+
+    expect(attributes).toBe(
+      [
+        '# Tell GitHub\'s classifier how to read this repository.',
+        'src/generated/** linguist-generated=true',
+        'vendor/** linguist-vendored',
+        'docs/* linguist-documentation',
+        '',
+      ].join('\n'),
+    );
+    expect(transport.requests).toHaveLength(1);
+    expect(transport.requests[0]!.url).toBe(
+      'https://api.github.com/repos/example-org/example-repo/contents/.gitattributes' +
+        '?ref=f00dcafe1234567890abcdef1234567890abcdef12',
+    );
+  });
+
+  it('reports a missing .gitattributes as null, and passes other failures through', async () => {
+    const notFound = async (): Promise<Response> =>
+      new Response('{"message": "Not Found"}', {
+        status: 404,
+        headers: { 'content-type': 'application/json' },
+      });
+    const client = new GitHubClient({ token: 'test-token', fetch: notFound });
+    expect(await client.getGitAttributesAt(ref, 'missing0000000000000000000000000000000')).toBeNull();
+
+    const forbidden = async (): Promise<Response> =>
+      new Response('{"message": "Forbidden"}', {
+        status: 403,
+        headers: { 'content-type': 'application/json' },
+      });
+    const denied = new GitHubClient({ token: 'test-token', fetch: forbidden });
+    await expect(
+      denied.getGitAttributesAt(ref, 'forbidden00000000000000000000000000000'),
+    ).rejects.toThrow();
   });
 });

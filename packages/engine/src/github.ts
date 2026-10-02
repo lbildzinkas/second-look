@@ -76,6 +76,7 @@ export class GitHubClient {
       description: data.body ?? '',
       base: data.base.ref,
       head: data.head.ref,
+      headSha: data.head.sha,
     };
   }
 
@@ -100,4 +101,47 @@ export class GitHubClient {
     }
     return String(response.data);
   }
+
+  /**
+   * Reads the repository's root `.gitattributes` as stored at the given
+   * commit, without a checkout: the contents endpoint serves the blob at
+   * that ref. Returns null when the repository has no such file; any other
+   * failure propagates.
+   */
+  async getGitAttributesAt(ref: PullRequestRef, sha: string): Promise<string | null> {
+    let data;
+    try {
+      ({ data } = await this.octokit.repos.getContent({
+        owner: ref.owner,
+        repo: ref.repo,
+        path: '.gitattributes',
+        ref: sha,
+      }));
+    } catch (error) {
+      if (isNotFound(error)) {
+        return null;
+      }
+      throw error;
+    }
+    if (
+      typeof data === 'object' &&
+      data !== null &&
+      !Array.isArray(data) &&
+      data.type === 'file' &&
+      typeof data.content === 'string' &&
+      data.encoding === 'base64'
+    ) {
+      // GitHub inlines the blob's base64 with line breaks; drop them.
+      const encoded = data.content.replace(/\s+/g, '');
+      return Buffer.from(encoded, 'base64').toString('utf8');
+    }
+    return null; // Symlinks, directories, or files too large to inline.
+  }
+}
+
+/** True when the error is the endpoint's plain 404. */
+function isNotFound(error: unknown): boolean {
+  return (
+    typeof error === 'object' && error !== null && (error as { status?: unknown }).status === 404
+  );
 }

@@ -7,7 +7,13 @@ Usage:
 
 The review command fetches a pull request's metadata and full diff, parses
 the diff into files and hunks, and prints a typed, versioned review result
-as JSON with one part per changed file.
+as JSON with one part per changed file. Each part carries a noise label
+(lockfile, generated, vendored, moved or renamed, snapshot, fixture) with
+its state — confirmed or claimed — and a one-line blind spot, or says that
+no rule applied; noise parts sink to the bottom of the result, except
+snapshots and fixtures, which are labelled but never sunk. The labels read
+the repository's linguist attributes at the head commit, without a
+checkout.
 
 The GitHub token is passed in by the caller, either with --token or through
 the GITHUB_TOKEN environment variable. It is used only for the GitHub

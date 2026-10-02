@@ -8,8 +8,9 @@
  */
 
 /** Version of the review result schema. */
-export const REVIEW_RESULT_VERSION = 1 as const;
+export const REVIEW_RESULT_VERSION = 2 as const;
 
+/** Version 2 added the head commit's SHA and each part's noise assessment. */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
 /** How one file changed, as told by its diff header. */
@@ -51,7 +52,67 @@ export interface PullRequestSummary {
   base: string;
   /** Name of the branch the change comes from. */
   head: string;
+  /** The head commit's full SHA; the commit noise attributes are read at. */
+  headSha: string;
 }
+
+/**
+ * One noise label the rules can attach to a part. A part whose label is
+ * lockfile, generated, vendored or moved or renamed sinks below the parts
+ * a reviewer must read; snapshot and fixture parts are labelled but never
+ * sunk, because a change there is a behaviour change.
+ */
+export type NoiseLabel =
+  /** A dependency lock file, such as a lockfile or a checksum file. */
+  | 'lockfile'
+  /** A file a tool wrote, or third-party code vendored into the repository. */
+  | 'generated'
+  | 'vendored'
+  /** A file that only moved or was renamed, with identical content. */
+  | 'moved or renamed'
+  /** A recorded expected output, such as a test snapshot. */
+  | 'snapshot'
+  /** Fixed input a test runs against. */
+  | 'fixture';
+
+/** The rule that attached a label; named for the reviewer to read. */
+export type NoiseRule =
+  | 'rename-identical'
+  | 'snapshot-name'
+  | 'fixture-path'
+  | 'linguist-generated'
+  | 'linguist-vendored'
+  | 'lockfile-name'
+  | 'generated-name'
+  | 'generated-header';
+
+/**
+ * How a label was established: **confirmed** when a check proved it (here,
+ * a rename whose diff shows no other change), **claimed** when a rule
+ * matched and nothing was checked.
+ */
+export type NoiseState = 'confirmed' | 'claimed';
+
+/**
+ * What the noise rules decided about one part: a label with its state and
+ * one-line blind spot, or the plain statement that no rule applied — the
+ * companion states the miss instead of staying silent (ADR 0001).
+ */
+export type NoiseAssessment =
+  | {
+      label: 'none';
+      /** Always "no rule applied"; the label itself carries no blind spot. */
+      note: 'no rule applied';
+    }
+  | {
+      label: NoiseLabel;
+      /** The rule that matched. */
+      rule: NoiseRule;
+      /** Whether a check proved the label or a rule merely claimed it. */
+      state: NoiseState;
+      /** One line stating what the rule can miss. */
+      blindSpot: string;
+    };
 
 /**
  * A named group of related edits. At this step every part is exactly one
@@ -79,6 +140,13 @@ export interface Part {
   additions: number;
   /** Number of removed lines across all hunks. */
   deletions: number;
+  /**
+   * The noise rules' verdict on this part. The engine sets it on every
+   * part before printing, so a reader of the result never sees a part
+   * without one; the type keeps it optional because the diff parser
+   * produces parts before any rule has run.
+   */
+  noise?: NoiseAssessment;
 }
 
 /** One hunk of a unified diff: a run of changed lines with surrounding context. */

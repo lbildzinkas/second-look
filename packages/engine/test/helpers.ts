@@ -3,6 +3,11 @@ import { fileURLToPath } from 'node:url';
 
 export const PR_URL = 'https://github.com/example-org/example-repo/pull/42';
 
+const PULLS_URL = 'https://api.github.com/repos/example-org/example-repo/pulls/42';
+const GITATTRIBUTES_URL =
+  'https://api.github.com/repos/example-org/example-repo/contents/.gitattributes';
+const HEAD_SHA = 'f00dcafe1234567890abcdef1234567890abcdef12';
+
 /** One request the fake transport served, with the headers we care about. */
 export interface RecordedRequest {
   url: string;
@@ -18,8 +23,9 @@ export interface FixtureTransport {
 /**
  * A fetch that serves the recorded GitHub responses from test/fixtures:
  * the JSON metadata for plain requests, the full diff for requests that ask
- * for the diff media type. Any other URL throws, so a test can never touch
- * the live network by accident.
+ * for the diff media type, and the repository's root `.gitattributes` as
+ * stored at the head commit. Any other URL throws, so a test can never
+ * touch the live network by accident.
  */
 export function fixtureFetch(): FixtureTransport {
   const requests: RecordedRequest[] = [];
@@ -32,7 +38,26 @@ export function fixtureFetch(): FixtureTransport {
       accept: headers.get('accept') ?? '',
       authorization: headers.get('authorization'),
     });
-    if (url !== 'https://api.github.com/repos/example-org/example-repo/pulls/42') {
+    if (url === `${GITATTRIBUTES_URL}?ref=${HEAD_SHA}`) {
+      const body = readFileSync(
+        fileURLToPath(new URL('./fixtures/pull-42.gitattributes', import.meta.url)),
+        'utf8',
+      );
+      return new Response(
+        JSON.stringify({
+          name: '.gitattributes',
+          path: '.gitattributes',
+          type: 'file',
+          encoding: 'base64',
+          content: Buffer.from(body, 'utf8').toString('base64'),
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json; charset=utf-8' },
+        },
+      );
+    }
+    if (url !== PULLS_URL) {
       throw new Error(
         `unexpected request to ${url}: tests run against recorded responses only`,
       );

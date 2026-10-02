@@ -219,6 +219,9 @@ describe('parseDiff', () => {
       'assets/logo.png',
       'notes.txt',
       'scripts/run.sh',
+      'src/util/format.ts',
+      'src/__snapshots__/review.test.ts.snap',
+      'src/generated/options.json',
       'package-lock.json',
     ]);
     expect(files[0]!.hunks[0]!.heading).toBe('Dependencies');
@@ -228,7 +231,7 @@ describe('parseDiff', () => {
     expect(files[4]!.isBinary).toBe(true);
     expect(files[5]!.newMissingFinalNewline).toBe(true);
     expect(files[6]!.newMode).toBe('100755');
-    expect(files[7]!.additions).toBe(48);
+    expect(files[10]!.additions).toBe(48);
   });
 
   it('treats header-shaped hunk body lines as body, not headers', () => {

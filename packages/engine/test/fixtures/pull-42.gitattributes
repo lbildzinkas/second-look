@@ -1,0 +1,4 @@
+# Tell GitHub's classifier how to read this repository.
+src/generated/** linguist-generated=true
+vendor/** linguist-vendored
+docs/* linguist-documentation
