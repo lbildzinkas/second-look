@@ -364,7 +364,7 @@ export interface Entity {
    * entity and every entity enclosing it: exported in TypeScript and
    * JavaScript, public or protected in C# and Java, `pub` in Rust, a
    * capitalised name in Go, no leading underscore in Python. An entity
-   * inside a function or method is never public.
+   * inside a function, method or property is never public.
    */
   public: boolean;
   /** How the hunk changes it; the strongest change wins across its lines. */
