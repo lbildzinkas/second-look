@@ -9,9 +9,14 @@
  * or refuses with a plain message. This version numbers the protocol
  * itself; the review result it carries keeps its own
  * `REVIEW_RESULT_VERSION`.
+ *
+ * After the handshake, {@link REVIEW_METHOD} reviews a pull request and
+ * {@link SEND_REVIEW_METHOD} sends the pending review to GitHub as one
+ * review — the protocol's one write, asked for only when the reviewer
+ * presses send (ADR 0002).
  */
 
-import type { ReviewResult } from './protocol.js';
+import type { PendingReview, ReviewResult, SentReview } from './protocol.js';
 
 /** Version of the JSON-RPC protocol between the extension and the engine. */
 export const ENGINE_PROTOCOL_VERSION = 1 as const;
@@ -96,6 +101,27 @@ export interface ReviewParams {
 
 /** The review request's result: the engine's typed, versioned review result. */
 export type ReviewRpcResult = ReviewResult;
+
+/** The request that sends the pending review to GitHub as one review. */
+export const SEND_REVIEW_METHOD = 'sendReview' as const;
+
+/** One send request; the token travels with the request, never stored. */
+export interface SendReviewParams {
+  /** The pull request's HTML URL. */
+  url: string;
+  /**
+   * The GitHub token for this one request, which the extension obtains
+   * from VS Code's GitHub sign-in when the reviewer presses send. The
+   * engine uses it only for the GitHub request and never stores or echoes
+   * it.
+   */
+  token: string;
+  /** The pending review the companion gathered, sent as it stands. */
+  review: PendingReview;
+}
+
+/** The send request's result: the review's link on GitHub. */
+export type SendReviewRpcResult = SentReview;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
