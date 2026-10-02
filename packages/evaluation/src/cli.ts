@@ -25,7 +25,7 @@ Usage:
                           [--token <token>] [--cache-dir <dir>]
   second-look-eval run [--cases <dir>]... [--model-free] [--changed-since <ref>]
                        [--baseline <file>] [--write-baseline <file>]
-                       [--runs <dir>] [--prompts <file>]
+                       [--runs <dir>]
 
 The record command fetches a pull request once and writes it as a case:
 its metadata, description, full diff, and the base and head content the
@@ -92,7 +92,6 @@ export async function runCli(
         baseline: { type: 'string' },
         'write-baseline': { type: 'string' },
         runs: { type: 'string' },
-        prompts: { type: 'string' },
       },
     });
     if (values.help) {
@@ -125,7 +124,7 @@ export async function runCli(
     }
 
     const cases = await loadCases([...(values.cases ?? [REPOSITORY_CASES]), ...privateFolders]);
-    const registry = await loadRegistry(values.prompts ?? REGISTRY);
+    const registry = await loadRegistry(REGISTRY);
     const problems = mappingProblems(registry, cases);
     if (problems.length > 0) throw new Error(problems.join('\n'));
     let selected = cases;
