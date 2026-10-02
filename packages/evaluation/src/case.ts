@@ -128,10 +128,12 @@ export async function loadCase(folder: string): Promise<EvaluationCase> {
       `${folder}: case format ${String(record.formatVersion)} is not ${CASE_FORMAT_VERSION}`,
     );
   }
-  const recorded = await readJson<Omit<ExpectedResults, 'claims'> & { claims?: ExpectedClaim[] }>(
-    join(folder, 'expected.json'),
-  );
-  const expected: ExpectedResults = { ...recorded, claims: recorded.claims ?? [] };
+  const recorded = await readJson<Partial<ExpectedResults>>(join(folder, 'expected.json'));
+  const expected: ExpectedResults = {
+    noise: recorded.noise ?? {},
+    importantParts: recorded.importantParts ?? [],
+    claims: recorded.claims ?? [],
+  };
   return { id: record.id, folder, record, expected };
 }
 

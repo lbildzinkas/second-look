@@ -82,16 +82,20 @@ describe('the run command', () => {
     expect(readFileSync(join(runFolder(), TRACE_FILE), 'utf8')).toBe('');
   });
 
-  it('keeps scoring a case recorded before the claims field existed', async () => {
+  it('keeps scoring a case whose expected.json omits whole sections', async () => {
     const legacy = join(scratch, 'cases', 'example-7');
     cpSync(join(REPOSITORY_CASES, 'example-7'), legacy, { recursive: true });
     const expectedPath = join(legacy, 'expected.json');
     const recorded = JSON.parse(readFileSync(expectedPath, 'utf8')) as Record<string, unknown>;
     delete recorded.claims;
+    delete recorded.importantParts;
+    delete recorded.noise;
     writeFileSync(expectedPath, `${JSON.stringify(recorded, null, 2)}\n`);
 
     const loaded = await loadCase(legacy);
     expect(loaded.expected.claims).toEqual([]);
+    expect(loaded.expected.importantParts).toEqual([]);
+    expect(loaded.expected.noise).toEqual({});
 
     const run = await cli(['run', '--cases', join(scratch, 'cases'), '--runs', join(scratch, 'runs')]);
     expect(run.err).toBe('');
@@ -99,7 +103,8 @@ describe('the run command', () => {
     expect(run.out).toContain('example-7  coverage');
     const results = JSON.parse(readFileSync(join(runFolder(), 'results.json'), 'utf8')) as RunResults;
     expect(results.failures).toEqual([]);
-    expect(results.rows.filter((row) => row.name.startsWith('claims-'))).toEqual([]);
+    const rows = results.rows.filter((row) => row.case === 'example-7');
+    expect(rows.map((row) => row.name)).toEqual(['coverage']);
   });
 
   it('fails when a model-free score drops below the baseline', async () => {
