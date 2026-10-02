@@ -283,6 +283,13 @@ function uvProjectEntry(entry: TomlTable): boolean {
   return source['virtual'] !== undefined || source['editable'] === '.';
 }
 
+/** A PEP 735 include-group reference, the one table a dependency group may hold. */
+function isIncludeGroup(item: TomlValue): boolean {
+  if (!isTomlTable(item)) return false;
+  const keys = Object.keys(item);
+  return keys.length === 1 && keys[0] === 'include-group' && typeof item['include-group'] === 'string';
+}
+
 /** pyproject.toml's [project] tables, as uv reads direct dependencies. */
 function readPep621Manifests(texts: readonly string[]): Map<string, string> | undefined {
   const specs = new Map<string, string>();
@@ -314,7 +321,8 @@ function readPep621Manifests(texts: readonly string[]): Map<string, string> | un
     if (dependencyGroups !== undefined) {
       if (!isTomlTable(dependencyGroups)) return undefined;
       for (const group of Object.values(dependencyGroups)) {
-        if (!push(group)) return undefined;
+        if (!Array.isArray(group)) return undefined;
+        if (!push(group.filter((item) => !isIncludeGroup(item)))) return undefined;
       }
     }
     const tool = doc['tool'];
@@ -487,6 +495,8 @@ function readNugetLock(text: string): LockIndex | undefined {
       }
     }
   }
+  const libraries = doc['libraries'];
+  if (isRecord(libraries)) index.roots.set('libraries section', stableStringify(libraries));
   return index;
 }
 
@@ -518,18 +528,19 @@ async function nugetManifestsIn(dir: string, list: ListDir): Promise<readonly st
   return manifests;
 }
 
-const PACKAGE_REFERENCE_TAG = /<PackageReference\b[^>]*>/g;
+const PACKAGE_TAGS = /<Package(?:Reference|Version)\b[^>]*>/g;
 const INCLUDE_ATTRIBUTE = /\bInclude="([^"]*)"/;
 const VERSION_ATTRIBUTE = /\bVersion="([^"]*)"/;
+const VERSION_OVERRIDE_ATTRIBUTE = /\bVersionOverride="([^"]*)"/;
 
-/** Project files' PackageReference entries, by package name (lowercase). */
+/** Project files' PackageReference and central PackageVersion entries, by package name (lowercase). */
 function readNugetManifests(texts: readonly string[]): Map<string, string> | undefined {
   const specs = new Map<string, string>();
   for (const text of texts) {
-    for (const tag of text.match(PACKAGE_REFERENCE_TAG) ?? []) {
+    for (const tag of text.match(PACKAGE_TAGS) ?? []) {
       const include = INCLUDE_ATTRIBUTE.exec(tag);
       if (include === null) continue;
-      const version = VERSION_ATTRIBUTE.exec(tag);
+      const version = VERSION_ATTRIBUTE.exec(tag) ?? VERSION_OVERRIDE_ATTRIBUTE.exec(tag);
       const name = include[1]!.toLowerCase();
       // The nearest non-empty version wins, so a project without a version
       // (central package management) takes the one Directory.Packages.props set.

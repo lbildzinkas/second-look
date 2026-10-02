@@ -609,6 +609,17 @@ ${withPytest ? '\n[[package]]\nname = "pytest"\nversion = "8.3.4"\nsource = { re
     );
     expect(check.outcome).toBe('confirmed');
   });
+
+  it('reads dependency groups that compose others with include-group', () => {
+    const check = confirmed(
+      format('uv.lock'),
+      side(devLock(false), [devManifest('')]),
+      side(devLock(true), [
+        devManifest('[dependency-groups]\ndev = ["pytest>=8"]\nall = [{include-group = "dev"}]\n'),
+      ]),
+    );
+    expect(check.outcome).toBe('confirmed');
+  });
 });
 
 describe('poetry.lock', () => {
@@ -1026,7 +1037,7 @@ describe('packages.lock.json', () => {
     const props = (json: string): string => `
 <Project>
   <ItemGroup>
-    <PackageReference Include="Newtonsoft.Json" Version="${json}" />
+    <PackageVersion Include="Newtonsoft.Json" Version="${json}" />
   </ItemGroup>
 </Project>
 `;
@@ -1037,6 +1048,53 @@ describe('packages.lock.json', () => {
       side(lock('13.0.1', '4.7.0'), [withoutVersion, props('13.0.1')]),
     );
     expect(check.outcome).toBe('confirmed');
+  });
+
+  it('takes the version from a PackageReference VersionOverride', () => {
+    const override = (json: string): string => `
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" VersionOverride="${json}" />
+  </ItemGroup>
+</Project>
+`;
+    const check = confirmed(
+      format('packages.lock.json'),
+      side(lock('13.0.3', '4.7.0'), [override('13.0.3')]),
+      side(lock('13.0.1', '4.7.0'), [override('13.0.1')]),
+    );
+    expect(check.outcome).toBe('confirmed');
+  });
+
+  it('stays claimed and names a hand-edited libraries section', () => {
+    const withLibraries = (sha: string): string => `
+{
+  "version": 1,
+  "dependencies": {
+    "net8.0": {
+      "Newtonsoft.Json": {
+        "type": "Direct",
+        "requested": "[13.0.3, 14.0.0)",
+        "resolved": "13.0.3",
+        "contentHash": "HrC5BXdl00IP9zeV+0Z848QWPAoCr9P3bDEZguI="
+      }
+    }
+  },
+  "libraries": {
+    "Newtonsoft.Json/13.0.3": {
+      "type": "package",
+      "sha512": "${sha}"
+    }
+  }
+}
+`;
+    const check = confirmed(
+      format('packages.lock.json'),
+      side(withLibraries('sha512-original'), [project('13.0.3')]),
+      side(withLibraries('sha512-evil'), [project('13.0.3')]),
+    );
+    expect(check.outcome).toBe('unexplained');
+    expect(check.blindSpot).toContain('the libraries section entry (content changed)');
   });
 
   it('runs no check when no manifest names the dependencies', () => {
