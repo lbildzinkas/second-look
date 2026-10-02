@@ -1228,8 +1228,10 @@ describe('manifest discovery inside the copies', () => {
     try {
       const overrides = await confirmLockfileNoise([lockfilePart(lockPath)], { base, head });
       const assessment = overrides.get(lockPath);
-      expect(assessment).toBeDefined();
-      return { state: assessment!.state, rule: assessment!.rule };
+      if (assessment === undefined || assessment.label === 'none') {
+        throw new Error(`expected a labelled lockfile assessment for ${lockPath}`);
+      }
+      return { state: assessment.state, rule: assessment.rule };
     } finally {
       rmSync(base, { recursive: true, force: true });
       rmSync(head, { recursive: true, force: true });
