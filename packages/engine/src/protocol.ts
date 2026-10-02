@@ -88,7 +88,7 @@ export type NoiseRule =
 
 /**
  * How a label was established: **confirmed** when a check proved it (here,
- * a rename whose diff shows no changed lines), **claimed** when a rule
+ * a rename whose diff shows no other change), **claimed** when a rule
  * matched and nothing was checked.
  */
 export type NoiseState = 'confirmed' | 'claimed';

@@ -33,7 +33,7 @@ A plain, model-free fact about a part (for example new versus changed code, or h
 _Avoid_: Heuristic, feature
 
 **Noise**:
-A part whose changes need no careful reading, such as a lockfile or a generated file; it is **confirmed** when a check proved it and **claimed** otherwise.
+A part whose changes need no careful reading, such as a lockfile or a generated file; it is **confirmed** when a check proved it and **claimed** otherwise. A snapshot or fixture part is labelled but never sunk, because a change there is a behaviour change.
 _Avoid_: Boilerplate, trivial change
 
 ### Checking claims
