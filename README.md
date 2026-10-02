@@ -24,7 +24,7 @@ npm ci        # install all workspace dependencies
 npm run check # build (type check) + lint + unit tests
 ```
 
-CI runs the same on every pull request and on every push to `master`, then `npm run eval`: the model-free evaluation cases, which fail the build when a score drops below the stored baseline.
+CI runs the same on every pull request and on every push to `master`, then `npm run eval`: every case, with no agent, which fails the build when a score drops below the stored baseline.
 
 Individual steps: `npm run build`, `npm run lint`, `npm test`.
 

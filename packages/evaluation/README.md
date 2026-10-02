@@ -16,7 +16,7 @@ A case is one folder, named after the case:
 | `expected.json` | The expected results, written by hand — or, for a seeded case, in full by the seed command. |
 | `LICENSE` | For a case recorded from a public pull request, the license of the project its code comes from. |
 
-`expected.json` has three fields:
+`expected.json` has four fields:
 
 - `noise` — each changed file's expected noise, by its path on the new side: `{ "label": "none" }`, or a label with its state, such as `{ "label": "lockfile", "state": "claimed" }`. A file set to `null` is not labelled yet and counts in no score.
 - `importantParts` — the parts a reviewer must not miss, each by the part's name as the engine prints it (`Cart.total in web/cart.ts`), or else by its path, which matches the first part holding that file.
@@ -73,7 +73,7 @@ Coverage is a hard gate: the run exits 1 when any coverage row, plain or agent, 
 
 `--baseline <file>` compares the run's rows with a stored run, row by row: the same case and score, by the same agent and model at the same effort. A row missing any stamp field, on either side, is never compared. The `(all)` rows are not compared either, since their case set changes when a case is added or a subset runs. The run exits 1 when a model-free score drops, or when a case it scored no longer gives a score its baseline has; an agent's drop is reported, since a model's answers vary from run to run.
 
-`--write-baseline <file>` writes the run over the stored baseline: the run's rows replace the stored rows of each case, agent, model and effort it scored, and every other stored row stays. One file so keeps the plain pass's rows beside the rows of each agent and model tried.
+`--write-baseline <file>` writes the run over the stored baseline: the run's rows replace the stored rows of each case, agent, model and effort it scored, and every other stored row stays. One file so keeps the plain pass's rows beside the rows of each agent and model tried. A stored fallback note stays too, unless the run scored that case with the same agent.
 
 The repository's baseline is `baseline.json`. CI runs `npm run eval` on every pull request: every case, with no agent, against that baseline. When a change improves a score, or adds a case, rewrite it with `--write-baseline packages/evaluation/baseline.json` in the same pull request; when a prompt changes, run its cases with the agent as well, so the baseline records the agent and model tried. It holds the grouping prompt's baseline for Pi 0.86.1 with `zai-coding-cn/glm-5.3` at its default effort: coverage 100% on every case, and a grouping agreement of 0.85 over the four cases with groups to compare, against 0.42 for the plain pass. The canaries change one hunk each, so the agent is not asked on them. Across the three runs made while the prompt was written, its agreement on `encode-httpx-3690` moved between 0.56 and 1, while the other cases held.
 
