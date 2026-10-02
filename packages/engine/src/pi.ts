@@ -185,7 +185,7 @@ export function piAdapter(options: PiAdapterOptions = {}): AgentAdapter {
     const stamp: AgentStamp = {
       agent: 'pi',
       agentVersion: probeResult.version,
-      model: request.model ?? null,
+      model: null,
       effort: request.effort && probeResult.supports.effort ? request.effort : null,
       runAt: new Date().toISOString(),
     };

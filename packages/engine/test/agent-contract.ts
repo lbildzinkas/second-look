@@ -154,6 +154,17 @@ export function describeAgentContract(name: string, start: (scenario: ContractSc
       expect(results[1]).toMatchObject({ ok: true, answer: { verdict: 'yes' } });
     });
 
+    it('stamps no model when the run ends before the agent names one', async () => {
+      const agent = start({ runs: [{ hang: true, partial: '{"verd' }] });
+      const { results } = await runAgentTasks(agent.adapter, [task(root)], {
+        ...DEFAULT_AGENT_SETTINGS,
+        timeoutMs: 1500,
+        model: 'asked-for/model',
+      });
+      expect(results[0]).toMatchObject({ ok: false, reason: 'timeout' });
+      expect(results[0]!.stamp.model).toBeNull();
+    });
+
     it('runs at most the configured number of agents at once', async () => {
       const agent = start({ runs: [{ text: '{"verdict":"yes"}', delayMs: 400 }] });
       const tasks = [task(root), task(root), task(root), task(root), task(root)];

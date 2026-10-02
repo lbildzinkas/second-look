@@ -72,6 +72,18 @@ describe('checkToolCall', () => {
     expect(read('src/link.txt')).toEqual({ allowed: false, reason: 'the path leads outside the read-only copy' });
   });
 
+  it('refuses a read call without a path, and any call whose path is not a string', () => {
+    expect(checkToolCall('read', {}, root, home)).toEqual({
+      allowed: false,
+      reason: 'the read tool must name a file to read',
+    });
+    expect(checkToolCall('read', { path: null }, root, home)).toEqual({ allowed: false, reason: 'the path is not a string' });
+    expect(checkToolCall('grep', { pattern: 'app', path: 7 }, root, home)).toEqual({
+      allowed: false,
+      reason: 'the path is not a string',
+    });
+  });
+
   it('refuses a missing file instead of letting the tool guess a near name', () => {
     expect(read('src/none.ts')).toEqual({ allowed: false, reason: 'no such file in the read-only copy' });
   });

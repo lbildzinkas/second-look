@@ -78,8 +78,15 @@ export function checkToolCall(
     return { allowed: false, reason: `the ${toolName} tool is not allowed: only ${READ_TOOLS.join(', ')} may run` };
   }
   if (!root) return { allowed: false, reason: `${READ_ROOT_VARIABLE} is not set, so no path may be read` };
-  const raw = input['path'] ?? '.';
-  if (typeof raw !== 'string') return { allowed: false, reason: 'the path is not a string' };
+  const given = input['path'];
+  if (given === undefined) {
+    if (toolName === 'read') {
+      return { allowed: false, reason: 'the read tool must name a file to read' };
+    }
+  } else if (typeof given !== 'string') {
+    return { allowed: false, reason: 'the path is not a string' };
+  }
+  const raw = typeof given === 'string' ? given : '.';
   if (URL_LIKE.test(raw.trim())) {
     return { allowed: false, reason: 'URLs are refused: there is no network access, only files of the read-only copy' };
   }
