@@ -86,7 +86,7 @@ const GENERATED_HEADER_MARKERS: readonly RegExp[] = [
   /this file (?:is|was) (?:auto[- ]?generated|automatically generated|generated)/i,
 ];
 
-/** One line per rule, stating what that rule can miss. */
+/** A fixed blind-spot line for each rule assessNoise attaches itself; the lock file check's rules carry their own. */
 const BLIND_SPOTS: Readonly<Record<string, string>> = {
   'rename-identical':
     'Identical content proves only the move; a move git reports as separate delete and add is missed.',
@@ -99,7 +99,7 @@ const BLIND_SPOTS: Readonly<Record<string, string>> = {
   'linguist-vendored':
     'Attributes come from the root .gitattributes at the head commit; subdirectory .gitattributes files are not read.',
   'lockfile-name':
-    'Only known lockfile names are matched; a lockfile renamed or hand-written under another name is missed.',
+    'no check for this lockfile; only known lockfile names are matched, so one renamed or hand-written under another name is missed.',
   'generated-name':
     'Only known generated-file names are matched; a generated file under another name with no header in its diff is missed.',
   'generated-header':
@@ -323,9 +323,24 @@ export function sinks(noise: NoiseAssessment | undefined): noise is LabelledNois
  * reviewer must read keep their diff order first, then the sinking noise
  * parts follow in theirs. Snapshots and fixtures are labelled but never
  * sunk, because a change there is a behaviour change.
+ *
+ * `lockfileNoise` carries the parse-only checks' assessments, by part
+ * path; each one replaces the name rule's claim only where that claim
+ * stands, so a renamed or linguist-declared lock file keeps its own label.
  */
-export function applyNoiseRules(parts: Part[], gitAttributes: string | null): Part[] {
-  const labelled = parts.map((part) => ({ ...part, noise: assessNoise(part, gitAttributes) }));
+export function applyNoiseRules(
+  parts: Part[],
+  gitAttributes: string | null,
+  lockfileNoise: ReadonlyMap<string, NoiseAssessment> = new Map(),
+): Part[] {
+  const labelled = parts.map((part) => {
+    const claimed = assessNoise(part, gitAttributes);
+    const confirmed =
+      claimed.label === 'lockfile' && claimed.rule === 'lockfile-name'
+        ? lockfileNoise.get(part.path)
+        : undefined;
+    return { ...part, noise: confirmed ?? claimed };
+  });
   const readFirst = labelled.filter((part) => !sinks(part.noise));
   const sunkLast = labelled.filter((part) => sinks(part.noise));
   return [...readFirst, ...sunkLast];

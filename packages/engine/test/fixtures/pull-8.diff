@@ -1,0 +1,76 @@
+diff --git a/package-lock.json b/package-lock.json
+index 291a9bf..34f663f 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -8,17 +8,25 @@
+       "name": "example-app",
+       "version": "1.0.0",
+       "dependencies": {
+-        "left-pad": "^1.3.0",
++        "left-pad": "^2.0.0",
+         "mkdirp": "^1.0.0"
+       },
+       "devDependencies": {
+         "typescript": "^5.0.0"
+       }
+     },
++    "node_modules/inner-pkg": {
++      "version": "1.0.2",
++      "resolved": "https://registry.npmjs.org/inner-pkg/-/inner-pkg-1.0.2.tgz",
++      "integrity": "sha512-8Nn3QpVNApjAyhQzphX8BkmKsKUxD4LdyK24iZeQGinBN9yTQT3ErnpN4TSBcJHq4pI6G2JL7gpiUxhkDI6hzgB=="
++    },
+     "node_modules/left-pad": {
+-      "version": "1.3.0",
+-      "resolved": "https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz",
+-      "integrity": "sha512-XI5MPzVNApjAyhQzphX8BkmKsKUxD4LdyK24iZeQGinBN9yTQT3ErnpN4TSBcJHq4pI6G2JL7gpiUxhkDI6hzgA=="
++      "version": "2.0.0",
++      "resolved": "https://registry.npmjs.org/left-pad/-/left-pad-2.0.0.tgz",
++      "integrity": "sha512-yJ6NPzVNApjAyhQzphX8BkmKsKUxD4LdyK24iZeQGinBN9yTQT3ErnpN4TSBcJHq4pI6G2JL7gpiUxhkDI6hzgC==",
++      "dependencies": {
++        "inner-pkg": "^1.0.0"
++      }
+     },
+     "node_modules/mkdirp": {
+       "version": "1.0.4",
+diff --git a/package.json b/package.json
+index b5ba795..5048b6c 100644
+--- a/package.json
++++ b/package.json
+@@ -2,7 +2,7 @@
+   "name": "example-app",
+   "version": "1.0.0",
+   "dependencies": {
+-    "left-pad": "^1.3.0",
++    "left-pad": "^2.0.0",
+     "mkdirp": "^1.0.0"
+   },
+   "devDependencies": {
+diff --git a/poetry.lock b/poetry.lock
+index 3e60e4b..ed54604 100644
+--- a/poetry.lock
++++ b/poetry.lock
+@@ -47,7 +47,7 @@ files = [
+ 
+ [[package]]
+ name = "rich"
+-version = "13.7.1"
++version = "99.0.0"
+ description = "Render rich text, tables, progress bars, syntax highlighting, markdown and more to the terminal."
+ optional = false
+ python-versions = ">=3.8.0"
+diff --git a/yarn.lock b/yarn.lock
+index 8367b63..abd28cf 100644
+--- a/yarn.lock
++++ b/yarn.lock
+@@ -2,7 +2,7 @@
+ # yarn lockfile v1
+ 
+ 
+-left-pad@^1.3.0:
+-  version "1.3.0"
+-  resolved "https://registry.yarnpkg.com/left-pad/-/left-pad-1.3.0.tgz#1e6b8d0bd25dc5b1b4d005cc5bce9eb3f5b3a2e0"
+-  integrity sha512-XI5MPzVNApjAyhQzphX8BkmKsKUxD4LdyK24iZeQGinBN9yTQT3ErnpN4TSBcJHq4pI6G2JL7gpiUxhkDI6hzgA==
++left-pad@^2.0.0:
++  version "2.0.0"
++  resolved "https://registry.yarnpkg.com/left-pad/-/left-pad-2.0.0.tgz#2f7c9e1ac3b6d0f2a1c5e7b8d9a0b1c2d3e4f5a6"
++  integrity sha512-yJ6NPzVNApjAyhQzphX8BkmKsKUxD4LdyK24iZeQGinBN9yTQT3ErnpN4TSBcJHq4pI6G2JL7gpiUxhkDI6hzgC==

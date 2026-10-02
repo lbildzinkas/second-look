@@ -13,8 +13,9 @@ export const REVIEW_RESULT_VERSION = 3 as const;
 /**
  * Version 2 added the head commit's SHA and each part's noise assessment;
  * version 3 split files into named parts by the entities their hunks touch,
- * with each part's signals and rank, and each entity's visibility and
- * how the hunk changes it.
+ * with each part's signals and rank, each entity's visibility and how the
+ * hunk changes it, and added the lockfile rules lockfile-follows-manifest
+ * and lockfile-unexplained.
  */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
@@ -140,7 +141,14 @@ export type NoiseLabel =
   /** Fixed input a test runs against. */
   | 'fixture';
 
-/** The rule that attached a label; named for the reviewer to read. */
+/**
+ * The rule that attached a label; named for the reviewer to read. The
+ * lockfile rules: `lockfile-name` claims the label from the file's name
+ * alone (no check for that lockfile), `lockfile-follows-manifest`
+ * confirms it with the parse-only check, and `lockfile-unexplained`
+ * keeps it claimed with the entries the manifest change does not explain
+ * named in the blind spot.
+ */
 export type NoiseRule =
   | 'rename-identical'
   | 'snapshot-name'
@@ -148,13 +156,15 @@ export type NoiseRule =
   | 'linguist-generated'
   | 'linguist-vendored'
   | 'lockfile-name'
+  | 'lockfile-follows-manifest'
+  | 'lockfile-unexplained'
   | 'generated-name'
   | 'generated-header';
 
 /**
- * How a label was established: **confirmed** when a check proved it (here,
- * a rename whose diff shows no other change), **claimed** when a rule
- * matched and nothing was checked.
+ * How a label was established: **confirmed** when a check proved it (a
+ * rename whose diff shows no other change, or the parse-only lock file
+ * check), **claimed** when a rule matched and nothing was checked.
  */
 export type NoiseState = 'confirmed' | 'claimed';
 

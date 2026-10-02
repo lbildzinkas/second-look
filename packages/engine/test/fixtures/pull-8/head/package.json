@@ -1,0 +1,11 @@
+{
+  "name": "example-app",
+  "version": "1.0.0",
+  "dependencies": {
+    "left-pad": "^2.0.0",
+    "mkdirp": "^1.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

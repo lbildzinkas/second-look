@@ -2,6 +2,7 @@ import { ensureCopy } from './cache.js';
 import { validateCoverage } from './coverage.js';
 import { parseDiff } from './diff.js';
 import { GitHubClient, parsePullRequestUrl } from './github.js';
+import { confirmLockfileNoise } from './lockfile.js';
 import { applyNoiseRules } from './noise.js';
 import { groupParts } from './parts.js';
 import { REVIEW_RESULT_VERSION } from './protocol.js';
@@ -93,7 +94,8 @@ export async function fetchChange(url: string, options: ReviewOptions): Promise<
 /**
  * Reviews a fetched change offline: parses the diff into files and hunks,
  * runs the syntax pass on every file, labels the noise in every file with
- * its state and blind spot, groups the hunks into parts named after the
+ * its state and blind spot, runs the parse-only lock file checks against
+ * both versions' copies, groups the hunks into parts named after the
  * entities they touch, proves every changed line belongs to exactly one
  * part, sets each part's signals, ranks the parts with the noise last, and
  * returns the typed, versioned result.
@@ -101,9 +103,12 @@ export async function fetchChange(url: string, options: ReviewOptions): Promise<
 export async function reviewChange(input: ReviewInput): Promise<ReviewResult> {
   const { base, head } = input.copies;
   const parsed = parseDiff(input.diff);
-  const { parseTimeMs } = await analyseParts(parsed.files, { base: base.path, head: head.path });
+  const [{ parseTimeMs }, lockfileNoise] = await Promise.all([
+    analyseParts(parsed.files, { base: base.path, head: head.path }),
+    confirmLockfileNoise(parsed.files, { base: base.path, head: head.path }),
+  ]);
 
-  const parts = groupParts(applyNoiseRules(parsed.files, input.gitAttributes));
+  const parts = groupParts(applyNoiseRules(parsed.files, input.gitAttributes, lockfileNoise));
   const coverage = validateCoverage(parsed, parts);
   if (!coverage.ok) {
     const details = coverage.problems

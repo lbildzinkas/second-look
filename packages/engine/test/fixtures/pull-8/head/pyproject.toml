@@ -1,0 +1,10 @@
+[tool.poetry]
+name = "example-py"
+version = "0.1.0"
+description = "The Python half of the example repository."
+authors = ["Example Maintainer <maintainer@example.org>"]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+httpx = ">=0.24"
+rich = ">=13.0"
