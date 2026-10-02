@@ -1,0 +1,7 @@
+unchanged
+unchanged
+exports[`review orders the parts by importance > keeps the story first`] = `Story first
+`;
+
+exports[`review orders the parts by importance > sinks the lockfile`] = `Lockfile last
+`;

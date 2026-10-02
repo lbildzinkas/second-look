@@ -7,10 +7,11 @@ Second Look is a VS Code companion for human pull request review: it ranks the c
 
 ## Repository layout
 
-The repository is a TypeScript workspace with two packages:
+The repository is a TypeScript workspace with three packages:
 
 - `packages/engine` — the engine: a separate local process that fetches a pull request, parses its full diff into files and hunks, reads the changed files' syntax trees from read-only copies of the change, and offers its result two ways: printed as typed, versioned JSON by the review command, and over a JSON-RPC protocol on stdio by the serve command (ADR 0005). It also reads portable PDB files, the .NET debug files that record each source file's hash and Source Link URL.
 - `packages/extension` — the VS Code extension: a thin client that starts the engine as its own process, talks the JSON-RPC protocol to it after a version handshake, and shows the result as the ranked review tree, with each part readable in the editor's multi-file diff over read-only copies.
+- `packages/evaluation` — the evaluation: runs the engine offline over recorded pull requests and scores it against a stored baseline; see [its README](packages/evaluation/README.md).
 
 The protocol types live in `packages/engine/src/protocol.ts` and `packages/engine/src/rpc.ts`, carry their versions, and are shared by both packages.
 
@@ -23,7 +24,7 @@ npm ci        # install all workspace dependencies
 npm run check # build (type check) + lint + unit tests
 ```
 
-CI runs the same on every pull request and on every push to `master`.
+CI runs the same on every pull request and on every push to `master`, then `npm run eval`: the model-free evaluation cases, which fail the build when a score drops below the stored baseline.
 
 Individual steps: `npm run build`, `npm run lint`, `npm test`.
 

@@ -1,0 +1,12 @@
+{
+  "noise": {
+    "app/fresh.py": { "label": "none" },
+    "web/cart.ts": { "label": "none" },
+    "tests/test_fresh.py": { "label": "none" },
+    "app/dedent.py": { "label": "none" },
+    "scripts/deploy.rb": { "label": "none" },
+    "app/reformat.py": { "label": "none" },
+    "src/Greeter.cs": { "label": "none" }
+  },
+  "importantParts": ["Cart.total in web/cart.ts", "apply_discount in app/dedent.py"]
+}

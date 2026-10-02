@@ -1,0 +1,21 @@
+{
+  "formatVersion": 1,
+  "id": "example-7",
+  "source": "https://github.com/example-org/example-repo/pull/7",
+  "recordedAt": "2026-10-02T00:00:00.000Z",
+  "prompts": [],
+  "pullRequest": {
+    "url": "https://github.com/example-org/example-repo/pull/7",
+    "number": 7,
+    "title": "Reformat the Python helpers and tax the cart total",
+    "author": "reviewer-login",
+    "description": "Reformats app/reformat.py, moves the flag out of the discount block, restyles Greeter and taxes the cart total.",
+    "base": "master",
+    "head": "tidy-and-tax",
+    "baseCommit": "5555555555555555555555555555555555555555",
+    "headSha": "7777777777777777777777777777777777777777"
+  },
+  "gitAttributes": null,
+  "baseCommit": "6666666666666666666666666666666666666666",
+  "headCommit": "7777777777777777777777777777777777777777"
+}
