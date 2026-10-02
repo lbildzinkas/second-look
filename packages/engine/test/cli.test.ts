@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { redactToken, runCli } from '../src/cli.js';
 import {
@@ -116,5 +117,66 @@ describe('redactToken', () => {
 
   it('leaves text alone when no token was given', () => {
     expect(redactToken('plain text', undefined)).toBe('plain text');
+  });
+});
+
+describe('runCli pdb', () => {
+  const fixturePath = (name: string): string =>
+    fileURLToPath(new URL(`./fixtures/pdb/${name}`, import.meta.url));
+
+  it('prints each document of a package with its hash and Source Link URL', async () => {
+    const { out, err } = streams();
+    const path = fixturePath('Microsoft.IO.RecyclableMemoryStream.dll');
+    const code = await runCli(['pdb', path], {}, { out, err });
+
+    expect(code).toBe(0);
+    expect(err.text).toBe('');
+    const result = JSON.parse(out.text) as {
+      package: string;
+      pdbs: { documents: { name: string; hashAlgorithm: string; hash: string; sourceLinkUrl: string }[] }[];
+    };
+    expect(result.package).toBe(path);
+    expect(result.pdbs[0]!.documents[1]).toEqual({
+      name: '/_/src/Events.cs',
+      hashAlgorithm: 'SHA-256',
+      hash: 'a3e3e10c7b71c9599d0d4dc65a6281169c8080f8944f8742c9f757aea0ffdb06',
+      sourceLinkUrl:
+        'https://raw.githubusercontent.com/microsoft/Microsoft.IO.RecyclableMemoryStream/2e75ee13b803d8c4166bc80b12acd71de37f7722/src/Events.cs',
+    });
+  });
+
+  it('reads a NuGet package without any GitHub token', async () => {
+    const { out, err } = streams();
+    const code = await runCli(
+      ['pdb', fixturePath('Microsoft.IO.RecyclableMemoryStream.1.2.2.nupkg')],
+      {},
+      { out, err },
+    );
+    expect(code).toBe(0);
+    expect((JSON.parse(out.text) as { pdbs: unknown[] }).pdbs).toHaveLength(3);
+  });
+
+  it('asks for a package file when none was given', async () => {
+    const { out, err } = streams();
+    const code = await runCli(['pdb'], {}, { out, err });
+    expect(code).toBe(1);
+    expect(err.text).toContain('pdb needs a package file');
+    expect(out.text).toBe('');
+  });
+
+  it('fails with a clear error for a file that is not a package', async () => {
+    const { out, err } = streams();
+    const path = fixturePath('../pull-42.json');
+    const code = await runCli(['pdb', path], {}, { out, err });
+    expect(code).toBe(1);
+    expect(err.text).toContain('not a portable PDB');
+    expect(out.text).toBe('');
+  });
+
+  it('fails with a clear error for a file that does not exist', async () => {
+    const { out, err } = streams();
+    const code = await runCli(['pdb', fixturePath('missing.nupkg')], {}, { out, err });
+    expect(code).toBe(1);
+    expect(err.text).toContain('ENOENT');
   });
 });

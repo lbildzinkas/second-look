@@ -5,4 +5,8 @@ export * from './gitattributes.js';
 export * from './noise.js';
 export * from './github.js';
 export * from './review.js';
+export * from './pdb.js';
+export * from './sourcelink.js';
+export * from './zip.js';
+export * from './symbols.js';
 export { redactToken, runCli } from './cli.js';
