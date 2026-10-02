@@ -86,7 +86,7 @@ const GENERATED_HEADER_MARKERS: readonly RegExp[] = [
   /this file (?:is|was) (?:auto[- ]?generated|automatically generated|generated)/i,
 ];
 
-/** One line per rule, stating what that rule can miss. */
+/** A fixed blind-spot line for each rule assessNoise attaches itself; the lock file check's rules carry their own. */
 const BLIND_SPOTS: Readonly<Record<string, string>> = {
   'rename-identical':
     'Identical content proves only the move; a move git reports as separate delete and add is missed.',
