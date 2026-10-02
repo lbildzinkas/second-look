@@ -1,6 +1,7 @@
 import { parseDiff } from '@second-look/engine';
 import type { NoiseAssessment, Part } from '@second-look/engine';
-import type { ExpectedNoise, ExpectedResults } from './case.js';
+import type { ExpectedClaim, ExpectedNoise, ExpectedResults, Verdict } from './case.js';
+import type { LibraryFetchOffer, PressedClaim } from './claims.js';
 
 /** How many leading parts count as the top of the ranking. */
 export const TOP_K = 3;
@@ -11,6 +12,8 @@ export interface Score {
   name: string;
   value: number;
   better: 'higher' | 'lower';
+  /** A plain caveat the report prints beside the value, such as why a failing score is expected. */
+  note?: string;
 }
 
 /** Counts behind a noise class's precision and recall. */
@@ -18,6 +21,30 @@ interface NoiseCounts {
   expected: number;
   predicted: number;
   matched: number;
+}
+
+/** Counts behind one verdict kind's claim check. */
+interface VerdictCounts {
+  expected: number;
+  matched: number;
+}
+
+/** The counts behind the claim checks, over the hand-labelled claims. */
+export interface ClaimTally {
+  /** Hand-labelled claims the run expected. */
+  expected: number;
+  /** Expected claims the review reported, matched by exact text. */
+  found: number;
+  /** Counts by expected verdict kind, like the noise classes. */
+  verdicts: Map<Verdict, VerdictCounts>;
+  /** Expected claims whose verdict's evidence matched. */
+  evidence: number;
+  /** Expected claims wanting a library fetch whose pressed offer matched the pin. */
+  fetchOffered: number;
+  /** Expected claims wanting a library fetch. */
+  fetchWanted: number;
+  /** Claims the review reported, whether expected or not. */
+  reported: number;
 }
 
 /**
@@ -32,6 +59,8 @@ export interface Tally {
   noise: Map<string, NoiseCounts>;
   /** The 1-based rank position of each known important part. */
   positions: number[];
+  /** The claim checks' counts. */
+  claims: ClaimTally;
 }
 
 function noiseClass(noise: NoiseAssessment | ExpectedNoise): string {
@@ -51,19 +80,92 @@ function changedLineKeys(parts: readonly Part[]): string[] {
   );
 }
 
+/** Whether a fetch offer names the library the claim is about at the version the project pins. */
+function matchesPin(wanted: ExpectedClaim, fetch: LibraryFetchOffer | undefined): boolean {
+  return (
+    fetch !== undefined &&
+    fetch.library === wanted.library.name &&
+    fetch.pinnedVersion === wanted.library.pinnedVersion
+  );
+}
+
+/**
+ * Whether a reported claim's verdict carries the expected evidence: the
+ * same file, line and source, with library source counting only behind a
+ * pressed fetch of the pinned library, since that is the only way the
+ * check may read it (ADR 0003).
+ */
+function evidenceMatches(wanted: ExpectedClaim, got: PressedClaim): boolean {
+  const evidence = got.verdict?.evidence;
+  if (!evidence) return false;
+  const expected = wanted.verdict.evidence;
+  if (
+    evidence.file !== expected.file ||
+    evidence.line !== expected.line ||
+    evidence.source !== expected.source
+  ) {
+    return false;
+  }
+  return (
+    evidence.source !== 'library source at the pinned version' ||
+    matchesPin(wanted, got.pressedFetch)
+  );
+}
+
+/** Tallies the claim checks: each hand-labelled claim against what the review reported, after the reviewer's fetch presses. */
+export function tallyClaims(
+  expected: readonly ExpectedClaim[],
+  reported: readonly PressedClaim[],
+): ClaimTally {
+  const tally: ClaimTally = {
+    expected: expected.length,
+    found: 0,
+    verdicts: new Map(),
+    evidence: 0,
+    fetchOffered: 0,
+    fetchWanted: 0,
+    reported: reported.length,
+  };
+  const counts = (kind: Verdict): VerdictCounts => {
+    let found = tally.verdicts.get(kind);
+    if (!found) tally.verdicts.set(kind, (found = { expected: 0, matched: 0 }));
+    return found;
+  };
+  for (const wanted of expected) {
+    const verdicts = counts(wanted.verdict.kind);
+    verdicts.expected++;
+    if (wanted.libraryFetch) tally.fetchWanted++;
+    const got = reported.find((claim) => claim.text === wanted.text);
+    if (!got) continue;
+    tally.found++;
+    if (got.verdict?.kind === wanted.verdict.kind) verdicts.matched++;
+    if (evidenceMatches(wanted, got)) tally.evidence++;
+    if (wanted.libraryFetch && matchesPin(wanted, got.pressedFetch)) tally.fetchOffered++;
+  }
+  return tally;
+}
+
 /**
  * Tallies one case: the diff's changed lines the result's parts cover
  * exactly once, each hand-labelled file's expected and actual noise
- * class, and where each known important part ranks. A review that failed
- * has no parts, so it covers no line and is not scored further.
+ * class, where each known important part ranks, and each hand-labelled
+ * claim against what the review reported. A review that failed has no
+ * parts, so it covers no line and is not scored further.
  */
 export function tallyCase(
   diff: string,
   expected: ExpectedResults,
   parts: readonly Part[] | undefined,
+  claims: readonly PressedClaim[] = [],
 ): Tally {
   const changed = changedLineKeys(parseDiff(diff).files);
-  const tally: Tally = { changedLines: changed.length, coveredLines: 0, noise: new Map(), positions: [] };
+  const tally: Tally = {
+    changedLines: changed.length,
+    coveredLines: 0,
+    noise: new Map(),
+    positions: [],
+    claims: tallyClaims(expected.claims, claims),
+  };
   if (!parts) return tally;
 
   const owners = new Map<string, number>();
@@ -94,7 +196,21 @@ export function tallyCase(
 
 /** Adds tallies up, for a run's overall scores. */
 export function addTallies(tallies: readonly Tally[]): Tally {
-  const total: Tally = { changedLines: 0, coveredLines: 0, noise: new Map(), positions: [] };
+  const total: Tally = {
+    changedLines: 0,
+    coveredLines: 0,
+    noise: new Map(),
+    positions: [],
+    claims: {
+      expected: 0,
+      found: 0,
+      verdicts: new Map(),
+      evidence: 0,
+      fetchOffered: 0,
+      fetchWanted: 0,
+      reported: 0,
+    },
+  };
   for (const tally of tallies) {
     total.changedLines += tally.changedLines;
     total.coveredLines += tally.coveredLines;
@@ -105,6 +221,20 @@ export function addTallies(tallies: readonly Tally[]): Tally {
       sum.predicted += counts.predicted;
       sum.matched += counts.matched;
       total.noise.set(name, sum);
+    }
+    const claims = total.claims;
+    const each = tally.claims;
+    claims.expected += each.expected;
+    claims.found += each.found;
+    claims.evidence += each.evidence;
+    claims.fetchOffered += each.fetchOffered;
+    claims.fetchWanted += each.fetchWanted;
+    claims.reported += each.reported;
+    for (const [kind, counts] of each.verdicts) {
+      const sum = claims.verdicts.get(kind) ?? { expected: 0, matched: 0 };
+      sum.expected += counts.expected;
+      sum.matched += counts.matched;
+      claims.verdicts.set(kind, sum);
     }
   }
   return total;
@@ -118,9 +248,10 @@ function median(values: readonly number[]): number {
 
 /**
  * The plain scores a tally gives: coverage, noise-label precision and
- * recall per class and state, and the median and top-k rank position of
- * the known important parts. A score with nothing to count is left out
- * rather than given a value it did not earn.
+ * recall per class and state, the median and top-k rank position of the
+ * known important parts, and the claim checks over the hand-labelled
+ * claims. A score with nothing to count is left out rather than given a
+ * value it did not earn.
  */
 export function scoresOf(tally: Tally): Score[] {
   const scores: Score[] = [];
@@ -140,6 +271,39 @@ export function scoresOf(tally: Tally): Score[] {
     scores.push({ name: 'rank-median', value: median(tally.positions), better: 'lower' });
     const top = tally.positions.filter((position) => position <= TOP_K).length;
     scores.push({ name: `rank-top-${TOP_K}`, value: top / tally.positions.length, better: 'higher' });
+  }
+  scores.push(...claimScores(tally.claims));
+  return scores;
+}
+
+/** The claim checks: found, verdict per kind, evidence, and fetch offered. */
+function claimScores(claims: ClaimTally): Score[] {
+  if (claims.expected === 0) return [];
+  const note =
+    claims.reported === 0
+      ? 'expected failure: the review reports no claims'
+      : undefined;
+  const scored = (score: Score): Score => (note ? { ...score, note } : score);
+  const scores = [
+    scored({ name: 'claims-found', value: claims.found / claims.expected, better: 'higher' }),
+  ];
+  for (const kind of [...claims.verdicts.keys()].sort()) {
+    const { expected, matched } = claims.verdicts.get(kind)!;
+    if (expected > 0) {
+      scores.push(
+        scored({ name: `claims-verdict:${kind}`, value: matched / expected, better: 'higher' }),
+      );
+    }
+  }
+  scores.push(scored({ name: 'claims-evidence', value: claims.evidence / claims.expected, better: 'higher' }));
+  if (claims.fetchWanted > 0) {
+    scores.push(
+      scored({
+        name: 'claims-fetch-offered',
+        value: claims.fetchOffered / claims.fetchWanted,
+        better: 'higher',
+      }),
+    );
   }
   return scores;
 }

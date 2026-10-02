@@ -1,0 +1,26 @@
+{
+  "noise": {
+    "src/BlobReader.cs": { "label": "none" }
+  },
+  "importantParts": ["BlobReader, BlobReader.Read in src/BlobReader.cs"],
+  "claims": [
+    {
+      "text": "The buffer GetBuffer returns is sized to the bytes written, so its Length is the blob's length.",
+      "origin": { "file": "src/BlobReader.cs", "line": 11 },
+      "library": {
+        "name": "Microsoft.IO.RecyclableMemoryStream",
+        "pinnedVersion": "1.2.2",
+        "pinnedBy": "src/BlobTool.csproj"
+      },
+      "verdict": {
+        "kind": "refuted",
+        "evidence": {
+          "file": "src/RecyclableMemoryStream.cs",
+          "line": 510,
+          "source": "library source at the pinned version"
+        }
+      },
+      "libraryFetch": true
+    }
+  ]
+}

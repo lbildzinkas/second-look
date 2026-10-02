@@ -4,6 +4,8 @@ import { reviewChange } from '@second-look/engine';
 import type { Part } from '@second-look/engine';
 import { caseInput } from './case.js';
 import type { EvaluationCase } from './case.js';
+import { pressFetches, reportedClaims } from './claims.js';
+import type { PressedClaim } from './claims.js';
 import type { PromptRegistry } from './prompts.js';
 import { addTallies, scoresOf, tallyCase } from './score.js';
 import type { Score, Tally } from './score.js';
@@ -118,13 +120,18 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
   for (const evaluationCase of options.cases) {
     const input = await caseInput(evaluationCase);
     let parts: Part[] | undefined;
+    let claims: PressedClaim[] = [];
     try {
-      parts = (await reviewChange(input)).parts;
+      const result = await reviewChange(input);
+      parts = result.parts;
+      // The evaluation stands in for the reviewer and presses every fetch
+      // the review offered, so the checks see what a press unlocked.
+      claims = pressFetches(reportedClaims(result));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       results.failures.push({ case: evaluationCase.id, error: message });
     }
-    const tally = tallyCase(input.diff, evaluationCase.expected, parts);
+    const tally = tallyCase(input.diff, evaluationCase.expected, parts, claims);
     tallies.push(tally);
     results.rows.push(...rowsOf(evaluationCase.id, tally, stampFor(evaluationCase.record.prompts)));
   }

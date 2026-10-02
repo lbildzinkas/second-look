@@ -8,5 +8,6 @@
     "app/reformat.py": { "label": "none" },
     "src/Greeter.cs": { "label": "none" }
   },
-  "importantParts": ["Cart.total in web/cart.ts", "apply_discount in app/dedent.py"]
+  "importantParts": ["Cart.total in web/cart.ts", "apply_discount in app/dedent.py"],
+  "claims": []
 }

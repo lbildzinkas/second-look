@@ -62,6 +62,12 @@ describe('the run command', () => {
     ]);
     expect(out).toContain('example-42  noise-recall:lockfile:claimed  1');
     expect(out).toContain('example-7  rank-top-3  0.5');
+    // The canaries' noise and parts pass while their claim checks fail as
+    // expected failures, because the review reports no claims yet.
+    expect(out).toContain('canary-python  claims-found  0');
+    expect(out).toContain(
+      'canary-csharp  claims-fetch-offered  0  (expected failure: the review reports no claims)',
+    );
     expect(out).toMatch(/baseline: 0 dropped, 0 missing, \d+ gained/);
     expect(code).toBe(0);
 
@@ -152,7 +158,13 @@ describe('the record command', () => {
     expect(readdirSync(join(case7, 'head', 'web')).sort()).toEqual(['cart.ts', 'checkout.ts']);
 
     const cases = await loadCases([REPOSITORY_CASES, privateFolder]);
-    expect(cases.map((each) => each.id)).toEqual(['example-42', 'example-7', 'mine']);
+    expect(cases.map((each) => each.id)).toEqual([
+      'canary-csharp',
+      'canary-python',
+      'example-42',
+      'example-7',
+      'mine',
+    ]);
     const run = await cli(['run', '--runs', join(scratch, 'runs')], env);
     expect(run.out).toContain('mine  coverage  1');
   });

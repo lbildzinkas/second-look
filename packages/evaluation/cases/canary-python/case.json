@@ -1,0 +1,21 @@
+{
+  "formatVersion": 1,
+  "id": "canary-python",
+  "source": "https://github.com/example-org/example-repo/pull/9",
+  "recordedAt": "2026-10-02T00:00:00.000Z",
+  "prompts": [],
+  "pullRequest": {
+    "url": "https://github.com/example-org/example-repo/pull/9",
+    "number": 9,
+    "title": "Add a helper that reads a documentation page",
+    "author": "reviewer-login",
+    "description": "Adds app/doc_links.py with a small helper that reads a documentation page over HTTP, the first piece of the link checker.",
+    "base": "master",
+    "head": "doc-links",
+    "baseCommit": "1212121212121212121212121212121212121212",
+    "headSha": "3434343434343434343434343434343434343434"
+  },
+  "gitAttributes": null,
+  "baseCommit": "2323232323232323232323232323232323232323",
+  "headCommit": "3434343434343434343434343434343434343434"
+}

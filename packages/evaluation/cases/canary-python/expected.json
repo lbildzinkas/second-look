@@ -1,0 +1,26 @@
+{
+  "noise": {
+    "app/doc_links.py": { "label": "none" }
+  },
+  "importantParts": ["doc_page in app/doc_links.py"],
+  "claims": [
+    {
+      "text": "Any redirect on the way is followed, so the caller always receives the final page rather than a 3xx status.",
+      "origin": { "file": "app/doc_links.py", "line": 9 },
+      "library": {
+        "name": "httpx",
+        "pinnedVersion": "0.27.2",
+        "pinnedBy": "requirements.txt"
+      },
+      "verdict": {
+        "kind": "refuted",
+        "evidence": {
+          "file": "httpx/_client.py",
+          "line": 171,
+          "source": "library source at the pinned version"
+        }
+      },
+      "libraryFetch": true
+    }
+  ]
+}

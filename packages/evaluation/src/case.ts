@@ -45,6 +45,53 @@ export interface CaseRecord {
 /** The noise a reviewer expects on one changed file. */
 export type ExpectedNoise = { label: 'none' } | { label: NoiseLabel; state: NoiseState };
 
+/** The outcome of checking a claim (the glossary's verdicts). */
+export type Verdict = 'verified' | 'refuted' | 'unverifiable' | 'not checked';
+
+/** Where a verdict's evidence came from (the glossary's evidence sources). */
+export type EvidenceSource =
+  | 'the change itself'
+  | 'library source at the pinned version'
+  | 'a CI log'
+  | 'the issue text'
+  | "the model's memory";
+
+/**
+ * One claim the change makes, as a reviewer expects the companion to find
+ * it and check it: the statement's text, where the change makes it, the
+ * library it is about as the project pins it, the verdict it deserves with
+ * the evidence that proves it, and that a library fetch should be offered
+ * before the check reads the library's source.
+ */
+export interface ExpectedClaim {
+  /** The claim's text, exactly as the change states it. */
+  text: string;
+  /** Where the change makes the claim: the file and 1-based line the statement starts at. */
+  origin: { file: string; line: number };
+  /** The library the claim is about, as the project pins it. */
+  library: {
+    /** The package name the pin uses. */
+    name: string;
+    /** The version the project pins. */
+    pinnedVersion: string;
+    /** The file that pins it, by its path in the head copy. */
+    pinnedBy: string;
+  };
+  /** The verdict the reviewer expects, with the evidence that proves it. */
+  verdict: {
+    kind: Verdict;
+    evidence: {
+      /** The evidence file, named as its source names it. */
+      file: string;
+      /** The 1-based line of the evidence file at the pinned version. */
+      line: number;
+      source: EvidenceSource;
+    };
+  };
+  /** That the companion offers a library fetch before checking this claim. */
+  libraryFetch: true;
+}
+
 /** A case's `expected.json`, written by hand. */
 export interface ExpectedResults {
   /**
@@ -57,6 +104,8 @@ export interface ExpectedResults {
    * prints it, or else by its path (the file's first part).
    */
   importantParts: string[];
+  /** The claims the change makes, each expected to be found and checked. */
+  claims: ExpectedClaim[];
 }
 
 /** A case loaded from its folder. */
