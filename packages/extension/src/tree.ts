@@ -18,6 +18,8 @@ export interface TreePart {
   tooltip?: string;
   /** Marks the parts that sank below the ones a reviewer must read. */
   kind: 'part' | 'noise';
+  /** The part itself, which clicking opens in the diff editor. */
+  part?: Part;
 }
 
 /** One section of the tree: an importance group, the unranked parts, or noise. */
@@ -106,6 +108,18 @@ export function buildTree(result: ReviewResult): TreeSection[] {
   return sections;
 }
 
+/**
+ * The parts in the order the reviewer reads them, straight from the tree:
+ * the importance groups in order, then the parts the engine has not ranked
+ * yet, then the noise last.
+ */
+export function partsInReadingOrder(result: ReviewResult): Part[] {
+  return buildTree(result)
+    .flatMap((section) => section.parts)
+    .filter((part) => part.part !== undefined)
+    .map((part) => part.part!);
+}
+
 /** The line the tooltip adds for a label that never sinks its part. */
 function labelledNotSunk(noise: LabelledNoise): string {
   return `${noise.label} · ${noise.state} — ${noise.blindSpot}`;
@@ -118,6 +132,7 @@ function rankedPart(part: Part): TreePart {
     description: part.rank!.reason,
     tooltip: [...part.rank!.signals, label].filter((line) => line !== '').join('\n'),
     kind: 'part',
+    part,
   };
 }
 
@@ -127,6 +142,7 @@ function unrankedPart(part: Part): TreePart {
     label: part.path,
     tooltip: label === '' ? undefined : label,
     kind: 'part',
+    part,
   };
 }
 
@@ -136,5 +152,6 @@ function noisePart(part: Part, noise: LabelledNoise): TreePart {
     description: `${noise.label} · ${noise.state}`,
     tooltip: noise.blindSpot,
     kind: 'noise',
+    part,
   };
 }

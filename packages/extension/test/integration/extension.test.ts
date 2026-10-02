@@ -5,9 +5,16 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type * as vscode from 'vscode';
-import { REVIEW_COMMAND, REVIEW_TREE_VIEW, activate } from '../../src/extension.js';
+import {
+  OPEN_ALL_PARTS_COMMAND,
+  OPEN_PART_COMMAND,
+  REVIEW_COMMAND,
+  REVIEW_TREE_VIEW,
+  activate,
+} from '../../src/extension.js';
+import { changeUri } from '../../src/change-copies.js';
 import { mixedResult } from '../results.js';
-import { stub, stubContext, type StubTreeView } from '../vscode-stub.js';
+import { stub, stubContext, workspace, type StubTreeView } from '../vscode-stub.js';
 
 const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.meta.url));
 const PR_URL = 'https://github.com/example-org/example-repo/pull/42';
@@ -39,28 +46,48 @@ function fakeEngine(options: FakeEngineOptions): ChildProcessWithoutNullStreams 
   });
 }
 
+/** The commands activating the companion registers. */
+function registeredCommands(): Map<string, (...args: unknown[]) => unknown> {
+  return new Map(stub.commands.map((command) => [command.id, command.handler]));
+}
+
 /** Activates the extension against a fake engine and returns its tree view. */
 async function reviewWithFakeEngine(options: FakeEngineOptions): Promise<StubTreeView> {
   activate(stubContext() as unknown as vscode.ExtensionContext, {
     spawnEngine: () => fakeEngine(options),
   });
-  expect(stub.commands).toHaveLength(1);
-  expect(stub.commands[0]!.id).toBe(REVIEW_COMMAND);
+  expect([...registeredCommands().keys()]).toEqual([
+    REVIEW_COMMAND,
+    OPEN_PART_COMMAND,
+    OPEN_ALL_PARTS_COMMAND,
+  ]);
 
   stub.inputBoxResult = PR_URL;
   stub.session = { accessToken: TOKEN };
-  await stub.commands[0]!.handler() as Promise<void>;
+  await registeredCommands().get(REVIEW_COMMAND)!() as Promise<void>;
 
   expect(stub.treeViews).toHaveLength(1);
   return stub.treeViews[0]!;
 }
 
+interface TestProvider {
+  getChildren(node?: unknown): unknown[];
+  getTreeItem(node: unknown): {
+    label?: string;
+    description?: string;
+    tooltip?: string;
+    contextValue?: string;
+    command?: { command: string; title: string; arguments?: unknown[] };
+  };
+}
+
+function providerOf(view: StubTreeView): TestProvider {
+  return view.provider as TestProvider;
+}
+
 /** The tree's nodes, as the view renders them. */
 function renderedTree(view: StubTreeView): { label: string; description?: string; tooltip?: string; contextValue?: string }[] {
-  const provider = view.provider as {
-    getChildren(node?: unknown): unknown[];
-    getTreeItem(node: unknown): { label?: string; description?: string; tooltip?: string; contextValue?: string };
-  };
+  const provider = providerOf(view);
   const rendered: { label: string; description?: string; tooltip?: string; contextValue?: string }[] = [];
   for (const node of provider.getChildren()) {
     const item = provider.getTreeItem(node);
@@ -83,35 +110,83 @@ function renderedTree(view: StubTreeView): { label: string; description?: string
   return rendered;
 }
 
+/** The tree node with this label, the argument clicking it passes on. */
+function partClick(
+  view: StubTreeView,
+  label: string,
+): { command: string; arguments: unknown[] } | undefined {
+  const provider = providerOf(view);
+  for (const node of provider.getChildren()) {
+    for (const child of provider.getChildren(node)) {
+      const item = provider.getTreeItem(child);
+      if (item.label === label && item.command !== undefined) {
+        return { command: item.command.command, arguments: item.command.arguments ?? [] };
+      }
+    }
+  }
+  return undefined;
+}
+
+/** An editor the double can show, recording what the extension did to it. */
+interface RecordingEditor {
+  document: { uri: { toString(): string } };
+  revealed: { start: number; end: number; type: number }[];
+  decorated: { type: unknown; ranges: unknown[] }[];
+  revealRange(range: unknown, type: number): void;
+  setDecorations(type: unknown, ranges: unknown[]): void;
+}
+
+function editorFor(uri: { toString(): string }): RecordingEditor {
+  const editor: RecordingEditor = {
+    document: { uri },
+    revealed: [],
+    decorated: [],
+    revealRange(range, type) {
+      const r = range as { start: { line: number }; end: { line: number } };
+      editor.revealed.push({ start: r.start.line, end: r.end.line, type });
+    },
+    setDecorations(type, ranges) {
+      editor.decorated.push({ type, ranges });
+    },
+  };
+  return editor;
+}
+
 beforeEach(() => {
   stub.reset();
 });
 
 describe('activating the companion', () => {
-  it('registers the review command and the review tree', () => {
+  it('registers the review commands and the review tree, and serves the change read-only', () => {
     activate(stubContext() as unknown as vscode.ExtensionContext, {
       spawnEngine: () => {
         throw new Error('no review ran');
       },
     });
 
-    expect(stub.commands.map((command) => command.id)).toEqual([REVIEW_COMMAND]);
+    expect(stub.commands.map((command) => command.id)).toEqual([
+      REVIEW_COMMAND,
+      OPEN_PART_COMMAND,
+      OPEN_ALL_PARTS_COMMAND,
+    ]);
     expect(stub.treeViews.map((view) => view.id)).toEqual([REVIEW_TREE_VIEW]);
+    expect(stub.fileSystemProviders.map((entry) => entry.scheme)).toEqual(['second-look-change']);
+    expect(stub.fileSystemProviders[0]!.options?.isReadonly).toBeInstanceOf(Object);
   });
 
-  it('shows the placeholder before any review ran', () => {
+  it('shows the placeholder before any review ran, with nothing to open', () => {
     activate(stubContext() as unknown as vscode.ExtensionContext, {
       spawnEngine: () => {
         throw new Error('no review ran');
       },
     });
 
-    expect(renderedTree(stub.treeViews[0]!)).toEqual([
-      {
-        label: 'Review a pull request to see its parts here, ranked by importance.',
-        contextValue: 'part',
-      },
-    ]);
+    const provider = providerOf(stub.treeViews[0]!);
+    const placeholder = provider.getChildren()[0]!;
+    expect(provider.getTreeItem(placeholder).label).toBe(
+      'Review a pull request to see its parts here, ranked by importance.',
+    );
+    expect(provider.getTreeItem(placeholder).command).toBeUndefined();
   });
 });
 
@@ -213,7 +288,7 @@ describe('the review command, end to end against a fake engine', () => {
     stub.inputBoxResult = undefined;
     stub.session = { accessToken: TOKEN };
 
-    await stub.commands[0]!.handler() as Promise<void>;
+    await registeredCommands().get(REVIEW_COMMAND)!() as Promise<void>;
 
     expect(stub.sessionRequests).toEqual([]);
     expect(stub.progressTitles).toEqual([]);
@@ -232,7 +307,7 @@ describe('the review command, end to end against a fake engine', () => {
     stub.inputBoxResult = PR_URL;
     stub.session = undefined;
 
-    await stub.commands[0]!.handler() as Promise<void>;
+    await registeredCommands().get(REVIEW_COMMAND)!() as Promise<void>;
 
     expect(stub.warningMessages).toEqual(['Sign in to GitHub to review a pull request.']);
     expect(stub.progressTitles).toEqual([]);
@@ -245,9 +320,142 @@ describe('the review command, end to end against a fake engine', () => {
     stub.inputBoxResult = PR_URL;
     stub.cancelSignIn = true;
 
-    await stub.commands[0]!.handler() as Promise<void>;
+    await registeredCommands().get(REVIEW_COMMAND)!() as Promise<void>;
 
     expect(stub.warningMessages).toEqual(['Sign in to GitHub to review a pull request.']);
     expect(stub.progressTitles).toEqual([]);
+  });
+});
+
+describe('reading a part in the multi-file diff', () => {
+  const copies = () => mixedResult().copies;
+  const base = (path: string) => changeUri('base', copies().base.commit, path);
+  const head = (path: string) => changeUri('head', copies().head.commit, path);
+
+  /** Clicks the tree row for a part, the way selecting it does. */
+  async function clickPart(view: StubTreeView, label: string): Promise<void> {
+    const click = partClick(view, label);
+    expect(click?.command).toBe(OPEN_PART_COMMAND);
+    await registeredCommands().get(OPEN_PART_COMMAND)!(...(click?.arguments ?? [])) as Promise<void>;
+  }
+
+  it('opens a clicked part with exactly its files, base left and head right', async () => {
+    const view = await reviewWithFakeEngine({ result: mixedResult(), logName: 'open-part.log' });
+
+    await clickPart(view, 'src/retry.py');
+
+    expect(stub.executedCommands).toEqual([
+      {
+        id: 'vscode.changes',
+        args: [
+          'src/retry.py',
+          [[head('src/retry.py'), base('src/retry.py'), head('src/retry.py')]],
+        ],
+      },
+    ]);
+  });
+
+  it('scrolls to the part first hunk and marks its lines once the diff shows them', async () => {
+    const view = await reviewWithFakeEngine({ result: mixedResult(), logName: 'marking.log' });
+
+    await clickPart(view, 'src/retry.py');
+    const modified = editorFor(head('src/retry.py'));
+    const original = editorFor(base('src/retry.py'));
+    stub.fireVisibleTextEditors([modified, original]);
+
+    expect(modified.revealed).toEqual([{ start: 2, end: 12, type: 1 }]);
+    expect(modified.decorated).toEqual([
+      {
+        type: stub.decorationTypes[0],
+        ranges: [{ start: { line: 4, character: 0 }, end: { line: 10, character: Number.MAX_SAFE_INTEGER } }],
+      },
+    ]);
+    expect(original.decorated).toEqual([
+      {
+        type: stub.decorationTypes[0],
+        ranges: [{ start: { line: 4, character: 0 }, end: { line: 5, character: Number.MAX_SAFE_INTEGER } }],
+      },
+    ]);
+    expect(original.revealed).toEqual([]);
+  });
+
+  it('replaces an earlier part marks with the next click', async () => {
+    const view = await reviewWithFakeEngine({ result: mixedResult(), logName: 're-mark.log' });
+
+    await clickPart(view, 'src/retry.py');
+    const earlier = editorFor(head('src/retry.py'));
+    stub.fireVisibleTextEditors([earlier]);
+    expect(earlier.decorated).toHaveLength(1);
+
+    await clickPart(view, 'src/settings.ts');
+    expect(earlier.decorated).toHaveLength(2); // cleared, then left alone
+    expect(earlier.decorated[1]).toEqual({ type: stub.decorationTypes[0], ranges: [] });
+
+    const next = editorFor(head('src/settings.ts'));
+    stub.fireVisibleTextEditors([earlier, next]);
+    expect(next.decorated).toEqual([]); // settings has no hunks in the fixture
+    expect(stub.executedCommands.at(-1)).toEqual({
+      id: 'vscode.changes',
+      args: [
+        'src/settings.ts',
+        [[head('src/settings.ts'), base('src/settings.ts'), head('src/settings.ts')]],
+      ],
+    });
+  });
+
+  it('serves the cached base and head content read-only, and refuses writes', async () => {
+    await reviewWithFakeEngine({ result: mixedResult(), logName: 'read-only.log' });
+    const content = new TextEncoder().encode('cached head content\n');
+    stub.files.set(`${copies().head.path}/src/retry.py`, content);
+
+    await expect(workspace.fs.readFile(head('src/retry.py'))).resolves.toEqual(content);
+    await expect(
+      workspace.fs.writeFile(head('src/retry.py'), new TextEncoder().encode('edited')),
+    ).rejects.toThrow('the base and head copies are read-only');
+  });
+
+  it('opens the whole change in one multi-file diff, in the tree order with the noise last', async () => {
+    const view = await reviewWithFakeEngine({ result: mixedResult(), logName: 'open-all.log' });
+    expect(partClick(view, 'uv.lock')?.command).toBe(OPEN_PART_COMMAND);
+
+    await registeredCommands().get(OPEN_ALL_PARTS_COMMAND)!() as Promise<void>;
+
+    expect(stub.executedCommands).toEqual([
+      {
+        id: 'vscode.changes',
+        args: [
+          'Retry failed webhook sends (#42)',
+          [
+            [head('src/retry.py'), base('src/retry.py'), head('src/retry.py')],
+            [head('src/settings.ts'), base('src/settings.ts'), head('src/settings.ts')],
+            [head('CHANGELOG.md'), base('CHANGELOG.md'), head('CHANGELOG.md')],
+            [head('src/legacy.ts'), base('src/legacy.ts'), head('src/legacy.ts')],
+            [head('__tests__/retry.test.ts.snap'), base('__tests__/retry.test.ts.snap'), head('__tests__/retry.test.ts.snap')],
+            [head('uv.lock'), base('uv.lock'), head('uv.lock')],
+            [head('transport.py'), base('transport.py'), head('transport.py')],
+          ],
+        ],
+      },
+    ]);
+
+    // The first part in order is the one the editor scrolls and marks.
+    const modified = editorFor(head('src/retry.py'));
+    stub.fireVisibleTextEditors([modified]);
+    expect(modified.revealed).toEqual([{ start: 2, end: 12, type: 1 }]);
+  });
+
+  it('asks for a review before opening all parts when none ran yet', async () => {
+    activate(stubContext() as unknown as vscode.ExtensionContext, {
+      spawnEngine: () => {
+        throw new Error('no review ran');
+      },
+    });
+
+    await registeredCommands().get(OPEN_ALL_PARTS_COMMAND)!() as Promise<void>;
+
+    expect(stub.warningMessages).toEqual([
+      'Review a pull request first, then open all its parts in order.',
+    ]);
+    expect(stub.executedCommands).toEqual([]);
   });
 });

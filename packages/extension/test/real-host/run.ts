@@ -1,10 +1,15 @@
 import { deepStrictEqual, ok } from 'node:assert';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import * as vscode from 'vscode';
-import { REVIEW_COMMAND } from 'second-look-extension';
+import {
+  CHANGE_SCHEME,
+  OPEN_ALL_PARTS_COMMAND,
+  OPEN_PART_COMMAND,
+  REVIEW_COMMAND,
+} from 'second-look-extension';
 import { mixedResult } from '../results.js';
 
 /**
@@ -86,6 +91,67 @@ async function renderedTree<T>(provider: vscode.TreeDataProvider<T>): Promise<Re
   return rendered;
 }
 
+/** Polls until a probe finds what it waits for, or the test times out. */
+async function waitFor<T>(what: string, probe: () => T | undefined): Promise<T> {
+  const deadline = Date.now() + TIMEOUT_MS;
+  for (;;) {
+    const found = probe();
+    if (found !== undefined) return found;
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
+/** Writes one file of a copy, creating its folders. */
+function plantCopyFile(copyDir: string, path: string, content: string): void {
+  const absolute = join(copyDir, path);
+  mkdirSync(dirname(absolute), { recursive: true });
+  writeFileSync(absolute, content);
+}
+
+/** The pull request's base copy, as the engine's cache would hold it. */
+const BASE_FILES: Record<string, string> = {
+  'src/retry.py': [
+    '# sending the webhook payload',
+    'def send(payload):',
+    '    url = settings.endpoint',
+    '    response = post(url, payload)',
+    '    if response.status >= 500:',
+    '        raise SendError(response)',
+    '    return response',
+    '',
+  ].join('\n'),
+  'src/settings.ts': 'export const attempts = 3;\n',
+  'CHANGELOG.md': '# Changelog\n',
+  'src/legacy.ts': 'export function legacy(): void {}\n',
+  '__tests__/retry.test.ts.snap': 'snapshot of the retry output\n',
+  'uv.lock': 'lockfile-content\n',
+  'transport.py': 'def deliver(payload):\n    pass\n',
+};
+
+/** The head copy: the retry part grew, everything else is the base. */
+const HEAD_FILES: Record<string, string> = {
+  ...BASE_FILES,
+  'src/retry.py': [
+    '# sending the webhook payload',
+    'def send(payload):',
+    '    url = settings.endpoint',
+    '    for attempt in retry.attempts():',
+    '        try:',
+    '            response = post(url, payload)',
+    '        except TransientError:',
+    '            continue',
+    '        if response.status >= 500:',
+    '            raise SendError(response)',
+    '        return response',
+    '    raise SendError("no attempt succeeded")',
+    '',
+    'def sign(payload):',
+    '    return hmac(payload, settings.secret)',
+    '',
+  ].join('\n'),
+};
+
 const EXPECTED_TREE: Rendered[] = [
   { label: 'Must review', tooltip: 'The parts to read first.' },
   {
@@ -160,11 +226,24 @@ export async function run(): Promise<void> {
   });
 
   try {
+    // The copies the engine's cache would hold, planted as real files so
+    // the diff editor reads real content through the companion's
+    // read-only file system.
+    const baseDir = join(workDir, 'base');
+    const headDir = join(workDir, 'head');
+    for (const [path, content] of Object.entries(BASE_FILES)) {
+      plantCopyFile(baseDir, path, content);
+    }
+    for (const [path, content] of Object.entries(HEAD_FILES)) {
+      plantCopyFile(headDir, path, content);
+    }
+
     // The fake engine takes the real engine's place: the companion's own
     // spawn starts whatever SECOND_LOOK_ENGINE_ENTRY names, and the
     // fixture reads its result and its log path from this environment.
+    const review = mixedResult({ base: baseDir, head: headDir });
     process.env['SECOND_LOOK_ENGINE_ENTRY'] = FAKE_ENGINE;
-    process.env['FAKE_ENGINE_RESULT'] = JSON.stringify(mixedResult());
+    process.env['FAKE_ENGINE_RESULT'] = JSON.stringify(review);
     process.env['FAKE_ENGINE_LOG'] = join(workDir, 'engine.log');
 
     // One activation, the editor's own: already happened or forced here,
@@ -209,6 +288,88 @@ export async function run(): Promise<void> {
     ok(requests[0] && requests[0].method === 'initialize');
     ok(requests[1] && requests[1].method === 'review');
     deepStrictEqual(requests[1]?.params, { url: PR_URL, token: TOKEN });
+
+    // Reading a part: clicking it opens the multi-file diff with exactly
+    // its files, read-only from the cached copies, scrolled to the part's
+    // first hunk.
+    const sections = (await provider.getChildren()) as unknown as {
+      parts?: { label: string; part?: { path: string } }[];
+    }[];
+    const retry = sections
+      .flatMap((section) => section.parts ?? [])
+      .find((row) => row.label === 'src/retry.py')?.part;
+    ok(retry, 'the tree row for src/retry.py carries its part');
+
+    await withTimeout(
+      vscode.commands.executeCommand(OPEN_PART_COMMAND, retry),
+      'the open-part command',
+    );
+
+    const retryHead = await withTimeout(
+      waitFor(
+        'the diff editor for src/retry.py',
+        () =>
+          vscode.window.visibleTextEditors.find(
+            (editor) =>
+              editor.document.uri.scheme === CHANGE_SCHEME &&
+              editor.document.uri.authority === 'head' &&
+              editor.document.uri.path.endsWith('/src/retry.py'),
+          ),
+      ),
+      'the diff editor for src/retry.py',
+    );
+
+    // The editor scrolled to the part's first hunk, which starts at the
+    // third line of the head side.
+    await withTimeout(
+      waitFor('the diff scrolled to the first hunk', () => {
+        const visible = retryHead.visibleRanges[0];
+        return visible !== undefined &&
+          visible.start.line <= 2 &&
+          2 <= visible.end.line
+          ? true
+          : undefined;
+      }),
+      'the diff scrolled to the first hunk',
+    );
+
+    // The copies serve the pull request's content, read-only: the head
+    // side holds the new retry logic, the base side the old one, and a
+    // write is refused.
+    const changeFile = (side: 'base' | 'head', path: string) =>
+      vscode.Uri.from({
+        scheme: CHANGE_SCHEME,
+        authority: side,
+        path: `/${review.copies[side].commit}/${path}`,
+      });
+    const headContent = await vscode.workspace.fs.readFile(changeFile('head', 'src/retry.py'));
+    const baseContent = await vscode.workspace.fs.readFile(changeFile('base', 'src/retry.py'));
+    deepStrictEqual(new TextDecoder().decode(headContent), HEAD_FILES['src/retry.py']!);
+    deepStrictEqual(new TextDecoder().decode(baseContent), BASE_FILES['src/retry.py']!);
+    await vscode.workspace.fs
+      .writeFile(retryHead.document.uri, new TextEncoder().encode('edited'))
+      .then(
+        () => {
+          throw new Error('writing a cached copy was not refused');
+        },
+        () => undefined,
+      );
+
+    // The whole change opens in one multi-file diff, in the tree's order.
+    await withTimeout(
+      vscode.commands.executeCommand(OPEN_ALL_PARTS_COMMAND),
+      'the open-all-parts command',
+    );
+    await withTimeout(
+      waitFor('the whole-change diff editor tab', () =>
+        vscode.window.tabGroups.all
+          .flatMap((group) => group.tabs)
+          .some((tab) => tab.label === 'Retry failed webhook sends (#42)')
+          ? true
+          : undefined,
+      ),
+      'the whole-change diff editor tab',
+    );
   } finally {
     delete process.env['SECOND_LOOK_ENGINE_ENTRY'];
     delete process.env['FAKE_ENGINE_RESULT'];

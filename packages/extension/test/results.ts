@@ -1,4 +1,10 @@
-import { REVIEW_RESULT_VERSION, type NoiseAssessment, type Part, type ReviewResult } from '@second-look/engine';
+import {
+  REVIEW_RESULT_VERSION,
+  type Hunk,
+  type NoiseAssessment,
+  type Part,
+  type ReviewResult,
+} from '@second-look/engine';
 
 /** The noise assessment every part carries: no rule applied. */
 export const NO_RULE_APPLIED: NoiseAssessment = { label: 'none', note: 'no rule applied' };
@@ -54,19 +60,25 @@ function summary() {
   };
 }
 
-export function result(parts: Part[]): ReviewResult {
+/** Where the test's copies sit, when a test plants real files for them. */
+export interface CopyPaths {
+  base: string;
+  head: string;
+}
+
+export function result(parts: Part[], copies?: CopyPaths): ReviewResult {
   return {
     version: REVIEW_RESULT_VERSION,
     pullRequest: summary(),
     copies: {
       base: {
         commit: '0123456789abcdef0123456789abcdef01234567',
-        path: '/cache/pull-42/0123456789abcdef0123456789abcdef01234567',
+        path: copies?.base ?? '/cache/pull-42/0123456789abcdef0123456789abcdef01234567',
         reused: false,
       },
       head: {
         commit: 'f00dcafe1234567890abcdef1234567890abcdef12',
-        path: '/cache/pull-42/f00dcafe1234567890abcdef1234567890abcdef12',
+        path: copies?.head ?? '/cache/pull-42/f00dcafe1234567890abcdef1234567890abcdef12',
         reused: false,
       },
     },
@@ -75,60 +87,92 @@ export function result(parts: Part[]): ReviewResult {
   };
 }
 
+/** The retry part's hunk: two deleted lines replaced by seven added ones. */
+function retryHunk(): Hunk {
+  return {
+    oldStart: 3,
+    oldLines: 6,
+    newStart: 3,
+    newLines: 11,
+    heading: 'def send(payload):',
+    entities: [],
+    lines: [
+      { kind: 'context', oldLineNumber: 3, newLineNumber: 3, text: '    url = settings.endpoint' },
+      { kind: 'context', oldLineNumber: 4, newLineNumber: 4, text: '    response = post(url, payload)' },
+      { kind: 'deletion', oldLineNumber: 5, text: '    if response.status >= 500:' },
+      { kind: 'deletion', oldLineNumber: 6, text: '        raise SendError(response)' },
+      { kind: 'addition', newLineNumber: 5, text: '    for attempt in retry.attempts():' },
+      { kind: 'addition', newLineNumber: 6, text: '        try:' },
+      { kind: 'addition', newLineNumber: 7, text: '            response = post(url, payload)' },
+      { kind: 'addition', newLineNumber: 8, text: '        except TransientError:' },
+      { kind: 'addition', newLineNumber: 9, text: '            continue' },
+      { kind: 'addition', newLineNumber: 10, text: '        if response.status >= 500:' },
+      { kind: 'addition', newLineNumber: 11, text: '            raise SendError(response)' },
+      { kind: 'context', oldLineNumber: 7, newLineNumber: 12, text: '    return response' },
+      { kind: 'context', oldLineNumber: 8, newLineNumber: 13, text: '' },
+    ],
+  };
+}
+
 /** A ranked, labelled, and unranked mix that exercises the whole tree. */
-export function mixedResult(): ReviewResult {
-  return result([
-    part('src/retry.py', {
-      additions: 40,
-      rank: {
-        importance: 'must review',
-        reason: 'New code the send path now runs on every delivery.',
-        signals: ['new code', '2 callers', 'no tests before this pull request'],
-      },
-    }),
-    part('src/settings.ts', {
-      rank: {
-        importance: 'worth reviewing',
-        reason: 'Changed code that the retry policy reads.',
-        signals: ['changed code'],
-      },
-    }),
-    part('CHANGELOG.md', {
-      rank: {
-        importance: 'context',
-        reason: 'Release note only.',
-        signals: ['documentation only'],
-      },
-    }),
-    part('src/legacy.ts'),
-    part('__tests__/retry.test.ts.snap', {
-      additions: 12,
-      noise: {
-        label: 'snapshot',
-        rule: 'snapshot-name',
-        state: 'claimed',
-        blindSpot: 'Only known snapshot names are matched.',
-      },
-    }),
-    part('uv.lock', {
-      additions: 14,
-      deletions: 9,
-      noise: {
-        label: 'lockfile',
-        rule: 'lockfile-name',
-        state: 'claimed',
-        blindSpot: 'Only known lockfile names are matched.',
-      },
-    }),
-    part('transport.py', {
-      additions: 0,
-      deletions: 0,
-      noise: {
-        label: 'moved or renamed',
-        rule: 'rename-identical',
-        state: 'confirmed',
-        blindSpot: 'Identical content proves only the move.',
-      },
-    }),
-  ]);
+export function mixedResult(copies?: CopyPaths): ReviewResult {
+  return result(
+    [
+      part('src/retry.py', {
+        additions: 7,
+        deletions: 2,
+        hunks: [retryHunk()],
+        rank: {
+          importance: 'must review',
+          reason: 'New code the send path now runs on every delivery.',
+          signals: ['new code', '2 callers', 'no tests before this pull request'],
+        },
+      }),
+      part('src/settings.ts', {
+        rank: {
+          importance: 'worth reviewing',
+          reason: 'Changed code that the retry policy reads.',
+          signals: ['changed code'],
+        },
+      }),
+      part('CHANGELOG.md', {
+        rank: {
+          importance: 'context',
+          reason: 'Release note only.',
+          signals: ['documentation only'],
+        },
+      }),
+      part('src/legacy.ts'),
+      part('__tests__/retry.test.ts.snap', {
+        additions: 12,
+        noise: {
+          label: 'snapshot',
+          rule: 'snapshot-name',
+          state: 'claimed',
+          blindSpot: 'Only known snapshot names are matched.',
+        },
+      }),
+      part('uv.lock', {
+        additions: 14,
+        deletions: 9,
+        noise: {
+          label: 'lockfile',
+          rule: 'lockfile-name',
+          state: 'claimed',
+          blindSpot: 'Only known lockfile names are matched.',
+        },
+      }),
+      part('transport.py', {
+        additions: 0,
+        deletions: 0,
+        noise: {
+          label: 'moved or renamed',
+          rule: 'rename-identical',
+          state: 'confirmed',
+          blindSpot: 'Identical content proves only the move.',
+        },
+      }),
+    ],
+    copies,
+  );
 }

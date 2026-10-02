@@ -1,12 +1,17 @@
 import * as vscode from 'vscode';
 import { EngineClient, spawnEngineProcess, type SpawnEngine } from './engine-client.js';
+import {
+  OPEN_ALL_PARTS_COMMAND,
+  OPEN_PART_COMMAND,
+  REVIEW_COMMAND,
+  REVIEW_TREE_VIEW,
+} from './commands.js';
+import { CHANGE_SCHEME, ChangeCopiesProvider } from './change-copies.js';
+import { openPartInDiffEditor, openWholeChangeInDiffEditor, PartMarker } from './diff-view.js';
 import { buildTree, type TreePart, type TreeSection } from './tree.js';
+import type { Part, ReviewResult } from '@second-look/engine';
 
-/** The command a reviewer runs on a pull request URL. */
-export const REVIEW_COMMAND = 'second-look.reviewPullRequest';
-
-/** The tree view in the side bar that ranks the parts. */
-export const REVIEW_TREE_VIEW = 'second-look.reviewTree';
+export { OPEN_ALL_PARTS_COMMAND, OPEN_PART_COMMAND, REVIEW_COMMAND, REVIEW_TREE_VIEW };
 
 /** The parts of the environment tests replace; production uses the real ones. */
 export interface ExtensionDeps {
@@ -29,7 +34,8 @@ function isSection(node: TreeNode): node is TreeSection {
 
 /**
  * The side-bar tree: importance groups in order with the reason beside
- * each part and the signals in its tooltip, and the noise last.
+ * each part and the signals in its tooltip, and the noise last. Clicking
+ * a part opens it in the diff editor.
  */
 class ReviewTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   private readonly change = new vscode.EventEmitter<void>();
@@ -52,6 +58,13 @@ class ReviewTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     item.description = node.description;
     item.tooltip = node.tooltip;
     item.contextValue = node.kind;
+    if (node.part !== undefined) {
+      item.command = {
+        command: OPEN_PART_COMMAND,
+        title: 'Open part in the diff editor',
+        arguments: [node.part],
+      };
+    }
     return item;
   }
 
@@ -70,20 +83,30 @@ class ReviewTreeProvider implements vscode.TreeDataProvider<TreeNode> {
  * that sign-in — the token travels with the request and is never stored.
  * Progress shows while the engine works, and an engine failure reads as
  * its plain message.
+ *
+ * The session keeps the result it shows, so a part click can open the
+ * multi-file diff from the same copies the engine downloaded.
  */
 class ReviewSession {
   private readonly tree: ReviewTreeProvider;
   private readonly treeView: vscode.TreeView<TreeNode>;
+  private readonly copies: ChangeCopiesProvider;
+  private readonly marker: PartMarker;
   private readonly spawnEngine: ExtensionDeps['spawnEngine'];
   private engine: EngineClient | undefined;
+  private result: ReviewResult | undefined;
 
   constructor(
     tree: ReviewTreeProvider,
     treeView: vscode.TreeView<TreeNode>,
+    copies: ChangeCopiesProvider,
+    marker: PartMarker,
     deps: ExtensionDeps,
   ) {
     this.tree = tree;
     this.treeView = treeView;
+    this.copies = copies;
+    this.marker = marker;
     this.spawnEngine = deps.spawnEngine;
   }
 
@@ -119,8 +142,41 @@ class ReviewSession {
         { location: { viewId: REVIEW_TREE_VIEW }, title: 'Reading the pull request…' },
         () => this.engineReview(url.trim(), accessToken),
       );
+      this.result = result;
+      this.copies.setCopies(result.copies);
       this.tree.setSections(buildTree(result));
       await this.revealFirstSection();
+    } catch (error) {
+      vscode.window.showErrorMessage(
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  /** Opens one part in the multi-file diff editor, read from the cached copies. */
+  async openPart(part: Part): Promise<void> {
+    if (this.result === undefined) {
+      return;
+    }
+    try {
+      await openPartInDiffEditor(part, this.result, this.marker);
+    } catch (error) {
+      vscode.window.showErrorMessage(
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  /** Opens the whole change in one multi-file diff, in the tree's ranked order. */
+  async openAllParts(): Promise<void> {
+    if (this.result === undefined) {
+      vscode.window.showWarningMessage(
+        'Review a pull request first, then open all its parts in order.',
+      );
+      return;
+    }
+    try {
+      await openWholeChangeInDiffEditor(this.result, this.marker);
     } catch (error) {
       vscode.window.showErrorMessage(
         error instanceof Error ? error.message : String(error),
@@ -155,8 +211,11 @@ class ReviewSession {
 
 /**
  * Activates the companion: registers the review command and the review
- * tree. Nothing here runs anything from the workspace — the engine is
- * started from the companion's own install and only ever reads GitHub.
+ * tree, the read-only file system that serves the change's copies, and
+ * the commands that open a part — or the whole change, in ranked order —
+ * in the editor's multi-file diff. Nothing here runs anything from the
+ * workspace — the engine is started from the companion's own install and
+ * only ever reads GitHub.
  *
  * Returns the review tree's data provider, so a test running in a real
  * editor can read the tree the command filled.
@@ -169,13 +228,26 @@ export function activate(
   const treeView = vscode.window.createTreeView(REVIEW_TREE_VIEW, {
     treeDataProvider: tree,
   });
-  const session = new ReviewSession(tree, treeView, deps);
+  const copies = new ChangeCopiesProvider();
+  const marker = new PartMarker();
+  const session = new ReviewSession(tree, treeView, copies, marker, deps);
   context.subscriptions.push(
     treeView,
+    marker,
     { dispose: () => session.dispose() },
+    vscode.workspace.registerFileSystemProvider(CHANGE_SCHEME, copies, {
+      isCaseSensitive: true,
+      isReadonly: new vscode.MarkdownString(
+        'The base and head copies are read-only; nothing from the pull request is written.',
+      ),
+    }),
     vscode.commands.registerCommand(REVIEW_COMMAND, (url?: string) =>
       session.reviewPullRequest(url),
     ),
+    vscode.commands.registerCommand(OPEN_PART_COMMAND, (part?: Part) =>
+      part === undefined ? undefined : session.openPart(part),
+    ),
+    vscode.commands.registerCommand(OPEN_ALL_PARTS_COMMAND, () => session.openAllParts()),
   );
   return tree;
 }
