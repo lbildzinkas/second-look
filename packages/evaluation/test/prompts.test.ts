@@ -9,7 +9,7 @@ import {
 import type { PromptRegistry } from '../src/prompts.js';
 
 function evaluationCase(id: string, prompts: string[]): EvaluationCase {
-  return { id, folder: id, record: { prompts } as EvaluationCase['record'], expected: { noise: {}, importantParts: [] } };
+  return { id, folder: id, record: { prompts } as EvaluationCase['record'], expected: { noise: {}, importantParts: [], claims: [] } };
 }
 
 const REGISTRY: PromptRegistry = {

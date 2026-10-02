@@ -12,5 +12,6 @@
     "src/generated/options.json": { "label": "generated", "state": "claimed" },
     "package-lock.json": { "label": "lockfile", "state": "claimed" }
   },
-  "importantParts": ["scripts/run.sh", "src/settings.ts"]
+  "importantParts": ["scripts/run.sh", "src/settings.ts"],
+  "claims": []
 }

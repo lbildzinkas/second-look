@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,7 +12,7 @@ import {
   temporaryCacheDir,
 } from '../../engine/test/helpers.js';
 import { hasStamp } from '../src/baseline.js';
-import { loadCases } from '../src/case.js';
+import { loadCase, loadCases } from '../src/case.js';
 import { runCli } from '../src/cli.js';
 import { recordCase } from '../src/record.js';
 import { ALL_CASES, NO_AGENT, TRACE_FILE, traceAgentCall } from '../src/run.js';
@@ -62,6 +62,12 @@ describe('the run command', () => {
     ]);
     expect(out).toContain('example-42  noise-recall:lockfile:claimed  1');
     expect(out).toContain('example-7  rank-top-3  0.5');
+    // The canaries' noise and parts pass while their claim checks fail as
+    // expected failures, because the review reports no claims yet.
+    expect(out).toContain('canary-python  claims-found  0');
+    expect(out).toContain(
+      'canary-csharp  claims-fetch-offered  0  (expected failure: the review reports no claims)',
+    );
     expect(out).toMatch(/baseline: 0 dropped, 0 missing, \d+ gained/);
     expect(code).toBe(0);
 
@@ -74,6 +80,31 @@ describe('the run command', () => {
     expect(results.rows.some((row) => row.case === ALL_CASES)).toBe(true);
     // A model-free run calls no agent, so its trace is empty.
     expect(readFileSync(join(runFolder(), TRACE_FILE), 'utf8')).toBe('');
+  });
+
+  it('keeps scoring a case whose expected.json omits whole sections', async () => {
+    const legacy = join(scratch, 'cases', 'example-7');
+    cpSync(join(REPOSITORY_CASES, 'example-7'), legacy, { recursive: true });
+    const expectedPath = join(legacy, 'expected.json');
+    const recorded = JSON.parse(readFileSync(expectedPath, 'utf8')) as Record<string, unknown>;
+    delete recorded.claims;
+    delete recorded.importantParts;
+    delete recorded.noise;
+    writeFileSync(expectedPath, `${JSON.stringify(recorded, null, 2)}\n`);
+
+    const loaded = await loadCase(legacy);
+    expect(loaded.expected.claims).toEqual([]);
+    expect(loaded.expected.importantParts).toEqual([]);
+    expect(loaded.expected.noise).toEqual({});
+
+    const run = await cli(['run', '--cases', join(scratch, 'cases'), '--runs', join(scratch, 'runs')]);
+    expect(run.err).toBe('');
+    expect(run.code).toBe(0);
+    expect(run.out).toContain('example-7  coverage');
+    const results = JSON.parse(readFileSync(join(runFolder(), 'results.json'), 'utf8')) as RunResults;
+    expect(results.failures).toEqual([]);
+    const rows = results.rows.filter((row) => row.case === 'example-7');
+    expect(rows.map((row) => row.name)).toEqual(['coverage']);
   });
 
   it('fails when a model-free score drops below the baseline', async () => {
@@ -152,7 +183,13 @@ describe('the record command', () => {
     expect(readdirSync(join(case7, 'head', 'web')).sort()).toEqual(['cart.ts', 'checkout.ts']);
 
     const cases = await loadCases([REPOSITORY_CASES, privateFolder]);
-    expect(cases.map((each) => each.id)).toEqual(['example-42', 'example-7', 'mine']);
+    expect(cases.map((each) => each.id)).toEqual([
+      'canary-csharp',
+      'canary-python',
+      'example-42',
+      'example-7',
+      'mine',
+    ]);
     const run = await cli(['run', '--runs', join(scratch, 'runs')], env);
     expect(run.out).toContain('mine  coverage  1');
   });

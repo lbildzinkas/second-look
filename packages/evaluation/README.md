@@ -15,12 +15,15 @@ A case is one folder, named after the case:
 | `base/`, `head/` | The content the review reads from each version: every changed file, and on the head side every file that names the change's entities, so the name-based reference counts come out as in the live review. |
 | `expected.json` | The expected results, written by hand. |
 
-`expected.json` has two fields:
+`expected.json` has three fields:
 
 - `noise` — each changed file's expected noise, by its path on the new side: `{ "label": "none" }`, or a label with its state, such as `{ "label": "lockfile", "state": "claimed" }`. A file set to `null` is not labelled yet and counts in no score.
 - `importantParts` — the parts a reviewer must not miss, each by the part's name as the engine prints it (`Cart.total in web/cart.ts`), or else by its path, which matches the file's first part.
+- `claims` — the claims the change makes, each with its text, where the change makes it (`origin`), the library it is about as the project pins it (`library`), the verdict it deserves with the evidence that proves it (`verdict`), and `libraryFetch: true` when the companion should offer a library fetch before checking it.
 
-The repository's cases live in `cases/`. `example-42` and `example-7` are invented pull requests, recorded from the engine's test fixtures.
+Any of the three may be left out: the omitted field simply counts nothing, so an `expected.json` written before a field existed keeps running.
+
+The repository's cases live in `cases/`. `example-42` and `example-7` are invented pull requests, recorded from the engine's test fixtures. `canary-python` and `canary-csharp` are hand-made canaries for the companion's core promise: a change whose docstring overclaims how a pinned library behaves (`httpx` 0.27.2, `Microsoft.IO.RecyclableMemoryStream` 1.2.2), with nothing in the description that gives the answer away. Each records its claim, the refuted verdict with evidence at the pinned version, and that a library fetch should be offered; the evaluation presses the fetch when the review offers one.
 
 ### Recording a case
 
@@ -43,6 +46,7 @@ Plain checks come first; each is computed per case and over the whole run (the `
 - `noise-precision:<class>` and `noise-recall:<class>` — per noise class and state, such as `lockfile:claimed`, `moved or renamed:confirmed` or `none`, over the hand-labelled files.
 - `rank-median` — the median 1-based position of the known important parts in the ranked parts (lower is better); a part the result lacks counts as one past the last.
 - `rank-top-3` — the share of the known important parts among the first three.
+- `claims-found`, `claims-verdict:<kind>`, `claims-evidence` and `claims-fetch-offered` — over the hand-labelled claims: whether the review reported each claim (by exact text), gave it the expected verdict with the expected evidence (file, line, source), and offered a library fetch for the pinned library. The evaluation presses every offered fetch, as the reviewer would, and library-source evidence counts only behind a pressed fetch ([ADR 0003](../../docs/adr/0003-library-source-only-on-reviewer-request.md)). The engine reports no claims yet, so these checks fail as expected failures: the report marks them, the baseline stores them at their failing values, and the claim steps land when they start to measure something.
 
 A score with nothing to count is left out rather than given a value.
 
@@ -69,6 +73,7 @@ Any model judge — a prompt that scores another prompt's output — must first 
 
 ## Trying it by hand
 
-1. Record a case from a public pull request into a folder of your own, and write its `expected.json`.
-2. Run `node packages/evaluation/dist/main.js run --cases <folder> --write-baseline <folder>/baseline.json`.
-3. Break a noise rule locally — for example, remove `package-lock.json` from the lockfile names in `packages/engine/src/noise.ts` — then `npm run build` and `npm run eval`: the lockfile recall of `example-42` drops and the run exits 1.
+1. Run `npm run eval` and read the report: on the canary cases the coverage, noise and rank checks pass, while every claim check fails as an expected failure, because the review reports no claims yet.
+2. Record a case from a public pull request into a folder of your own, and write its `expected.json`.
+3. Run `node packages/evaluation/dist/main.js run --cases <folder> --write-baseline <folder>/baseline.json`.
+4. Break a noise rule locally — for example, remove `package-lock.json` from the lockfile names in `packages/engine/src/noise.ts` — then `npm run build` and `npm run eval`: the lockfile recall of `example-42` drops and the run exits 1.

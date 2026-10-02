@@ -34,8 +34,11 @@ review reads. Label the case by hand in its expected.json. Cases go to
 case is kept outside the repository unless a folder in it is named.
 
 The run command reviews every case offline and scores it: coverage,
-noise-label precision and recall per class and state, and the median and
-top-3 rank position of the known important parts. It reads the cases in
+noise-label precision and recall per class and state, the median and
+top-3 rank position of the known important parts, and the claim checks
+over the hand-labelled claims (found, verdict, evidence, fetch offered),
+which fail as expected failures while the engine reports no claims; the
+stored baseline records them at those failing values. It reads the cases in
 --cases (the repository's own cases when none is given) and in every
 folder of SECOND_LOOK_EVAL_CASES. --model-free keeps the cases tied to no
 prompt; --changed-since keeps the cases tied to the prompts this branch
@@ -190,7 +193,10 @@ function format(value: number): string {
 
 /** The run's scores, one line per row, then any case the engine failed. */
 function report(results: RunResults): string {
-  const lines = results.rows.map((row) => `${row.case}  ${row.name}  ${format(row.value)}`);
+  const lines = results.rows.map((row) => {
+    const note = row.note ? `  (${row.note})` : '';
+    return `${row.case}  ${row.name}  ${format(row.value)}${note}`;
+  });
   for (const failure of results.failures) {
     lines.push(`FAILED ${failure.case}: ${failure.error}`);
   }

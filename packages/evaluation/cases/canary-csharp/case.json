@@ -1,0 +1,21 @@
+{
+  "formatVersion": 1,
+  "id": "canary-csharp",
+  "source": "https://github.com/example-org/example-repo/pull/11",
+  "recordedAt": "2026-10-02T00:00:00.000Z",
+  "prompts": [],
+  "pullRequest": {
+    "url": "https://github.com/example-org/example-repo/pull/11",
+    "number": 11,
+    "title": "Read a blob into pooled memory",
+    "author": "reviewer-login",
+    "description": "Adds src/BlobReader.cs, which loads a stream into a RecyclableMemoryStream and returns the bytes, ready for the blob cache.",
+    "base": "master",
+    "head": "blob-reader",
+    "baseCommit": "5656565656565656565656565656565656565656",
+    "headSha": "7878787878787878787878787878787878787878"
+  },
+  "gitAttributes": null,
+  "baseCommit": "6767676767676767676767676767676767676767",
+  "headCommit": "7878787878787878787878787878787878787878"
+}

@@ -76,6 +76,7 @@ export async function recordCase(url: string, options: RecordOptions): Promise<s
     const expected: ExpectedResults = {
       noise: Object.fromEntries(live.parts.map((part) => [part.path, null])),
       importantParts: [],
+      claims: [],
     };
     await writeFile(join(folder, 'case.json'), `${JSON.stringify(record, null, 2)}\n`);
     await writeFile(join(folder, 'change.diff'), input.diff);
