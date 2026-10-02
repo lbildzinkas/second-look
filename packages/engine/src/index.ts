@@ -26,4 +26,5 @@ export * from './pi.js';
 export * from './claude-code.js';
 export * from './agents.js';
 export * from './probe.js';
+export * from './grouping.js';
 export { runCli } from './cli.js';

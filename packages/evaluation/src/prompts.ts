@@ -26,11 +26,14 @@ export async function loadRegistry(path: string): Promise<PromptRegistry> {
 /**
  * Checks that prompts and cases map onto each other: every prompt a case
  * names is registered, and every registered prompt has at least one case,
- * since no prompt lands without its evaluation. Returns the problems.
+ * since no prompt lands without its evaluation. Returns the problems. A
+ * run over other folders than the repository's cases checks only the
+ * first half, since the prompts' own cases live in the repository.
  */
 export function mappingProblems(
   registry: PromptRegistry,
   cases: readonly EvaluationCase[],
+  options: { everyPromptHasACase?: boolean } = {},
 ): string[] {
   const known = new Set(registry.prompts.map((prompt) => prompt.id));
   const problems = cases.flatMap((evaluationCase) =>
@@ -38,6 +41,7 @@ export function mappingProblems(
       .filter((id) => !known.has(id))
       .map((id) => `case ${evaluationCase.id} names the unregistered prompt ${id}`),
   );
+  if (options.everyPromptHasACase === false) return problems;
   for (const prompt of registry.prompts) {
     if (!cases.some((evaluationCase) => evaluationCase.record.prompts.includes(prompt.id))) {
       problems.push(`prompt ${prompt.id} has no case`);

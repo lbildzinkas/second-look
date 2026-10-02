@@ -22,5 +22,6 @@
       },
       "libraryFetch": true
     }
-  ]
+  ],
+  "groups": [["src/BlobReader.cs#1"]]
 }

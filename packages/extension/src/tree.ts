@@ -1,7 +1,9 @@
 import {
   IMPORTANCE_ORDER,
+  filesOfPart,
   isLabelledNoise,
   noiseSinks,
+  type FileSlice,
   type Importance,
   type LabelledNoise,
   type Part,
@@ -10,7 +12,7 @@ import {
 
 /** One part as the tree shows it. */
 export interface TreePart {
-  /** The part's name in the tree: its path. */
+  /** The part's name in the tree: the entities it touches, or its path. */
   label: string;
   /** Shown beside the label: the one-line reason, or the noise label with its state. */
   description?: string;
@@ -120,27 +122,42 @@ export function partsInReadingOrder(result: ReviewResult): Part[] {
     .map((part) => part.part!);
 }
 
-/** The line the tooltip adds for a label that never sinks its part. */
-function labelledNotSunk(noise: LabelledNoise): string {
-  return `${noise.label} · ${noise.state} — ${noise.blindSpot}`;
+/**
+ * The lines the tooltip adds about a part's files: which files it spans,
+ * when it groups hunks across files, and each label that never sinks its
+ * part, with its blind spot.
+ */
+function fileLines(part: Part): string[] {
+  const files = filesOfPart(part);
+  const spans = files.length > 1 ? [`across ${files.map((file) => file.path).join(', ')}`] : [];
+  const labels = files.flatMap(({ path, noise }) => {
+    if (!noise || !isLabelledNoise(noise)) return [];
+    const where = files.length > 1 ? `${path}: ` : '';
+    return [`${where}${noise.label} · ${noise.state} — ${noise.blindSpot}`];
+  });
+  return [...spans, ...labels];
+}
+
+/** A part's name in the tree; the engine names every part, so the path is only a fallback. */
+function partLabel(part: Part): string {
+  return part.name ?? part.path;
 }
 
 function rankedPart(part: Part): TreePart {
-  const label = part.noise && isLabelledNoise(part.noise) ? labelledNotSunk(part.noise) : '';
   return {
-    label: part.path,
+    label: partLabel(part),
     description: part.rank!.reason,
-    tooltip: [...part.rank!.signals, label].filter((line) => line !== '').join('\n'),
+    tooltip: [...part.rank!.signals, ...fileLines(part)].join('\n'),
     kind: 'part',
     part,
   };
 }
 
 function unrankedPart(part: Part): TreePart {
-  const label = part.noise && isLabelledNoise(part.noise) ? labelledNotSunk(part.noise) : '';
+  const lines = fileLines(part);
   return {
-    label: part.path,
-    tooltip: label === '' ? undefined : label,
+    label: partLabel(part),
+    tooltip: lines.length === 0 ? undefined : lines.join('\n'),
     kind: 'part',
     part,
   };
@@ -148,10 +165,59 @@ function unrankedPart(part: Part): TreePart {
 
 function noisePart(part: Part, noise: LabelledNoise): TreePart {
   return {
-    label: part.path,
+    label: partLabel(part),
     description: `${noise.label} · ${noise.state}`,
     tooltip: noise.blindSpot,
     kind: 'noise',
     part,
   };
+}
+
+/**
+ * The status line above the tree: the stage still running while the plain
+ * parts show, then who grouped the parts shown — the agent, with its model
+ * and the grouping prompt's version, or the plain pass with the reason the
+ * agent's grouping was not used. A result the agent was never asked about
+ * needs no line.
+ */
+export function groupingStatus(result: ReviewResult, running?: string): string | undefined {
+  if (running !== undefined) return `Plain parts shown; ${running}…`;
+  const agent = result.grouping.agent;
+  if (agent === undefined) return undefined;
+  if (agent.outcome === 'fell back') return `Plain grouping kept: ${agent.detail}.`;
+  const model = agent.stamp.model === null ? '' : ` · ${agent.stamp.model}`;
+  return `Grouped by ${agent.stamp.agent}${model} (grouping prompt v${agent.promptVersion}): ${agent.detail}.`;
+}
+
+/**
+ * Where a part starts: its first file and that file's first hunk. Every
+ * hunk belongs to exactly one part, so a later grouping of the same change
+ * has exactly one part holding it.
+ */
+export interface PartAnchor {
+  path: string;
+  /** The first hunk's start on each side; absent for a file without hunks. */
+  hunk?: { oldStart: number; newStart: number };
+}
+
+/** The anchor of a part: where it starts. */
+export function anchorOf(part: Part): PartAnchor {
+  const [first] = filesOfPart(part);
+  const hunk = first!.hunks[0];
+  return { path: first!.path, ...(hunk ? { hunk: { oldStart: hunk.oldStart, newStart: hunk.newStart } } : {}) };
+}
+
+/** Whether a file's share of a part holds the anchor's hunk, or is the anchor's hunkless file. */
+function holdsAnchor(file: FileSlice, anchor: PartAnchor): boolean {
+  if (file.path !== anchor.path) return false;
+  const { hunk } = anchor;
+  if (hunk === undefined) return file.hunks.length === 0;
+  return file.hunks.some((each) => each.oldStart === hunk.oldStart && each.newStart === hunk.newStart);
+}
+
+/** The tree node of the part that holds the anchor's hunk, when the tree has one. */
+export function findAnchor(sections: readonly TreeSection[], anchor: PartAnchor): TreePart | undefined {
+  return sections
+    .flatMap((section) => section.parts)
+    .find(({ part }) => part !== undefined && filesOfPart(part).some((file) => holdsAnchor(file, anchor)));
 }

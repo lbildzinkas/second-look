@@ -101,11 +101,19 @@ export interface ExpectedResults {
   noise: Record<string, ExpectedNoise | null>;
   /**
    * The parts a reviewer must not miss, each by its name as the engine
-   * prints it, or else by its path (the file's first part).
+   * prints it, or else by its path (the first part holding that file).
    */
   importantParts: string[];
   /** The claims the change makes, each expected to be found and checked. */
   claims: ExpectedClaim[];
+  /**
+   * The hand-labelled grouping: the parts a reviewer would read, each as
+   * the hunks it holds. A hunk is `path#n`, the file's n-th hunk in the
+   * diff counting from 1, by its path on the new side; a file without
+   * hunks, such as a binary, is its bare path. Absent when the case's
+   * grouping is not labelled.
+   */
+  groups?: string[][];
 }
 
 /** A case loaded from its folder. */
@@ -133,6 +141,7 @@ export async function loadCase(folder: string): Promise<EvaluationCase> {
     noise: recorded.noise ?? {},
     importantParts: recorded.importantParts ?? [],
     claims: recorded.claims ?? [],
+    ...(recorded.groups ? { groups: recorded.groups } : {}),
   };
   return { id: record.id, folder, record, expected };
 }
@@ -140,11 +149,12 @@ export async function loadCase(folder: string): Promise<EvaluationCase> {
 /**
  * Loads every case in the given folders: each sub-folder holding a
  * `case.json` is one case. A folder may live outside the repository, so
- * private cases never enter it. Two cases with one id are refused.
+ * private cases never enter it. A folder named twice is read once; two
+ * cases with one id are refused.
  */
 export async function loadCases(folders: readonly string[]): Promise<EvaluationCase[]> {
   const cases = new Map<string, EvaluationCase>();
-  for (const folder of folders.map((given) => resolve(given))) {
+  for (const folder of new Set(folders.map((given) => resolve(given)))) {
     for (const entry of await readdir(folder, { withFileTypes: true })) {
       const caseFolder = join(folder, entry.name);
       if (!entry.isDirectory() || !(await isFile(join(caseFolder, 'case.json')))) continue;

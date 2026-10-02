@@ -13,10 +13,10 @@ import type { ChangeCopy } from './protocol.js';
 import { UNTRUSTED_INPUT_RULE, untrustedBlock } from './untrusted.js';
 
 /**
- * The answer the probe asks for. This is the one fixed prompt in the engine:
- * it checks the agent's setup and lockdown, never reviews anything, and the
- * contract tests use it, so no product prompt lands without its evaluation
- * (ADR 0006).
+ * The answer the probe asks for. The probe's prompt is fixed: it checks
+ * the agent's setup and lockdown, never reviews anything, and the contract
+ * tests use it. Review prompts, such as grouping, land with their
+ * evaluation (ADR 0006).
  */
 export const PROBE_SCHEMA: JsonSchema = {
   type: 'object',

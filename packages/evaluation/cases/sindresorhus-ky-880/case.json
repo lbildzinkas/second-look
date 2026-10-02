@@ -1,0 +1,23 @@
+{
+  "formatVersion": 1,
+  "id": "sindresorhus-ky-880",
+  "source": "https://github.com/sindresorhus/ky/pull/880",
+  "recordedAt": "2026-10-02T18:43:53.445Z",
+  "prompts": [
+    "grouping"
+  ],
+  "pullRequest": {
+    "url": "https://github.com/sindresorhus/ky/pull/880",
+    "number": 880,
+    "title": "Fix `signal` replacement when extending instances",
+    "author": "sindresorhus",
+    "description": "Fixes https://github.com/sindresorhus/ky/issues/879",
+    "base": "main",
+    "head": "ss/investigate-ky-issue-879",
+    "baseCommit": "294fe63be57d73bda18194b7e23ab7225c054643",
+    "headSha": "e22943f7dacf64beec1efb1958604424f07dd4b4"
+  },
+  "gitAttributes": "* text=auto eol=lf\n*.ai binary\n",
+  "baseCommit": "294fe63be57d73bda18194b7e23ab7225c054643",
+  "headCommit": "e22943f7dacf64beec1efb1958604424f07dd4b4"
+}
