@@ -797,6 +797,16 @@ describe('how a hunk changes an entity', () => {
     ]);
   });
 
+  it("reads a change inside a C# expression-bodied property as a body change", async () => {
+    const base = 'public class A\n{\n    public int Total =>\n        Compute(\n            1);\n}\n';
+    const head = base.replace('1);', '2);');
+    const part = changedPart({ path: 'A.cs', base, head, deleted: [5], added: [5] });
+    await analysePart(part, { base, head });
+    expect(part.hunks[0]!.entities).toEqual([
+      { kind: 'property', name: 'A.Total', public: true, change: 'body' },
+    ]);
+  });
+
   it('keeps the strongest change when a hunk touches an entity more than once', async () => {
     const base = 'export function f(a: number): number {\n  return a;\n}\n';
     const head = 'export function f(a: number, b: number): number {\n  return a + b;\n}\n';

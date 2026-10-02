@@ -256,10 +256,12 @@ function isOwnPublic(
 function declarationRows(declaration: Declaration): { first: number; last: number } {
   const { node, kind } = declaration;
   const first = outermostWrapper(node).startPosition.row;
+  const value = node.childForFieldName('value');
   const body =
     node.childForFieldName('body') ??
     node.childForFieldName('accessors') ??
-    node.childForFieldName('value')?.childForFieldName('body');
+    value?.childForFieldName('body') ??
+    (value?.type === 'arrow_expression_clause' ? value : undefined);
   if (SURFACE_KINDS.has(kind) || !body) return { first, last: node.endPosition.row };
   // A brace opens the body on its own row; an indented block starts a row later.
   const opens = body.text.startsWith('{') ? body.startPosition.row : body.startPosition.row - 1;
