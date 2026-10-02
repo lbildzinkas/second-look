@@ -403,7 +403,10 @@ describe('packages.lock.json', () => {
         "type": "Direct",
         "requested": "[${json}, 14.0.0)",
         "resolved": "${json}",
-        "contentHash": "HrC5BXdl00IP9zeV+0Z848QWPAoCr9P3bDEZguI="
+        "contentHash": "HrC5BXdl00IP9zeV+0Z848QWPAoCr9P3bDEZguI=",
+        "dependencies": {
+          "Microsoft.CSharp": "4.7.0"
+        }
       },
       "Microsoft.CSharp": {
         "type": "Transitive",
@@ -425,14 +428,29 @@ describe('packages.lock.json', () => {
     expect(check.blindSpot).toContain('microsoft.csharp 4.7.0 → 4.7.1');
   });
 
-  it('accepts a changed transitive while a manifest dependency changed', () => {
+  it('confirms a transitive bump reached through the recorded dependency edges', () => {
     const check = confirmed(
       format('packages.lock.json'),
       side(lock('13.0.3', '4.7.0'), [project('13.0.3')]),
       side(lock('13.0.1', '4.7.1'), [project('13.0.1')]),
     );
     expect(check.outcome).toBe('confirmed');
-    expect(check.blindSpot).toContain('does not record which package pulls a transitive');
+    expect(check.blindSpot).toContain('Parse-only');
+    expect(check.blindSpot).toContain('content hashes are not re-checked');
+  });
+
+  it('stays claimed and names a smuggled transitive while a manifest dependency changed', () => {
+    const smuggled = JSON.parse(lock('13.0.1', '4.7.0')) as {
+      dependencies: Record<string, Record<string, unknown>>;
+    };
+    smuggled.dependencies['net8.0']!['Serilog'] = { type: 'Transitive', resolved: '4.0.2' };
+    const check = confirmed(
+      format('packages.lock.json'),
+      side(lock('13.0.3', '4.7.0'), [project('13.0.3')]),
+      side(JSON.stringify(smuggled), [project('13.0.1')]),
+    );
+    expect(check.outcome).toBe('unexplained');
+    expect(check.blindSpot).toContain('serilog@4.0.2');
   });
 
   it('stays claimed and names a hand-bumped direct entry', () => {

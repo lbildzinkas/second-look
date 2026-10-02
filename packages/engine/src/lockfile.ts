@@ -57,18 +57,16 @@ function under(dir: string, name: string): string {
 
 /**
  * One lock file read by package name: the versions present (each with a
- * fingerprint of its whole entry, so a hand-edited hash is a change too),
- * the dependency edges the lock file itself records, and the names it
- * marks transitive rather than direct.
+ * fingerprint of its whole entry, so a hand-edited hash is a change too)
+ * and the dependency edges the lock file itself records.
  */
 interface LockIndex {
   versions: Map<string, Map<string, string>>;
   edges: Map<string, Set<string>>;
-  transitive: Set<string>;
 }
 
 function emptyIndex(): LockIndex {
-  return { versions: new Map(), edges: new Map(), transitive: new Set() };
+  return { versions: new Map(), edges: new Map() };
 }
 
 function recordEntry(index: LockIndex, name: string, version: string, fingerprint: string): void {
@@ -384,7 +382,6 @@ function readNugetLock(text: string): LockIndex | undefined {
       const version = raw['resolved'];
       if (version !== undefined && typeof version !== 'string') return undefined;
       recordEntry(index, name, typeof version === 'string' ? version : '', stableStringify(raw));
-      if (raw['type'] === 'Transitive') index.transitive.add(name);
       const dependencies = raw['dependencies'];
       if (dependencies === undefined) continue;
       if (!isRecord(dependencies)) return undefined;
@@ -459,12 +456,6 @@ export interface LockfileFormat {
   readonly manifestName: string;
   /** What a confirmed label of this format cannot see. */
   readonly blindSpot: string;
-  /**
-   * True when the lock file marks entries transitive but not which
-   * package pulls them (NuGet): a changed transitive is then accepted
-   * while a manifest dependency changed, and the blind spot says so.
-   */
-  readonly attributesTransitives: boolean;
   readLock(text: string): LockIndex | undefined;
   manifestsIn(lockDir: string, list: ListDir): Promise<readonly string[]>;
   readManifests(texts: readonly string[]): Map<string, string> | undefined;
@@ -482,7 +473,6 @@ const NPM_FORMAT: LockfileFormat = {
   name: 'package-lock.json',
   manifestName: 'package.json',
   blindSpot: `Parse-only: the resolver is not re-run and hashes are not re-checked against the registry; ${CLOSURE_BLIND_SPOT}.`,
-  attributesTransitives: false,
   readLock: readNpmLock,
   manifestsIn: manifestBeside('package.json'),
   readManifests: readNpmManifests,
@@ -492,7 +482,6 @@ const UV_FORMAT: LockfileFormat = {
   name: 'uv.lock',
   manifestName: 'pyproject.toml',
   blindSpot: `Parse-only: the resolver is not re-run and hashes are not re-checked against the registry; ${CLOSURE_BLIND_SPOT}.`,
-  attributesTransitives: false,
   readLock: (text: string) => readTomlPackages(text, uvEdges),
   manifestsIn: manifestBeside('pyproject.toml'),
   readManifests: readPep621Manifests,
@@ -502,7 +491,6 @@ const POETRY_FORMAT: LockfileFormat = {
   name: 'poetry.lock',
   manifestName: 'pyproject.toml',
   blindSpot: `Parse-only: the resolver is not re-run and hashes are not re-checked against the registry; ${CLOSURE_BLIND_SPOT}.`,
-  attributesTransitives: false,
   readLock: (text: string) => readTomlPackages(text, poetryEdges),
   manifestsIn: manifestBeside('pyproject.toml'),
   readManifests: readPoetryManifests,
@@ -512,7 +500,6 @@ const CARGO_FORMAT: LockfileFormat = {
   name: 'Cargo.lock',
   manifestName: 'Cargo.toml',
   blindSpot: `Parse-only: the resolver is not re-run and checksums are not re-checked against the registry; ${CLOSURE_BLIND_SPOT}.`,
-  attributesTransitives: false,
   readLock: (text: string) => readTomlPackages(text, cargoEdges),
   manifestsIn: manifestBeside('Cargo.toml'),
   readManifests: readCargoManifests,
@@ -521,9 +508,7 @@ const CARGO_FORMAT: LockfileFormat = {
 const NUGET_FORMAT: LockfileFormat = {
   name: 'packages.lock.json',
   manifestName: 'project files or Directory.Packages.props',
-  blindSpot:
-    'Parse-only: restore is not re-run and content hashes are not re-checked; the lock file does not record which package pulls a transitive entry, so any changed transitive is accepted while a manifest dependency changed.',
-  attributesTransitives: true,
+  blindSpot: `Parse-only: restore is not re-run and content hashes are not re-checked; ${CLOSURE_BLIND_SPOT}.`,
   readLock: readNugetLock,
   manifestsIn: nugetManifestsIn,
   readManifests: readNugetManifests,
@@ -677,13 +662,7 @@ export function confirmLockfileChange(
     ...closureFrom(changedDirects, oldIndex.edges),
   ]);
   const unexplained = changedEntries(oldIndex, newIndex).filter(
-    (entry) =>
-      !explained.has(entry.name) &&
-      !(
-        format.attributesTransitives &&
-        changedDirects.length > 0 &&
-        (oldIndex.transitive.has(entry.name) || newIndex.transitive.has(entry.name))
-      ),
+    (entry) => !explained.has(entry.name),
   );
   if (unexplained.length === 0) {
     return { outcome: 'confirmed', blindSpot: format.blindSpot };
