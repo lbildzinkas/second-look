@@ -155,6 +155,8 @@ const NPM_MANIFEST_TABLES = [
   'optionalDependencies',
   'peerDependencies',
 ] as const;
+/** The manifest's override tables, whose nested tables scope an override to a subtree. */
+const NPM_OVERRIDE_TABLES = ['overrides', 'resolutions'] as const;
 
 /** The package name of a `packages` key; undefined for the root and workspace keys. */
 function npmNameFromKey(key: string): string | undefined {
@@ -221,9 +223,24 @@ function readNpmLock(text: string): LockIndex | undefined {
   return undefined;
 }
 
-/** package.json, with every dependency table read as direct. */
+/** package.json, with every dependency and override table read as direct. */
 function readNpmManifests(texts: readonly string[]): Map<string, string> | undefined {
   const specs = new Map<string, string>();
+  const add = (name: string, spec: string): void => {
+    specs.set(name, specs.has(name) ? `${specs.get(name)} ${spec}` : spec);
+  };
+  const collectOverrides = (entries: Record<string, unknown>): boolean => {
+    for (const [name, spec] of Object.entries(entries)) {
+      if (typeof spec === 'string') {
+        add(name, spec);
+        continue;
+      }
+      if (!isRecord(spec)) return false;
+      add(name, stableStringify(spec));
+      if (!collectOverrides(spec)) return false;
+    }
+    return true;
+  };
   for (const text of texts) {
     let doc: unknown;
     try {
@@ -238,8 +255,14 @@ function readNpmManifests(texts: readonly string[]): Map<string, string> | undef
       if (!isRecord(dependencies)) return undefined;
       for (const [name, spec] of Object.entries(dependencies)) {
         if (typeof spec !== 'string') return undefined;
-        specs.set(name, spec);
+        add(name, spec);
       }
+    }
+    for (const table of NPM_OVERRIDE_TABLES) {
+      const overrides = doc[table];
+      if (overrides === undefined) continue;
+      if (!isRecord(overrides)) return undefined;
+      if (!collectOverrides(overrides)) return undefined;
     }
   }
   return specs;
@@ -290,41 +313,54 @@ function isIncludeGroup(item: TomlValue): boolean {
   return keys.length === 1 && keys[0] === 'include-group' && typeof item['include-group'] === 'string';
 }
 
+/**
+ * pyproject.toml's [project] and [dependency-groups] tables, the PEP 621
+ * form both uv and poetry 2 read, added to the specs by requirement name.
+ */
+function readProjectTables(doc: TomlTable, specs: Map<string, string>): boolean {
+  const requirements: string[] = [];
+  const push = (value: TomlValue): boolean => {
+    if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
+      return false;
+    }
+    requirements.push(...(value as string[]));
+    return true;
+  };
+  const project = doc['project'];
+  if (project !== undefined) {
+    if (!isTomlTable(project)) return false;
+    const dependencies = project['dependencies'];
+    if (dependencies !== undefined && !push(dependencies)) return false;
+    const optional = project['optional-dependencies'];
+    if (optional !== undefined) {
+      if (!isTomlTable(optional)) return false;
+      for (const group of Object.values(optional)) {
+        if (!push(group)) return false;
+      }
+    }
+  }
+  const dependencyGroups = doc['dependency-groups'];
+  if (dependencyGroups !== undefined) {
+    if (!isTomlTable(dependencyGroups)) return false;
+    for (const group of Object.values(dependencyGroups)) {
+      if (!Array.isArray(group)) return false;
+      if (!push(group.filter((item) => !isIncludeGroup(item)))) return false;
+    }
+  }
+  for (const requirement of requirements) {
+    const name = requirementName(requirement);
+    if (name !== undefined) specs.set(name, requirement);
+  }
+  return true;
+}
+
 /** pyproject.toml's [project], [dependency-groups] and [tool.uv] tables, where uv records direct dependencies. */
 function readPep621Manifests(texts: readonly string[]): Map<string, string> | undefined {
   const specs = new Map<string, string>();
   for (const text of texts) {
     const doc = parseToml(text);
     if (doc === undefined) return undefined;
-    const requirements: string[] = [];
-    const push = (value: TomlValue): boolean => {
-      if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
-        return false;
-      }
-      requirements.push(...(value as string[]));
-      return true;
-    };
-    const project = doc['project'];
-    if (project !== undefined) {
-      if (!isTomlTable(project)) return undefined;
-      const dependencies = project['dependencies'];
-      if (dependencies !== undefined && !push(dependencies)) return undefined;
-      const optional = project['optional-dependencies'];
-      if (optional !== undefined) {
-        if (!isTomlTable(optional)) return undefined;
-        for (const group of Object.values(optional)) {
-          if (!push(group)) return undefined;
-        }
-      }
-    }
-    const dependencyGroups = doc['dependency-groups'];
-    if (dependencyGroups !== undefined) {
-      if (!isTomlTable(dependencyGroups)) return undefined;
-      for (const group of Object.values(dependencyGroups)) {
-        if (!Array.isArray(group)) return undefined;
-        if (!push(group.filter((item) => !isIncludeGroup(item)))) return undefined;
-      }
-    }
+    if (!readProjectTables(doc, specs)) return undefined;
     const tool = doc['tool'];
     if (tool !== undefined) {
       if (!isTomlTable(tool)) return undefined;
@@ -332,12 +368,14 @@ function readPep621Manifests(texts: readonly string[]): Map<string, string> | un
       if (uv !== undefined) {
         if (!isTomlTable(uv)) return undefined;
         const dev = uv['dev-dependencies'];
-        if (dev !== undefined && !push(dev)) return undefined;
+        if (dev !== undefined) {
+          if (!Array.isArray(dev) || !dev.every((item) => typeof item === 'string')) return undefined;
+          for (const requirement of dev as string[]) {
+            const name = requirementName(requirement);
+            if (name !== undefined) specs.set(name, requirement);
+          }
+        }
       }
-    }
-    for (const requirement of requirements) {
-      const name = requirementName(requirement);
-      if (name !== undefined) specs.set(name, requirement);
     }
   }
   return specs;
@@ -362,12 +400,13 @@ function poetryEdges(entry: TomlTable): readonly string[] | undefined {
   return edges;
 }
 
-/** pyproject.toml's [tool.poetry] tables, where poetry names its direct dependencies. */
+/** pyproject.toml's [project] tables and the [tool.poetry] tables, where poetry names its direct dependencies. */
 function readPoetryManifests(texts: readonly string[]): Map<string, string> | undefined {
   const specs = new Map<string, string>();
   for (const text of texts) {
     const doc = parseToml(text);
     if (doc === undefined) return undefined;
+    if (!readProjectTables(doc, specs)) return undefined;
     const tool = doc['tool'];
     if (tool === undefined) continue;
     if (!isTomlTable(tool)) return undefined;
@@ -418,8 +457,14 @@ function readCargoManifests(texts: readonly string[]): Map<string, string> | und
       if (dependencies === undefined) continue;
       if (!isTomlTable(dependencies)) return false;
       for (const [name, spec] of Object.entries(dependencies)) {
-        if (typeof spec !== 'string' && !isTomlTable(spec)) return false;
-        specs.set(pep503(name), typeof spec === 'string' ? spec : stableStringify(spec));
+        if (typeof spec === 'string') {
+          specs.set(pep503(name), spec);
+          continue;
+        }
+        if (!isTomlTable(spec)) return false;
+        const renamed = spec['package'];
+        if (renamed !== undefined && typeof renamed !== 'string') return false;
+        specs.set(pep503(typeof renamed === 'string' ? renamed : name), stableStringify(spec));
       }
     }
     return true;
