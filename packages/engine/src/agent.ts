@@ -1,8 +1,8 @@
 /**
  * The agent adapter interface (ADR 0004): how the engine runs the coding
- * agent the reviewer already has installed — Pi first, Claude Code and
- * Codex later — non-interactively, with the companion's own prompt and a
- * JSON schema for the answer.
+ * agent the reviewer already has installed — Pi and Claude Code today —
+ * non-interactively, with the companion's own prompt and a JSON schema for
+ * the answer.
  *
  * An adapter does two things:
  *
@@ -18,7 +18,8 @@
  * off; every path confined to the read-only copy, with credential paths
  * (SSH keys, cloud credentials, the GitHub login) refused by name. The
  * agent signs in with its own login: the companion never reads or stores
- * it, and the GitHub token the engine holds never reaches the agent.
+ * it, and the GitHub token the engine holds never reaches the agent —
+ * {@link GITHUB_TOKEN_VARIABLES} names the variables every adapter strips.
  *
  * {@link runAgentTasks} sits on top of any adapter: it checks each answer
  * against its schema, retries an invalid answer once and then reports the
@@ -55,6 +56,12 @@ export interface AgentRunRequest {
   instructions: string;
   /** The task, with any untrusted text already cleaned and marked as such. */
   prompt: string;
+  /**
+   * The schema the answer must meet. Claude Code enforces it through its
+   * own `--json-schema` flag; Pi's instructions embed it, so Pi's adapter
+   * does not read it.
+   */
+  schema?: JsonSchema;
   /** The model to use; the agent's own default when absent. */
   model?: string;
   /** The effort level to ask for; the agent's own default when absent. */
@@ -74,6 +81,17 @@ export interface AgentTokens {
 }
 
 /**
+ * Which login a run signed in with, as the companion can tell without ever
+ * reading the login itself.
+ */
+export interface AgentLogin {
+  /** Where the login came from, in plain words. */
+  source: string;
+  /** A warning that this login silently overrides another. */
+  warning?: string;
+}
+
+/**
  * Who answered and at what cost: stamped on every result, successful or
  * not, so the reviewer can always tell which agent and model said what.
  */
@@ -84,6 +102,8 @@ export interface AgentStamp {
   model: string | null;
   /** The effort level the agent reports, else the one asked for; null when neither is known. */
   effort: string | null;
+  /** Which login the run used, when the adapter can tell; the companion never reads the login itself. */
+  login?: AgentLogin;
   /** When the run started, as an ISO 8601 time. */
   runAt: string;
   /** Tokens used, when the agent reports them. */
@@ -110,6 +130,18 @@ export interface AgentAdapter {
   probe(): Promise<AgentProbe>;
   run(request: AgentRunRequest): Promise<AgentRunOutcome>;
 }
+
+/**
+ * Environment variables that carry the GitHub login. Every adapter removes
+ * them from the agent's environment, so the token the engine holds never
+ * reaches the agent.
+ */
+export const GITHUB_TOKEN_VARIABLES = [
+  'GITHUB_TOKEN',
+  'GH_TOKEN',
+  'GH_ENTERPRISE_TOKEN',
+  'GITHUB_ENTERPRISE_TOKEN',
+] as const;
 
 /** How agent runs are paced: settings, with {@link DEFAULT_AGENT_SETTINGS}. */
 export interface AgentSettings {
@@ -208,6 +240,7 @@ async function runTask(
       root: task.root,
       instructions: task.instructions,
       prompt,
+      schema: task.schema,
       timeoutMs: settings.timeoutMs,
       ...(settings.model ? { model: settings.model } : {}),
       ...(settings.effort ? { effort: settings.effort } : {}),

@@ -44,6 +44,25 @@ export interface StubDecorationType extends StubDisposable {
   options: Record<string, unknown>;
 }
 
+/** A status bar item the extension created, with what it last showed. */
+export interface StubStatusBarItem extends StubDisposable {
+  id: string;
+  alignment: number;
+  priority: number | undefined;
+  text: string;
+  tooltip: string | undefined;
+  command: string | undefined;
+  backgroundColor: unknown;
+  shown: boolean;
+  show(): void;
+  hide(): void;
+}
+
+/** A theme colour the extension asked for, by its id. */
+export class ThemeColor {
+  constructor(readonly id: string) {}
+}
+
 /** The MarkdownString of a readonly file system's reason. */
 export class StubMarkdownString {
   constructor(readonly value: string) {}
@@ -56,6 +75,9 @@ export interface StubState {
   treeViews: StubTreeView[];
   fileSystemProviders: StubFileSystemProvider[];
   decorationTypes: StubDecorationType[];
+  statusBarItems: StubStatusBarItem[];
+  /** The configuration values `getConfiguration` reads, keyed by `section.key`. */
+  configuration: Record<string, unknown>;
   /** The editors currently visible; tests set these and fire the change. */
   visibleTextEditors: unknown[];
   /** The file contents behind `file:` URIs, keyed by path. */
@@ -73,9 +95,12 @@ export interface StubState {
   reset(): void;
   /** Fires the visible-editors change the way the editor does. */
   fireVisibleTextEditors(editors: unknown[]): void;
+  /** Fires the configuration change the way the editor does. */
+  fireConfigurationChange(): void;
 }
 
 const visibleEditorListeners = new Set<(editors: unknown[]) => void>();
+const configurationListeners = new Set<(event: StubConfigurationChangeEvent) => void>();
 
 export const stub: StubState = {
   commands: [],
@@ -83,6 +108,8 @@ export const stub: StubState = {
   treeViews: [],
   fileSystemProviders: [],
   decorationTypes: [],
+  statusBarItems: [],
+  configuration: {},
   visibleTextEditors: [],
   files: new Map(),
   inputBoxResult: undefined,
@@ -98,8 +125,11 @@ export const stub: StubState = {
     stub.treeViews = [];
     stub.fileSystemProviders = [];
     stub.decorationTypes = [];
+    stub.statusBarItems = [];
+    stub.configuration = {};
     stub.visibleTextEditors = [];
     visibleEditorListeners.clear();
+    configurationListeners.clear();
     stub.files = new Map();
     stub.inputBoxResult = undefined;
     stub.warningMessages = [];
@@ -113,6 +143,16 @@ export const stub: StubState = {
     stub.visibleTextEditors = editors;
     for (const listener of visibleEditorListeners) {
       listener(editors);
+    }
+  },
+  fireConfigurationChange() {
+    // The double reports every section as affected; tests plant the values
+    // they mean before firing.
+    const event: StubConfigurationChangeEvent = {
+      affectsConfiguration: () => true,
+    };
+    for (const listener of configurationListeners) {
+      listener(event);
     }
   },
 };
@@ -398,11 +438,57 @@ export const window = {
     stub.decorationTypes.push(type);
     return type;
   },
+  createStatusBarItem(id: string, alignment = StatusBarAlignment.Left, priority?: number): StubStatusBarItem {
+    const item: StubStatusBarItem = {
+      id,
+      alignment,
+      priority,
+      text: '',
+      tooltip: undefined,
+      command: undefined,
+      backgroundColor: undefined,
+      shown: false,
+      show: (): void => {
+        item.shown = true;
+      },
+      hide: (): void => {
+        item.shown = false;
+      },
+      dispose: (): void => {
+        stub.statusBarItems = stub.statusBarItems.filter((entry) => entry !== item);
+      },
+    };
+    stub.statusBarItems.push(item);
+    return item;
+  },
 };
+
+/** The configuration-change event the editor fires, as the double reports it. */
+export interface StubConfigurationChangeEvent {
+  affectsConfiguration(section: string): boolean;
+}
 
 export const MarkdownString = StubMarkdownString;
 
+/** The sides of the status bar an item can sit on. */
+export const StatusBarAlignment = {
+  Left: 0,
+  Right: 1,
+} as const;
+
 export const workspace = {
+  getConfiguration(section: string): { get<T>(key: string, defaultValue?: T): T | undefined } {
+    return {
+      get: <T,>(key: string, defaultValue?: T): T | undefined =>
+        (stub.configuration[`${section}.${key}`] as T | undefined) ?? defaultValue,
+    };
+  },
+  onDidChangeConfiguration(
+    listener: (event: StubConfigurationChangeEvent) => void,
+  ): StubDisposable {
+    configurationListeners.add(listener);
+    return { dispose: () => configurationListeners.delete(listener) };
+  },
   registerFileSystemProvider(
     scheme: string,
     provider: unknown,

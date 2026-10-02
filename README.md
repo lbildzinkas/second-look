@@ -9,8 +9,8 @@ Second Look is a VS Code companion for human pull request review: it ranks the c
 
 The repository is a TypeScript workspace with three packages:
 
-- `packages/engine` — the engine: a separate local process that fetches a pull request, parses its full diff into files and hunks, reads the changed files' syntax trees from read-only copies of the change, and offers its result two ways: printed as typed, versioned JSON by the review command, and over a JSON-RPC protocol on stdio by the serve command (ADR 0005). It also reads portable PDB files, the .NET debug files that record each source file's hash and Source Link URL. It drives the reviewer's installed coding agent, Pi first, through one adapter interface (ADR 0004).
-- `packages/extension` — the VS Code extension: a thin client that starts the engine as its own process, talks the JSON-RPC protocol to it after a version handshake, and shows the result as the ranked review tree, with each part readable in the editor's multi-file diff over read-only copies.
+- `packages/engine` — the engine: a separate local process that fetches a pull request, parses its full diff into files and hunks, reads the changed files' syntax trees from read-only copies of the change, and offers its result two ways: printed as typed, versioned JSON by the review command, and over a JSON-RPC protocol on stdio by the serve command (ADR 0005). It also reads portable PDB files, the .NET debug files that record each source file's hash and Source Link URL. It drives the reviewer's installed coding agent, Pi or Claude Code, through one adapter interface (ADR 0004).
+- `packages/extension` — the VS Code extension: a thin client that starts the engine as its own process, talks the JSON-RPC protocol to it after a version handshake, and shows the result as the ranked review tree, with each part readable in the editor's multi-file diff over read-only copies. Its settings pick the agent, the model and the account label; the status bar shows what they choose.
 - `packages/evaluation` — the evaluation: runs the engine offline over recorded pull requests and scores it against a stored baseline; see [its README](packages/evaluation/README.md).
 
 The protocol types live in `packages/engine/src/protocol.ts` and `packages/engine/src/rpc.ts`, carry their versions, and are shared by all three packages.
@@ -59,7 +59,7 @@ The token is passed in by the caller (`--token` or `GITHUB_TOKEN`), is used only
 
 ## Probing the reviewer's coding agent
 
-The engine does its model work through the coding agent the reviewer already has installed and signed in, never through a model API of its own (ADR 0004). One adapter interface, documented in `packages/engine/src/agent.ts`, runs an agent non-interactively with the companion's own prompt and a JSON schema for the answer. It first probes the installed version for what it supports. The first adapter drives Pi.
+The engine does its model work through the coding agent the reviewer already has installed and signed in, never through a model API of its own (ADR 0004). One adapter interface, documented in `packages/engine/src/agent.ts`, runs an agent non-interactively with the companion's own prompt and a JSON schema for the answer. It first probes the installed version for what it supports. Two adapters exist: Pi and Claude Code, chosen by name (`--agent pi` or `--agent claude-code`; the VS Code settings offer the same names).
 
 Every Pi run is locked down. Pi has no sandbox of its own, so the strongest mechanism it offers is used:
 
@@ -71,6 +71,18 @@ Every Pi run is locked down. Pi has no sandbox of its own, so the strongest mech
 
 A Pi version whose help lacks any of these flags is never run. The agent signs in with its own login: the companion never reads or stores it, and the agent inherits the engine's environment minus the GitHub token.
 
+Claude Code runs under its own lockdown, built from the flags it offers (`packages/engine/src/claude-code.ts`):
+
+- Print mode (`--print`) with the answer checked against the task's schema (`--json-schema`), streamed as JSON with partial messages, so a run that times out keeps what it wrote.
+- File-reading tools only (`--tools Read,Grep,Glob`): no shell, no network tools, no edits. Claude Code confines its file tools to the working directory — the read-only copy.
+- User-level settings only (`--setting-sources user`), so nothing from the pull request configures the agent, and no MCP servers (`--strict-mcp-config`).
+- No session file (`--no-session-persistence`), permission prompts denied rather than asked (`--permission-prompts none`), and the companion's own system prompt. The prompt goes on stdin.
+- The GitHub token variables are removed from the agent's environment, as for Pi.
+
+A Claude Code version whose help lacks any of these flags is never run. Each run's stamp reports which login it used — the stored subscription sign-in, an OAuth token or cloud credentials from the environment — and warns when an inherited `ANTHROPIC_API_KEY` silently overrides the subscription. The key itself is never read, printed or copied: only its presence is checked.
+
+The VS Code settings pick the agent, the model and a label for the account or subscription it bills; the status bar shows them, and warns about an inherited API key when Claude Code is the agent. Every result is stamped, so the reviewer can always tell which agent and model said what.
+
 Pull request text reaches the agent inside a marked untrusted block, with Unicode tag characters, zero-width characters and bidirectional controls stripped. HTML comments, which GitHub hides from the reviewer, are kept but delimited. Each answer is checked against its schema. An invalid answer is retried once, then reported as a failure, never guessed. Every result is stamped with the agent, its version, the model, the effort, the run date, and the tokens and cost when the agent reports them. Runs have a timeout and a concurrency limit, and a run that times out keeps what it wrote.
 
 The probe command runs the one fixed prompt that exists so far. It is a setup check, not a review prompt, and the contract tests use it: no product prompt lands without its evaluation (ADR 0006). With Pi installed and signed in:
@@ -81,7 +93,7 @@ GITHUB_TOKEN="$(gh auth token)" node packages/engine/dist/main.js \
   --target README.md --target ~/.ssh/id_ed25519 --target https://example.com/
 ```
 
-It prints what the installed Pi supports and, for each target, the agent's schema-checked answer and the run's stamp. The credential path and the URL come back refused. `--model` and `--effort` pick the model and effort level. `--agent-timeout` (seconds, default 300) and `--agent-concurrency` (default 2) set the pacing. Tests drive the adapter through a contract suite against a fake Pi executable and never call a model.
+It prints what the installed Pi supports and, for each target, the agent's schema-checked answer and the run's stamp. The credential path and the URL come back refused. `--agent` picks the adapter (`pi` by default, `claude-code` for Claude Code). `--model` and `--effort` pick the model and effort level. `--agent-timeout` (seconds, default 300) and `--agent-concurrency` (default 2) set the pacing. Tests drive each adapter through a shared contract suite against a fake agent executable and never call a model.
 
 ## Reading a package's portable PDBs
 

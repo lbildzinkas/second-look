@@ -23,5 +23,7 @@ export * from './untrusted.js';
 export * from './agent.js';
 export * from './pi-guard.js';
 export * from './pi.js';
+export * from './claude-code.js';
+export * from './agents.js';
 export * from './probe.js';
 export { runCli } from './cli.js';

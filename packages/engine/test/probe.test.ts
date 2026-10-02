@@ -4,6 +4,7 @@ import { runCli } from '../src/cli.js';
 import { validateJson } from '../src/json-schema.js';
 import { PROBE_INSTRUCTIONS, PROBE_SCHEMA, probePrompt, runAgentProbe } from '../src/probe.js';
 import { HIDDEN_COMMENT_START, UNTRUSTED_INPUT_RULE } from '../src/untrusted.js';
+import { FAKE_CLAUDE, fakeClaude } from './fake-claude.js';
 import { FAKE_PI, GUARD, fakePi } from './fake-pi.js';
 import { CaptureStream, PR_URL, fixtureFetch, pull42, temporaryCacheDir } from './helpers.js';
 
@@ -127,5 +128,49 @@ describe('runCli probe', () => {
     expect(code).toBe(1);
     expect(err.text).toContain('lacks --no-context-files');
     expect(pi.runs()).toHaveLength(0);
+  });
+
+  it('drives Claude Code instead of Pi when --agent names it', async () => {
+    const claude = fakeClaude({ version: '2.1.280', runs: [{ text: REFUSED }] });
+    const { out, err } = streams();
+    const code = await runCli(
+      ['probe', PR_URL, '--agent', 'claude-code'],
+      {
+        GITHUB_TOKEN: TOKEN,
+        SECOND_LOOK_CACHE_DIR: cacheDir,
+        FAKE_CLAUDE_DIR: claude.dir,
+        ANTHROPIC_API_KEY: 'sk-ant-inherited',
+        PATH: process.env['PATH'],
+      },
+      { out, err },
+      { fetch: fixtureFetch().fetch, claudeCode: { command: [process.execPath, FAKE_CLAUDE] } },
+    );
+    expect(code).toBe(0);
+    expect(err.text).toBe('');
+    const report = JSON.parse(out.text) as {
+      agent: { agent: string; version: string };
+      results: { ok: boolean; stamp: { agent: string; login: { source: string; warning?: string } } }[];
+    };
+    expect(report.agent).toMatchObject({ agent: 'claude-code', version: '2.1.280' });
+    expect(report.results[0]).toMatchObject({ ok: true, stamp: { agent: 'claude-code' } });
+    expect(report.results[0]!.stamp.login.source).toContain('ANTHROPIC_API_KEY');
+    expect(report.results[0]!.stamp.login.warning).toMatch(/overrides the Claude subscription/);
+    const [run] = claude.calls().filter((call) => call.kind === 'run');
+    expect(run!.args).toContain('--setting-sources');
+    expect(run!.env['GITHUB_TOKEN']).toBeUndefined();
+    expect(out.text).not.toContain(TOKEN);
+  });
+
+  it('refuses an agent the companion cannot drive', async () => {
+    const { out, err } = streams();
+    const code = await runCli(
+      ['probe', PR_URL, '--agent', 'codex'],
+      { GITHUB_TOKEN: TOKEN, SECOND_LOOK_CACHE_DIR: cacheDir },
+      { out, err },
+      { fetch: fixtureFetch().fetch },
+    );
+    expect(code).toBe(1);
+    expect(err.text).toContain('unknown agent "codex"');
+    expect(out.text).toBe('');
   });
 });
