@@ -190,6 +190,13 @@ export async function runCli(
     streams.err.write(`second-look-engine: ${command} needs a pull request URL\n`);
     return 1;
   }
+  if (command === 'review' && agentName === undefined) {
+    const tuning = ['--model', '--effort', '--agent-timeout'].find((flag) => agentFlags[flag] !== undefined);
+    if (tuning) {
+      streams.err.write(`second-look-engine: ${tuning} tunes the agent; pass --agent to run one\n`);
+      return 1;
+    }
+  }
 
   const token = tokenFlag ?? env['GITHUB_TOKEN'] ?? env['GH_TOKEN'];
   if (!token) {
