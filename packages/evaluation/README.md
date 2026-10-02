@@ -21,6 +21,8 @@ A case is one folder, named after the case:
 - `importantParts` — the parts a reviewer must not miss, each by the part's name as the engine prints it (`Cart.total in web/cart.ts`), or else by its path, which matches the file's first part.
 - `claims` — the claims the change makes, each with its text, where the change makes it (`origin`), the library it is about as the project pins it (`library`), the verdict it deserves with the evidence that proves it (`verdict`), and `libraryFetch: true` when the companion should offer a library fetch before checking it.
 
+Any of the three may be left out: the omitted field simply counts nothing, so an `expected.json` written before a field existed keeps running.
+
 The repository's cases live in `cases/`. `example-42` and `example-7` are invented pull requests, recorded from the engine's test fixtures. `canary-python` and `canary-csharp` are hand-made canaries for the companion's core promise: a change whose docstring overclaims how a pinned library behaves (`httpx` 0.27.2, `Microsoft.IO.RecyclableMemoryStream` 1.2.2), with nothing in the description that gives the answer away. Each records its claim, the refuted verdict with evidence at the pinned version, and that a library fetch should be offered; the evaluation presses the fetch when the review offers one.
 
 ### Recording a case
