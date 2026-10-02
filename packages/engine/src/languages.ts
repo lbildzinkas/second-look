@@ -20,6 +20,7 @@ export interface LanguageSpec {
 const TYPESCRIPT_ENTITIES: Readonly<Record<string, EntityKind>> = {
   function_declaration: 'function',
   generator_function_declaration: 'function',
+  function_signature: 'function',
   variable_declarator: 'function',
   class_declaration: 'class',
   abstract_class_declaration: 'class',

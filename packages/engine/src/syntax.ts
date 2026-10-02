@@ -113,7 +113,11 @@ function entityAt(
   for (let node = tree.rootNode.descendantForPosition({ row, column }); node; node = node.parent) {
     // A decorated Python definition owns its decorator lines.
     const target =
-      node.type === 'decorated_definition' ? node.childForFieldName('definition') : node;
+      node.type === 'decorated_definition'
+        ? node.childForFieldName('definition')
+        : node.type === 'ambient_declaration'
+          ? node.firstNamedChild
+          : node;
     if (!target || (last && target.equals(last))) continue;
     last = target;
     const entity = declaredEntity(target, language);
@@ -145,6 +149,9 @@ const CLOSE = ')';
 
 /** Node types whose whitespace is content rather than formatting. */
 const STRING_LIKE = /string|template|heredoc|literal|regex|comment/;
+
+/** Interpolation wrappers inside them hold code, so their whitespace is formatting. */
+const INTERPOLATION = /substitution|interpolation|template_type/;
 
 interface SignatureToken {
   text: string;
@@ -183,7 +190,12 @@ function* signature(tree: Tree, source: string): Generator<SignatureToken> {
       const type = cursor.nodeType;
       yield { text: `(${type}`, row };
       if (cursor.gotoFirstChild()) {
-        open.push({ end, row, keep: STRING_LIKE.test(type) ? /[^]/ : /\S/, previousEnd: start });
+        open.push({
+          end,
+          row,
+          keep: STRING_LIKE.test(type) && !INTERPOLATION.test(type) ? /[^]/ : /\S/,
+          previousEnd: start,
+        });
         continue;
       }
       yield { text: `'${source.slice(start, end)}`, row };

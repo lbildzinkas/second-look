@@ -228,6 +228,22 @@ describe('whitespace that is content', () => {
   });
 });
 
+/** Whitespace inside an interpolation wrapper hugs code, not string text. */
+const INTERPOLATION_WHITESPACE: [string, string, string][] = [
+  ['a.ts', 'const x = `${a}`;\n', 'const x = `${ a }`;\n'],
+  ['a.tsx', 'const x = `${a}`;\n', 'const x = `${ a }`;\n'],
+  ['a.js', 'const x = `${a}`;\n', 'const x = `${ a }`;\n'],
+  ['a.ts', 'type T = `a${U}b`;\n', 'type T = `a${ U }b`;\n'],
+];
+
+describe('whitespace inside an interpolation', () => {
+  it.each(INTERPOLATION_WHITESPACE)('is formatting in %s: %j', async (path, base, head) => {
+    const part = changedPart({ path, base, head, deleted: [1], added: [1] });
+    await analysePart(part, { base, head });
+    expect(part.syntax.formattingOnly.status).toBe('confirmed');
+  });
+});
+
 /** One changed line inside an entity, per language. */
 const ENTITY_CASES: {
   path: string;
@@ -265,6 +281,20 @@ const ENTITY_CASES: {
     line: 3,
     expected: 'Cart.total',
     kind: 'method',
+  },
+  {
+    path: 'web/cart.ts',
+    source: 'interface Cart {\n  total(): number;\n}\n',
+    line: 2,
+    expected: 'Cart.total',
+    kind: 'method',
+  },
+  {
+    path: 'types/global.d.ts',
+    source: 'declare function loadConfig(): void;\n',
+    line: 1,
+    expected: 'loadConfig',
+    kind: 'function',
   },
   {
     path: 'web/cart.ts',
