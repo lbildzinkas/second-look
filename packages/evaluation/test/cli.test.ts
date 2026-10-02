@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,7 +12,7 @@ import {
   temporaryCacheDir,
 } from '../../engine/test/helpers.js';
 import { hasStamp } from '../src/baseline.js';
-import { loadCases } from '../src/case.js';
+import { loadCase, loadCases } from '../src/case.js';
 import { runCli } from '../src/cli.js';
 import { recordCase } from '../src/record.js';
 import { ALL_CASES, NO_AGENT, TRACE_FILE, traceAgentCall } from '../src/run.js';
@@ -80,6 +80,26 @@ describe('the run command', () => {
     expect(results.rows.some((row) => row.case === ALL_CASES)).toBe(true);
     // A model-free run calls no agent, so its trace is empty.
     expect(readFileSync(join(runFolder(), TRACE_FILE), 'utf8')).toBe('');
+  });
+
+  it('keeps scoring a case recorded before the claims field existed', async () => {
+    const legacy = join(scratch, 'cases', 'example-7');
+    cpSync(join(REPOSITORY_CASES, 'example-7'), legacy, { recursive: true });
+    const expectedPath = join(legacy, 'expected.json');
+    const recorded = JSON.parse(readFileSync(expectedPath, 'utf8')) as Record<string, unknown>;
+    delete recorded.claims;
+    writeFileSync(expectedPath, `${JSON.stringify(recorded, null, 2)}\n`);
+
+    const loaded = await loadCase(legacy);
+    expect(loaded.expected.claims).toEqual([]);
+
+    const run = await cli(['run', '--cases', join(scratch, 'cases'), '--runs', join(scratch, 'runs')]);
+    expect(run.err).toBe('');
+    expect(run.code).toBe(0);
+    expect(run.out).toContain('example-7  coverage');
+    const results = JSON.parse(readFileSync(join(runFolder(), 'results.json'), 'utf8')) as RunResults;
+    expect(results.failures).toEqual([]);
+    expect(results.rows.filter((row) => row.name.startsWith('claims-'))).toEqual([]);
   });
 
   it('fails when a model-free score drops below the baseline', async () => {
