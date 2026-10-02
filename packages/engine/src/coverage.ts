@@ -1,5 +1,6 @@
 import type { ParsedDiff } from './diff.js';
-import type { Part } from './protocol.js';
+import { filesOfPart } from './parts.js';
+import type { Part, FileSlice } from './protocol.js';
 
 /** One way the part assignment failed to cover the diff exactly. */
 export interface CoverageProblem {
@@ -30,7 +31,7 @@ function lineId(side: Side, line: number): LineId {
  * with their old-side line numbers, additions with their new-side ones.
  * Context lines are not changed lines and contribute nothing.
  */
-function changedLinesOnSide(part: Part, side: Side): LineId[] {
+function changedLinesOnSide(part: FileSlice, side: Side): LineId[] {
   const ids: LineId[] = [];
   for (const hunk of part.hunks) {
     for (const line of hunk.lines) {
@@ -79,22 +80,24 @@ export function validateCoverage(diff: ParsedDiff, parts: Part[]): CoverageRepor
   // Every changed line each part claims, watched for double claims.
   const claims = new Map<string, Map<LineId, number>>();
   for (const [partIndex, part] of parts.entries()) {
-    for (const side of ['old', 'new'] as const) {
-      const path = side === 'old' ? part.previousPath ?? part.path : part.path;
-      let byLine = claims.get(path);
-      if (!byLine) {
-        byLine = new Map();
-        claims.set(path, byLine);
-      }
-      for (const id of changedLinesOnSide(part, side)) {
-        const owner = byLine.get(id);
-        if (owner !== undefined && owner !== partIndex) {
-          problems.push({
-            file: path,
-            description: `changed line ${id} belongs to more than one part`,
-          });
+    for (const file of filesOfPart(part)) {
+      for (const side of ['old', 'new'] as const) {
+        const path = side === 'old' ? file.previousPath ?? file.path : file.path;
+        let byLine = claims.get(path);
+        if (!byLine) {
+          byLine = new Map();
+          claims.set(path, byLine);
         }
-        byLine.set(id, partIndex);
+        for (const id of changedLinesOnSide(file, side)) {
+          const owner = byLine.get(id);
+          if (owner !== undefined && owner !== partIndex) {
+            problems.push({
+              file: path,
+              description: `changed line ${id} belongs to more than one part`,
+            });
+          }
+          byLine.set(id, partIndex);
+        }
       }
     }
   }
@@ -134,10 +137,10 @@ export function validateCoverage(diff: ParsedDiff, parts: Part[]): CoverageRepor
     }
   }
   const partPaths = new Set<string>();
-  for (const part of parts) {
-    partPaths.add(part.path);
-    if (part.previousPath !== undefined) {
-      partPaths.add(part.previousPath);
+  for (const file of parts.flatMap(filesOfPart)) {
+    partPaths.add(file.path);
+    if (file.previousPath !== undefined) {
+      partPaths.add(file.previousPath);
     }
   }
   for (const path of diffPaths) {

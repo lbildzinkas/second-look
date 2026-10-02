@@ -1,0 +1,23 @@
+{
+  "formatVersion": 1,
+  "id": "encode-httpx-3690",
+  "source": "https://github.com/encode/httpx/pull/3690",
+  "recordedAt": "2026-10-02T18:43:50.469Z",
+  "prompts": [
+    "grouping"
+  ],
+  "pullRequest": {
+    "url": "https://github.com/encode/httpx/pull/3690",
+    "number": 3690,
+    "title": "Add `.wait_ready` to parser for clean server disconnects",
+    "author": "lovelydinosaur",
+    "description": "Add `.wait_ready()` to `HTTPParser`...\r\n\r\nWe need this in order to differentiate between clean disconnects at the start of a new request/response cycle, rather than a `ProtocolError` while calling `recv_method_line()`.\r\n",
+    "base": "v1",
+    "head": "server-clean-disconnects",
+    "baseCommit": "20380490fd0bd13c68704080754c1385bff96d69",
+    "headSha": "350221558d4f079fc4ab3673d81a4bc730fbb9c3"
+  },
+  "gitAttributes": null,
+  "baseCommit": "20380490fd0bd13c68704080754c1385bff96d69",
+  "headCommit": "350221558d4f079fc4ab3673d81a4bc730fbb9c3"
+}

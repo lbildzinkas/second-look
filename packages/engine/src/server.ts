@@ -1,3 +1,4 @@
+import type { AgentAdapter, AgentSettings } from './agent.js';
 import { reviewPullRequest } from './review.js';
 import {
   ENGINE_FAILED_CODE,
@@ -9,11 +10,14 @@ import {
   JSON_RPC_PARSE_ERROR,
   NOT_INITIALIZED_CODE,
   REVIEW_METHOD,
+  REVIEW_STAGE_METHOD,
   VERSION_MISMATCH_CODE,
   isRpcRequest,
   redactToken,
   type InitializeParams,
   type ReviewParams,
+  type ReviewStageParams,
+  type RpcNotification,
   type RpcResponse,
 } from './rpc.js';
 /** Where the server reads its lines from: the engine's stdin. */
@@ -37,6 +41,11 @@ export interface RpcServerDeps {
   fetch?: typeof fetch;
   /** The engine's cache folder, which holds the read-only copies. */
   cacheDir: string;
+  /**
+   * The agent that groups the parts after the plain pass; without one,
+   * the plain result is the review's only answer.
+   */
+  agent?: { adapter: AgentAdapter; settings?: AgentSettings };
 }
 
 /**
@@ -47,6 +56,12 @@ export interface RpcServerDeps {
  * is refused with a plain message. `review` then carries the pull request
  * URL and the GitHub token per request — the token is used only for the
  * GitHub request, redacted from every error message, and never stored.
+ *
+ * With an agent, a review arrives in stages: as soon as the plain result
+ * is ready the engine sends it in a {@link REVIEW_STAGE_METHOD}
+ * notification naming the stage that runs next, and the review's
+ * response carries the result with the agent's parts, or the plain parts
+ * with the reason they stayed.
  */
 export async function runRpcServer(
   source: RpcLineSource,
@@ -157,6 +172,14 @@ async function review(
       token,
       cacheDir: deps.cacheDir,
       ...(deps.fetch ? { fetch: deps.fetch } : {}),
+      ...(deps.agent
+        ? {
+            agentStage: {
+              ...deps.agent,
+              onStage: (stage) => notify(sink, REVIEW_STAGE_METHOD, { id, ...stage }),
+            },
+          }
+        : {}),
     });
     respond(sink, { jsonrpc: '2.0', id, result });
   } catch (error) {
@@ -167,6 +190,11 @@ async function review(
 
 function failure(id: number | null, code: number, message: string): RpcResponse {
   return { jsonrpc: '2.0', id, error: { code, message } };
+}
+
+function notify(sink: RpcLineSink, method: string, params: ReviewStageParams): void {
+  const notification: RpcNotification<ReviewStageParams> = { jsonrpc: '2.0', method, params };
+  sink.writeLine(JSON.stringify(notification));
 }
 
 function respond(sink: RpcLineSink, response: RpcResponse): void {

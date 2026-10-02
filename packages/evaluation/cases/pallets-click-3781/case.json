@@ -1,0 +1,23 @@
+{
+  "formatVersion": 1,
+  "id": "pallets-click-3781",
+  "source": "https://github.com/pallets/click/pull/3781",
+  "recordedAt": "2026-10-02T18:43:48.363Z",
+  "prompts": [
+    "grouping"
+  ],
+  "pullRequest": {
+    "url": "https://github.com/pallets/click/pull/3781",
+    "number": 3781,
+    "title": "Add support of `pathlib.Path` to `edit`",
+    "author": "kdeldycke",
+    "description": "Closes #2869.",
+    "base": "main",
+    "head": "edit-path-support",
+    "baseCommit": "2103e157683c5e4cadc8ee1838df526a54bde9a4",
+    "headSha": "a1d87858abd77fa8e3ffc204670ccd75b96c4781"
+  },
+  "gitAttributes": null,
+  "baseCommit": "2103e157683c5e4cadc8ee1838df526a54bde9a4",
+  "headCommit": "a1d87858abd77fa8e3ffc204670ccd75b96c4781"
+}

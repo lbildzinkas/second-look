@@ -1,3 +1,9 @@
 {
-  "prompts": []
+  "prompts": [
+    {
+      "id": "grouping",
+      "version": "1",
+      "files": ["packages/engine/src/grouping.ts"]
+    }
+  ]
 }

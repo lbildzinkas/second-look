@@ -10,6 +10,10 @@
 //   FAKE_ENGINE_STALL_ON          receive this method, answer nothing, stay alive
 //   FAKE_ENGINE_IGNORE_SIGTERM    stay alive when sent SIGTERM, like a frozen engine
 //   FAKE_ENGINE_LOG               path to append every request it received
+//   FAKE_ENGINE_STAGE             JSON { running, timeoutMs, result } to send as a
+//                                 review/stage notification before the answer
+//   FAKE_ENGINE_STAGE_ONLY        send the stage notification, then never answer
+//   FAKE_ENGINE_ANSWER_DELAY_MS   wait this long after the stage before answering
 //
 // Every request it receives is appended to the log, so a test can prove
 // what reached the engine, including the token carried per request.
@@ -23,6 +27,9 @@ const reviewError = process.env.FAKE_ENGINE_ERROR;
 const exitOn = process.env.FAKE_ENGINE_EXIT_ON;
 const stallOn = process.env.FAKE_ENGINE_STALL_ON;
 const log = process.env.FAKE_ENGINE_LOG;
+const stage = process.env.FAKE_ENGINE_STAGE ? JSON.parse(process.env.FAKE_ENGINE_STAGE) : null;
+const stageOnly = Boolean(process.env.FAKE_ENGINE_STAGE_ONLY);
+const answerDelayMs = Number(process.env.FAKE_ENGINE_ANSWER_DELAY_MS ?? '0');
 
 if (process.env.FAKE_ENGINE_IGNORE_SIGTERM) {
   process.on('SIGTERM', () => {
@@ -76,7 +83,13 @@ function handle(line) {
       fail(request.id, -32002, reviewError);
       return;
     }
-    send({ jsonrpc: '2.0', id: request.id, result: reviewResult });
+    if (stage) {
+      send({ jsonrpc: '2.0', method: 'review/stage', params: { id: request.id, ...stage } });
+      if (stageOnly) return;
+    }
+    const answer = () => send({ jsonrpc: '2.0', id: request.id, result: reviewResult });
+    if (answerDelayMs > 0) setTimeout(answer, answerDelayMs);
+    else answer();
     return;
   }
   fail(request.id, -32601, `unknown method: ${request.method}`);

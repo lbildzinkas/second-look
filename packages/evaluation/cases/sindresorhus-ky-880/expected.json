@@ -1,0 +1,30 @@
+{
+  "noise": {
+    "source/types/ky.ts": {
+      "label": "none"
+    },
+    "test/main.ts": {
+      "label": "none"
+    },
+    "source/utils/merge.ts": {
+      "label": "none"
+    },
+    "readme.md": {
+      "label": "none"
+    }
+  },
+  "importantParts": [
+    "deepMergeInternal in source/utils/merge.ts"
+  ],
+  "groups": [
+    [
+      "readme.md#1",
+      "source/types/ky.ts#1",
+      "source/utils/merge.ts#1",
+      "test/main.ts#1"
+    ],
+    [
+      "source/utils/merge.ts#2"
+    ]
+  ]
+}
