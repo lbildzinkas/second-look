@@ -415,31 +415,30 @@ export async function run(): Promise<void> {
       vscode.commands.executeCommand(SUBMIT_REVIEW_COMMAND, 'comment', 'Sent by the real-host test.'),
       'the submit-review command',
     );
-    const sent = waitFor('the send request in the engine log', () => {
+    const sent = await waitFor('the send request in the engine log', () => {
       const logged = readFileSync(join(workDir, 'engine.log'), 'utf8')
         .split('\n')
         .filter((line) => line !== '')
         .map((line) => JSON.parse(line) as EngineRequest);
       return logged.find((request) => request.method === 'sendReview');
     });
-    deepStrictEqual(await sent, {
-      method: 'sendReview',
-      params: {
-        url: PR_URL,
-        token: TOKEN,
-        review: {
-          submit: 'comment',
-          body: 'Sent by the real-host test.',
-          comments: [
-            {
-              kind: 'line',
-              path: 'src/retry.py',
-              side: 'head',
-              line: 5,
-              body: 'this retry loop needs a cap',
-            },
-          ],
-        },
+    // The log holds the whole JSON-RPC envelope, id and all, so what the
+    // send pins is the params the engine received.
+    deepStrictEqual(sent.params, {
+      url: PR_URL,
+      token: TOKEN,
+      review: {
+        submit: 'comment',
+        body: 'Sent by the real-host test.',
+        comments: [
+          {
+            kind: 'line',
+            path: 'src/retry.py',
+            side: 'head',
+            line: 5,
+            body: 'this retry loop needs a cap',
+          },
+        ],
       },
     });
     deepStrictEqual(await renderedTree(provider), EXPECTED_TREE);
