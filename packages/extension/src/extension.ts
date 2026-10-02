@@ -55,6 +55,11 @@ function isSection(node: TreeNode): node is TreeSection {
   return 'parts' in node;
 }
 
+/** Whether a value is one of the three ways a review is submitted. */
+function isSubmitKind(value: unknown): value is SubmitKind {
+  return value === 'comment' || value === 'approve' || value === 'request changes';
+}
+
 /**
  * The side-bar tree: importance groups in order with the reason beside
  * each part and the signals in its tooltip, the noise last, and the
@@ -262,8 +267,11 @@ class ReviewSession {
    * moment nothing of the review has left the companion (ADR 0002) — and
    * a send that fails keeps every comment for the reviewer to send again.
    *
-   * The arguments, when given, skip the prompts: the choice and the
-   * overall comment are already decided, the way a test drives the flow.
+   * The arguments skip the prompts only when they are what they claim:
+   * a genuine submit kind and a string body, the way a test drives the
+   * flow. The editor's menus forward other things — the tree title's
+   * button passes the view's context object — so anything else reads as
+   * absent and the prompts ask.
    */
   async submitReview(submitArg?: SubmitKind, bodyArg?: string): Promise<void> {
     if (this.result === undefined || this.url === undefined) {
@@ -272,11 +280,11 @@ class ReviewSession {
       );
       return;
     }
-    const submit = submitArg ?? (await pickSubmitKind());
+    const submit = isSubmitKind(submitArg) ? submitArg : await pickSubmitKind();
     if (submit === undefined) {
       return; // Dismissed: the deliberate step was not taken.
     }
-    const body = bodyArg !== undefined ? bodyArg : await readOverallComment();
+    const body = typeof bodyArg === 'string' ? bodyArg : await readOverallComment();
     if (body === undefined) {
       return;
     }

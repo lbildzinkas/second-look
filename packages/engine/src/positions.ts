@@ -73,11 +73,13 @@ export function positionComments(diff: string, comments: readonly Comment[]): Po
 /**
  * The position of one line in its file's hunks: the index of the line in
  * the patch, counting each hunk's `@@` header, from the file's first
- * header at 0. `\ No newline at end of file` markers annotate the line
- * before them rather than taking a position of their own.
+ * header at 0. A `\ No newline at end of file` marker takes the position
+ * after the line it annotates, shifting every later line of the file's
+ * patch down by one, the way GitHub counts.
  */
 function linePosition(hunks: readonly Hunk[], comment: Extract<Comment, { kind: 'line' }>): number | undefined {
   let position = 0;
+  let markers = 0;
   for (const hunk of hunks) {
     // The hunk's `@@` header sits at the next position; its first body
     // line is the one below it.
@@ -87,7 +89,10 @@ function linePosition(hunks: readonly Hunk[], comment: Extract<Comment, { kind: 
       // carries no number there, so it matches no comment.
       const number = comment.side === 'head' ? line.newLineNumber : line.oldLineNumber;
       if (number === comment.line) {
-        return position + index;
+        return position + index + markers;
+      }
+      if (line.endsWithoutNewline) {
+        markers++;
       }
     }
     position += hunk.lines.length;

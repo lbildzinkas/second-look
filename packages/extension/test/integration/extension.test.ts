@@ -597,6 +597,34 @@ describe('the pending review and sending it', () => {
     }
   });
 
+  it('asks through the prompts when the tree title button forwards the view context', async () => {
+    await reviewWithFakeEngine({ result: mixedResult(), logName: 'title-button.log' });
+    const thread = stub.commentControllers[0]!.createCommentThread(
+      head('src/retry.py'),
+      new Range(4, 0, 4, 0),
+      [],
+    );
+    await registeredCommands().get(ADD_COMMENT_COMMAND)!({ thread, text: 'sent from the title button' });
+    stub.quickPickResult = { submit: 'approve' };
+    stub.inputBoxResult = '';
+
+    // The rocket button in the tree's title runs the command with the
+    // view-pane context object as its first argument; that is no submit
+    // kind, so the prompts ask and the send carries their choice.
+    await registeredCommands().get(SUBMIT_REVIEW_COMMAND)!({
+      $treeViewId: 'second-look.reviewTree',
+      $focusedTreeItem: true,
+      $selectedTreeItems: true,
+    }) as Promise<void>;
+
+    const sent = engineRequests('title-button.log').find((request) => request.method === 'sendReview');
+    expect(sent?.params?.['review']).toMatchObject({
+      submit: 'approve',
+      comments: [{ kind: 'line', path: 'src/retry.py', side: 'head', line: 5, body: 'sent from the title button' }],
+    });
+    expect(stub.errorMessages).toEqual([]);
+  });
+
   it('sends nothing when the reviewer dismisses the submit step', async () => {
     await reviewWithFakeEngine({ result: mixedResult(), logName: 'dismissed-submit.log' });
     stub.quickPickResult = undefined;
