@@ -22,6 +22,7 @@ import {
   type TreeSection,
 } from './tree.js';
 import { AgentStatusBar } from './agent-status.js';
+import { readAgentSettings, type AgentSettings } from './agent-settings.js';
 import type { Part, ReviewResult } from '@second-look/engine';
 
 export { OPEN_ALL_PARTS_COMMAND, OPEN_PART_COMMAND, REVIEW_COMMAND, REVIEW_TREE_VIEW };
@@ -130,6 +131,8 @@ class ReviewSession {
   private readonly marker: PartMarker;
   private readonly spawnEngine: ExtensionDeps['spawnEngine'];
   private engine: EngineClient | undefined;
+  /** The agent and model the running engine was started with. */
+  private engineAgent: Pick<AgentSettings, 'agent' | 'model'> | undefined;
   private result: ReviewResult | undefined;
   /** Counts the reviews started, so a replaced review's late answers are dropped. */
   private reviews = 0;
@@ -277,8 +280,15 @@ class ReviewSession {
     token: string,
     onStage: (stage: ReviewStageUpdate) => void,
   ): Promise<ReviewResult> {
-    if (this.engine === undefined) {
-      this.engine = new EngineClient(this.spawnEngine ?? spawnEngineProcess);
+    const chosen: Pick<AgentSettings, 'agent' | 'model'> = readAgentSettings();
+    if (
+      this.engine === undefined ||
+      this.engineAgent?.agent !== chosen.agent ||
+      this.engineAgent?.model !== chosen.model
+    ) {
+      this.engine?.dispose();
+      this.engineAgent = chosen;
+      this.engine = new EngineClient(this.spawnEngine ?? (() => spawnEngineProcess(chosen)));
     }
     const engine = this.engine;
     if (!engine.initialized) {
