@@ -540,6 +540,75 @@ source = { registry = "https://pypi.org/simple" }
     );
     expect(check.outcome).toBe('confirmed');
   });
+
+  it('parses a lock whose dev dependencies are grouped by name', () => {
+    const groupedLock = (specifier: string, anyioVersion: string): string => `
+version = 1
+
+[[package]]
+name = "app"
+version = "0.1.0"
+source = { virtual = "." }
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anyio", specifier = "${specifier}" },
+]
+
+[[package]]
+name = "anyio"
+version = "${anyioVersion}"
+source = { registry = "https://pypi.org/simple" }
+`;
+    const check = confirmed(
+      format('uv.lock'),
+      side(groupedLock('>=4.3', '4.3.0'), [pyproject('>=4.3')]),
+      side(groupedLock('>=4.4', '4.4.0'), [pyproject('>=4.4')]),
+    );
+    expect(check.outcome).toBe('confirmed');
+  });
+
+  const devManifest = (extra: string): string => `
+[project]
+name = "app"
+dependencies = ["anyio>=4.3"]
+${extra}`;
+  const devLock = (withPytest: boolean): string => `
+version = 1
+
+[[package]]
+name = "app"
+version = "0.1.0"
+source = { virtual = "." }
+
+[[package]]
+name = "anyio"
+version = "4.3.0"
+source = { registry = "https://pypi.org/simple" }
+${withPytest ? '\n[[package]]\nname = "pytest"\nversion = "8.3.4"\nsource = { registry = "https://pypi.org/simple" }\n' : ''}`;
+
+  it('confirms a dev dependency added through a dependency group', () => {
+    const check = confirmed(
+      format('uv.lock'),
+      side(devLock(false), [devManifest('')]),
+      side(devLock(true), [devManifest('[dependency-groups]\ndev = ["pytest>=8"]\n')]),
+    );
+    expect(check.outcome).toBe('confirmed');
+  });
+
+  it('confirms a dev dependency added through legacy tool.uv dev-dependencies', () => {
+    const check = confirmed(
+      format('uv.lock'),
+      side(devLock(false), [devManifest('')]),
+      side(devLock(true), [devManifest('[tool.uv]\ndev-dependencies = ["pytest>=8"]\n')]),
+    );
+    expect(check.outcome).toBe('confirmed');
+  });
 });
 
 describe('poetry.lock', () => {

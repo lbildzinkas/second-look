@@ -245,7 +245,7 @@ function readNpmManifests(texts: readonly string[]): Map<string, string> | undef
   return specs;
 }
 
-/** uv.lock records dependencies as arrays of `{ name = ... }` tables. */
+/** uv.lock records dependencies as arrays of `{ name = ... }` tables, with optional and dev groups keyed by name. */
 function uvEdges(entry: TomlTable): readonly string[] | undefined {
   const edges: string[] = [];
   const collect = (value: TomlValue): boolean => {
@@ -258,11 +258,16 @@ function uvEdges(entry: TomlTable): readonly string[] | undefined {
     if (Array.isArray(value)) return value.every(collect);
     return false;
   };
-  const groups: (TomlValue | undefined)[] = [entry['dependencies'], entry['dev-dependencies']];
+  const groups: (TomlValue | undefined)[] = [entry['dependencies']];
   const optional = entry['optional-dependencies'];
   if (optional !== undefined) {
     if (!isTomlTable(optional)) return undefined;
     groups.push(...Object.values(optional));
+  }
+  const dev = entry['dev-dependencies'];
+  if (dev !== undefined) {
+    if (isTomlTable(dev)) groups.push(...Object.values(dev));
+    else groups.push(dev);
   }
   for (const group of groups) {
     if (group === undefined) continue;
@@ -284,25 +289,42 @@ function readPep621Manifests(texts: readonly string[]): Map<string, string> | un
   for (const text of texts) {
     const doc = parseToml(text);
     if (doc === undefined) return undefined;
-    const project = doc['project'];
-    if (project === undefined) continue;
-    if (!isTomlTable(project)) return undefined;
     const requirements: string[] = [];
-    const dependencies = project['dependencies'];
-    if (dependencies !== undefined) {
-      if (!Array.isArray(dependencies) || !dependencies.every((item) => typeof item === 'string')) {
-        return undefined;
+    const push = (value: TomlValue): boolean => {
+      if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
+        return false;
       }
-      requirements.push(...(dependencies as string[]));
-    }
-    const optional = project['optional-dependencies'];
-    if (optional !== undefined) {
-      if (!isTomlTable(optional)) return undefined;
-      for (const group of Object.values(optional)) {
-        if (!Array.isArray(group) || !group.every((item) => typeof item === 'string')) {
-          return undefined;
+      requirements.push(...(value as string[]));
+      return true;
+    };
+    const project = doc['project'];
+    if (project !== undefined) {
+      if (!isTomlTable(project)) return undefined;
+      const dependencies = project['dependencies'];
+      if (dependencies !== undefined && !push(dependencies)) return undefined;
+      const optional = project['optional-dependencies'];
+      if (optional !== undefined) {
+        if (!isTomlTable(optional)) return undefined;
+        for (const group of Object.values(optional)) {
+          if (!push(group)) return undefined;
         }
-        requirements.push(...(group as string[]));
+      }
+    }
+    const dependencyGroups = doc['dependency-groups'];
+    if (dependencyGroups !== undefined) {
+      if (!isTomlTable(dependencyGroups)) return undefined;
+      for (const group of Object.values(dependencyGroups)) {
+        if (!push(group)) return undefined;
+      }
+    }
+    const tool = doc['tool'];
+    if (tool !== undefined) {
+      if (!isTomlTable(tool)) return undefined;
+      const uv = tool['uv'];
+      if (uv !== undefined) {
+        if (!isTomlTable(uv)) return undefined;
+        const dev = uv['dev-dependencies'];
+        if (dev !== undefined && !push(dev)) return undefined;
       }
     }
     for (const requirement of requirements) {
