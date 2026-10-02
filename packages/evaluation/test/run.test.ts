@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { GROUPING_INSTRUCTIONS } from '../../engine/src/grouping.js';
 import { scriptedAgent } from '../../engine/test/helpers.js';
+import type { AgentAdapter } from '@second-look/engine';
 import { loadCases } from '../src/case.js';
 import { loadRegistry } from '../src/prompts.js';
 import { ALL_CASES, NO_AGENT, TRACE_FILE, belowFullCoverage, runEvaluation } from '../src/run.js';
@@ -33,7 +34,7 @@ afterEach(() => {
   rmSync(runs, { recursive: true, force: true });
 });
 
-async function run(answers: string[]) {
+async function run(answers: string[], adapter: AgentAdapter = scriptedAgent(answers)) {
   const all = await loadCases([join(PACKAGE, 'cases')]);
   const cases = all.filter((each) => each.id === 'example-7' || each.id === 'example-42');
   return runEvaluation({
@@ -42,7 +43,7 @@ async function run(answers: string[]) {
     companionVersion: '0.1.0',
     runsFolder: runs,
     now: new Date('2026-10-02T00:00:00.000Z'),
-    agent: { adapter: scriptedAgent(answers) },
+    agent: { adapter },
   });
 }
 
@@ -100,6 +101,27 @@ describe('runEvaluation with an agent', () => {
       rowsOf(results.rows, NO_AGENT, 'grouping-agreement')['example-7'],
     );
     expect(readFileSync(join(folder, TRACE_FILE), 'utf8').trim().split('\n')).toHaveLength(2);
+  });
+
+  it('records a coverage row of 0 when the agent pass throws, so the hard gate cannot pass silently', async () => {
+    const crashing: AgentAdapter = {
+      agent: 'fake',
+      probe: scriptedAgent([]).probe,
+      run: async () => {
+        throw new Error('agent crashed');
+      },
+    };
+    const { results } = await run([], crashing);
+
+    expect(results.failures).toEqual([{ case: 'example-7', error: 'agent crashed' }]);
+    const uncovered = belowFullCoverage(results.rows);
+    expect(uncovered).toHaveLength(1);
+    expect(uncovered[0]).toMatchObject({
+      case: 'example-7',
+      agent: 'fake',
+      name: 'coverage',
+      value: 0,
+    });
   });
 });
 

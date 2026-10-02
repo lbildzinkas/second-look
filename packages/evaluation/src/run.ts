@@ -214,6 +214,20 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
       agentTallies.set(key, group);
     } catch (error) {
       results.failures.push({ case: evaluationCase.id, error: messageOf(error) });
+      results.rows.push(
+        ...rowsOf(
+          evaluationCase.id,
+          tallyCase(input.diff, evaluationCase.expected, undefined),
+          {
+            ...stampFor(evaluationCase.record.prompts),
+            agent: options.agent.adapter.agent,
+            agentVersion: '',
+            model: '',
+            effort: '',
+          },
+          GROUPING_SCORES,
+        ),
+      );
     }
   }
   const allPrompts = [...new Set(options.cases.flatMap((each) => each.record.prompts))].sort();

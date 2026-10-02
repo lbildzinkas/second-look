@@ -98,6 +98,11 @@ export function compareWithBaseline(
   return comparison;
 }
 
+/** The case and agent a fallback was recorded for, whatever its detail. */
+function fallbackKey(entry: { case: string; agent: string }): string {
+  return JSON.stringify([entry.case, entry.agent]);
+}
+
 /**
  * A stored baseline with a run's rows written over it: the run replaces
  * every stored row of each case, agent, model and effort it scored, and
@@ -108,6 +113,7 @@ export function mergeBaseline(stored: RunResults, run: RunResults): RunResults {
   const scored = new Set(run.rows.map(runKey));
   const kept = stored.rows.filter((row) => !scored.has(runKey(row)));
   const cases = new Set(run.rows.map((row) => row.case));
+  const scoredFallbacks = new Set(run.rows.map(fallbackKey));
   // The plain pass's rows first, then each agent's, each in its own order.
   const rows = [...kept, ...run.rows].sort(
     (a, b) => Number(a.agent !== NO_AGENT) - Number(b.agent !== NO_AGENT),
@@ -116,7 +122,7 @@ export function mergeBaseline(stored: RunResults, run: RunResults): RunResults {
     rows,
     failures: [...stored.failures.filter((failure) => !cases.has(failure.case)), ...run.failures],
     fallbacks: [
-      ...(stored.fallbacks ?? []).filter((fallback) => !cases.has(fallback.case)),
+      ...(stored.fallbacks ?? []).filter((fallback) => !scoredFallbacks.has(fallbackKey(fallback))),
       ...(run.fallbacks ?? []),
     ],
   };

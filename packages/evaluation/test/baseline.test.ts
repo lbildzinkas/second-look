@@ -131,4 +131,20 @@ describe('mergeBaseline', () => {
       fallbacks: [],
     });
   });
+
+  it('keeps a stored fallback unless the run scored that case with the same agent', () => {
+    const stored = {
+      rows: [row()],
+      failures: [],
+      fallbacks: [{ case: 'example-7', agent: 'pi', detail: 'the answer was invalid twice' }],
+    };
+    const plain = { rows: [row({ value: 1 })], failures: [], fallbacks: [] };
+    expect(mergeBaseline(stored, plain).fallbacks).toEqual(stored.fallbacks);
+
+    const another = { rows: [row({ ...pi, agent: 'claude', value: 1 })], failures: [], fallbacks: [] };
+    expect(mergeBaseline(stored, another).fallbacks).toEqual(stored.fallbacks);
+
+    const again = { rows: [row({ ...pi, value: 1 })], failures: [], fallbacks: [] };
+    expect(mergeBaseline(stored, again).fallbacks).toEqual([]);
+  });
 });
