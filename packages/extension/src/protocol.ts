@@ -3,13 +3,16 @@ import {
   REVIEW_RESULT_VERSION,
   type ChangeKind,
   type DiffLineKind,
+  type EntityChange,
   type EntityKind,
   type FormattingOnlyStatus,
   type Importance,
   type NoiseLabel,
   type NoiseRule,
   type NoiseState,
+  type Novelty,
   type PartRank,
+  type PartRole,
   type ReviewResult,
   type SyntaxCheck,
 } from '@second-look/engine';
@@ -58,6 +61,12 @@ const ENTITY_KINDS: readonly EntityKind[] = [
   'method',
   'property',
 ];
+
+const ENTITY_CHANGES: readonly EntityChange[] = ['added', 'removed', 'declaration', 'body'];
+
+const NOVELTIES: readonly Novelty[] = ['new', 'changed', 'removed'];
+
+const ROLES: readonly PartRole[] = ['test', 'code'];
 
 const FORMATTING_STATUSES: readonly FormattingOnlyStatus[] = [
   'confirmed',
@@ -124,7 +133,33 @@ function isHunk(value: unknown): boolean {
 }
 
 function isEntity(value: unknown): boolean {
-  return isRecord(value) && isOneOf(value['kind'], ENTITY_KINDS) && isString(value['name']);
+  return (
+    isRecord(value) &&
+    isOneOf(value['kind'], ENTITY_KINDS) &&
+    isString(value['name']) &&
+    typeof value['public'] === 'boolean' &&
+    isOneOf(value['change'], ENTITY_CHANGES)
+  );
+}
+
+function isStringList(value: unknown): boolean {
+  return Array.isArray(value) && value.every(isString);
+}
+
+function isPartSignals(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const references = value['references'];
+  return (
+    isOneOf(value['novelty'], NOVELTIES) &&
+    isOneOf(value['role'], ROLES) &&
+    isNumber(value['changedLines']) &&
+    isStringList(value['publicSurface']) &&
+    isRecord(references) &&
+    // The reference count matches names only, and must say so.
+    references['basis'] === 'name-based' &&
+    isStringList(references['names']) &&
+    isNumber(references['files'])
+  );
 }
 
 function isPartSyntax(value: unknown): boolean {
@@ -201,10 +236,13 @@ function isPart(value: unknown): boolean {
   if (!isNumber(value['additions']) || !isNumber(value['deletions'])) return false;
   if (!Array.isArray(value['hunks']) || !value['hunks'].every(isHunk)) return false;
   if (!isPartSyntax(value['syntax'])) return false;
-  // The engine sets the noise assessment on every part before printing.
+  // The engine sets the name, noise, signals and rank on every part
+  // before printing; the rank stays optional for a reader that meets a
+  // part without one, and when present it carries an importance, its
+  // reason and the signals the reason cites.
+  if (!isNonEmptyString(value['name'])) return false;
   if (!isNoiseAssessment(value['noise'])) return false;
-  // The rank is optional until the engine ranks parts; when present it
-  // carries an importance, its reason and the signals the reason cites.
+  if (!isPartSignals(value['signals'])) return false;
   return value['rank'] === undefined || isPartRank(value['rank']);
 }
 

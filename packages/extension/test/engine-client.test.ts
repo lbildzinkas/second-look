@@ -66,7 +66,7 @@ describe('EngineClient against a fake engine', () => {
     await client.initialize();
     const result = await client.review(PR_URL, TOKEN);
 
-    expect(result.version).toBe(2);
+    expect(result.version).toBe(3);
     expect(result.parts).toHaveLength(7);
 
     const requests = loggedRequests('round-trip.log') as {
@@ -242,7 +242,7 @@ describe('EngineClient against a fake engine', () => {
       await timedOut;
 
       await client.initialize();
-      expect(await client.review(PR_URL, TOKEN)).toMatchObject({ version: 2 });
+      expect(await client.review(PR_URL, TOKEN)).toMatchObject({ version: 3 });
       expect(spawns).toBe(2);
       client.dispose();
     } finally {

@@ -94,7 +94,9 @@ describe('formatting-only check', () => {
     await analysePart(part, { base: PYTHON_BEFORE_DEDENT, head: PYTHON_AFTER_DEDENT });
     expect(part.syntax.formattingOnly.status).toBe('structure-changed');
     expect(part.syntax.formattingOnly.reason).toBe('the syntax tree changes at head line 4');
-    expect(part.hunks[0]!.entities).toEqual([{ kind: 'function', name: 'apply_discount' }]);
+    expect(part.hunks[0]!.entities).toEqual([
+      { kind: 'function', name: 'apply_discount', public: true, change: 'body' },
+    ]);
   });
 
   it('confirms a C# whitespace-only change', async () => {
@@ -109,8 +111,8 @@ describe('formatting-only check', () => {
     expect(part.syntax.language).toBe('c-sharp');
     expect(part.syntax.formattingOnly.status).toBe('confirmed');
     expect(part.hunks[0]!.entities).toEqual([
-      { kind: 'class', name: 'Greeter' },
-      { kind: 'method', name: 'Greeter.Greet' },
+      { kind: 'class', name: 'Greeter', public: true, change: 'declaration' },
+      { kind: 'method', name: 'Greeter.Greet', public: true, change: 'declaration' },
     ]);
   });
 
@@ -147,7 +149,9 @@ describe('formatting-only check', () => {
     expect(part.syntax.checksNotRun).toEqual([
       { check: 'formatting-only', reason: part.syntax.formattingOnly.reason },
     ]);
-    expect(part.hunks[0]!.entities).toEqual([{ kind: 'function', name: 'f' }]);
+    expect(part.hunks[0]!.entities).toEqual([
+      { kind: 'function', name: 'f', public: true, change: 'body' },
+    ]);
   });
 
   it('compares deeply nested code without exhausting the stack', async () => {
@@ -166,7 +170,9 @@ describe('formatting-only check', () => {
       status: 'structure-changed',
       reason: 'the file is new',
     });
-    expect(part.hunks[0]!.entities).toEqual([{ kind: 'function', name: 'fresh' }]);
+    expect(part.hunks[0]!.entities).toEqual([
+      { kind: 'function', name: 'fresh', public: true, change: 'added' },
+    ]);
   });
 });
 
@@ -409,7 +415,7 @@ describe('entity names', () => {
       });
       await analysePart(part, { base: source, head: source });
       expect(part.syntax.checksNotRun.map((check) => check.check)).not.toContain('entities');
-      expect(part.hunks[0]!.entities).toEqual([{ kind, name: expected }]);
+      expect(part.hunks[0]!.entities).toEqual([expect.objectContaining({ kind, name: expected })]);
     },
   );
 
@@ -532,5 +538,258 @@ describe('files the syntax pass cannot read', () => {
     part.hunks = [];
     await analysePart(part, {});
     expect(part.syntax.formattingOnly.reason).toBe('the file is binary');
+  });
+});
+
+/** Whether the entity a line falls in is public, by each language's rule. */
+const VISIBILITY_CASES: {
+  path: string;
+  source: string;
+  line: number;
+  name: string;
+  public: boolean;
+}[] = [
+  { path: 'a.py', source: 'def load():\n    return 1\n', line: 2, name: 'load', public: true },
+  { path: 'a.py', source: 'def _load():\n    return 1\n', line: 2, name: '_load', public: false },
+  {
+    path: 'a.py',
+    source: 'class Store:\n    def __init__(self):\n        self.x = 1\n',
+    line: 3,
+    name: 'Store.__init__',
+    public: true,
+  },
+  {
+    path: 'a.py',
+    source: 'class _Store:\n    def run(self):\n        return 1\n',
+    line: 3,
+    name: '_Store.run',
+    public: false,
+  },
+  {
+    path: 'a.py',
+    source: 'def outer():\n    def inner():\n        return 1\n    return inner\n',
+    line: 3,
+    name: 'outer.inner',
+    public: false,
+  },
+  {
+    path: 'a.go',
+    source: 'package a\n\nfunc Load() {\n\trun()\n}\n',
+    line: 4,
+    name: 'Load',
+    public: true,
+  },
+  {
+    path: 'a.go',
+    source: 'package a\n\nfunc load() {\n\trun()\n}\n',
+    line: 4,
+    name: 'load',
+    public: false,
+  },
+  { path: 'a.rs', source: 'pub fn load() {\n    run();\n}\n', line: 2, name: 'load', public: true },
+  {
+    path: 'a.rs',
+    source: 'pub(crate) fn load() {\n    run();\n}\n',
+    line: 2,
+    name: 'load',
+    public: false,
+  },
+  {
+    path: 'a.rs',
+    source: 'impl Server {\n    pub fn start(&self) {\n        run();\n    }\n}\n',
+    line: 3,
+    name: 'Server.start',
+    public: true,
+  },
+  {
+    path: 'a.rs',
+    source: 'impl Server {\n    fn start(&self) {\n        run();\n    }\n}\n',
+    line: 3,
+    name: 'Server.start',
+    public: false,
+  },
+  {
+    path: 'a.rs',
+    source: 'pub trait Run {\n    fn run(&self);\n}\n',
+    line: 2,
+    name: 'Run.run',
+    public: true,
+  },
+  {
+    path: 'A.cs',
+    source: 'public class A\n{\n    protected void M()\n    {\n        Run();\n    }\n}\n',
+    line: 5,
+    name: 'A.M',
+    public: true,
+  },
+  {
+    path: 'A.cs',
+    source: 'public class A\n{\n    private void M()\n    {\n        Run();\n    }\n}\n',
+    line: 5,
+    name: 'A.M',
+    public: false,
+  },
+  {
+    path: 'A.cs',
+    source: 'class A\n{\n    public void M()\n    {\n        Run();\n    }\n}\n',
+    line: 5,
+    name: 'A.M',
+    public: false,
+  },
+  {
+    path: 'I.cs',
+    source: 'public interface I\n{\n    void N();\n}\n',
+    line: 3,
+    name: 'I.N',
+    public: true,
+  },
+  {
+    path: 'A.java',
+    source: 'public class A {\n  public void m() {\n    run();\n  }\n}\n',
+    line: 3,
+    name: 'A.m',
+    public: true,
+  },
+  {
+    path: 'A.java',
+    source: 'class A {\n  public void m() {\n    run();\n  }\n}\n',
+    line: 3,
+    name: 'A.m',
+    public: false,
+  },
+  {
+    path: 'I.java',
+    source: 'public interface I {\n  void n();\n}\n',
+    line: 2,
+    name: 'I.n',
+    public: true,
+  },
+  {
+    path: 'cart.ts',
+    source: 'export class Cart {\n  total(): number {\n    return 1;\n  }\n}\n',
+    line: 3,
+    name: 'Cart.total',
+    public: true,
+  },
+  {
+    path: 'cart.ts',
+    source: 'export class Cart {\n  protected total(): number {\n    return 1;\n  }\n}\n',
+    line: 3,
+    name: 'Cart.total',
+    public: true,
+  },
+  {
+    path: 'cart.ts',
+    source: 'export class Cart {\n  private total(): number {\n    return 1;\n  }\n}\n',
+    line: 3,
+    name: 'Cart.total',
+    public: false,
+  },
+  {
+    path: 'cart.ts',
+    source: 'export class Cart {\n  #total(): number {\n    return 1;\n  }\n}\n',
+    line: 3,
+    name: 'Cart.#total',
+    public: false,
+  },
+  {
+    path: 'cart.ts',
+    source: 'class Cart {\n  total(): number {\n    return 1;\n  }\n}\n',
+    line: 3,
+    name: 'Cart.total',
+    public: false,
+  },
+  {
+    path: 'cart.ts',
+    source: 'export const isEmpty = (): boolean =>\n  true;\n',
+    line: 2,
+    name: 'isEmpty',
+    public: true,
+  },
+  {
+    path: 'cart.ts',
+    source: 'export function f() {\n  const g = () => {\n    return 1;\n  };\n}\n',
+    line: 3,
+    name: 'f.g',
+    public: false,
+  },
+  {
+    path: 'legacy.js',
+    source: 'var track = function () {\n  send();\n};\n',
+    line: 2,
+    name: 'track',
+    public: false,
+  },
+];
+
+describe('entity visibility', () => {
+  it.each(VISIBILITY_CASES)(
+    'reads $name in $path as public: $public',
+    async ({ path, source, line, name, public: isPublic }) => {
+      const part = changedPart({
+        path,
+        base: source,
+        head: source,
+        deleted: [line],
+        added: [line],
+      });
+      await analysePart(part, { base: source, head: source });
+      expect(part.hunks[0]!.entities).toEqual([
+        expect.objectContaining({ name, public: isPublic }),
+      ]);
+    },
+  );
+});
+
+describe('how a hunk changes an entity', () => {
+  it('marks an entity only the head declares as added, and one only the base declares as removed', async () => {
+    const base = 'def kept():\n    return 1\n\n\ndef gone():\n    return 2\n';
+    const head = 'def kept():\n    return 1\n\n\ndef fresh():\n    return 3\n';
+    const part = changedPart({ path: 'a.py', base, head, deleted: [5, 6], added: [5, 6] });
+    await analysePart(part, { base, head });
+    expect(part.hunks[0]!.entities).toEqual([
+      { kind: 'function', name: 'gone', public: true, change: 'removed' },
+      { kind: 'function', name: 'fresh', public: true, change: 'added' },
+    ]);
+  });
+
+  it('marks a signature or decorator change as a declaration change', async () => {
+    const base = 'def load(path):\n    return 1\n';
+    const head = '@cached\ndef load(path, mode):\n    return 1\n';
+    const part = changedPart({ path: 'a.py', base, head, deleted: [1], added: [1, 2] });
+    await analysePart(part, { base, head });
+    expect(part.hunks[0]!.entities).toEqual([
+      { kind: 'function', name: 'load', public: true, change: 'declaration' },
+    ]);
+  });
+
+  it('marks a change inside the body as a body change, even next to a brace on its own line', async () => {
+    const base = 'public class A\n{\n    public int M()\n    {\n        return 1;\n    }\n}\n';
+    const head = base.replace('return 1;', 'return 2;');
+    const part = changedPart({ path: 'A.cs', base, head, deleted: [5], added: [5] });
+    await analysePart(part, { base, head });
+    expect(part.hunks[0]!.entities).toEqual([
+      { kind: 'method', name: 'A.M', public: true, change: 'body' },
+    ]);
+  });
+
+  it("reads a member of an interface or type as a change to the type's declaration", async () => {
+    const base = 'export interface Cart {\n  items: number[];\n}\n';
+    const head = 'export interface Cart {\n  items: string[];\n}\n';
+    const part = changedPart({ path: 'cart.ts', base, head, deleted: [2], added: [2] });
+    await analysePart(part, { base, head });
+    expect(part.hunks[0]!.entities).toEqual([
+      { kind: 'interface', name: 'Cart', public: true, change: 'declaration' },
+    ]);
+  });
+
+  it('keeps the strongest change when a hunk touches an entity more than once', async () => {
+    const base = 'export function f(a: number): number {\n  return a;\n}\n';
+    const head = 'export function f(a: number, b: number): number {\n  return a + b;\n}\n';
+    const part = changedPart({ path: 'f.ts', base, head, deleted: [1, 2], added: [1, 2] });
+    await analysePart(part, { base, head });
+    expect(part.hunks[0]!.entities).toEqual([
+      { kind: 'function', name: 'f', public: true, change: 'declaration' },
+    ]);
   });
 });

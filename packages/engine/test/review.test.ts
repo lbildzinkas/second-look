@@ -18,7 +18,7 @@ afterEach(async () => {
 });
 
 describe('reviewPullRequest', () => {
-  it('returns a versioned review result with one part per file', async () => {
+  it('returns a versioned review result with named, ranked parts', async () => {
     const result = await reviewPullRequest(PR_URL, {
       token: 'test-token',
       fetch: fixtureFetch().fetch,
@@ -26,7 +26,7 @@ describe('reviewPullRequest', () => {
     });
 
     expect(result.version).toBe(REVIEW_RESULT_VERSION);
-    expect(result.version).toBe(2);
+    expect(result.version).toBe(3);
     expect(result.pullRequest.number).toBe(42);
     expect(result.pullRequest.description).toHaveLength(8082);
     // The head commit's SHA, where the noise attributes are read.
@@ -34,23 +34,30 @@ describe('reviewPullRequest', () => {
       'f00dcafe1234567890abcdef1234567890abcdef',
     );
 
-    // One part per changed file, no duplicates. The noise parts sink to
-    // the bottom in diff order; snapshots stay among the readable parts.
+    // Each file's hunks touch one group of entities here, so each file is
+    // one part. The ranked parts come first; the noise parts sink to the
+    // bottom in diff order, and snapshots stay among the ranked parts.
     const paths = result.parts.map((part) => part.path);
     expect(new Set(paths).size).toBe(paths.length);
     expect(paths).toEqual([
-      'README.md',
-      'src/settings.ts',
-      'src/legacy.ts',
       'src/fresh.ts',
-      'assets/logo.png',
+      'README.md',
+      'src/legacy.ts',
+      'src/settings.ts',
       'notes.txt',
+      'assets/logo.png',
       'scripts/run.sh',
       'src/__snapshots__/review.test.ts.snap',
       'src/util/format.ts',
       'src/generated/options.json',
       'package-lock.json',
     ]);
+    for (const part of result.parts) {
+      expect(part.name).toBeTruthy();
+      expect(part.signals?.references.basis).toBe('name-based');
+      expect(part.rank?.importance).toBeTruthy();
+      expect(part.rank?.reason).toBeTruthy();
+    }
   });
 
   it('labels every part, with the fixture pull request exercising each state', async () => {
@@ -212,22 +219,24 @@ describe('the syntax pass in a review', () => {
       status: 'structure-changed',
       reason: 'the syntax tree changes at head line 4',
     });
-    expect(dedent.hunks[0]!.entities).toEqual([{ kind: 'function', name: 'apply_discount' }]);
+    expect(dedent.hunks[0]!.entities).toEqual([
+      { kind: 'function', name: 'apply_discount', public: true, change: 'body' },
+    ]);
   });
 
   it('names the entities each hunk touches', async () => {
     const { parts } = await partsByPath();
     expect(parts.get('web/cart.ts')!.hunks[0]!.entities).toEqual([
-      { kind: 'method', name: 'Cart.total' },
+      { kind: 'method', name: 'Cart.total', public: true, change: 'body' },
     ]);
     expect(parts.get('app/fresh.py')!.hunks[0]!.entities).toEqual([
-      { kind: 'function', name: 'fresh' },
+      { kind: 'function', name: 'fresh', public: true, change: 'added' },
     ]);
     expect(parts.get('app/reformat.py')!.hunks[0]!.entities).toEqual([
-      { kind: 'function', name: 'load' },
-      { kind: 'class', name: 'Store' },
-      { kind: 'method', name: 'Store.__init__' },
-      { kind: 'method', name: 'Store.path_for' },
+      { kind: 'function', name: 'load', public: true, change: 'declaration' },
+      { kind: 'class', name: 'Store', public: true, change: 'declaration' },
+      { kind: 'method', name: 'Store.__init__', public: true, change: 'declaration' },
+      { kind: 'method', name: 'Store.path_for', public: true, change: 'declaration' },
     ]);
   });
 
@@ -245,5 +254,41 @@ describe('the syntax pass in a review', () => {
   it('records the parse time', async () => {
     const { parseTimeMs } = await partsByPath();
     expect(parseTimeMs).toBeGreaterThan(0);
+  });
+});
+
+describe('ranking in a review', () => {
+  async function review(): Promise<Part[]> {
+    const result = await reviewPullRequest(PR_7_URL, {
+      token: 'test-token',
+      fetch: fixtureFetch(pull7()).fetch,
+      cacheDir,
+    });
+    return result.parts;
+  }
+
+  it('gives the same order and reasons for the same input', async () => {
+    const ranking = (parts: Part[]): string[] =>
+      parts.map((part) => `${part.rank!.importance} | ${part.name} | ${part.rank!.reason}`);
+    const first = ranking(await review());
+    expect(ranking(await review())).toEqual(first);
+    expect(first).toMatchInlineSnapshot(`
+      [
+        "must review | fresh in app/fresh.py | changes the public surface: fresh; code; new code; 2 changed lines",
+        "worth reviewing | Cart.total in web/cart.ts | code; changes code named in 2 other files (name-based); 2 changed lines",
+        "context | test_fresh in tests/test_fresh.py | test; new code; 5 changed lines",
+        "context | apply_discount in app/dedent.py | code; 2 changed lines",
+        "context | scripts/deploy.rb | code; 2 changed lines",
+        "context | load, Store, Store.__init__ and 1 more in app/reformat.py | formatting only, confirmed by the syntax trees; code; 17 changed lines",
+        "context | Greeter, Greeter.Greet in src/Greeter.cs | formatting only, confirmed by the syntax trees; code; 10 changed lines",
+      ]
+    `);
+  });
+
+  it('counts references by name in the head copy, and labels the count so', async () => {
+    const cart = (await review()).find((part) => part.path === 'web/cart.ts')!;
+    // web/checkout.ts calls cart.total(); app/dedent.py reads order.total,
+    // which a name-based count cannot tell apart.
+    expect(cart.signals!.references).toEqual({ basis: 'name-based', names: ['total'], files: 2 });
   });
 });

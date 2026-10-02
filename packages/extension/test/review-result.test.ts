@@ -31,6 +31,7 @@ function sampleResult(): ReviewResult {
     parseTimeMs: 1.25,
     parts: [
       {
+        name: 'Settings.load in src/settings.ts',
         path: 'src/settings.ts',
         previousPath: 'src/config.ts',
         changeKind: 'rename',
@@ -56,7 +57,9 @@ function sampleResult(): ReviewResult {
               },
               { kind: 'addition', newLineNumber: 3, text: 'here' },
             ],
-            entities: [{ kind: 'method', name: 'Settings.load' }],
+            entities: [
+              { kind: 'method', name: 'Settings.load', public: true, change: 'declaration' },
+            ],
           },
         ],
         additions: 1,
@@ -76,6 +79,13 @@ function sampleResult(): ReviewResult {
           },
           checksNotRun: [],
         },
+        signals: {
+          novelty: 'changed',
+          role: 'code',
+          changedLines: 2,
+          publicSurface: ['Settings.load'],
+          references: { basis: 'name-based', names: ['load'], files: 3 },
+        },
       },
     ],
   };
@@ -89,7 +99,7 @@ describe('isReviewResult', () => {
 
   it('rejects results of any other version', () => {
     const value = sampleResult() as unknown as { version: number };
-    value.version = 3;
+    value.version = 2;
     expect(isReviewResult(value)).toBe(false);
   });
 
@@ -104,7 +114,7 @@ describe('isReviewResult', () => {
   it('rejects values that are not review results', () => {
     expect(isReviewResult(null)).toBe(false);
     expect(isReviewResult('review')).toBe(false);
-    expect(isReviewResult({ version: 2 })).toBe(false);
+    expect(isReviewResult({ version: 3 })).toBe(false);
   });
 
   it('rejects a part without its syntax findings', () => {
@@ -243,6 +253,34 @@ describe('isReviewResult', () => {
     }
   });
 
+  it('rejects a part without its name or signals', () => {
+    for (const field of ['name', 'signals']) {
+      const value = JSON.parse(JSON.stringify(sampleResult())) as {
+        parts: Record<string, unknown>[];
+      };
+      delete value.parts[0]![field];
+      expect(isReviewResult(value), field).toBe(false);
+    }
+  });
+
+  it('rejects a reference count not labelled name-based', () => {
+    const basis = JSON.parse(JSON.stringify(sampleResult())) as {
+      parts: { signals: { references: { basis: string } } }[];
+    };
+    basis.parts[0]!.signals.references.basis = 'resolved';
+    expect(isReviewResult(basis)).toBe(false);
+  });
+
+  it('rejects an entity without its visibility or change', () => {
+    for (const field of ['public', 'change']) {
+      const value = JSON.parse(JSON.stringify(sampleResult())) as {
+        parts: { hunks: { entities: Record<string, unknown>[] }[] }[];
+      };
+      delete value.parts[0]!.hunks[0]!.entities[0]![field];
+      expect(isReviewResult(value), field).toBe(false);
+    }
+  });
+
   it('rejects a part whose numbers are not integers', () => {
     const value = JSON.parse(JSON.stringify(sampleResult())) as {
       parts: { additions: number }[];
@@ -267,6 +305,6 @@ describe('parseReviewResult', () => {
 
 describe('the versioned protocol is shared with the engine', () => {
   it('uses the same version constant', () => {
-    expect(REVIEW_RESULT_VERSION).toBe(2);
+    expect(REVIEW_RESULT_VERSION).toBe(3);
   });
 });

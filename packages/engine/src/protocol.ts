@@ -8,9 +8,14 @@
  */
 
 /** Version of the review result schema. */
-export const REVIEW_RESULT_VERSION = 2 as const;
+export const REVIEW_RESULT_VERSION = 3 as const;
 
-/** Version 2 added the head commit's SHA and each part's noise assessment. */
+/**
+ * Version 2 added the head commit's SHA and each part's noise assessment;
+ * version 3 split files into named parts by the entities their hunks touch,
+ * with each part's signals and rank, and each entity's visibility and
+ * how the hunk changes it.
+ */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
 /**
@@ -29,9 +34,9 @@ export const IMPORTANCE_ORDER: readonly Importance[] = [
 
 /**
  * A part's ranking: its importance, the one-line reason beside it, and
- * the plain signals the reason cites. Absent while the engine does not
- * rank parts yet; a reader then shows the part ungrouped rather than
- * guessing an importance for it.
+ * the plain signals the reason cites. The engine ranks every part before
+ * printing; a reader that meets a part without one shows it ungrouped
+ * rather than guessing an importance for it.
  */
 export interface PartRank {
   importance: Importance;
@@ -64,8 +69,10 @@ export interface ReviewResult {
   /** Time spent parsing syntax trees across all parts, in milliseconds. */
   parseTimeMs: number;
   /**
-   * One part per changed file at this step. Every changed line of the diff
-   * belongs to exactly one part; the engine proves this before printing.
+   * The named parts in review order: must review, worth reviewing, then
+   * context, with the sinking noise parts last. Every changed line of the
+   * diff belongs to exactly one part; the engine proves this before
+   * printing.
    */
   parts: Part[];
 }
@@ -179,11 +186,22 @@ export type NoiseAssessment =
     };
 
 /**
- * A named group of related edits. At this step every part is exactly one
- * file; later steps may group related files into one part. Every changed
- * line belongs to exactly one part.
+ * A named group of related edits. At this step a part holds the hunks of
+ * one file that touch the same entities, so a file splits into one part
+ * per group of entities, plus one part for the hunks that touch no entity.
+ * The file's own fields (path, change kind, modes, noise, syntax) are
+ * repeated on each of its parts. Every changed line belongs to exactly one
+ * part.
  */
 export interface Part {
+  /**
+   * The part's name: the entities its hunks touch and the file, such as
+   * `Cart.total in web/cart.ts`; `top-level code in app/x.py` for hunks
+   * outside every entity; the bare path when the file's entities could not
+   * be named. The engine sets it on every part before printing; the diff
+   * parser's parts have none yet.
+   */
+  name?: string;
   /** The file's path on the new side (after any rename). */
   path: string;
   /** The file's path on the old side, when the diff renames the file. */
@@ -213,12 +231,55 @@ export interface Part {
   noise?: NoiseAssessment;
   /** What the syntax trees tell about this file's change. */
   syntax: PartSyntax;
+  /** The plain facts ranking cites; set on every part before printing. */
+  signals?: PartSignals;
   /**
-   * The part's ranking. The engine does not rank parts yet, so this is
-   * absent until ranking lands; readers show unranked parts in their own
-   * section instead of placing them anywhere.
+   * The part's ranking: its importance with its reason and the signals
+   * the reason cites. The engine sets it on every part before printing;
+   * a reader that meets a part without one shows it ungrouped rather than
+   * guessing an importance for it.
    */
   rank?: PartRank;
+}
+
+/** Whether a part's code is new, changed or removed. */
+export type Novelty =
+  /** The file is added, or every entity the part touches is added and no line is removed. */
+  | 'new'
+  /** The file is deleted, or every entity the part touches is removed and no line is added. */
+  | 'removed'
+  /** Anything else: the part edits code that was already there. */
+  | 'changed';
+
+/** Whether a part's file is a test, by its path. */
+export type PartRole = 'test' | 'code';
+
+/**
+ * How many other files in the head copy mention the part's entity names.
+ * The count matches names as whole words in any file's text, without
+ * resolving what a name refers to, and is labelled so.
+ */
+export interface ReferenceSignal {
+  basis: 'name-based';
+  /** The names searched for: each entity's own name, the type's for a dunder method. */
+  names: string[];
+  /** Number of other files in the head copy that contain any of the names. */
+  files: number;
+}
+
+/** The plain, model-free facts about a part that ranking must cite. */
+export interface PartSignals {
+  novelty: Novelty;
+  role: PartRole;
+  /** Added plus removed lines. */
+  changedLines: number;
+  /**
+   * The public entities the part adds, removes, or whose declaration it
+   * changes, in order of first appearance; empty when it changes none or
+   * when the file's entities could not be named.
+   */
+  publicSurface: string[];
+  references: ReferenceSignal;
 }
 
 /** A check the syntax pass runs on each changed file. */
@@ -278,11 +339,36 @@ export type EntityKind =
   | 'method'
   | 'property';
 
+/** How a hunk's changed lines change an entity. */
+export type EntityChange =
+  /** The head declares the entity and the base did not. */
+  | 'added'
+  /** The base declared the entity and the head does not. */
+  | 'removed'
+  /**
+   * A changed line falls on the entity's declaration: its header, from any
+   * decorator or modifier to where its body opens, or the whole of a type,
+   * interface, enum, struct or trait, whose members are its surface.
+   */
+  | 'declaration'
+  /** Only lines inside the entity's body changed. */
+  | 'body';
+
 /** A named code entity, such as a function, class or method. */
 export interface Entity {
   kind: EntityKind;
   /** Name qualified by its enclosing entities, outermost first: `Cart.total`. */
   name: string;
+  /**
+   * True when the language's visibility rules let other modules use the
+   * entity and every entity enclosing it: exported in TypeScript and
+   * JavaScript, public or protected in C# and Java, `pub` in Rust, a
+   * capitalised name in Go, no leading underscore in Python. An entity
+   * inside a function or method is never public.
+   */
+  public: boolean;
+  /** How the hunk changes it; the strongest change wins across its lines. */
+  change: EntityChange;
 }
 
 /** One hunk of a unified diff: a run of changed lines with surrounding context. */

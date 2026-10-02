@@ -313,6 +313,11 @@ export function assessNoise(
   return assessment ?? NO_RULE_APPLIED;
 }
 
+/** True when the assessment's label sinks its part below the parts a reviewer must read. */
+export function sinks(noise: NoiseAssessment | undefined): noise is LabelledNoise {
+  return noise !== undefined && SINKING_LABELS.has(noise.label);
+}
+
 /**
  * Labels every part and sinks the noise to the bottom: the parts a
  * reviewer must read keep their diff order first, then the sinking noise
@@ -321,7 +326,7 @@ export function assessNoise(
  */
 export function applyNoiseRules(parts: Part[], gitAttributes: string | null): Part[] {
   const labelled = parts.map((part) => ({ ...part, noise: assessNoise(part, gitAttributes) }));
-  const readFirst = labelled.filter((part) => !part.noise || !SINKING_LABELS.has(part.noise.label));
-  const sunkLast = labelled.filter((part) => part.noise && SINKING_LABELS.has(part.noise.label));
+  const readFirst = labelled.filter((part) => !sinks(part.noise));
+  const sunkLast = labelled.filter((part) => sinks(part.noise));
   return [...readFirst, ...sunkLast];
 }

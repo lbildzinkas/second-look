@@ -6,7 +6,15 @@ import type { Node, Parser, Tree } from '@vscode/tree-sitter-wasm';
 import { pathInCopy } from './archive.js';
 import { extensionOf, languageForPath } from './languages.js';
 import type { LanguageSpec } from './languages.js';
-import type { Entity, EntityKind, FormattingOnly, Hunk, Part, PartSyntax } from './protocol.js';
+import type {
+  Entity,
+  EntityChange,
+  EntityKind,
+  FormattingOnly,
+  Hunk,
+  Part,
+  PartSyntax,
+} from './protocol.js';
 
 /** Files larger than this are not parsed; their checks say so. */
 const MAX_PARSE_BYTES = 1_000_000;
@@ -80,7 +88,10 @@ function mismatchWithDiff(part: Part, versions: FileVersions): string | undefine
 }
 
 /** The entity a node declares, with its name, or undefined when it declares none. */
-function declaredEntity(node: Node, language: LanguageSpec): Entity | undefined {
+function declaredEntity(
+  node: Node,
+  language: LanguageSpec,
+): { kind: EntityKind; name: string } | undefined {
   let kind = language.entities[node.type];
   if (kind === undefined) return undefined;
   let name = node.childForFieldName('name')?.text;
@@ -117,16 +128,24 @@ function wrappedDeclaration(node: Node): Node | null | undefined {
   }
 }
 
-/** The innermost entity enclosing a position, named through all enclosing entities. */
-function entityAt(
-  tree: Tree,
-  language: LanguageSpec,
-  row: number,
-  column: number,
-): Entity | undefined {
-  const chain: Entity[] = [];
+/** Entity kinds whose whole declaration is their surface: their members are what callers use. */
+const SURFACE_KINDS = new Set<EntityKind>(['interface', 'enum', 'struct', 'trait', 'type']);
+
+/** Entity kinds whose nested entities are local, so never public. */
+const LOCAL_SCOPES = new Set<EntityKind>(['function', 'method', 'property']);
+
+/** One declaration enclosing a position, with the node that declares it. */
+interface Declaration {
+  kind: EntityKind;
+  name: string;
+  node: Node;
+}
+
+/** The declarations enclosing a node, outermost first, each with its own name. */
+function declarationsAround(start: Node | null, language: LanguageSpec): Declaration[] {
+  const chain: Declaration[] = [];
   let last: Node | undefined;
-  for (let node = tree.rootNode.descendantForPosition({ row, column }); node; node = node.parent) {
+  for (let node = start; node; node = node.parent) {
     // Wrapper nodes own a declaration's first line, so hop to what they wrap.
     let target = node;
     for (let wrapped = wrappedDeclaration(target); wrapped; wrapped = wrappedDeclaration(target)) {
@@ -135,26 +154,182 @@ function entityAt(
     if (last && target.equals(last)) continue;
     last = target;
     const entity = declaredEntity(target, language);
-    if (entity) chain.unshift(entity);
+    if (entity) chain.unshift({ ...entity, node: target });
   }
+  return chain;
+}
+
+/** The outermost wrapper around a declaration, such as its decorators or `export`. */
+function outermostWrapper(declaration: Node): Node {
+  let outer = declaration;
+  for (let parent = outer.parent; parent; parent = parent.parent) {
+    let wrapped = wrappedDeclaration(parent);
+    while (wrapped && !wrapped.equals(declaration)) wrapped = wrappedDeclaration(wrapped);
+    if (!wrapped) break;
+    outer = parent;
+  }
+  return outer;
+}
+
+function hasChild(node: Node, type: string, text: RegExp): boolean {
+  return node.children.some((child) => child?.type === type && text.test(child.text));
+}
+
+/** Whether a declaration's own visibility lets other modules use it. */
+function isOwnPublic(
+  declaration: Declaration,
+  enclosing: Declaration | undefined,
+  language: LanguageSpec,
+): boolean {
+  if (enclosing && LOCAL_SCOPES.has(enclosing.kind)) return false;
+  const { node } = declaration;
+  const ownName = declaration.name.slice(declaration.name.lastIndexOf('.') + 1);
+  switch (language.name) {
+    case 'python':
+      return !ownName.startsWith('_') || /^__\w+__$/.test(ownName);
+    case 'go':
+      return /^\p{Lu}/u.test(ownName);
+    case 'rust':
+      return (
+        node.type === 'impl_item' ||
+        enclosing?.kind === 'trait' ||
+        hasChild(node, 'visibility_modifier', /^pub$/)
+      );
+    case 'c-sharp':
+      return enclosing?.kind === 'interface' || hasChild(node, 'modifier', /^(public|protected)$/);
+    case 'java':
+      return (
+        enclosing?.kind === 'interface' || hasChild(node, 'modifiers', /\b(public|protected)\b/)
+      );
+    default: {
+      // TypeScript and JavaScript: exported at the top level, not private in a class.
+      if (!enclosing) {
+        const outer = outermostWrapper(node);
+        for (let at: Node | null = node; at; at = at.parent) {
+          if (at.type === 'export_statement') return true;
+          if (at.equals(outer)) break;
+        }
+        return false;
+      }
+      return (
+        node.childForFieldName('name')?.type !== 'private_property_identifier' &&
+        !hasChild(node, 'accessibility_modifier', /^private$/)
+      );
+    }
+  }
+}
+
+/**
+ * The rows of a declaration: from its outermost wrapper to where its body
+ * opens, or all of it for a kind whose members are its surface.
+ */
+function declarationRows(declaration: Declaration): { first: number; last: number } {
+  const { node, kind } = declaration;
+  const first = outermostWrapper(node).startPosition.row;
+  const body =
+    node.childForFieldName('body') ??
+    node.childForFieldName('accessors') ??
+    node.childForFieldName('value')?.childForFieldName('body');
+  if (SURFACE_KINDS.has(kind) || !body) return { first, last: node.endPosition.row };
+  // A brace opens the body on its own row; an indented block starts a row later.
+  const opens = body.text.startsWith('{') ? body.startPosition.row : body.startPosition.row - 1;
+  return { first, last: Math.max(first, opens) };
+}
+
+/** An entity at a position, with the rows of its declaration. */
+interface EntityAtPosition {
+  kind: EntityKind;
+  name: string;
+  public: boolean;
+  rows: { first: number; last: number };
+}
+
+/** The qualified name of the innermost declaration of a chain. */
+function qualifiedName(chain: Declaration[]): string {
+  return chain.map((declaration) => declaration.name).join('.');
+}
+
+/** The innermost entity enclosing a position, named through all enclosing entities. */
+function entityAt(
+  tree: Tree,
+  language: LanguageSpec,
+  row: number,
+  column: number,
+): EntityAtPosition | undefined {
+  const chain = declarationsAround(tree.rootNode.descendantForPosition({ row, column }), language);
   const innermost = chain.at(-1);
   if (!innermost) return undefined;
   const outer = chain.at(-2);
   const isMethod = innermost.kind === 'function' && outer && TYPE_KINDS.has(outer.kind);
-  const kind = isMethod ? 'method' : innermost.kind;
-  return { kind, name: chain.map((entity) => entity.name).join('.') };
+  return {
+    kind: isMethod ? 'method' : innermost.kind,
+    name: qualifiedName(chain),
+    public: chain.every((declaration, index) =>
+      isOwnPublic(declaration, chain[index - 1], language),
+    ),
+    rows: declarationRows(innermost),
+  };
 }
 
-/** The entities a hunk's changed lines fall in, in order of first appearance. */
-function hunkEntities(hunk: Hunk, language: LanguageSpec, base?: Tree, head?: Tree): Entity[] {
+/** The qualified names of every entity a tree declares. */
+function declaredNames(tree: Tree, language: LanguageSpec): Set<string> {
+  const names = new Set<string>();
+  for (const node of tree.rootNode.descendantsOfType(Object.keys(language.entities))) {
+    if (node && declaredEntity(node, language)) {
+      names.add(qualifiedName(declarationsAround(node, language)));
+    }
+  }
+  return names;
+}
+
+/** One side of a file, parsed, with the names of the entities it declares. */
+interface ParsedSide {
+  tree: Tree;
+  source: string;
+  names: Set<string>;
+}
+
+/** How strongly each change marks an entity; the strongest wins across a hunk. */
+const CHANGE_STRENGTH: Readonly<Record<EntityChange, number>> = {
+  body: 0,
+  declaration: 1,
+  added: 2,
+  removed: 2,
+};
+
+/**
+ * The entities a hunk's changed lines fall in, in order of first
+ * appearance, each with its visibility and how the hunk changes it. A
+ * removed line is read from the base and an added line from the head; an
+ * entity the other side does not declare is added or removed.
+ */
+function hunkEntities(
+  hunk: Hunk,
+  language: LanguageSpec,
+  base?: ParsedSide,
+  head?: ParsedSide,
+): Entity[] {
   const entities = new Map<string, Entity>();
   for (const line of hunk.lines) {
-    const tree = line.kind === 'deletion' ? base : line.kind === 'addition' ? head : undefined;
+    if (line.kind === 'context') continue;
+    const [side, other] = line.kind === 'deletion' ? [base, head] : [head, base];
     const lineNumber = line.kind === 'deletion' ? line.oldLineNumber : line.newLineNumber;
-    if (!tree || lineNumber === undefined) continue;
+    if (!side || lineNumber === undefined) continue;
+    const row = lineNumber - 1;
     const column = /^[ \t]*/.exec(line.text)![0].length;
-    const entity = entityAt(tree, language, lineNumber - 1, column);
-    if (entity) entities.set(`${entity.kind} ${entity.name}`, entity);
+    const found = entityAt(side.tree, language, row, column);
+    if (!found) continue;
+    const change: EntityChange = !other?.names.has(found.name)
+      ? line.kind === 'deletion'
+        ? 'removed'
+        : 'added'
+      : row >= found.rows.first && row <= found.rows.last
+        ? 'declaration'
+        : 'body';
+    const key = `${found.kind} ${found.name}`;
+    const seen = entities.get(key);
+    if (seen && CHANGE_STRENGTH[seen.change] >= CHANGE_STRENGTH[change]) continue;
+    entities.set(key, { kind: found.kind, name: found.name, public: found.public, change });
   }
   return [...entities.values()];
 }
@@ -251,12 +426,6 @@ function firstStructuralDifference(base: ParsedSide, head: ParsedSide): number |
   }
 }
 
-/** One side of a file, parsed. */
-interface ParsedSide {
-  tree: Tree;
-  source: string;
-}
-
 function formattingOnly(part: Part, base?: ParsedSide, head?: ParsedSide): FormattingOnly {
   if (part.hunks.length === 0) {
     return { status: 'not-checked', reason: 'the content did not change' };
@@ -334,7 +503,9 @@ export async function analysePart(
   const parser = await parserFor(language);
   const parse = (source: string | undefined): ParsedSide | undefined => {
     const tree = source === undefined ? null : parser.parse(source);
-    return tree && source !== undefined ? { tree, source } : undefined;
+    return tree && source !== undefined
+      ? { tree, source, names: declaredNames(tree, language) }
+      : undefined;
   };
   const started = performance.now();
   const base = parse(versions.base);
@@ -342,7 +513,7 @@ export async function analysePart(
   const parseTimeMs = performance.now() - started;
   try {
     for (const hunk of part.hunks) {
-      hunk.entities = hunkEntities(hunk, language, base?.tree, head?.tree);
+      hunk.entities = hunkEntities(hunk, language, base, head);
     }
     const formatting = formattingOnly(part, base, head);
     part.syntax = {

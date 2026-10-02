@@ -10,7 +10,7 @@ import {
 
 /** One part as the tree shows it. */
 export interface TreePart {
-  /** The part's name in the tree: its path, until parts get names of their own. */
+  /** The part's name in the tree: its path. */
   label: string;
   /** Shown beside the label: the one-line reason, or the noise label with its state. */
   description?: string;
@@ -29,7 +29,7 @@ export interface TreeSection {
   parts: TreePart[];
 }
 
-/** The title of the section for parts the engine has not ranked yet. */
+/** The title of the section for parts that arrive without a rank. */
 export const NOT_RANKED_YET = 'Not ranked yet';
 
 /** The title of the last section, where the noise parts sink. */
@@ -50,14 +50,13 @@ const SECTION_TOOLTIPS: Record<Importance, string> = {
 /**
  * Builds the tree the reviewer reads from a review result: the importance
  * groups in order, each part with its reason beside it and its signals in
- * its tooltip, then the parts the engine has not ranked yet, and the noise
+ * its tooltip, then the parts that arrived without a rank, and the noise
  * last with its label and confirmed or claimed state.
  *
- * Until the engine ranks parts, results carry no importance, so every
- * reading part sits in the unranked section — the tree shows whatever the
- * engine returns, never inventing a rank. Empty sections are left out, and
- * snapshots and fixtures never sink, because a change there is a behaviour
- * change.
+ * A part that arrives without a rank sits in its own section — the tree
+ * shows whatever the engine returns, never inventing a rank. Empty
+ * sections are left out, and snapshots and fixtures never sink, because a
+ * change there is a behaviour change.
  */
 export function buildTree(result: ReviewResult): TreeSection[] {
   const grouped = new Map<Importance, TreePart[]>(
