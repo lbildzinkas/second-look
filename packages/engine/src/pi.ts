@@ -3,13 +3,14 @@ import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
-import type {
-  AgentAdapter,
-  AgentProbe,
-  AgentRunOutcome,
-  AgentRunRequest,
-  AgentStamp,
-  AgentTokens,
+import {
+  GITHUB_TOKEN_VARIABLES,
+  type AgentAdapter,
+  type AgentProbe,
+  type AgentRunOutcome,
+  type AgentRunRequest,
+  type AgentStamp,
+  type AgentTokens,
 } from './agent.js';
 import { READ_ROOT_VARIABLE, READ_TOOLS } from './pi-guard.js';
 
@@ -31,9 +32,6 @@ const LOCKDOWN_FLAGS = [
   '--tools',
   '--system-prompt',
 ] as const;
-
-/** Environment variables that carry the GitHub login; the agent never gets them. */
-const GITHUB_TOKEN_VARIABLES = ['GITHUB_TOKEN', 'GH_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN'];
 
 /** The guard extension built next to this file. */
 export const PI_GUARD_PATH = fileURLToPath(new URL('./pi-guard.js', import.meta.url));

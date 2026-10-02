@@ -9,6 +9,7 @@ import {
 import { CHANGE_SCHEME, ChangeCopiesProvider } from './change-copies.js';
 import { openPartInDiffEditor, openWholeChangeInDiffEditor, PartMarker } from './diff-view.js';
 import { buildTree, type TreePart, type TreeSection } from './tree.js';
+import { AgentStatusBar } from './agent-status.js';
 import type { Part, ReviewResult } from '@second-look/engine';
 
 export { OPEN_ALL_PARTS_COMMAND, OPEN_PART_COMMAND, REVIEW_COMMAND, REVIEW_TREE_VIEW };
@@ -17,6 +18,8 @@ export { OPEN_ALL_PARTS_COMMAND, OPEN_PART_COMMAND, REVIEW_COMMAND, REVIEW_TREE_
 export interface ExtensionDeps {
   /** Starts the engine process; tests start a fake engine instead. */
   spawnEngine?: SpawnEngine;
+  /** The extension host's environment; tests inject one carrying an API key. */
+  env?: NodeJS.ProcessEnv;
 }
 
 /** The one node the tree shows before the first review. */
@@ -211,9 +214,10 @@ class ReviewSession {
 
 /**
  * Activates the companion: registers the review command and the review
- * tree, the read-only file system that serves the change's copies, and
- * the commands that open a part — or the whole change, in ranked order —
- * in the editor's multi-file diff. Nothing here runs anything from the
+ * tree, the read-only file system that serves the change's copies, the
+ * commands that open a part — or the whole change, in ranked order —
+ * in the editor's multi-file diff, and the status bar entry that shows
+ * the agent and model in use. Nothing here runs anything from the
  * workspace — the engine is started from the companion's own install and
  * only ever reads GitHub.
  *
@@ -231,10 +235,13 @@ export function activate(
   const copies = new ChangeCopiesProvider();
   const marker = new PartMarker();
   const session = new ReviewSession(tree, treeView, copies, marker, deps);
+  const agentStatusBar = new AgentStatusBar(deps.env);
+  agentStatusBar.refresh();
   context.subscriptions.push(
     treeView,
     marker,
     { dispose: () => session.dispose() },
+    agentStatusBar,
     vscode.workspace.registerFileSystemProvider(CHANGE_SCHEME, copies, {
       isCaseSensitive: true,
       isReadonly: new vscode.MarkdownString(

@@ -1,8 +1,10 @@
 import { DEFAULT_AGENT_SETTINGS, type AgentSettings } from './agent.js';
+import { agentAdapter } from './agents.js';
 import { defaultCacheDir } from './cache.js';
 import { readFile } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
-import { piAdapter, type PiAdapterOptions } from './pi.js';
+import type { ClaudeCodeAdapterOptions } from './claude-code.js';
+import type { PiAdapterOptions } from './pi.js';
 import { runAgentProbe } from './probe.js';
 import { reviewPullRequest } from './review.js';
 import { readPackagePdbs } from './symbols.js';
@@ -15,7 +17,7 @@ const USAGE = `second-look-engine — the engine of the Second Look reviewer's c
 
 Usage:
   second-look-engine review <pull-request-url> [--token <token>] [--cache-dir <dir>]
-  second-look-engine probe <pull-request-url> [--target <path-or-url>]...
+  second-look-engine probe <pull-request-url> [--agent <pi|claude-code>] [--target <path-or-url>]...
       [--model <model>] [--effort <level>] [--agent-timeout <seconds>]
       [--agent-concurrency <n>] [--token <token>] [--cache-dir <dir>]
   second-look-engine pdb <package-file>
@@ -47,11 +49,15 @@ The GitHub token is passed in by the caller, either with --token or through
 the GITHUB_TOKEN environment variable. It is used only for the GitHub
 request, and is never written to disk or logs.
 
-The probe command checks the reviewer's installed coding agent (Pi) on a
+The probe command checks the reviewer's installed coding agent (Pi by
+default, Claude Code with --agent) on a
 pull request: it takes the read-only head copy, asks the agent, locked down,
 to read each target (the copy's root by default), and prints what the
 installed version supports, each answer checked against its schema, and the
 stamp of each run: agent, version, model, effort, run date, tokens and cost.
+Each adapter reports which login the run used — Claude Code, for instance,
+its stored subscription sign-in, and a warning when an inherited
+ANTHROPIC_API_KEY overrides it.
 The agent runs with file-reading tools only, confined to the copy: a
 credential path or a URL comes back refused. It signs in with its own login;
 the GitHub token never reaches it. Each run stops after --agent-timeout
@@ -83,10 +89,12 @@ export interface CliDeps {
   fetch?: typeof fetch;
   /** How the probe starts Pi; tests point it at a fake agent. */
   pi?: Pick<PiAdapterOptions, 'command' | 'guardPath'>;
+  /** How the probe starts Claude Code; tests point it at a fake agent. */
+  claudeCode?: Pick<ClaudeCodeAdapterOptions, 'command'>;
 }
 
 /** Flags that take a value, beyond --token and --cache-dir. */
-const AGENT_FLAGS = ['--target', '--model', '--effort', '--agent-timeout', '--agent-concurrency'];
+const AGENT_FLAGS = ['--agent', '--target', '--model', '--effort', '--agent-timeout', '--agent-concurrency'];
 
 /**
  * Runs the command line. Returns the process exit code: 0 on success,
@@ -169,12 +177,19 @@ export async function runCli(
       streams.err.write(`second-look-engine: ${settings}\n`);
       return 1;
     }
+    let adapter;
+    try {
+      adapter = agentAdapter(agentFlags['--agent']?.at(-1) ?? 'pi', { pi: deps.pi, claudeCode: deps.claudeCode, env });
+    } catch (error) {
+      streams.err.write(`second-look-engine: ${error instanceof Error ? error.message : String(error)}\n`);
+      return 1;
+    }
     try {
       const report = await runAgentProbe(url, {
         token,
         fetch: deps.fetch,
         cacheDir: cacheDirFlag ?? defaultCacheDir(env),
-        adapter: piAdapter({ ...deps.pi, env }),
+        adapter,
         targets: agentFlags['--target'] ?? [],
         settings,
       });

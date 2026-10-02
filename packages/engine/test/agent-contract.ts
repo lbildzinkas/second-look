@@ -52,6 +52,16 @@ export interface ContractAgent {
   ends(): number[];
 }
 
+/** How the suite treats the effort field of an agent's stamp. */
+export interface ContractOptions {
+  /**
+   * True (the default) when the agent reports the effort it used itself.
+   * False when the adapter can only echo an effort that was asked for, so
+   * a run without one is stamped without an effort.
+   */
+  reportsEffort?: boolean;
+}
+
 /** Environment the contract gives the engine: a GitHub login and the agent's own. */
 export const ENGINE_GITHUB_TOKEN = 'ghp_contract-token-must-not-reach-the-agent';
 export const AGENT_OWN_LOGIN = 'the-agent-own-login';
@@ -75,7 +85,11 @@ const FAST: AgentSettings = { ...DEFAULT_AGENT_SETTINGS, timeoutMs: 10_000 };
  * timeouts that keep partial results, the concurrency limit, and the
  * GitHub login kept from the agent while its own login passes untouched.
  */
-export function describeAgentContract(name: string, start: (scenario: ContractScenario) => ContractAgent): void {
+export function describeAgentContract(
+  name: string,
+  start: (scenario: ContractScenario) => ContractAgent,
+  options: ContractOptions = {},
+): void {
   describe(`${name} adapter contract`, () => {
     const root = mkdtempSync(join(tmpdir(), 'second-look-contract-copy-'));
 
@@ -100,7 +114,7 @@ export function describeAgentContract(name: string, start: (scenario: ContractSc
       expect(stamp.agent).toBe(agent.adapter.agent);
       expect(stamp.agentVersion).toBe('1.2.3');
       expect(stamp.model).toContain('model-a');
-      expect(stamp.effort).toBe('high');
+      expect(stamp.effort).toBe(options.reportsEffort === false ? null : 'high');
       expect(Date.parse(stamp.runAt)).toBeGreaterThanOrEqual(before - 1000);
       expect(stamp.tokens).toMatchObject({ input: 100, output: 20, total: 125 });
       expect(stamp.costUsd).toBeCloseTo(0.01);
