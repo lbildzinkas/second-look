@@ -137,6 +137,7 @@ winapi = "0.3"
       'x = [1, 2', // unterminated array
       'x = { a = 1', // unterminated inline table
       '= 1', // no key
+      'value = "\\U00110000"', // above the Unicode range
     ]) {
       expect(parseToml(broken), broken).toBeUndefined();
     }
@@ -145,5 +146,10 @@ winapi = "0.3"
   it('reads an empty document as an empty table', () => {
     expect(parseToml('')).toEqual({});
     expect(parseToml('\n# only a comment\n')).toEqual({});
+  });
+
+  it('reads unicode escapes up to the top of the range', () => {
+    expect(parseToml('value = "\\U0010FFFF"')).toEqual({ value: '\u{10FFFF}' });
+    expect(parseToml('value = "\\u00e9"')).toEqual({ value: 'é' });
   });
 });

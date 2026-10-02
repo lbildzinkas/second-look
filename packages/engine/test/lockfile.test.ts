@@ -230,6 +230,22 @@ describe('package-lock.json', () => {
     expect(check.outcome).toBe('confirmed');
   });
 
+  it('runs no check when adversarial nesting overflows the reader', () => {
+    let nested: unknown = [];
+    for (let i = 0; i < 50_000; i++) nested = [nested];
+    const deep = JSON.stringify({
+      lockfileVersion: 3,
+      packages: { 'node_modules/left-pad': { version: '1.3.0', pad: nested } },
+    });
+    const check = confirmed(
+      format('package-lock.json'),
+      side(deep, [manifest('^1.3.0')]),
+      side(deep, [manifest('^1.3.0')]),
+    );
+    expect(check.outcome).toBe('no check');
+    expect(check.blindSpot).toContain('no check for this lockfile');
+  });
+
   it('reads the v1 nested-entries form too', () => {
     const check = confirmed(
       format('package-lock.json'),
@@ -336,6 +352,28 @@ requirements-hash = "deadbeef"
       side(lock('4.4.0', ''), ['[project]\nname = "app"\ndependencies = ["ANYIO>=4.4"]\n']),
     );
     expect(check.outcome).toBe('confirmed');
+  });
+
+  it('runs no check when adversarial nesting overflows the reader', () => {
+    const deep = `[[package]]\nname = "anyio"\nversion = "4.4.0"\ndependencies = [${'['.repeat(10_000)}${']'.repeat(10_000)}]\n`;
+    const check = confirmed(
+      format('uv.lock'),
+      side(deep, [pyproject('>=4.3')]),
+      side(deep, [pyproject('>=4.3')]),
+    );
+    expect(check.outcome).toBe('no check');
+    expect(check.blindSpot).toContain('no check for this lockfile');
+  });
+
+  it('runs no check when a manifest escape is outside Unicode', () => {
+    const broken = '[project]\nname = "app"\ndescription = "\\U00110000"\n';
+    const check = confirmed(
+      format('uv.lock'),
+      side(lock('4.3.0', ''), [broken]),
+      side(lock('4.4.0', ''), [broken]),
+    );
+    expect(check.outcome).toBe('no check');
+    expect(check.blindSpot).toContain('pyproject.toml did not parse');
   });
 });
 

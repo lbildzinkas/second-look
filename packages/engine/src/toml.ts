@@ -114,6 +114,7 @@ export function parseToml(text: string): TomlTable | undefined {
         code = code * 16 + value;
         at++;
       }
+      if (code > 0x10ffff) fail();
       return String.fromCodePoint(code);
     }
     if (char === ' ' || char === '\t' || char === '\n' || char === '\r') {

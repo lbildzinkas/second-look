@@ -654,6 +654,15 @@ function changedRoots(oldIndex: LockIndex, newIndex: LockIndex): ChangedEntry[] 
   return changed;
 }
 
+/** Runs one lock or manifest reader, treating a throw as unreadable content. */
+function readSafely<T>(read: () => T): T | undefined {
+  try {
+    return read();
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * The parse-only check itself: every changed lock entry must belong to the
  * dependency closure of the changed manifest entries — the closure walked
@@ -668,13 +677,13 @@ export function confirmLockfileChange(
   oldSide: LockfileSide,
   newSide: LockfileSide,
 ): LockfileCheck {
-  const oldIndex =
-    oldSide.lock === null ? emptyIndex() : format.readLock(oldSide.lock);
+  const oldLock = oldSide.lock;
+  const oldIndex = oldLock === null ? emptyIndex() : readSafely(() => format.readLock(oldLock));
   if (oldIndex === undefined) {
     return { outcome: 'no check', blindSpot: `no check for this lockfile: the base ${lockName} did not parse` };
   }
-  const newIndex =
-    newSide.lock === null ? emptyIndex() : format.readLock(newSide.lock);
+  const newLock = newSide.lock;
+  const newIndex = newLock === null ? emptyIndex() : readSafely(() => format.readLock(newLock));
   if (newIndex === undefined) {
     return { outcome: 'no check', blindSpot: `no check for this lockfile: the head ${lockName} did not parse` };
   }
@@ -684,11 +693,11 @@ export function confirmLockfileChange(
       blindSpot: `no check for this lockfile: no ${format.manifestName} beside it names its dependencies`,
     };
   }
-  const oldSpecs = format.readManifests(oldSide.manifests);
+  const oldSpecs = readSafely(() => format.readManifests(oldSide.manifests));
   if (oldSpecs === undefined) {
     return { outcome: 'no check', blindSpot: `no check for this lockfile: its ${format.manifestName} did not parse` };
   }
-  const newSpecs = format.readManifests(newSide.manifests);
+  const newSpecs = readSafely(() => format.readManifests(newSide.manifests));
   if (newSpecs === undefined) {
     return { outcome: 'no check', blindSpot: `no check for this lockfile: its ${format.manifestName} did not parse` };
   }
