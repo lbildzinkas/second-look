@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
-import { filesNaming, parseDiff, pathInCopy, reviewChange } from '@second-look/engine';
+import { filesNaming, lockfileManifests, parseDiff, pathInCopy, reviewChange } from '@second-look/engine';
 import type { NoiseAssessment, Part, PullRequestSummary } from '@second-look/engine';
 import { CASE_FORMAT_VERSION, caseInput, loadCase } from './case.js';
 import type { CaseRecord, ExpectedNoise, ExpectedResults } from './case.js';
@@ -111,6 +111,17 @@ export async function seedCase(diff: string, options: SeedOptions): Promise<stri
     const names = new Set(live.parts.flatMap((part) => part.signals?.references.names ?? []));
     for (const naming of (await filesNaming(mutated, names)).values()) {
       for (const path of naming) headPaths.add(path);
+    }
+    // A wrap may touch a lock file while leaving its manifest alone (a
+    // transitive dependency bump); the review reads that manifest to
+    // check the lock file, so the case carries it on both sides and the
+    // replay assesses the lock file exactly as the live review did.
+    const changedPaths = [
+      ...new Set(live.parts.flatMap((part) => [part.path, part.previousPath ?? part.path])),
+    ];
+    for (const manifest of await lockfileManifests(changedPaths, mutated)) {
+      basePaths.add(manifest);
+      headPaths.add(manifest);
     }
     try {
       await copyFiles(options.sourceDir, join(folder, 'base'), basePaths);

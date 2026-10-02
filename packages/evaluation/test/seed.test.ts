@@ -83,6 +83,69 @@ const LOCKFILE = `{
   "packages": {}
 }
 `;
+/** The manifest beside the lock file, which the lock check reads. */
+const MANIFEST = `{
+  "name": "shop",
+  "dependencies": {
+    "leftpad": "^1.0.0"
+  }
+}
+`;
+/** A lock file whose manifest names one direct dependency, which itself
+ * records a transitive dependency the wrap below bumps. */
+const LOCKED = `{
+  "name": "shop",
+  "lockfileVersion": 3,
+  "requires": true,
+  "packages": {
+    "": {
+      "name": "shop",
+      "dependencies": {
+        "leftpad": "^1.0.0"
+      }
+    },
+    "node_modules/leftpad": {
+      "version": "1.0.0",
+      "resolved": "https://registry.npmjs.org/leftpad/-/leftpad-1.0.0.tgz",
+      "integrity": "sha512-leftpad-1.0.0",
+      "dependencies": {
+        "transitive": "^2.0.0"
+      }
+    },
+    "node_modules/transitive": {
+      "version": "2.0.0",
+      "resolved": "https://registry.npmjs.org/transitive/-/transitive-2.0.0.tgz",
+      "integrity": "sha512-transitive-2.0.0"
+    }
+  }
+}
+`;
+/** The same mutant wrapped with a transitive dependency bump inside the
+ * lock file, the manifest beside it untouched. */
+const TRANSITIVE_WRAP_DIFF = `diff --git a/src/shop.py b/src/shop.py
+--- a/src/shop.py
++++ b/src/shop.py
+@@ -1,6 +1,6 @@
+ def total(prices):
+     amount = 0
+     for price in prices:
+-        amount += price
++        amount -= price
+     if amount > 0:
+         return amount
+diff --git a/package-lock.json b/package-lock.json
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -20,5 +20,5 @@
+     "node_modules/transitive": {
+-      "version": "2.0.0",
+-      "resolved": "https://registry.npmjs.org/transitive/-/transitive-2.0.0.tgz",
+-      "integrity": "sha512-transitive-2.0.0"
++      "version": "2.1.0",
++      "resolved": "https://registry.npmjs.org/transitive/-/transitive-2.1.0.tgz",
++      "integrity": "sha512-transitive-2.1.0"
+     }
+`;
 /** The same mutant wrapped with a lockfile touch, a noise-rule file. */
 const LOCKFILE_WRAP_DIFF = `diff --git a/src/shop.py b/src/shop.py
 index 1111111..3333333 100644
@@ -222,6 +285,30 @@ describe('seedCase', () => {
       id: 'lockfile-wrap',
       faultPath: 'src/shop.py',
     });
+    const expected = JSON.parse(readFileSync(join(folder, 'expected.json'), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    expect(expected['noise']).toEqual({
+      'package-lock.json': { label: 'lockfile', state: 'claimed' },
+      'src/shop.py': { label: 'none' },
+    });
+    expect(expected['importantParts']).toEqual(['total in src/shop.py']);
+  });
+
+  it('seeds a wrap that bumps a lock file while leaving its manifest untouched', async () => {
+    writeFileSync(join(source, 'package.json'), MANIFEST);
+    writeFileSync(join(source, 'package-lock.json'), LOCKED);
+    const folder = await seedCase(TRANSITIVE_WRAP_DIFF, {
+      sourceDir: source,
+      casesFolder,
+      id: 'transitive-wrap',
+      faultPath: 'src/shop.py',
+    });
+    // The manifest the lock check reads rides along on both sides, so
+    // the replay runs the same check the live review ran.
+    expect(readFileSync(join(folder, 'base', 'package.json'), 'utf8')).toBe(MANIFEST);
+    expect(readFileSync(join(folder, 'head', 'package.json'), 'utf8')).toBe(MANIFEST);
     const expected = JSON.parse(readFileSync(join(folder, 'expected.json'), 'utf8')) as Record<
       string,
       unknown
