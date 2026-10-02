@@ -236,4 +236,17 @@ describe('the review command, end to end against a fake engine', () => {
     expect(stub.warningMessages).toEqual(['Sign in to GitHub to review a pull request.']);
     expect(stub.progressTitles).toEqual([]);
   });
+
+  it('shows the plain sign-in message when the reviewer cancels the GitHub sign-in', async () => {
+    activate(stubContext() as unknown as vscode.ExtensionContext, {
+      spawnEngine: () => fakeEngine({ result: mixedResult(), logName: 'cancelled-sign-in.log' }),
+    });
+    stub.inputBoxResult = PR_URL;
+    stub.cancelSignIn = true;
+
+    await stub.commands[0]!.handler() as Promise<void>;
+
+    expect(stub.warningMessages).toEqual(['Sign in to GitHub to review a pull request.']);
+    expect(stub.progressTitles).toEqual([]);
+  });
 });

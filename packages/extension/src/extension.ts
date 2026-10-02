@@ -100,18 +100,24 @@ class ReviewSession {
       return;
     }
 
-    const session = await vscode.authentication.getSession('github', ['repo'], {
-      createIfNone: true,
-    });
+    let session: vscode.AuthenticationSession | undefined;
+    try {
+      session = await vscode.authentication.getSession('github', ['repo'], {
+        createIfNone: true,
+      });
+    } catch {
+      session = undefined;
+    }
     if (!session) {
       vscode.window.showWarningMessage('Sign in to GitHub to review a pull request.');
       return;
     }
+    const accessToken = session.accessToken;
 
     try {
       const result = await vscode.window.withProgress(
         { location: { viewId: REVIEW_TREE_VIEW }, title: 'Reading the pull request…' },
-        () => this.engineReview(url.trim(), session.accessToken),
+        () => this.engineReview(url.trim(), accessToken),
       );
       this.tree.setSections(buildTree(result));
       await this.revealFirstSection();

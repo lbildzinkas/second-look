@@ -38,6 +38,8 @@ export interface StubState {
   sessionRequests: { id: string; scopes: string[]; createIfNone: boolean }[];
   /** What getSession resolves with; undefined reads as no sign-in. */
   session: StubSession | undefined;
+  /** When set, getSession rejects, as cancelling the editor's sign-in flow does. */
+  cancelSignIn: boolean;
   reset(): void;
 }
 
@@ -50,6 +52,7 @@ export const stub: StubState = {
   progressTitles: [],
   sessionRequests: [],
   session: undefined,
+  cancelSignIn: false,
   reset() {
     stub.commands = [];
     stub.treeViews = [];
@@ -59,6 +62,7 @@ export const stub: StubState = {
     stub.progressTitles = [];
     stub.sessionRequests = [];
     stub.session = undefined;
+    stub.cancelSignIn = false;
   },
 };
 
@@ -149,6 +153,9 @@ export const authentication = {
       scopes: [...scopes],
       createIfNone: options.createIfNone ?? false,
     });
+    if (stub.cancelSignIn) {
+      return Promise.reject(new Error('User did not consent to login.'));
+    }
     return Promise.resolve(stub.session);
   },
 };
