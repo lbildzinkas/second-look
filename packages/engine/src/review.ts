@@ -22,8 +22,6 @@ export interface ReviewOptions {
 /**
  * Reviews one pull request: fetches its metadata and full diff, parses the
  * diff into files and hunks, proves every changed line belongs to exactly
- * Reviews one pull request: fetches its metadata and full diff, parses the
- * diff into files and hunks, proves every changed line belongs to exactly
  * one part, labels the noise in every part with its state and blind spot
  * (reading the repository's linguist attributes at the head commit, with
  * no checkout), sinks the noise parts to the bottom, takes read-only
