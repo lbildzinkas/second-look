@@ -48,6 +48,9 @@ const HANDSHAKE_TIMEOUT_MS = 10_000;
 /** How long one review request may take before the engine is given up on. */
 const REVIEW_TIMEOUT_MS = 120_000;
 
+/** How long a stalled engine gets to die from SIGTERM before it is killed outright. */
+const KILL_GRACE_MS = 2_000;
+
 interface Pending {
   resolve(result: unknown): void;
   reject(error: Error): void;
@@ -158,6 +161,14 @@ export class EngineClient {
         this.pending.delete(id);
         reject(new Error('the engine did not answer in time'));
         this.dispose();
+        // SIGTERM takes no effect on a stopped process, so a stalled engine
+        // can linger past the stop above: kill it outright if it lingers.
+        const killer = setTimeout(() => {
+          if (engine.exitCode === null && engine.signalCode === null) {
+            engine.kill('SIGKILL');
+          }
+        }, KILL_GRACE_MS);
+        engine.once('exit', () => clearTimeout(killer));
       }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
       engine.stdin.write(`${JSON.stringify(message)}\n`);

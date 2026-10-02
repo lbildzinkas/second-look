@@ -24,6 +24,7 @@ interface FakeEngineOptions {
   protocolVersion?: string;
   exitOn?: string;
   stallOn?: string;
+  ignoreSigterm?: boolean;
   logName?: string;
 }
 
@@ -42,6 +43,7 @@ function fakeEngine(options: FakeEngineOptions = {}): ChildProcessWithoutNullStr
         : {}),
       ...(options.exitOn !== undefined ? { FAKE_ENGINE_EXIT_ON: options.exitOn } : {}),
       ...(options.stallOn !== undefined ? { FAKE_ENGINE_STALL_ON: options.stallOn } : {}),
+      ...(options.ignoreSigterm ? { FAKE_ENGINE_IGNORE_SIGTERM: '1' } : {}),
       ...(options.logName !== undefined
         ? { FAKE_ENGINE_LOG: join(workDir, options.logName) }
         : {}),
@@ -157,13 +159,63 @@ describe('EngineClient against a fake engine', () => {
       });
 
       const handshake = client.initialize();
+      // Subscribe before the timeout fires: dispose() kills the stalled
+      // engine inside the timer callback, and an exit listener attached
+      // after the process already died never fires.
+      const stalledEngineExited = new Promise<void>((resolve) => {
+        engines[0]!.once('exit', () => resolve());
+      });
       const timedOut = expect(handshake).rejects.toThrow('the engine did not answer in time');
       await vi.advanceTimersByTimeAsync(10_000);
       await timedOut;
 
-      await new Promise<void>((resolve) => engines[0]!.once('exit', () => resolve()));
+      await stalledEngineExited;
       await client.initialize();
       expect(engines).toHaveLength(2);
+      client.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('kills a stalled engine that ignores SIGTERM, so it actually stops', async () => {
+    vi.useFakeTimers();
+    try {
+      const engines: ChildProcessWithoutNullStreams[] = [];
+      const client = new EngineClient(() => {
+        const engine = fakeEngine({
+          stallOn: 'initialize',
+          ignoreSigterm: true,
+          logName: 'sigterm-proof.log',
+        });
+        engines.push(engine);
+        return engine;
+      });
+
+      const handshake = client.initialize();
+      // Subscribe before the timeout fires: the signal is only observable
+      // on the exit event, and a listener attached after the process died
+      // never fires.
+      const stalledEngineKilled = new Promise<NodeJS.Signals | null>((resolve) => {
+        engines[0]!.once('exit', (_code, signal) => resolve(signal));
+      });
+      // The engine must be running before the deadline fires, or SIGTERM
+      // lands while it is still starting up and kills it before the
+      // ignoring handler exists.
+      const ignoringSigterm = new Promise<void>((resolve) => {
+        engines[0]!.stderr.on('data', (chunk: Buffer) => {
+          if (String(chunk).includes('ignoring SIGTERM')) resolve();
+        });
+      });
+      await ignoringSigterm;
+      const timedOut = expect(handshake).rejects.toThrow(
+        'the engine did not answer in time',
+      );
+      await vi.advanceTimersByTimeAsync(10_000); // Handshake deadline: SIGTERM, ignored.
+      await timedOut;
+      await vi.advanceTimersByTimeAsync(2_000); // Grace over: kill it outright.
+
+      expect(await stalledEngineKilled).toBe('SIGKILL');
       client.dispose();
     } finally {
       vi.useRealTimers();

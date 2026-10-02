@@ -8,6 +8,7 @@
 //   FAKE_ENGINE_PROTOCOL_VERSION  protocol version to speak (default 1)
 //   FAKE_ENGINE_EXIT_ON           exit right after this method, answering nothing
 //   FAKE_ENGINE_STALL_ON          receive this method, answer nothing, stay alive
+//   FAKE_ENGINE_IGNORE_SIGTERM    stay alive when sent SIGTERM, like a frozen engine
 //   FAKE_ENGINE_LOG               path to append every request it received
 //
 // Every request it receives is appended to the log, so a test can prove
@@ -22,6 +23,17 @@ const reviewError = process.env.FAKE_ENGINE_ERROR;
 const exitOn = process.env.FAKE_ENGINE_EXIT_ON;
 const stallOn = process.env.FAKE_ENGINE_STALL_ON;
 const log = process.env.FAKE_ENGINE_LOG;
+
+if (process.env.FAKE_ENGINE_IGNORE_SIGTERM) {
+  process.on('SIGTERM', () => {
+    // Swallow the signal and stay alive: SIGTERM is held pending on a
+    // stopped process until it resumes, so this models a frozen engine.
+  });
+  // Announce the handler on stderr, so a test can wait until it is in
+  // place: a SIGTERM delivered while the process is still starting up
+  // would kill it before the handler exists.
+  process.stderr.write('ignoring SIGTERM\n');
+}
 
 function send(message) {
   process.stdout.write(`${JSON.stringify(message)}\n`);
