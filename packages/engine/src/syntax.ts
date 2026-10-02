@@ -281,14 +281,8 @@ function qualifiedName(chain: Declaration[]): string {
   return chain.map((declaration) => declaration.name).join('.');
 }
 
-/** The innermost entity enclosing a position, named through all enclosing entities. */
-function entityAt(
-  tree: Tree,
-  language: LanguageSpec,
-  row: number,
-  column: number,
-): EntityAtPosition | undefined {
-  const chain = declarationsAround(tree.rootNode.descendantForPosition({ row, column }), language);
+/** The innermost entity of a declaration chain, named through all enclosing entities. */
+function entityFor(chain: Declaration[], language: LanguageSpec): EntityAtPosition | undefined {
   const innermost = chain.at(-1);
   if (!innermost) return undefined;
   const outer = chain.at(-2);
@@ -301,6 +295,48 @@ function entityAt(
     ),
     rows: declarationRows(innermost),
   };
+}
+
+/** The innermost entity enclosing a position, named through all enclosing entities. */
+function entityAt(
+  tree: Tree,
+  language: LanguageSpec,
+  row: number,
+  column: number,
+): EntityAtPosition | undefined {
+  const start = tree.rootNode.descendantForPosition({ row, column });
+  return entityFor(declarationsAround(start, language), language);
+}
+
+/**
+ * The entities a row on a multi-declarator statement's own row names: every
+ * function-valued declarator whose declaration rows include the row. A row
+ * inside one declarator's own lines names none of them.
+ */
+function sharedRowEntities(
+  tree: Tree,
+  language: LanguageSpec,
+  row: number,
+  column: number,
+): EntityAtPosition[] {
+  const start = tree.rootNode.descendantForPosition({ row, column });
+  if (!start) return [];
+  for (let node: Node | null = start; node; node = node.parent) {
+    for (let at: Node | null = node; at; at = wrappedDeclarations(at)[0] ?? null) {
+      const declarators = wrappedDeclarations(at);
+      if (
+        (at.type === 'lexical_declaration' || at.type === 'variable_declaration') &&
+        declarators.length > 1 &&
+        declarators.every((declarator) => !contains(declarator, start))
+      ) {
+        return declarators
+          .map((declarator) => entityFor(declarationsAround(declarator, language), language))
+          .filter((entity): entity is EntityAtPosition => entity !== undefined)
+          .filter((entity) => row >= entity.rows.first && row <= entity.rows.last);
+      }
+    }
+  }
+  return [];
 }
 
 /** The qualified names of every entity a tree declares. */
@@ -349,19 +385,25 @@ function hunkEntities(
     if (!side || lineNumber === undefined) continue;
     const row = lineNumber - 1;
     const column = /^[ \t]*/.exec(line.text)![0].length;
-    const found = entityAt(side.tree, language, row, column);
-    if (!found) continue;
-    const change: EntityChange = !other?.names.has(found.name)
-      ? line.kind === 'deletion'
-        ? 'removed'
-        : 'added'
-      : row >= found.rows.first && row <= found.rows.last
-        ? 'declaration'
-        : 'body';
-    const key = `${found.kind} ${found.name}`;
-    const seen = entities.get(key);
-    if (seen && CHANGE_STRENGTH[seen.change] >= CHANGE_STRENGTH[change]) continue;
-    entities.set(key, { kind: found.kind, name: found.name, public: found.public, change });
+    const found = sharedRowEntities(side.tree, language, row, column);
+    if (found.length === 0) {
+      const one = entityAt(side.tree, language, row, column);
+      if (one) found.push(one);
+    }
+    if (found.length === 0) continue;
+    for (const one of found) {
+      const change: EntityChange = !other?.names.has(one.name)
+        ? line.kind === 'deletion'
+          ? 'removed'
+          : 'added'
+        : row >= one.rows.first && row <= one.rows.last
+          ? 'declaration'
+          : 'body';
+      const key = `${one.kind} ${one.name}`;
+      const seen = entities.get(key);
+      if (seen && CHANGE_STRENGTH[seen.change] >= CHANGE_STRENGTH[change]) continue;
+      entities.set(key, { kind: one.kind, name: one.name, public: one.public, change });
+    }
   }
   return [...entities.values()];
 }

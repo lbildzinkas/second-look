@@ -797,6 +797,27 @@ describe('how a hunk changes an entity', () => {
     ]);
   });
 
+  it('names every function a one-line multi-declarator statement declares when its own row changes', async () => {
+    const base = 'export const a = () => 1, b = () => 2;\n';
+    const head = 'export const a = () => 1, b = () => 3;\n';
+    const part = changedPart({ path: 'cart.ts', base, head, deleted: [1], added: [1] });
+    await analysePart(part, { base, head });
+    expect(part.hunks[0]!.entities).toEqual([
+      { kind: 'function', name: 'a', public: true, change: 'declaration' },
+      { kind: 'function', name: 'b', public: true, change: 'declaration' },
+    ]);
+  });
+
+  it('names a later function declarator when the statement row changes', async () => {
+    const base = 'export const retries = 3, load = () => 9;\n';
+    const head = 'export const retries = 3, load = () => 8;\n';
+    const part = changedPart({ path: 'cart.ts', base, head, deleted: [1], added: [1] });
+    await analysePart(part, { base, head });
+    expect(part.hunks[0]!.entities).toEqual([
+      { kind: 'function', name: 'load', public: true, change: 'declaration' },
+    ]);
+  });
+
   it("reads a change inside a C# expression-bodied property as a body change", async () => {
     const base = 'public class A\n{\n    public int Total =>\n        Compute(\n            1);\n}\n';
     const head = base.replace('1);', '2);');
