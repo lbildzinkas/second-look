@@ -1,19 +1,26 @@
 import { deepStrictEqual, ok } from 'node:assert';
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import * as vscode from 'vscode';
-import { activate, REVIEW_COMMAND } from 'second-look-extension';
+import { REVIEW_COMMAND } from 'second-look-extension';
 import { mixedResult } from '../results.js';
 
 /**
  * The extension's real-host test: the same review run the stub-based
  * integration test drives, but inside a real VS Code, through the real
- * API — the real command registry, the real authentication API, real
- * tree items — and still against the fake engine fixture, a plain Node
- * child process, so nothing touches the network. Only CI runs it.
+ * API — the real activation, the real command registry, the real
+ * authentication API, real tree items — and still against the fake
+ * engine fixture, a plain Node child process, so nothing touches the
+ * network. Only CI runs it.
+ *
+ * The editor activates the extension exactly once, on its own terms, and
+ * the registry rejects registering the review command a second time, so
+ * this test rides that one activation: it reads the tree through the data
+ * provider the activation exported and substitutes the fake engine for
+ * the real one through the environment, which the extension host already
+ * passes to the engine child process it spawns.
  */
 
 const EXTENSION_ID = 'lbildzinkas.second-look-extension';
@@ -77,19 +84,6 @@ async function renderedTree<T>(provider: vscode.TreeDataProvider<T>): Promise<Re
     }
   }
   return rendered;
-}
-
-/** Starts the fake engine as its own process, logging what reaches it. */
-function fakeEngine(logPath: string): ChildProcessWithoutNullStreams {
-  return spawn(process.execPath, [FAKE_ENGINE], {
-    stdio: ['pipe', 'pipe', 'pipe'],
-    env: {
-      ...process.env,
-      ELECTRON_RUN_AS_NODE: '1',
-      FAKE_ENGINE_RESULT: JSON.stringify(mixedResult()),
-      FAKE_ENGINE_LOG: logPath,
-    },
-  });
 }
 
 const EXPECTED_TREE: Rendered[] = [
@@ -166,19 +160,28 @@ export async function run(): Promise<void> {
   });
 
   try {
-    // The editor activates the extension on its own terms first, so the
-    // activation below is the one whose review the command runs: same
-    // module, real API, with the engine swapped for the fake engine.
+    // The fake engine takes the real engine's place: the companion's own
+    // spawn starts whatever SECOND_LOOK_ENGINE_ENTRY names, and the
+    // fixture reads its result and its log path from this environment.
+    process.env['SECOND_LOOK_ENGINE_ENTRY'] = FAKE_ENGINE;
+    process.env['FAKE_ENGINE_RESULT'] = JSON.stringify(mixedResult());
+    process.env['FAKE_ENGINE_LOG'] = join(workDir, 'engine.log');
+
+    // One activation, the editor's own: already happened or forced here,
+    // either way the review command is registered exactly once.
     const extension = vscode.extensions.getExtension(EXTENSION_ID);
     ok(extension, `the ${EXTENSION_ID} extension is not installed in the development host`);
-    if (!extension.isActive) {
-      await withTimeout(extension.activate(), `activation of ${EXTENSION_ID}`);
-    }
+    await withTimeout(extension.activate(), `activation of ${EXTENSION_ID}`);
 
-    const subscriptions: { dispose(): unknown }[] = [];
-    const provider = activate({ subscriptions } as vscode.ExtensionContext, {
-      spawnEngine: () => fakeEngine(join(workDir, 'engine.log')),
-    });
+    // The activation exported the review tree's data provider, the tree
+    // the command fills.
+    const provider = extension.exports as vscode.TreeDataProvider<unknown> | undefined;
+    ok(
+      provider !== undefined &&
+        typeof provider.getChildren === 'function' &&
+        typeof provider.getTreeItem === 'function',
+      `the ${EXTENSION_ID} activation did not export the review tree's data provider`,
+    );
 
     deepStrictEqual(await renderedTree(provider), [
       {
@@ -207,6 +210,9 @@ export async function run(): Promise<void> {
     ok(requests[1] && requests[1].method === 'review');
     deepStrictEqual(requests[1]?.params, { url: PR_URL, token: TOKEN });
   } finally {
+    delete process.env['SECOND_LOOK_ENGINE_ENTRY'];
+    delete process.env['FAKE_ENGINE_RESULT'];
+    delete process.env['FAKE_ENGINE_LOG'];
     auth.dispose();
     sessionChanges.dispose();
     rmSync(workDir, { recursive: true, force: true });

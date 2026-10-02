@@ -18,11 +18,21 @@ import { ProtocolError, isReviewResult } from './protocol.js';
  */
 export type SpawnEngine = () => ChildProcessWithoutNullStreams;
 
+/** The environment variable through which the real-host test substitutes its fake engine. */
+const ENGINE_ENTRY_ENV = 'SECOND_LOOK_ENGINE_ENTRY';
+
 /**
  * Resolves the engine's entry point from the companion's own install, so
- * nothing is ever run out of the reviewer's workspace.
+ * nothing is ever run out of the reviewer's workspace. The real-host test
+ * names its fake engine here — no real install ever sets this — because it
+ * rides the extension's one real activation, whose engine spawn starts
+ * from this same resolution.
  */
 export function engineEntryPath(): string {
+  const entry = process.env[ENGINE_ENTRY_ENV];
+  if (entry !== undefined && entry !== '') {
+    return entry;
+  }
   const require = createRequire(import.meta.url);
   const manifest = require.resolve('@second-look/engine/package.json');
   return join(dirname(manifest), 'dist', 'main.js');

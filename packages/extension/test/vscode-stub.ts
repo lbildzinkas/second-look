@@ -102,6 +102,11 @@ export class EventEmitter<T> {
 
 export const commands = {
   registerCommand(id: string, handler: (...args: unknown[]) => unknown): StubDisposable {
+    // The real registry serves one handler per command id and rejects a
+    // second registration of the same id, so the double rejects one too.
+    if (stub.commands.some((command) => command.id === id)) {
+      throw new Error(`command '${id}' already exists`);
+    }
     stub.commands.push({ id, handler });
     return { dispose: () => undefined };
   },
