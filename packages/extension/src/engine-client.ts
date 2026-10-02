@@ -42,9 +42,17 @@ export function spawnEngineProcess(): ChildProcessWithoutNullStreams {
   });
 }
 
+/** How long the version handshake may take before the engine is given up on. */
+const HANDSHAKE_TIMEOUT_MS = 10_000;
+
+/** How long one review request may take before the engine is given up on. */
+const REVIEW_TIMEOUT_MS = 120_000;
+
 interface Pending {
   resolve(result: unknown): void;
   reject(error: Error): void;
+  /** Clears the deadline when the request settles before it. */
+  timer: ReturnType<typeof setTimeout>;
 }
 
 /** The id of a JSON-RPC response, when the line carries one. */
@@ -75,7 +83,9 @@ function responseResult(value: unknown): unknown {
  *
  * The connection starts with a version handshake, and every review request
  * carries its own GitHub token from VS Code's sign-in; the client keeps no
- * token and stores nothing between requests.
+ * token and stores nothing between requests. Every request has a deadline:
+ * an engine that stays silent past it is stopped, its failure reads as a
+ * plain message, and the next request starts a fresh engine.
  */
 export class EngineClient {
   private readonly spawnEngine: SpawnEngine;
@@ -98,9 +108,11 @@ export class EngineClient {
    * engine that speaks another protocol version with its plain message.
    */
   async initialize(): Promise<void> {
-    const result = (await this.request(INITIALIZE_METHOD, {
-      protocolVersion: ENGINE_PROTOCOL_VERSION,
-    })) as InitializeResult;
+    const result = (await this.request(
+      INITIALIZE_METHOD,
+      { protocolVersion: ENGINE_PROTOCOL_VERSION },
+      HANDSHAKE_TIMEOUT_MS,
+    )) as InitializeResult;
     if (
       typeof result !== 'object' ||
       result === null ||
@@ -122,7 +134,7 @@ export class EngineClient {
     if (!this.handshaken) {
       throw new Error('the engine has not completed its handshake yet');
     }
-    const result = await this.request(REVIEW_METHOD, { url, token });
+    const result = await this.request(REVIEW_METHOD, { url, token }, REVIEW_TIMEOUT_MS);
     if (!isReviewResult(result)) {
       throw new ProtocolError();
     }
@@ -137,30 +149,39 @@ export class EngineClient {
     this.handshaken = false;
   }
 
-  private async request(method: string, params: unknown): Promise<unknown> {
+  private async request(method: string, params: unknown, timeoutMs: number): Promise<unknown> {
     const engine = this.ensureEngine();
     const id = this.nextId++;
     const message = { jsonrpc: '2.0' as const, id, method, params };
     return new Promise<unknown>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error('the engine did not answer in time'));
+        this.dispose();
+      }, timeoutMs);
+      this.pending.set(id, { resolve, reject, timer });
       engine.stdin.write(`${JSON.stringify(message)}\n`);
     });
   }
 
   private ensureEngine(): ChildProcessWithoutNullStreams {
     if (this.engine === undefined) {
-      this.engine = this.spawnEngine();
-      const responses = createInterface({ input: this.engine.stdout });
+      const engine = this.spawnEngine();
+      this.engine = engine;
+      const responses = createInterface({ input: engine.stdout });
       responses.on('line', (line) => this.onResponse(line));
-      this.engine.stdin.on('error', () => {
+      engine.stdin.on('error', () => {
+        if (this.engine !== engine) return;
         this.failPending(new Error('the engine stopped before answering'));
       });
-      this.engine.once('exit', () => {
+      engine.once('exit', () => {
+        if (this.engine !== engine) return;
         this.failPending(new Error('the engine stopped before answering'));
         this.engine = undefined;
         this.handshaken = false;
       });
-      this.engine.once('error', (error) => {
+      engine.once('error', (error) => {
+        if (this.engine !== engine) return;
         this.failPending(new Error(`the engine could not be started: ${error.message}`));
         this.engine = undefined;
         this.handshaken = false;
@@ -188,6 +209,7 @@ export class EngineClient {
       return;
     }
     this.pending.delete(id);
+    clearTimeout(pending.timer);
     const error = responseError(value);
     if (error !== undefined) {
       pending.reject(new Error(error));
@@ -198,6 +220,7 @@ export class EngineClient {
 
   private failPending(error: Error): void {
     for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer);
       pending.reject(error);
     }
     this.pending.clear();

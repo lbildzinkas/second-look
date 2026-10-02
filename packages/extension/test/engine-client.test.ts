@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { ProtocolError } from '../src/protocol.js';
 import { EngineClient } from '../src/engine-client.js';
 import { mixedResult } from './results.js';
@@ -23,6 +23,7 @@ interface FakeEngineOptions {
   error?: string;
   protocolVersion?: string;
   exitOn?: string;
+  stallOn?: string;
   logName?: string;
 }
 
@@ -40,6 +41,7 @@ function fakeEngine(options: FakeEngineOptions = {}): ChildProcessWithoutNullStr
         ? { FAKE_ENGINE_PROTOCOL_VERSION: options.protocolVersion }
         : {}),
       ...(options.exitOn !== undefined ? { FAKE_ENGINE_EXIT_ON: options.exitOn } : {}),
+      ...(options.stallOn !== undefined ? { FAKE_ENGINE_STALL_ON: options.stallOn } : {}),
       ...(options.logName !== undefined
         ? { FAKE_ENGINE_LOG: join(workDir, options.logName) }
         : {}),
@@ -138,5 +140,61 @@ describe('EngineClient against a fake engine', () => {
       'the engine stopped before answering',
     );
     client.dispose();
+  });
+
+  it('gives up on a handshake the engine never answers, with a plain message', async () => {
+    vi.useFakeTimers();
+    try {
+      const engines: ChildProcessWithoutNullStreams[] = [];
+      const client = new EngineClient(() => {
+        const engine = fakeEngine(
+          engines.length === 0
+            ? { stallOn: 'initialize', logName: 'stalled-handshake.log' }
+            : { logName: 'stalled-handshake.log' },
+        );
+        engines.push(engine);
+        return engine;
+      });
+
+      const handshake = client.initialize();
+      const timedOut = expect(handshake).rejects.toThrow('the engine did not answer in time');
+      await vi.advanceTimersByTimeAsync(10_000);
+      await timedOut;
+
+      await new Promise<void>((resolve) => engines[0]!.once('exit', () => resolve()));
+      await client.initialize();
+      expect(engines).toHaveLength(2);
+      client.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('gives up on a review the engine never answers, with a plain message', async () => {
+    vi.useFakeTimers();
+    try {
+      let spawns = 0;
+      const client = new EngineClient(() => {
+        spawns += 1;
+        return fakeEngine({
+          result: mixedResult(),
+          stallOn: spawns === 1 ? 'review' : undefined,
+          logName: 'stalled-review.log',
+        });
+      });
+
+      await client.initialize();
+      const review = client.review(PR_URL, TOKEN);
+      const timedOut = expect(review).rejects.toThrow('the engine did not answer in time');
+      await vi.advanceTimersByTimeAsync(120_000);
+      await timedOut;
+
+      await client.initialize();
+      expect(await client.review(PR_URL, TOKEN)).toMatchObject({ version: 2 });
+      expect(spawns).toBe(2);
+      client.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

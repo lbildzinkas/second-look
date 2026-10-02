@@ -7,6 +7,7 @@
 //   FAKE_ENGINE_ERROR             answer review with this plain error message
 //   FAKE_ENGINE_PROTOCOL_VERSION  protocol version to speak (default 1)
 //   FAKE_ENGINE_EXIT_ON           exit right after this method, answering nothing
+//   FAKE_ENGINE_STALL_ON          receive this method, answer nothing, stay alive
 //   FAKE_ENGINE_LOG               path to append every request it received
 //
 // Every request it receives is appended to the log, so a test can prove
@@ -19,6 +20,7 @@ const reviewResult = process.env.FAKE_ENGINE_RESULT
   : null;
 const reviewError = process.env.FAKE_ENGINE_ERROR;
 const exitOn = process.env.FAKE_ENGINE_EXIT_ON;
+const stallOn = process.env.FAKE_ENGINE_STALL_ON;
 const log = process.env.FAKE_ENGINE_LOG;
 
 function send(message) {
@@ -39,6 +41,9 @@ function handle(line) {
     return;
   }
   if (log) appendFileSync(log, `${JSON.stringify(request)}\n`);
+  if (stallOn && request.method === stallOn) {
+    return;
+  }
   if (exitOn && request.method === exitOn) {
     process.exit(0);
   }
