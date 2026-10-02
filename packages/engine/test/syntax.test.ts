@@ -318,6 +318,20 @@ const ENTITY_CASES: {
     kind: 'function',
   },
   {
+    path: 'web/legacy.js',
+    source: 'var track = function () { send(); };\n',
+    line: 1,
+    expected: 'track',
+    kind: 'function',
+  },
+  {
+    path: 'web/legacy.js',
+    source: 'export var track = function () {};\n',
+    line: 1,
+    expected: 'track',
+    kind: 'function',
+  },
+  {
     path: 'web/Cart.ts',
     source: 'export default class Cart {\n  total(): number;\n}\n',
     line: 1,

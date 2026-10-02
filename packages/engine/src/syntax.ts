@@ -101,13 +101,14 @@ function declaredEntity(node: Node, language: LanguageSpec): Entity | undefined 
   return name ? { kind, name } : undefined;
 }
 
-/** The declaration a wrapper node holds in a child: decorators, `declare`, `export`, `const`. */
-function wrappedDeclaration(node: Node): Node | undefined {
+/** The declaration a wrapper node holds in a child: decorators, `declare`, `export`, variables. */
+function wrappedDeclaration(node: Node): Node | null | undefined {
   switch (node.type) {
     case 'decorated_definition':
       return node.childForFieldName('definition');
     case 'ambient_declaration':
     case 'lexical_declaration':
+    case 'variable_declaration':
       return node.firstNamedChild;
     case 'export_statement':
       return node.childForFieldName('declaration');
