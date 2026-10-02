@@ -720,6 +720,20 @@ const VISIBILITY_CASES: {
     name: 'track',
     public: false,
   },
+  {
+    path: 'cart.ts',
+    source: 'export const retries = 3, load = () =>\n  9;\n',
+    line: 2,
+    name: 'load',
+    public: true,
+  },
+  {
+    path: 'cart.ts',
+    source: 'export const track = () => 1, send = () =>\n  2;\n',
+    line: 2,
+    name: 'send',
+    public: true,
+  },
 ];
 
 describe('entity visibility', () => {

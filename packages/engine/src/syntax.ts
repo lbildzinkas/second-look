@@ -112,20 +112,47 @@ function declaredEntity(
   return name ? { kind, name } : undefined;
 }
 
-/** The declaration a wrapper node holds in a child: decorators, `declare`, `export`, variables. */
-function wrappedDeclaration(node: Node): Node | null | undefined {
+/** The declarations a wrapper node holds in children: decorators, `declare`, `export`, variables. */
+function wrappedDeclarations(node: Node): readonly Node[] {
   switch (node.type) {
-    case 'decorated_definition':
-      return node.childForFieldName('definition');
+    case 'decorated_definition': {
+      const definition = node.childForFieldName('definition');
+      return definition ? [definition] : [];
+    }
     case 'ambient_declaration':
+      return node.firstNamedChild ? [node.firstNamedChild] : [];
     case 'lexical_declaration':
     case 'variable_declaration':
-      return node.firstNamedChild;
-    case 'export_statement':
-      return node.childForFieldName('declaration');
+      // A variable declaration holds one declarator per name it declares.
+      return node.children.filter((child): child is Node => child?.type === 'variable_declarator');
+    case 'export_statement': {
+      const declaration = node.childForFieldName('declaration');
+      return declaration ? [declaration] : [];
+    }
     default:
-      return undefined;
+      return [];
   }
+}
+
+/** Whether a node is another or sits inside it. */
+function contains(outer: Node, inner: Node): boolean {
+  for (let at: Node | null = inner; at; at = at.parent) {
+    if (at.equals(outer)) return true;
+  }
+  return false;
+}
+
+/** The declaration a wrapper holds around a node, or its first one. */
+function wrappedDeclarationAround(node: Node, around: Node): Node | undefined {
+  const wrapped = wrappedDeclarations(node);
+  return wrapped.find((child) => contains(child, around)) ?? wrapped[0];
+}
+
+/** Whether a wrapper holds a declaration, directly or through other wrappers. */
+function wrapsDeclaration(wrapper: Node, declaration: Node): boolean {
+  return wrappedDeclarations(wrapper).some(
+    (child) => child.equals(declaration) || wrapsDeclaration(child, declaration),
+  );
 }
 
 /** Entity kinds whose whole declaration is their surface: their members are what callers use. */
@@ -143,12 +170,17 @@ interface Declaration {
 
 /** The declarations enclosing a node, outermost first, each with its own name. */
 function declarationsAround(start: Node | null, language: LanguageSpec): Declaration[] {
+  if (!start) return [];
   const chain: Declaration[] = [];
   let last: Node | undefined;
-  for (let node = start; node; node = node.parent) {
+  for (let node: Node | null = start; node; node = node.parent) {
     // Wrapper nodes own a declaration's first line, so hop to what they wrap.
     let target = node;
-    for (let wrapped = wrappedDeclaration(target); wrapped; wrapped = wrappedDeclaration(target)) {
+    for (
+      let wrapped = wrappedDeclarationAround(target, start);
+      wrapped;
+      wrapped = wrappedDeclarationAround(target, start)
+    ) {
       target = wrapped;
     }
     if (last && target.equals(last)) continue;
@@ -163,9 +195,7 @@ function declarationsAround(start: Node | null, language: LanguageSpec): Declara
 function outermostWrapper(declaration: Node): Node {
   let outer = declaration;
   for (let parent = outer.parent; parent; parent = parent.parent) {
-    let wrapped = wrappedDeclaration(parent);
-    while (wrapped && !wrapped.equals(declaration)) wrapped = wrappedDeclaration(wrapped);
-    if (!wrapped) break;
+    if (!wrapsDeclaration(parent, declaration)) break;
     outer = parent;
   }
   return outer;
