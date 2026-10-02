@@ -80,17 +80,17 @@
             "claude-code"
           ],
           "default": "pi",
-          "description": "The installed coding agent the companion drives for its model work: Pi or Claude Code. Each result is stamped with the agent that produced it, its version, the model and the login it used, so switching this setting switches the stamp. An agent that is missing, or a version too old for the companion's lockdown, is never run: the engine's agent probe reports what is missing, and the status bar shows the agent in use."
+          "description": "The installed coding agent the companion selects for its agent passes: Pi or Claude Code. The status bar shows the agent in use. An agent that is missing, or a version too old for the companion's lockdown, is never run: the engine's agent probe reports what is missing."
         },
         "second-look.agentModel": {
           "type": "string",
           "default": "",
-          "description": "The model the agent runs, in the agent's own naming: for example `anthropic/claude-sonnet-5` for Pi or `sonnet` for Claude Code. Empty uses the agent's own default model. The status bar shows the model in use, and every result's stamp repeats it."
+          "description": "The model the selected agent runs, in the agent's own naming: for example `anthropic/claude-sonnet-5` for Pi or `sonnet` for Claude Code. Empty uses the agent's own default model. The status bar shows the model in use."
         },
         "second-look.agentAccount": {
           "type": "string",
           "default": "",
-          "description": "A label for the account or subscription the agent bills, such as `Claude Max (work address)` or `Pi personal key`, shown in the status bar beside the agent and model. The companion never reads the agent's login: this label is what you tell it. For Claude Code, each result's stamp names the login the run actually used, and warns when an inherited ANTHROPIC_API_KEY overrides the Claude subscription."
+          "description": "A label for the account or subscription the agent bills, such as `Claude Max (work address)` or `Pi personal key`, shown in the status bar beside the agent and model. The companion never reads the agent's login: this label is what you tell it. For Claude Code, the status bar warns when an inherited ANTHROPIC_API_KEY overrides the Claude subscription."
         }
       }
     }

@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { AGENT_NAMES } from '@second-look/engine';
 import { stub, stubContext } from './vscode-stub.js';
 import { activate } from '../src/extension.js';
 import { AgentStatusBar } from '../src/agent-status.js';
 import {
-  AGENT_SETTING_VALUES,
   apiKeyOverrideWarning,
   agentStatusBarText,
   readAgentSettings,
@@ -28,10 +28,16 @@ describe('readAgentSettings', () => {
     expect(readAgentSettings()).toEqual(CLAUDE_CODE);
   });
 
+  it('offers every agent the engine can drive, by the engine\u2019s own list', () => {
+    for (const agent of AGENT_NAMES) {
+      stub.configuration = { 'second-look.agent': agent };
+      expect(readAgentSettings().agent).toBe(agent);
+    }
+  });
+
   it('falls back to Pi on a value the settings no longer offer', () => {
     stub.configuration = { 'second-look.agent': 'codex' };
     expect(readAgentSettings().agent).toBe('pi');
-    expect(AGENT_SETTING_VALUES).toEqual(['pi', 'claude-code']);
   });
 });
 
