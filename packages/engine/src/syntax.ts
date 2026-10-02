@@ -101,6 +101,21 @@ function declaredEntity(node: Node, language: LanguageSpec): Entity | undefined 
   return name ? { kind, name } : undefined;
 }
 
+/** The declaration a wrapper node holds in a child: decorators, `declare`, `export`, `const`. */
+function wrappedDeclaration(node: Node): Node | undefined {
+  switch (node.type) {
+    case 'decorated_definition':
+      return node.childForFieldName('definition');
+    case 'ambient_declaration':
+    case 'lexical_declaration':
+      return node.firstNamedChild;
+    case 'export_statement':
+      return node.childForFieldName('declaration');
+    default:
+      return undefined;
+  }
+}
+
 /** The innermost entity enclosing a position, named through all enclosing entities. */
 function entityAt(
   tree: Tree,
@@ -111,14 +126,12 @@ function entityAt(
   const chain: Entity[] = [];
   let last: Node | undefined;
   for (let node = tree.rootNode.descendantForPosition({ row, column }); node; node = node.parent) {
-    // A decorated Python definition owns its decorator lines.
-    const target =
-      node.type === 'decorated_definition'
-        ? node.childForFieldName('definition')
-        : node.type === 'ambient_declaration'
-          ? node.firstNamedChild
-          : node;
-    if (!target || (last && target.equals(last))) continue;
+    // Wrapper nodes own a declaration's first line, so hop to what they wrap.
+    let target = node;
+    for (let wrapped = wrappedDeclaration(target); wrapped; wrapped = wrappedDeclaration(target)) {
+      target = wrapped;
+    }
+    if (last && target.equals(last)) continue;
     last = target;
     const entity = declaredEntity(target, language);
     if (entity) chain.unshift(entity);

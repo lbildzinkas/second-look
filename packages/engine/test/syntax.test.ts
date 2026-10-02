@@ -297,6 +297,34 @@ const ENTITY_CASES: {
     kind: 'function',
   },
   {
+    path: 'web/api.ts',
+    source: 'export function ping(): void {\n  send();\n}\n',
+    line: 1,
+    expected: 'ping',
+    kind: 'function',
+  },
+  {
+    path: 'types/global.d.ts',
+    source: 'export declare function loadConfig(): void;\n',
+    line: 1,
+    expected: 'loadConfig',
+    kind: 'function',
+  },
+  {
+    path: 'web/cart.ts',
+    source: 'export const isEmpty = (): boolean => true;\n',
+    line: 1,
+    expected: 'isEmpty',
+    kind: 'function',
+  },
+  {
+    path: 'web/Cart.ts',
+    source: 'export default class Cart {\n  total(): number;\n}\n',
+    line: 1,
+    expected: 'Cart',
+    kind: 'class',
+  },
+  {
     path: 'web/cart.ts',
     source: 'export const isEmpty = (items: number[]): boolean =>\n  items.length === 0;\n',
     line: 2,
@@ -375,6 +403,19 @@ describe('entity names', () => {
     const source = 'import os\nVALUE = 1\n';
     const part = changedPart({
       path: 'a.py',
+      base: source,
+      head: source,
+      deleted: [2],
+      added: [2],
+    });
+    await analysePart(part, { base: source, head: source });
+    expect(part.hunks[0]!.entities).toEqual([]);
+  });
+
+  it('names nothing for a bare export clause', async () => {
+    const source = 'function load() {}\nexport { load };\n';
+    const part = changedPart({
+      path: 'a.ts',
       base: source,
       head: source,
       deleted: [2],
