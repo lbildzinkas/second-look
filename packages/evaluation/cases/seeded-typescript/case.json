@@ -1,0 +1,21 @@
+{
+  "formatVersion": 1,
+  "id": "seeded-typescript",
+  "source": "https://github.com/example-org/example-repo/pull/9279",
+  "recordedAt": "2026-10-02T20:08:11.347Z",
+  "prompts": [],
+  "pullRequest": {
+    "url": "https://github.com/example-org/example-repo/pull/9279",
+    "number": 9279,
+    "title": "Update 4 files",
+    "author": "contributor-login",
+    "description": "Updates 4 files.",
+    "base": "master",
+    "head": "update-4-files",
+    "baseCommit": "3785a666bb3868e6cd470e247fc96cda5473dd67",
+    "headSha": "3ce15c0de8ae46c842618bcbf2bf3d67875e1b46"
+  },
+  "gitAttributes": null,
+  "baseCommit": "3785a666bb3868e6cd470e247fc96cda5473dd67",
+  "headCommit": "3ce15c0de8ae46c842618bcbf2bf3d67875e1b46"
+}

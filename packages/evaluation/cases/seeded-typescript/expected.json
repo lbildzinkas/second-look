@@ -1,0 +1,20 @@
+{
+  "noise": {
+    "CONTEXT.md": {
+      "label": "none"
+    },
+    "README.md": {
+      "label": "none"
+    },
+    "packages/engine/src/rank.ts": {
+      "label": "none"
+    },
+    "packages/engine/test/rank.test.ts": {
+      "label": "none"
+    }
+  },
+  "importantParts": [
+    "score in packages/engine/src/rank.ts"
+  ],
+  "claims": []
+}

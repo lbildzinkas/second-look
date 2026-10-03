@@ -1,0 +1,52 @@
+diff --git a/CONTEXT.md b/CONTEXT.md
+index 9e4a937..a678058 100644
+--- a/CONTEXT.md
++++ b/CONTEXT.md
+@@ -21,7 +21,7 @@ A few sentences at the top of a review that tell what the change does, in the or
+ _Avoid_: Walkthrough, tour, summary
+ 
+ **Part**:
+-A named group of related edits; every changed line belongs to exactly one part.
++A named group of related edits within one file; every changed line belongs to exactly one part.
+ _Avoid_: Chunk, section, group, file
+ 
+ **Importance**:
+diff --git a/README.md b/README.md
+index 8d9216a..dcb15dc 100644
+--- a/README.md
++++ b/README.md
+@@ -17,7 +17,7 @@ The protocol types live in `packages/engine/src/protocol.ts` and `packages/engin
+ 
+ ## Building and testing
+ 
+-Requires Node 20 or later. One command installs, type-checks, lints and tests everything:
++Requires Node 20 or later. Install once, then one command type-checks, lints and tests everything:
+ 
+ ```sh
+ npm ci        # install all workspace dependencies
+diff --git a/packages/engine/src/rank.ts b/packages/engine/src/rank.ts
+index 4077057..cafe159 100644
+--- a/packages/engine/src/rank.ts
++++ b/packages/engine/src/rank.ts
+@@ -63,7 +63,7 @@ function score(signals: PartSignals): { points: number; cited: string[] } {
+     points += 1;
+     cited.push('new code');
+   } else if (referring > 0) {
+-    points += referring >= MANY_REFERENCES ? 2 : 1;
++    points += referring < MANY_REFERENCES ? 2 : 1;
+     const verb = signals.novelty === 'removed' ? 'removes' : 'changes';
+     cited.push(`${verb} code named in ${files(referring)} (name-based)`);
+   }
+diff --git a/packages/engine/test/rank.test.ts b/packages/engine/test/rank.test.ts
+index 3bc3c79..dbd879b 100644
+--- a/packages/engine/test/rank.test.ts
++++ b/packages/engine/test/rank.test.ts
+@@ -93,7 +93,7 @@ describe('rankParts', () => {
+   });
+ 
+   it('keeps at most a third of the parts, rounded up, at must review', () => {
+-    for (const count of [1, 2, 3, 4, 7, 10]) {
++    for (const count of [1, 2, 3, 4, 5, 7, 9, 10]) {
+       const parts = Array.from({ length: count }, (_, i) => heavy(`p${i}`, 20 + i));
+       const ranked = rankParts(parts);
+       const must = ranked.filter((p) => p.rank!.importance === 'must review');

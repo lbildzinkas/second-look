@@ -57,7 +57,7 @@ export interface Tally {
   coveredLines: number;
   /** Counts by noise class: `none`, or a label and its state, such as `lockfile:claimed`. */
   noise: Map<string, NoiseCounts>;
-  /** The 1-based rank position of each known important part, counted only over results with at least {@link TOP_K} parts. */
+  /** The 1-based rank position of each known important part. */
   positions: number[];
   /** The claim checks' counts. */
   claims: ClaimTally;
@@ -150,10 +150,7 @@ export function tallyClaims(
  * exactly once, each hand-labelled file's expected and actual noise
  * class, where each known important part ranks, and each hand-labelled
  * claim against what the review reported. A review that failed has no
- * parts, so it covers no line and is not scored further. A result with
- * fewer than {@link TOP_K} parts is never tallied for rank: every part
- * of so small a ranking is trivially at the top, so its positions are
- * fixed by the part count, not by how the review ranked.
+ * parts, so it covers no line and is not scored further.
  */
 export function tallyCase(
   diff: string,
@@ -189,12 +186,10 @@ export function tallyCase(
     if (noiseClass(actual) === noiseClass(wanted)) counts(noiseClass(wanted)).matched++;
   }
 
-  if (parts.length >= TOP_K) {
-    for (const important of expected.importantParts) {
-      const byName = parts.findIndex((part) => part.name === important);
-      const index = byName >= 0 ? byName : parts.findIndex((part) => part.path === important);
-      tally.positions.push(index >= 0 ? index + 1 : parts.length + 1);
-    }
+  for (const important of expected.importantParts) {
+    const byName = parts.findIndex((part) => part.name === important);
+    const index = byName >= 0 ? byName : parts.findIndex((part) => part.path === important);
+    tally.positions.push(index >= 0 ? index + 1 : parts.length + 1);
   }
   return tally;
 }

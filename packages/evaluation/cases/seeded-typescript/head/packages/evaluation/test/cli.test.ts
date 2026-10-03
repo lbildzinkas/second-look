@@ -189,9 +189,6 @@ describe('the record command', () => {
       'example-42',
       'example-7',
       'mine',
-      'seeded-csharp',
-      'seeded-python',
-      'seeded-typescript',
     ]);
     const run = await cli(['run', '--runs', join(scratch, 'runs')], env);
     expect(run.out).toContain('mine  coverage  1');

@@ -14,6 +14,7 @@ export * from './parts.js';
 export * from './signals.js';
 export * from './rank.js';
 export * from './review.js';
+export { lockfileManifests } from './lockfile.js';
 export * from './pdb.js';
 export * from './sourcelink.js';
 export * from './zip.js';

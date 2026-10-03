@@ -98,7 +98,11 @@ export async function recordCase(url: string, options: RecordOptions): Promise<s
  * ordinary writable files; a path the copy does not hold, such as a
  * symbolic link the archive skipped, is left out.
  */
-async function copyFiles(from: string, to: string, paths: ReadonlySet<string>): Promise<void> {
+export async function copyFiles(
+  from: string,
+  to: string,
+  paths: ReadonlySet<string>,
+): Promise<void> {
   await mkdir(to, { recursive: true });
   for (const path of [...paths].sort()) {
     const source = pathInCopy(from, path);
@@ -109,7 +113,7 @@ async function copyFiles(from: string, to: string, paths: ReadonlySet<string>): 
   }
 }
 
-async function exists(path: string): Promise<boolean> {
+export async function exists(path: string): Promise<boolean> {
   try {
     await stat(path);
     return true;

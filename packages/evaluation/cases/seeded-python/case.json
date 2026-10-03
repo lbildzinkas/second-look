@@ -1,0 +1,21 @@
+{
+  "formatVersion": 1,
+  "id": "seeded-python",
+  "source": "https://github.com/example-org/example-repo/pull/8714",
+  "recordedAt": "2026-10-02T20:08:11.763Z",
+  "prompts": [],
+  "pullRequest": {
+    "url": "https://github.com/example-org/example-repo/pull/8714",
+    "number": 8714,
+    "title": "Update 3 files",
+    "author": "contributor-login",
+    "description": "Updates 3 files.",
+    "base": "master",
+    "head": "update-3-files",
+    "baseCommit": "b046ea6a86d11bfe7d9c07b503e9cf7e00a26fad",
+    "headSha": "c08b7549533f1729fd51d067abf0afce3619ea72"
+  },
+  "gitAttributes": null,
+  "baseCommit": "b046ea6a86d11bfe7d9c07b503e9cf7e00a26fad",
+  "headCommit": "c08b7549533f1729fd51d067abf0afce3619ea72"
+}

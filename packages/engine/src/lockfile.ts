@@ -916,6 +916,25 @@ async function readTextOrNull(absolute: string): Promise<string | null> {
   }
 }
 
+/** Lists one directory inside a copy, dot files aside; a missing directory reads empty. */
+function listDirIn(copyRoot: string): ListDir {
+  return async (relativeDir) => {
+    // The copy root itself is the repository root's directory, which
+    // pathInCopy's containment guard would reject (it admits only strict
+    // children), so resolve it directly; deeper directories stay guarded.
+    const absolute =
+      relativeDir === '.' || relativeDir === ''
+        ? resolve(copyRoot)
+        : pathInCopy(copyRoot, relativeDir);
+    if (absolute === undefined) return [];
+    try {
+      return (await readdir(absolute)).filter((name) => !name.startsWith('.'));
+    } catch {
+      return [];
+    }
+  };
+}
+
 /** Reads one side of a lock file's story inside one copy of the repository. */
 async function readSide(
   copyRoot: string,
@@ -924,19 +943,7 @@ async function readSide(
 ): Promise<LockfileSide> {
   const lockAbsolute = pathInCopy(copyRoot, lockPath);
   const lock = lockAbsolute === undefined ? null : await readTextOrNull(lockAbsolute);
-  const list: ListDir = async (relativeDir) => {
-    // The copy root itself is the repository root's directory, which
-    // pathInCopy's containment guard would reject (it admits only strict
-    // children), so resolve it directly; deeper directories stay guarded.
-    const absolute =
-      relativeDir === '.' || relativeDir === '' ? resolve(copyRoot) : pathInCopy(copyRoot, relativeDir);
-    if (absolute === undefined) return [];
-    try {
-      return (await readdir(absolute)).filter((name) => !name.startsWith('.'));
-    } catch {
-      return [];
-    }
-  };
+  const list = listDirIn(copyRoot);
   const manifests: string[] = [];
   for (const relative of await format.manifestsIn(dirname(lockPath), list)) {
     const absolute = pathInCopy(copyRoot, relative);
@@ -970,6 +977,29 @@ function assessmentFor(
     state: 'claimed',
     blindSpot: check.blindSpot,
   };
+}
+
+/**
+ * The manifest paths the lock file checks read beside the lock files
+ * among `changedPaths`, as paths in one copy of the repository, so a
+ * caller that copies what a review reads — seeding or recording a
+ * case — carries them even when the change leaves the manifest itself
+ * untouched.
+ */
+export async function lockfileManifests(
+  changedPaths: readonly string[],
+  copyRoot: string,
+): Promise<readonly string[]> {
+  const list = listDirIn(copyRoot);
+  const manifests = new Set<string>();
+  for (const path of changedPaths) {
+    const format = lockfileFormatFor(path);
+    if (format === undefined) continue;
+    for (const manifest of await format.manifestsIn(dirname(path), list)) {
+      manifests.add(manifest);
+    }
+  }
+  return [...manifests].sort();
 }
 
 /**

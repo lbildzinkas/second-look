@@ -116,17 +116,6 @@ describe('tallyCase and scoresOf', () => {
     expect(byName(scoresOf(tally))['rank-top-3']).toBe(0.5);
   });
 
-  it('skips the rank scores when the result ranks fewer than three parts', () => {
-    const [lockfile, cart] = parts({ 'package-lock.json': LOCKFILE });
-    for (const small of [[lockfile!], [lockfile!, cart!]]) {
-      const tally = tallyCase(DIFF, EXPECTED, small);
-      expect(tally.positions).toEqual([]);
-      const scores = byName(scoresOf(tally));
-      expect(scores['rank-median']).toBeUndefined();
-      expect(scores['rank-top-3']).toBeUndefined();
-    }
-  });
-
   it('scores a failed review as covering nothing, and nothing else', () => {
     const scores = scoresOf(tallyCase(DIFF, EXPECTED, undefined));
     expect(scores).toEqual([{ name: 'coverage', value: 0, better: 'higher' }]);
