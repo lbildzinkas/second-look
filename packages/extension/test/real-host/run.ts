@@ -51,7 +51,11 @@ interface Rendered {
 
 interface EngineRequest {
   method: string;
-  params?: { url?: string; token?: string };
+  params?: {
+    url?: string;
+    token?: string;
+    agent?: { agent?: string; model?: string; account?: string };
+  };
 }
 
 function withTimeout<T>(work: PromiseLike<T>, what: string): Promise<T> {
@@ -289,7 +293,14 @@ export async function run(): Promise<void> {
     deepStrictEqual(requests.length, 2);
     ok(requests[0] && requests[0].method === 'initialize');
     ok(requests[1] && requests[1].method === 'review');
-    deepStrictEqual(requests[1]?.params, { url: PR_URL, token: TOKEN });
+    // The request carries the agent choice the settings read — their
+    // defaults in this clean editor — beside the URL and the token, so
+    // the engine runs every agent pass with it.
+    deepStrictEqual(requests[1]?.params, {
+      url: PR_URL,
+      token: TOKEN,
+      agent: { agent: 'pi', model: '', account: '' },
+    });
 
     // Reading a part: clicking it opens the multi-file diff with exactly
     // its files, read-only from the cached copies, scrolled to the part's
