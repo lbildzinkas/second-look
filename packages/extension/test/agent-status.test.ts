@@ -7,6 +7,7 @@ import {
   apiKeyOverrideWarning,
   agentStatusBarText,
   readAgentSettings,
+  reviewAgentChoice,
   type AgentSettings,
 } from '../src/agent-settings.js';
 
@@ -38,6 +39,21 @@ describe('readAgentSettings', () => {
   it('falls back to Pi on a value the settings no longer offer', () => {
     stub.configuration = { 'second-look.agent': 'codex' };
     expect(readAgentSettings().agent).toBe('pi');
+  });
+});
+
+describe('reviewAgentChoice', () => {
+  it('carries the agent, model and account the settings chose, as the review request does', () => {
+    expect(reviewAgentChoice(CLAUDE_CODE)).toEqual({
+      agent: 'claude-code',
+      model: 'sonnet',
+      account: 'Claude Max (work)',
+    });
+    expect(reviewAgentChoice({ agent: 'pi', model: '', account: '' })).toEqual({
+      agent: 'pi',
+      model: '',
+      account: '',
+    });
   });
 });
 

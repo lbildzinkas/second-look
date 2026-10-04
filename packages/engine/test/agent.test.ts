@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_AGENT_SETTINGS, parseAnswer } from '../src/agent.js';
+import {
+  DEFAULT_AGENT_SETTINGS,
+  parseAnswer,
+  runAgentTasks,
+  type AgentAdapter,
+  type AgentProbe,
+  type AgentStamp,
+} from '../src/agent.js';
 import { validateJson, type JsonSchema } from '../src/json-schema.js';
 
 const SCHEMA: JsonSchema = {
@@ -55,5 +62,61 @@ describe('parseAnswer', () => {
 describe('DEFAULT_AGENT_SETTINGS', () => {
   it('gives each run five minutes and runs two at once', () => {
     expect(DEFAULT_AGENT_SETTINGS).toEqual({ timeoutMs: 300_000, concurrency: 2 });
+  });
+});
+
+const ANSWER_SCHEMA: JsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['verdict'],
+  properties: { verdict: { enum: ['yes', 'no'] } },
+};
+
+/** A stub adapter that always answers with the stamp it was given; no real agent runs. */
+function stubAgent(options: { stamp?: AgentStamp; probe?: Partial<AgentProbe> } = {}): AgentAdapter {
+  const stamp: AgentStamp = options.stamp ?? {
+    agent: 'fake',
+    agentVersion: '1.2.3',
+    model: 'fake/model',
+    effort: null,
+    runAt: '2026-10-05T00:00:00.000Z',
+  };
+  return {
+    agent: 'fake',
+    probe: async () => ({
+      agent: 'fake',
+      version: '1.2.3',
+      usable: true,
+      supports: { effort: false },
+      lockdown: [],
+      ...options.probe,
+    }),
+    run: async () => ({ status: 'completed', text: '{"verdict":"yes"}', stamp }),
+  };
+}
+
+describe('runAgentTasks with the account label', () => {
+  const task = { root: '.', instructions: 'fixed', prompt: 'answer', schema: ANSWER_SCHEMA };
+
+  it('stamps the reviewer\u2019s account label from the settings on every result', async () => {
+    const { results } = await runAgentTasks(stubAgent(), [task], {
+      ...DEFAULT_AGENT_SETTINGS,
+      account: 'Claude Max (work)',
+    });
+
+    expect(results[0]!.ok).toBe(true);
+    expect(results[0]!.stamp.account).toBe('Claude Max (work)');
+  });
+
+  it('stamps the label on a failed probe too, and stamps nothing without one', async () => {
+    const unusable = stubAgent({ probe: { usable: false, reason: 'not installed' } });
+    const labelled = await runAgentTasks(unusable, [task], {
+      ...DEFAULT_AGENT_SETTINGS,
+      account: 'Pi personal key',
+    });
+    expect(labelled.results[0]).toMatchObject({ ok: false, stamp: { account: 'Pi personal key' } });
+
+    const unlabelled = await runAgentTasks(stubAgent(), [task], DEFAULT_AGENT_SETTINGS);
+    expect(unlabelled.results[0]!.stamp).not.toHaveProperty('account');
   });
 });

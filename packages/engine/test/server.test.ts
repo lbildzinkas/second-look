@@ -7,13 +7,17 @@ import {
   REVIEW_STAGE_METHOD,
   VERSION_MISMATCH_CODE,
 } from '../src/rpc.js';
-import { runRpcServer } from '../src/server.js';
+import type { AgentName } from '../src/agents.js';
+import { GROUPING_INSTRUCTIONS } from '../src/grouping.js';
+import { DEFAULT_EFFORT } from '../src/ranking.js';
+import { runRpcServer, type RpcAgentDeps } from '../src/server.js';
 import { removeCopy } from '../src/cache.js';
 import {
   PR_7_URL,
   PR_URL,
   SENT_REVIEW_URL,
   fixtureFetch,
+  offeredParts,
   pull7,
   scriptedAgent,
   temporaryCacheDir,
@@ -296,7 +300,7 @@ describe('runRpcServer with an agent', () => {
       {
         cacheDir,
         fetch: fixtureFetch(pull7()).fetch,
-        agent: { adapter: scriptedAgent([JSON.stringify(answer)]) },
+        agent: { adapterFor: () => scriptedAgent([JSON.stringify(answer)]), defaultAgent: 'pi' },
       },
     );
 
@@ -355,7 +359,7 @@ describe('runRpcServer with an agent', () => {
     const server = runRpcServer(
       { readLine: async () => (index < lines.length ? (lines[index++] as string) : null) },
       { writeLine: (line) => written.push(line) },
-      { cacheDir, fetch: fixtureFetch(pull7()).fetch, agent: { adapter } },
+      { cacheDir, fetch: fixtureFetch(pull7()).fetch, agent: { adapterFor: () => adapter, defaultAgent: 'pi' } },
     );
     await vi.waitFor(() => expect(stageStarted).toBe(true));
     await vi.waitFor(() => {
@@ -371,5 +375,141 @@ describe('runRpcServer with an agent', () => {
     expect(send!.result).toEqual({ url: SENT_REVIEW_URL });
     expect(review!.result).toMatchObject({ grouping: { by: 'agent' } });
     expect((review!.result as { parts: unknown[] }).parts).toHaveLength(2);
+  });
+
+  /** The grouping a reviewer would give pull request 7: two parts over its seven hunks. */
+  const GROUPING = {
+    parts: [
+      { name: 'fresh, with its test', hunks: ['h2', 'h7'] },
+      { name: 'the rest', hunks: ['h1', 'h3', 'h4', 'h5', 'h6'] },
+    ],
+  };
+
+  /**
+   * A fake agent under the name the settings would choose, answering the
+   * grouping and the ranking pass like a reviewer would and recording
+   * every run it saw. No real agent is ever run.
+   */
+  function namedAgent(agent: AgentName, model: string) {
+    const scripted = scriptedAgent([]);
+    return {
+      ...scripted,
+      agent,
+      run: async (request: Parameters<typeof scripted.run>[0]) => {
+        scripted.requests.push(request);
+        const answer =
+          request.instructions === GROUPING_INSTRUCTIONS
+            ? GROUPING
+            : {
+                parts: [...offeredParts(request.prompt)].reverse().map(({ id }, index) => ({
+                  part: id,
+                  importance: index === 0 ? 'must review' : 'worth reviewing',
+                  reason: `reason for ${id}`,
+                  signals: ['size'],
+                })),
+              };
+        return {
+          status: 'completed' as const,
+          text: JSON.stringify(answer),
+          stamp: { agent, agentVersion: '1.2.3', model, effort: null, runAt: '2026-10-05T00:00:00.000Z' },
+        };
+      },
+    };
+  }
+
+  /** Serves the lines and returns how to read a request's answer by its id. */
+  async function serveWithAgent(
+    lines: string[],
+    agent: RpcAgentDeps,
+  ): Promise<(id: number) => Response> {
+    let index = 0;
+    const written: string[] = [];
+    await runRpcServer(
+      { readLine: async () => (index < lines.length ? (lines[index++] as string) : null) },
+      { writeLine: (line) => written.push(line) },
+      { cacheDir, fetch: fixtureFetch(pull7()).fetch, agent },
+    );
+    const responses = written.map((line) => JSON.parse(line) as Response);
+    // Stage notifications carry no id; the answers are the id-carrying lines.
+    return (id) => responses.find((response) => response.id === id)!;
+  }
+
+  it('runs every agent pass with the agent, model and account the request carries, so switching the choice changes the stamp', async () => {
+    const pi = namedAgent('pi', 'pi/model');
+    const claude = namedAgent('claude-code', 'claude/model');
+    const answers = await serveWithAgent(
+      [
+        request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+        request('review', { url: PR_7_URL, token: TOKEN, agent: { agent: 'pi', model: 'pi/model', account: 'Pi personal key' } }, 2),
+        request('review', { url: PR_7_URL, token: TOKEN, agent: { agent: 'claude-code', model: 'claude/model', account: 'Claude Max (work)' } }, 3),
+      ],
+      {
+        adapterFor: (name) => (name === 'pi' ? pi : claude),
+        defaultAgent: 'pi',
+        testedRankings: [
+          { agent: 'pi', model: 'pi/model', effort: DEFAULT_EFFORT },
+          { agent: 'claude-code', model: 'claude/model', effort: DEFAULT_EFFORT },
+        ],
+      },
+    );
+
+    // Both reviews grouped and ranked through the same engine, each pass
+    // asking for the model the request named.
+    expect(pi.requests.map((run) => run.model)).toEqual(['pi/model', 'pi/model']);
+    expect(claude.requests.map((run) => run.model)).toEqual(['claude/model', 'claude/model']);
+    const first = answers(2).result as {
+      grouping: { by: string; agent?: { stamp?: { agent: string; model: string; account?: string } } };
+      ranking: { by: string; agent?: { stamp?: { agent: string; model: string; account?: string } } };
+    };
+    expect(first.grouping).toMatchObject({ by: 'agent', agent: { stamp: { agent: 'pi', model: 'pi/model', account: 'Pi personal key' } } });
+    expect(first.ranking).toMatchObject({ by: 'agent', agent: { stamp: { agent: 'pi', model: 'pi/model', account: 'Pi personal key' } } });
+    const second = answers(3).result as typeof first;
+    expect(second.grouping).toMatchObject({ by: 'agent', agent: { stamp: { agent: 'claude-code', model: 'claude/model', account: 'Claude Max (work)' } } });
+    expect(second.ranking).toMatchObject({ by: 'agent', agent: { stamp: { agent: 'claude-code', model: 'claude/model', account: 'Claude Max (work)' } } });
+  });
+
+  it('runs the serve default when the request carries no choice', async () => {
+    const pi = namedAgent('pi', 'pi/model');
+    const claude = namedAgent('claude-code', 'claude/model');
+    const answers = await serveWithAgent(
+      [
+        request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+        request('review', { url: PR_7_URL, token: TOKEN }, 2),
+      ],
+      {
+        adapterFor: (name) => (name === 'pi' ? pi : claude),
+        defaultAgent: 'claude-code',
+        settings: { timeoutMs: 10_000, concurrency: 1, model: 'claude/model' },
+      },
+    );
+
+    // Only the grouping pass ran: the serve default agent has no tested
+    // ranking here, so the plain ranking stayed and said so.
+    expect(pi.requests).toHaveLength(0);
+    expect(claude.requests).toHaveLength(1);
+    expect(claude.requests[0]!.model).toBe('claude/model');
+    expect(answers(2).result).toMatchObject({
+      grouping: { by: 'agent', agent: { stamp: { agent: 'claude-code', model: 'claude/model' } } },
+      ranking: { by: 'plain', agent: { outcome: 'not tested' } },
+    });
+  });
+
+  it('refuses an agent choice the engine cannot drive, naming the choices', async () => {
+    const answers = await serveWithAgent(
+      [
+        request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+        request('review', { url: PR_7_URL, token: TOKEN, agent: { agent: 'codex' } }, 2),
+        request('review', { url: PR_7_URL, token: TOKEN, agent: { agent: 'pi', model: 3 } }, 3),
+        request('review', { url: PR_7_URL, token: TOKEN, agent: { agent: 'claude-code' } }, 4),
+      ],
+      { adapterFor: () => namedAgent('pi', 'pi/model'), defaultAgent: 'pi' },
+    );
+
+    expect(answers(2).error).toMatchObject({ code: JSON_RPC_INVALID_PARAMS });
+    expect(answers(2).error!.message).toContain('choose pi or claude-code');
+    expect(answers(3).error).toMatchObject({ code: JSON_RPC_INVALID_PARAMS });
+    expect(answers(3).error!.message).toContain('model must be a string');
+    // A choice of only the agent is fine: model and account are optional.
+    expect(answers(4).result).toMatchObject({ grouping: { by: 'agent' } });
   });
 });

@@ -1,6 +1,8 @@
-import type { AgentAdapter, AgentSettings } from './agent.js';
+import { DEFAULT_AGENT_SETTINGS, type AgentAdapter, type AgentSettings } from './agent.js';
+import { AGENT_NAMES, isAgentName, type AgentName } from './agents.js';
 import { reviewPullRequest } from './review.js';
 import { sendReview } from './send.js';
+import type { TestedRanking } from './ranking.js';
 import {
   ENGINE_FAILED_CODE,
   ENGINE_PROTOCOL_VERSION,
@@ -17,6 +19,7 @@ import {
   isRpcRequest,
   redactToken,
   type InitializeParams,
+  type ReviewAgentChoice,
   type ReviewParams,
   type ReviewStageParams,
   type RpcNotification,
@@ -35,6 +38,25 @@ export interface RpcLineSink {
   writeLine(line: string): void;
 }
 
+/**
+ * What the review requests' agent passes need: how to start each agent a
+ * request may name, and the settings they run with when it names none.
+ */
+export interface RpcAgentDeps {
+  /**
+   * Starts the adapter for the agent a review names. The engine probes
+   * the adapter before any run, so an agent that is not installed is
+   * never run and its probe says so in plain words.
+   */
+  adapterFor: (name: AgentName) => AgentAdapter;
+  /** The agent that reviews when a request carries no choice. */
+  defaultAgent: AgentName;
+  /** The settings the passes run with; a request's choice replaces their model and account. */
+  settings?: AgentSettings;
+  /** Where the agent ranking is the default; the engine's tested rankings when absent. */
+  testedRankings?: readonly TestedRanking[];
+}
+
 /** What the server needs besides its streams; tests inject a fake fetch. */
 export interface RpcServerDeps {
   /**
@@ -45,10 +67,10 @@ export interface RpcServerDeps {
   /** The engine's cache folder, which holds the read-only copies. */
   cacheDir: string;
   /**
-   * The agent that groups and ranks the parts after the plain pass;
+   * The agents that group and rank the parts after the plain pass;
    * without one, the plain result is the review's only answer.
    */
-  agent?: { adapter: AgentAdapter; settings?: AgentSettings };
+  agent?: RpcAgentDeps;
 }
 
 /**
@@ -63,11 +85,14 @@ export interface RpcServerDeps {
  * The protocol starts with a version handshake: `initialize` must succeed
  * before any other request, and a client speaking another protocol version
  * is refused with a plain message. `review` then carries the pull request
- * URL and the GitHub token per request, and `sendReview` the pending
- * review the companion gathered — the protocol's one write — submitted as
- * one GitHub review when the reviewer presses send. The token arrives
- * with each request, is used only for that request's GitHub calls, is
- * redacted from every error message, and is never stored.
+ * URL, the GitHub token and — when the client's settings chose one — the
+ * agent, model and account that run the review's agent passes; a request
+ * without a choice runs the engine's serve-time default. `sendReview`
+ * carries the pending review the companion gathered — the protocol's one
+ * write — submitted as one GitHub review when the reviewer presses send.
+ * The token arrives with each request, is used only for that request's
+ * GitHub calls, is redacted from every error message, and is never
+ * stored.
  *
  * With an agent, a review arrives in stages: as soon as the plain result
  * is ready the engine sends it in a {@link REVIEW_STAGE_METHOD}
@@ -160,6 +185,41 @@ function initialize(
   return true;
 }
 
+/** Why a review's agent choice is not one the engine can run, in plain words; absent when it is. */
+function agentChoiceProblem(value: unknown): string | undefined {
+  if (typeof value !== 'object' || value === null) return 'the agent choice must be an object';
+  const choice = value as Record<string, unknown>;
+  if (typeof choice['agent'] !== 'string' || !isAgentName(choice['agent'])) {
+    return `the agent choice names an agent the engine cannot drive: choose ${AGENT_NAMES.join(' or ')}`;
+  }
+  if (choice['model'] !== undefined && typeof choice['model'] !== 'string') {
+    return 'the agent choice model must be a string';
+  }
+  if (choice['account'] !== undefined && typeof choice['account'] !== 'string') {
+    return 'the agent choice account must be a string';
+  }
+  return undefined;
+}
+
+/**
+ * The settings a review's agent passes run with: the engine's own, with
+ * the request's model and account replacing theirs when it carries a
+ * choice — an empty model asks for the agent's own default, an empty
+ * account leaves the runs unlabelled.
+ */
+function agentRunSettings(
+  agent: RpcAgentDeps,
+  choice: ReviewAgentChoice | undefined,
+): AgentSettings {
+  const settings: AgentSettings = { ...DEFAULT_AGENT_SETTINGS, ...agent.settings };
+  if (choice === undefined) return settings;
+  if (choice.model === undefined || choice.model === '') delete settings.model;
+  else settings.model = choice.model;
+  if (choice.account === undefined || choice.account === '') delete settings.account;
+  else settings.account = choice.account;
+  return settings;
+}
+
 async function review(
   params: unknown,
   id: number,
@@ -178,13 +238,24 @@ async function review(
     );
     return;
   }
-  const { url, token } = (params ?? {}) as Partial<ReviewParams>;
+  const { url, token, agent: choice } = (params ?? {}) as Partial<ReviewParams>;
   if (typeof url !== 'string' || url.length === 0 || typeof token !== 'string' || token.length === 0) {
     respond(
       sink,
-      failure(id, JSON_RPC_INVALID_PARAMS, `${REVIEW_METHOD} needs params: { "url": string, "token": string }`),
+      failure(
+        id,
+        JSON_RPC_INVALID_PARAMS,
+        `${REVIEW_METHOD} needs params: { "url": string, "token": string, "agent"?: { "agent": "${AGENT_NAMES.join('" | "')}", "model"?: string, "account"?: string } }`,
+      ),
     );
     return;
+  }
+  if (choice !== undefined) {
+    const problem = agentChoiceProblem(choice);
+    if (problem !== undefined) {
+      respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${REVIEW_METHOD}: ${problem}`));
+      return;
+    }
   }
   try {
     const result = await reviewPullRequest(url, {
@@ -194,7 +265,9 @@ async function review(
       ...(deps.agent
         ? {
             agentStage: {
-              ...deps.agent,
+              adapter: deps.agent.adapterFor(choice?.agent ?? deps.agent.defaultAgent),
+              settings: agentRunSettings(deps.agent, choice),
+              ...(deps.agent.testedRankings ? { testedRankings: deps.agent.testedRankings } : {}),
               onStage: (stage) => notify(sink, REVIEW_STAGE_METHOD, { id, ...stage }),
             },
           }

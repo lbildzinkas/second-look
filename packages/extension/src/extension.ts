@@ -30,7 +30,7 @@ import {
 import { ReviewComments } from './comments.js';
 import { isSubmitKind, SendReviewPage } from './send-page.js';
 import { AgentStatusBar } from './agent-status.js';
-import { readAgentSettings, type AgentSettings } from './agent-settings.js';
+import { readAgentSettings, reviewAgentChoice } from './agent-settings.js';
 import type { Part, PendingReview, ReviewResult } from '@second-look/engine';
 
 export {
@@ -155,9 +155,10 @@ class ReviewTreeProvider implements vscode.TreeDataProvider<TreeNode> {
  * Runs the review: asks for the pull request URL unless the command
  * already carries one as its argument, signs in with VS Code's built-in
  * GitHub login, and hands the request to the engine with the token from
- * that sign-in — the token travels with the request and is never stored.
- * Progress shows while the engine works, and an engine failure reads as
- * its plain message.
+ * that sign-in and the agent choice the settings carry — both travel with
+ * the request, the token is never stored, and the engine runs every agent
+ * pass on the chosen agent, model and account. Progress shows while the
+ * engine works, and an engine failure reads as its plain message.
  *
  * A review arrives in stages: the tree shows the plain parts first, with
  * a status line naming the stage still running, then updates in place
@@ -177,8 +178,6 @@ class ReviewSession {
   private readonly comments: ReviewComments;
   private readonly spawnEngine: ExtensionDeps['spawnEngine'];
   private engine: EngineClient | undefined;
-  /** The agent and model the running engine was started with. */
-  private engineAgent: Pick<AgentSettings, 'agent' | 'model'> | undefined;
   private result: ReviewResult | undefined;
   /** Counts the reviews started, so a replaced review's late answers are dropped. */
   private reviews = 0;
@@ -497,26 +496,17 @@ class ReviewSession {
     onStage: (stage: ReviewStageUpdate) => void,
   ): Promise<ReviewResult> {
     const engine = await this.readyEngine();
-    return engine.review(url, token, onStage);
+    return engine.review(url, token, reviewAgentChoice(readAgentSettings()), onStage);
   }
 
   /**
-   * The engine, started with the agent and model the settings choose and
-   * past its handshake. A settings change since the running engine was
-   * started stops it, so the next request runs on the chosen agent.
+   * The engine, started and past its handshake. The agent, model and
+   * account the settings choose travel with each review request, so a
+   * settings change needs no engine restart: the next review simply runs
+   * on the chosen agent, and its result is stamped accordingly.
    */
   private async readyEngine(): Promise<EngineClient> {
-    const chosen: Pick<AgentSettings, 'agent' | 'model'> = readAgentSettings();
-    if (
-      this.engine === undefined ||
-      this.engineAgent?.agent !== chosen.agent ||
-      this.engineAgent?.model !== chosen.model
-    ) {
-      this.engine?.dispose();
-      this.engineAgent = chosen;
-      this.engine = new EngineClient(this.spawnEngine ?? (() => spawnEngineProcess(chosen)));
-    }
-    const engine = this.engine;
+    const engine = this.engine ?? (this.engine = new EngineClient(this.spawnEngine ?? spawnEngineProcess));
     if (!engine.initialized) {
       await engine.initialize();
     }

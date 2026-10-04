@@ -270,7 +270,9 @@ function isAgentStamp(value: unknown): boolean {
     isString(value['agentVersion']) &&
     (value['model'] === null || isString(value['model'])) &&
     (value['effort'] === null || isString(value['effort'])) &&
-    isString(value['runAt'])
+    isString(value['runAt']) &&
+    // The reviewer's own account label, when the settings gave one.
+    (value['account'] === undefined || isString(value['account']))
   );
 }
 

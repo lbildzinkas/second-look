@@ -1,12 +1,18 @@
 import * as vscode from 'vscode';
-import { API_KEY_VARIABLE, isAgentName, type AgentName } from '@second-look/engine';
+import {
+  API_KEY_VARIABLE,
+  isAgentName,
+  type AgentName,
+  type ReviewAgentChoice,
+} from '@second-look/engine';
 
 /**
  * The agent settings (issue 27): which installed coding agent the companion
  * drives, the model it runs and the reviewer's label for the account or
  * subscription it bills. They are documented in their descriptions in the
- * extension's manifest, and the status bar shows what they choose, so the
- * reviewer can tell at a glance which agent would answer.
+ * extension's manifest, the status bar shows what they choose, and every
+ * review request carries them so the engine runs its agent passes with
+ * them and stamps the account label on their results.
  */
 
 /** The agent settings, read from the `second-look` section. */
@@ -31,6 +37,16 @@ export function readAgentSettings(): AgentSettings {
     model: configuration.get<string>('agentModel', '').trim(),
     account: configuration.get<string>('agentAccount', '').trim(),
   };
+}
+
+/**
+ * The agent choice a review request carries (issue 65): the agent, model
+ * and account the settings chose, so the engine runs every agent pass
+ * with them. Switching the settings and re-running a review changes the
+ * stamp on every agent-produced result.
+ */
+export function reviewAgentChoice(settings: AgentSettings): ReviewAgentChoice {
+  return { agent: settings.agent, model: settings.model, account: settings.account };
 }
 
 /**

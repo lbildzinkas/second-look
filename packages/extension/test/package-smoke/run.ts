@@ -193,11 +193,25 @@ export async function run(): Promise<void> {
     const requests = readFileSync(join(workDir, 'engine.log'), 'utf8')
       .split('\n')
       .filter((line) => line !== '')
-      .map((line) => JSON.parse(line) as { method: string; params?: { url?: string; token?: string } });
+      .map((line) => JSON.parse(line) as {
+        method: string;
+        params?: {
+          url?: string;
+          token?: string;
+          agent?: { agent?: string; model?: string; account?: string };
+        };
+      });
     deepStrictEqual(requests.length, 2);
     ok(requests[0] && requests[0].method === 'initialize');
     ok(requests[1] && requests[1].method === 'review');
-    deepStrictEqual(requests[1]?.params, { url: PR_URL, token: TOKEN });
+    // The request carries the agent choice the settings read — their
+    // defaults in this clean editor — beside the URL and the token, so
+    // the engine runs every agent pass with it.
+    deepStrictEqual(requests[1]?.params, {
+      url: PR_URL,
+      token: TOKEN,
+      agent: { agent: 'pi', model: '', account: '' },
+    });
   } finally {
     delete process.env['SECOND_LOOK_ENGINE_ENTRY'];
     delete process.env['FAKE_ENGINE_RESULT'];

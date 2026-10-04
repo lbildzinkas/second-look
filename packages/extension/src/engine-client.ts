@@ -10,11 +10,11 @@ import {
   SEND_REVIEW_METHOD,
   type InitializeResult,
   type PendingReview,
+  type ReviewAgentChoice,
   type ReviewResult,
   type SentReview,
 } from '@second-look/engine';
 import { ProtocolError, SendProtocolError, isReviewResult, isSentReview } from './protocol.js';
-import type { AgentSettings } from './agent-settings.js';
 
 /**
  * Creates the engine process this client talks to. Tests inject their own
@@ -43,28 +43,19 @@ export function engineEntryPath(): string {
   return join(dirname(manifest), 'dist', 'main.js');
 }
 
-/** The agent the engine runs: the one the settings chose, with its model. */
-export type EngineAgent = Pick<AgentSettings, 'agent' | 'model'>;
-
 /**
- * The serve command line for the chosen agent: `--agent` by name and, when
- * the settings name a model, `--model` too. Nothing else is passed — no
- * token ever travels on the command line.
- */
-function serveArguments(agent: EngineAgent): string[] {
-  return ['serve', '--agent', agent.agent, ...(agent.model === '' ? [] : ['--model', agent.model])];
-}
-
-/**
- * Starts the engine as a separate local process speaking JSON-RPC on stdio,
- * serving with the agent and model the settings chose.
+ * Starts the engine as a separate local process speaking JSON-RPC on stdio.
+ *
+ * The agent, model and account the settings choose travel with each
+ * review request over the protocol, never on the command line, so a
+ * settings change reaches the next review without restarting the engine.
  *
  * `ELECTRON_RUN_AS_NODE` matters inside the editor: there `process.execPath`
  * is the editor's own binary, which only runs plain Node code when it is
  * told to act as Node. Outside the editor the flag is simply ignored.
  */
-export function spawnEngineProcess(agent: EngineAgent): ChildProcessWithoutNullStreams {
-  return spawn(process.execPath, [engineEntryPath(), ...serveArguments(agent)], {
+export function spawnEngineProcess(): ChildProcessWithoutNullStreams {
+  return spawn(process.execPath, [engineEntryPath(), 'serve'], {
     env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
@@ -192,8 +183,10 @@ export class EngineClient {
 
   /**
    * Sends one review request with the token VS Code's GitHub sign-in gave
-   * for it. The token travels with this request only; the client keeps no
-   * copy. Rejects with the engine's plain message when the engine fails.
+   * for it and the agent choice the settings picked: the agent, model and
+   * account that run the review's agent passes. Both travel with this
+   * request only; the client keeps no copy of the token. Rejects with the
+   * engine's plain message when the engine fails.
    *
    * A review can arrive in stages: each stage notification hands its
    * result so far to `onStage` and gives the request the stage's own
@@ -202,12 +195,18 @@ export class EngineClient {
   async review(
     url: string,
     token: string,
+    agent?: ReviewAgentChoice,
     onStage?: (stage: ReviewStageUpdate) => void,
   ): Promise<ReviewResult> {
     if (!this.handshaken) {
       throw new Error('the engine has not completed its handshake yet');
     }
-    const result = await this.request(REVIEW_METHOD, { url, token }, REVIEW_TIMEOUT_MS, onStage);
+    const result = await this.request(
+      REVIEW_METHOD,
+      { url, token, ...(agent !== undefined ? { agent } : {}) },
+      REVIEW_TIMEOUT_MS,
+      onStage,
+    );
     if (!isReviewResult(result)) {
       throw new ProtocolError();
     }

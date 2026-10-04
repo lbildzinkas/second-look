@@ -105,6 +105,12 @@ export interface AgentStamp {
   effort: string | null;
   /** Which login the run used, when the adapter can tell; the companion never reads the login itself. */
   login?: AgentLogin;
+  /**
+   * The reviewer's label for the account or subscription this run bills,
+   * when the settings gave one; the companion never reads the login
+   * itself, so the label is only what the reviewer told it.
+   */
+  account?: string;
   /** When the run started, as an ISO 8601 time. */
   runAt: string;
   /** Tokens used, when the agent reports them. */
@@ -144,7 +150,10 @@ export const GITHUB_TOKEN_VARIABLES = [
   'GITHUB_ENTERPRISE_TOKEN',
 ] as const;
 
-/** How agent runs are paced: settings, with {@link DEFAULT_AGENT_SETTINGS}. */
+/**
+ * What the companion asks each agent run for, and how its runs are paced:
+ * settings, with {@link DEFAULT_AGENT_SETTINGS}.
+ */
 export interface AgentSettings {
   /** Each run is stopped after this many milliseconds. */
   timeoutMs: number;
@@ -152,6 +161,11 @@ export interface AgentSettings {
   concurrency: number;
   model?: string;
   effort?: string;
+  /**
+   * The reviewer's label for the account or subscription each run bills,
+   * stamped on every result; empty or absent stamps nothing.
+   */
+  account?: string;
 }
 
 export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
@@ -239,6 +253,11 @@ function combineStamps(earlier: AgentStamp, later: AgentStamp): AgentStamp {
 const RETRY_NOTE =
   'Your previous answer was rejected because it did not meet the schema and rules:';
 
+/** Stamps the reviewer's account label, when the settings gave one, on a run's stamp. */
+function withAccount(stamp: AgentStamp, account: string | undefined): AgentStamp {
+  return account ? { ...stamp, account } : stamp;
+}
+
 async function runTask(
   adapter: AgentAdapter,
   task: AgentTask,
@@ -260,7 +279,9 @@ async function runTask(
       ...(settings.model ? { model: settings.model } : {}),
       ...(settings.effort ? { effort: settings.effort } : {}),
     });
-    const current = stamp ? combineStamps(stamp, outcome.stamp) : outcome.stamp;
+    const current = stamp
+      ? combineStamps(stamp, withAccount(outcome.stamp, settings.account))
+      : withAccount(outcome.stamp, settings.account);
     stamp = current;
     if (outcome.status !== 'completed') {
       return {
@@ -306,13 +327,16 @@ export async function runAgentTasks(
   const probe = await adapter.probe();
   if (!probe.usable) {
     const message = probe.reason ?? `${probe.agent} cannot run with the companion's lockdown`;
-    const stamp: AgentStamp = {
-      agent: probe.agent,
-      agentVersion: probe.version,
-      model: null,
-      effort: null,
-      runAt: new Date().toISOString(),
-    };
+    const stamp: AgentStamp = withAccount(
+      {
+        agent: probe.agent,
+        agentVersion: probe.version,
+        model: null,
+        effort: null,
+        runAt: new Date().toISOString(),
+      },
+      settings.account,
+    );
     return {
       probe,
       results: tasks.map(() => ({ ok: false, reason: 'unusable', message, attempts: 0, stamp })),
