@@ -6,12 +6,13 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { AgentRunRequest } from '../src/agent.js';
 import { CLAIMS_INSTRUCTIONS } from '../src/claims.js';
-import type { Claim, ClaimVerdict, Claims, NoiseAssessment, Part } from '../src/protocol.js';
+import type { CiResults, Claim, ClaimVerdict, Claims, NoiseAssessment, Part } from '../src/protocol.js';
 import { reviewChange, type ReviewInput, type ReviewStage } from '../src/review.js';
 import { STORY_INSTRUCTIONS } from '../src/story.js';
 import {
   VERDICTS_INSTRUCTIONS,
   VERDICTS_PROMPT_VERSION,
+  VERDICTS_SCHEMA,
   copyReader,
   findingAnchor,
   findingCounts,
@@ -22,9 +23,12 @@ import {
   settleVerdict,
   verdictItems,
   verdictProblems,
+  verdictsInstructions,
   verdictsPrompt,
+  verdictsSchema,
   type AnsweredVerdict,
 } from '../src/verdicts.js';
+import { ciLogItems } from '../src/ci.js';
 import { answeringAgent, changedPart } from './helpers.js';
 
 const RETRY = [
@@ -66,6 +70,30 @@ function claims(): Claim[] {
 
 function answered(overrides: Partial<AnsweredVerdict>): AnsweredVerdict {
   return { id: 'c1', verdict: 'refuted', source: 'the change itself', reason: 'It tries five times.', evidence: [], library: null, ...overrides };
+}
+
+/** The CI a review read: one failed job, its log trimmed to the failing step, and one that passed. */
+function failedCi(): CiResults {
+  return {
+    outcome: 'read',
+    detail: '2 check runs at the head commit, 1 failed; logs are read only for failed jobs',
+    headSha: '7878787878787878787878787878787878787878',
+    checks: [
+      {
+        name: 'check / test',
+        status: 'completed',
+        conclusion: 'failure',
+        url: 'https://github.com/example-org/example-repo/actions/runs/700/job/9001',
+        annotations: [],
+        log: {
+          step: 'pytest',
+          lines: ['##[group]Run pytest', 'FAILED tests/test_misc.py::test_fraction - assert 5 == 500000', '##[error]Process completed with exit code 1.'],
+          detail: 'trimmed to the failing step "pytest", ending at its last error',
+        },
+      },
+      { name: 'check / lint', status: 'completed', conclusion: 'success', url: 'https://github.com/x', annotations: [] },
+    ],
+  };
 }
 
 const LOOP = { file: 'app/retry.py', line: 3, quote: 'for attempt in range(5):' };
@@ -235,6 +263,50 @@ describe('settleVerdict', () => {
   });
 });
 
+describe('the verdicts prompt with CI logs', () => {
+  it("shows each failed check's trimmed log as untrusted, its lines numbered, only when there is one", () => {
+    const logs = ciLogItems(failedCi());
+    const prompt = verdictsPrompt(verdictItems(claims()), [retryPart()], 'B', logs);
+    expect(prompt).toContain('[log1] check "check / test", failing step "pytest"');
+    expect(prompt).toContain('<untrusted-input id="B" source="log log1">\n1: ##[group]Run pytest\n2: FAILED tests/test_misc.py::test_fraction - assert 5 == 500000\n');
+    expect(prompt).not.toContain('check / lint');
+    expect(verdictsPrompt(verdictItems(claims()), [retryPart()], 'B')).toBe(verdictsPrompt(verdictItems(claims()), [retryPart()], 'B', []));
+    expect(verdictsPrompt(verdictItems(claims()), [retryPart()], 'B')).not.toContain('logs of the checks');
+  });
+
+  it('offers a CI log as an evidence source only when the prompt shows one', () => {
+    expect(verdictsInstructions(false)).toBe(VERDICTS_INSTRUCTIONS);
+    expect(verdictsSchema(false)).toEqual(VERDICTS_SCHEMA);
+    expect(VERDICTS_INSTRUCTIONS).not.toContain('a CI log');
+    expect(verdictsInstructions(true)).toContain('Set source to "a CI log" when the evidence is lines of a failed check\'s CI log');
+    expect(verdictsInstructions(true)).toContain('"enum":["the change itself","a CI log","the model\'s memory"]');
+  });
+
+  it('re-checks a CI log citation in the log it names, and labels it with its check run', async () => {
+    const logs = ciLogItems(failedCi());
+    const read = copyReader(headCopy());
+    const cited = { file: 'log1', line: 2, quote: 'FAILED tests/test_misc.py::test_fraction - assert 5 == 500000' };
+    const verdict = await judgeVerdict(read, answered({ source: 'a CI log', evidence: [cited] }), logs);
+    expect(verdict).toEqual({
+      kind: 'refuted',
+      source: 'a CI log',
+      reason: 'It tries five times.',
+      evidence: [{ path: 'check / test', line: 2, quote: 'FAILED tests/test_misc.py::test_fraction - assert 5 == 500000', ciLog: true }],
+    });
+    // A CI log's finding has no line on the diff: its thread sits on its part.
+    expect(findingAnchor({ ...claims()[1]!, verdict })).toBeUndefined();
+    expect(await judgeVerdict(read, answered({ source: 'a CI log', evidence: [{ ...cited, quote: 'assert 500000 == 500000' }] }), logs)).toMatchObject({
+      kind: 'unverifiable',
+      recheck: 'the quote of the citation log1:2 is not on that line',
+    });
+    // A head copy file is no CI log.
+    expect(await judgeVerdict(read, answered({ source: 'a CI log', evidence: [LOOP] }), logs)).toMatchObject({
+      kind: 'unverifiable',
+      recheck: 'the citation app/retry.py:3 names a file the CI logs does not have',
+    });
+  });
+});
+
 describe('judgeVerdict', () => {
   it('re-reads each citation in the head copy before settling the verdict', async () => {
     const read = copyReader(headCopy());
@@ -381,6 +453,64 @@ describe('reviewChange with the verdicts stage', () => {
       evidence: [],
       recheck: 'the quote of the citation src/tomli/_re.py:83 is not on that line',
     });
+  });
+
+  it("lists a fresh pipeline report's findings first and judges them with the failed check's CI log", async () => {
+    const recorded = await recordedCase('misstated-python');
+    const steps = [{ step: 'review', status: 'completed' }];
+    const report = [
+      `<!-- no-mistakes-pipeline-attestation:v1 ${JSON.stringify({ head_sha: recorded.pullRequest.headSha, steps })} -->`,
+      '<details>',
+      '<summary>⚠️ **Review** - 1 warning</summary>',
+      '',
+      '- ⚠️ `src/tomli/_re.py:83` - The fraction is padded on the left, so `.5` parses as 5 microseconds.',
+      '</details>',
+    ].join('\n');
+    const input: ReviewInput = { ...recorded, pullRequest: { ...recorded.pullRequest, description: `${MISSTATED}\n\n${report}` }, ci: failedCi() };
+    const agent = answeringAgent((request: AgentRunRequest) => {
+      if (request.instructions === STORY_INSTRUCTIONS) return 'no story';
+      if (request.instructions === CLAIMS_INSTRUCTIONS) return { claims: [{ source: 'description', quote: MISSTATED, file: null, line: null, part: 'p1' }] };
+      return {
+        verdicts: [
+          answered({
+            id: 'c1',
+            verdict: 'verified',
+            source: 'a CI log',
+            reason: 'The failed test shows .5 parsed as 5 microseconds.',
+            evidence: [{ file: 'log1', line: 2, quote: 'FAILED tests/test_misc.py::test_fraction - assert 5 == 500000' }],
+          }),
+          answered({ id: 'c2', reason: 'rjust pads on the left.', evidence: [{ file: 'src/tomli/_re.py', line: 83, quote: 'micros = int(micros_str.rjust(6, "0")) if micros_str else 0' }] }),
+        ],
+      };
+    });
+
+    const result = await reviewChange(input, { adapter: agent });
+
+    expect(result.pipeline.attestation).toBe('fresh');
+    expect(agent.requests.at(-1)!.instructions).toBe(verdictsInstructions(true));
+    expect(agent.requests.at(-1)!.prompt).toContain('[log1] check "check / test"');
+    expect(result.claims!.claims.map((claim) => [claim.source, claim.verdict.kind])).toEqual([
+      ['pipeline', 'verified'],
+      ['description', 'refuted'],
+    ]);
+    expect(result.claims!.claims[0]).toMatchObject({
+      quote: 'The fraction is padded on the left, so `.5` parses as 5 microseconds.',
+      location: { kind: 'pipeline', finding: 0, step: 'Review', path: 'src/tomli/_re.py', line: 83 },
+      part: 0,
+      verdict: { source: 'a CI log', evidence: [{ path: 'check / test', line: 2, ciLog: true }] },
+    });
+    expect(result.claims!.judging!.detail).toBe(
+      "every citation was re-read in the head copy or the CI log it names; one that did not match, or the model's memory alone, kept a claim from verified",
+    );
+  });
+
+  it('lists no pipeline claim from a stale report', async () => {
+    const recorded = await recordedCase('misstated-python');
+    const stale = `<!-- no-mistakes-pipeline-attestation:v1 ${JSON.stringify({ head_sha: 'e804c2eea15efa7a734a2247c8205d8229299252', steps: [] })} -->\n<details>\n<summary>**Review**</summary>\n\n- ⚠️ Something.\n</details>`;
+    const input: ReviewInput = { ...recorded, pullRequest: { ...recorded.pullRequest, description: `${MISSTATED}\n\n${stale}` } };
+    const result = await reviewChange(input, { adapter: misstatedAgent() });
+    expect(result.pipeline).toMatchObject({ attestation: 'stale', findings: [{ step: 'Review', text: 'Something.' }] });
+    expect(result.claims!.claims.map((claim) => claim.source)).toEqual(['description']);
   });
 
   it('judges no claim when the review asks for none', async () => {

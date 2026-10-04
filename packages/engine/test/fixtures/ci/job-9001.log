@@ -1,0 +1,25 @@
+2026-09-29T08:31:02.1000000Z Current runner version: '2.320.0'
+2026-09-29T08:31:02.2000000Z ##[group]Operating System
+2026-09-29T08:31:02.2000000Z Ubuntu
+2026-09-29T08:31:02.2000000Z ##[endgroup]
+2026-09-29T08:31:03.0000000Z ##[group]Run actions/checkout@v4
+2026-09-29T08:31:03.0000000Z with:
+2026-09-29T08:31:03.0000000Z   repository: example-org/example-repo
+2026-09-29T08:31:03.0000000Z ##[endgroup]
+2026-09-29T08:31:04.0000000Z HEAD is now at 9f3c2e1 Merge f00dcaf into 0123456
+2026-09-29T08:31:05.0000000Z ##[group]Run npm ci
+2026-09-29T08:31:05.0000000Z npm ci
+2026-09-29T08:31:05.0000000Z ##[endgroup]
+2026-09-29T08:31:40.0000000Z added 412 packages in 35s
+2026-09-29T08:31:41.0000000Z ##[group]Run npm test
+2026-09-29T08:31:41.0000000Z npm test
+2026-09-29T08:31:41.0000000Z ##[endgroup]
+2026-09-29T08:34:10.0000000Z  FAIL  test/settings.test.ts > settings > loads the defaults
+2026-09-29T08:34:10.0000000Z AssertionError: expected 3000 to be 30
+2026-09-29T08:34:10.0000000Z  Tests  1 failed | 41 passed (42)
+2026-09-29T08:34:11.0000000Z ##[error]Process completed with exit code 1.
+2026-09-29T08:34:12.0000000Z ##[group]Run actions/upload-artifact@v4
+2026-09-29T08:34:12.0000000Z Skipped
+2026-09-29T08:34:12.0000000Z ##[endgroup]
+2026-09-29T08:34:12.5000000Z Post job cleanup.
+2026-09-29T08:34:12.6000000Z Cleaning up orphan processes

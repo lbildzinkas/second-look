@@ -3,6 +3,7 @@
   "id": 123456789,
   "html_url": "https://github.com/example-org/example-repo/pull/42",
   "number": 42,
+  "merge_commit_sha": "9f3c2e1a0b4d5c6e7f8091a2b3c4d5e6f7a8b9c0",
   "state": "open",
   "locked": false,
   "title": "Update dependencies and rename the config module",

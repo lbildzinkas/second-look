@@ -48,6 +48,9 @@ const MAX_QUOTE_LENGTH = 500;
 /** How many added lines of a part the prompt shows; the agent can read the rest. */
 const SHOWN_LINES = 80;
 
+/** The sources the agent lists claims from; the pipeline's claims are the engine's own. */
+const ANSWER_SOURCES: readonly ClaimSource[] = ['description', 'docstring', 'comment', 'agent'];
+
 /** The answer the claims prompt asks for. */
 export const CLAIMS_SCHEMA: JsonSchema = {
   type: 'object',
@@ -61,7 +64,7 @@ export const CLAIMS_SCHEMA: JsonSchema = {
         additionalProperties: false,
         required: ['source', 'quote', 'file', 'line', 'part'],
         properties: {
-          source: { type: 'string', enum: CLAIM_SOURCE_ORDER },
+          source: { type: 'string', enum: ANSWER_SOURCES },
           quote: { type: 'string' },
           file: { type: ['string', 'null'] },
           line: { type: ['integer', 'null'] },
@@ -424,6 +427,7 @@ export function locateClaims(context: ClaimContext, answer: ClaimsAnswer): { cla
 
 /** A location's line or sentence, for ordering claims within one part. */
 function positionOf(location: ClaimLocation): number {
+  if (location.kind === 'pipeline') return location.finding;
   return location.kind === 'story' ? location.sentence : location.line;
 }
 

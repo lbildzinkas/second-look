@@ -86,6 +86,7 @@ export function result(parts: Part[], copies?: CopyPaths): ReviewResult {
     parts,
     grouping: { by: 'plain' },
     ranking: { by: 'plain' },
+    pipeline: { attestation: 'missing', detail: 'the description carries no no-mistakes attestation', steps: [], findings: [] },
   };
 }
 
@@ -295,6 +296,68 @@ export function judgedResult(copies?: CopyPaths): ReviewResult {
             recheck: "the model's memory never yields verified",
           },
         },
+      ],
+    },
+  };
+}
+
+/**
+ * The judged result with a fresh pipeline report whose open finding is the
+ * first claim, verified by a failed check's CI log, and the CI it read:
+ * a failed job with an annotation and its trimmed log, and a passing one.
+ */
+export function pipelineResult(copies?: CopyPaths): ReviewResult {
+  const shown = judgedResult(copies);
+  const claims = shown.claims!;
+  return {
+    ...shown,
+    pipeline: {
+      attestation: 'fresh',
+      detail: "the report was made at the pull request's head f00dcaf, so its open findings are listed first among the claims",
+      headSha: shown.pullRequest.headSha,
+      steps: [
+        { step: 'review', status: 'completed' },
+        { step: 'ci', status: 'pending' },
+      ],
+      findings: [{ step: 'Review', severity: 'warning', text: 'send gives up after <b>five</b> attempts.', path: 'src/retry.py', line: 6 }],
+    },
+    ci: {
+      outcome: 'read',
+      detail: '2 check runs at the head commit, 1 failed; logs are read only for failed jobs',
+      headSha: shown.pullRequest.headSha,
+      mergeCommit: '9f3c2e1a0b4d5c6e7f8091a2b3c4d5e6f7a8b9c0',
+      checks: [
+        {
+          name: 'check / test',
+          status: 'completed',
+          conclusion: 'failure',
+          url: 'https://github.com/example-org/example-repo/actions/runs/700/job/9001',
+          annotations: [{ path: 'src/retry.py', startLine: 6, endLine: 6, level: 'failure', message: 'expected 3 attempts, got 5', title: 'retry' }],
+          log: {
+            step: 'pytest',
+            lines: ['##[group]Run pytest', 'FAILED test_retry.py::test_gives_up - assert 5 == 3 <img src=x>', '##[error]Process completed with exit code 1.'],
+            detail: 'trimmed to the failing step "pytest", ending at its last error',
+          },
+        },
+        { name: 'check / lint', status: 'completed', conclusion: 'success', url: 'https://github.com/example-org/example-repo/actions/runs/700/job/9002', annotations: [] },
+      ],
+    },
+    claims: {
+      ...claims,
+      claims: [
+        {
+          quote: 'send gives up after <b>five</b> attempts.',
+          source: 'pipeline',
+          location: { kind: 'pipeline', finding: 0, step: 'Review', path: 'src/retry.py', line: 6 },
+          part: 0,
+          verdict: {
+            kind: 'verified',
+            source: 'a CI log',
+            reason: 'The failed test shows five attempts.',
+            evidence: [{ path: 'check / test', line: 2, quote: 'FAILED test_retry.py::test_gives_up - assert 5 == 3', ciLog: true }],
+          },
+        },
+        ...claims.claims,
       ],
     },
   };

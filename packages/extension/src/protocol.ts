@@ -347,7 +347,7 @@ function isLine(value: unknown): value is number {
   return isNumber(value) && value >= 1;
 }
 
-/** Where a claim's quote sits: a description line, added file lines, or a story sentence the result has. */
+/** Where a claim's quote sits: a description line, added file lines, a story sentence the result has, or a pipeline finding. */
 function isClaimLocation(value: unknown, sentenceCount: number): boolean {
   if (!isRecord(value)) return false;
   switch (value['kind']) {
@@ -357,14 +357,22 @@ function isClaimLocation(value: unknown, sentenceCount: number): boolean {
       return isNonEmptyString(value['path']) && isLine(value['line']) && isLine(value['endLine']) && value['endLine'] >= value['line'];
     case 'story':
       return isNumber(value['sentence']) && value['sentence'] < sentenceCount;
+    case 'pipeline':
+      return isNumber(value['finding']) && isNonEmptyString(value['step']) && isOptionalString(value['path']) && (value['line'] === undefined || isLine(value['line']));
     default:
       return false;
   }
 }
 
-/** One line of the head copy a verdict cites: its file, line and quote. */
+/** One line a verdict cites: its file, or the check run whose CI log holds it, its line and quote. */
 function isCitation(value: unknown): boolean {
-  return isRecord(value) && isNonEmptyString(value['path']) && isLine(value['line']) && isNonEmptyString(value['quote']);
+  return (
+    isRecord(value) &&
+    isNonEmptyString(value['path']) &&
+    isLine(value['line']) &&
+    isNonEmptyString(value['quote']) &&
+    (value['ciLog'] === undefined || value['ciLog'] === true)
+  );
 }
 
 /** A library fetch a verdict offers: the library, its pinned version, the lock file and why. */
@@ -418,6 +426,9 @@ function isClaimVerdict(value: unknown): boolean {
   ) {
     return false;
   }
+  // A verdict from a CI log cites only its lines, and every other cites none.
+  const fromLog = value['source'] === 'a CI log';
+  if (!evidence.every((cited) => ((cited as { ciLog?: true }).ciLog === true) === fromLog)) return false;
   return value['source'] !== "the model's memory" || (value['kind'] !== 'verified' && evidence.length === 0);
 }
 
@@ -438,8 +449,9 @@ function isClaim(value: unknown, partCount: number, sentenceCount: number): bool
   return (
     isNonEmptyString(value['quote']) &&
     isOneOf(value['source'], CLAIM_SOURCE_ORDER) &&
-    // A claim from the story sits in a story sentence, and every other claim outside it.
+    // A claim from the story sits in a story sentence, and every other claim outside it; so with the pipeline's findings.
     (value['source'] === 'agent') === (isRecord(value['location']) && value['location']['kind'] === 'story') &&
+    (value['source'] === 'pipeline') === (isRecord(value['location']) && value['location']['kind'] === 'pipeline') &&
     isClaimLocation(value['location'], sentenceCount) &&
     isNumber(value['part']) &&
     value['part'] < partCount &&
@@ -448,9 +460,9 @@ function isClaim(value: unknown, partCount: number, sentenceCount: number): bool
 }
 
 /**
- * The claims of the result's parts: listed, or fallen back with none,
- * always stamped; a claim carries a checked verdict only once the claims
- * were judged.
+ * The claims of the result's parts: listed, or fallen back with only the
+ * pipeline's, always stamped; a claim carries a checked verdict only once
+ * the claims were judged.
  */
 function isClaims(value: unknown, partCount: number, sentenceCount: number): boolean {
   if (!isRecord(value)) return false;
@@ -467,9 +479,69 @@ function isClaims(value: unknown, partCount: number, sentenceCount: number): boo
   ) {
     return false;
   }
-  if (value['outcome'] === 'fell back') return claims.length === 0;
+  if (value['outcome'] === 'fell back' && !claims.every((claim) => isRecord(claim) && claim['source'] === 'pipeline')) return false;
   return claims.every(
     (claim) => isClaim(claim, partCount, sentenceCount) && (judged || (claim as { verdict: { kind: unknown } }).verdict.kind === 'not checked'),
+  );
+}
+
+/** The pipeline report the description carries: its attestation's state, its steps and its open findings. */
+function isPipelineReport(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const { steps, findings } = value;
+  return (
+    isOneOf(value['attestation'], ['fresh', 'stale', 'missing', 'malformed'] as const) &&
+    isString(value['detail']) &&
+    isOptionalString(value['headSha']) &&
+    Array.isArray(steps) &&
+    steps.every((step) => isRecord(step) && isString(step['step']) && isString(step['status'])) &&
+    Array.isArray(findings) &&
+    findings.every(
+      (finding) =>
+        isRecord(finding) &&
+        isString(finding['step']) &&
+        isOneOf(finding['severity'], ['error', 'warning', 'info'] as const) &&
+        isString(finding['text']) &&
+        isOptionalString(finding['path']) &&
+        (finding['line'] === undefined || isLine(finding['line'])),
+    )
+  );
+}
+
+/** One check run: its name, status and conclusion, its annotations, and a failed job's trimmed log. */
+function isCheckRun(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const { annotations, log } = value;
+  return (
+    isString(value['name']) &&
+    isString(value['status']) &&
+    (value['conclusion'] === null || isString(value['conclusion'])) &&
+    isString(value['url']) &&
+    Array.isArray(annotations) &&
+    annotations.every(
+      (annotation) =>
+        isRecord(annotation) &&
+        isString(annotation['path']) &&
+        isNumber(annotation['startLine']) &&
+        isNumber(annotation['endLine']) &&
+        isOneOf(annotation['level'], ['notice', 'warning', 'failure'] as const) &&
+        isString(annotation['message']) &&
+        isOptionalString(annotation['title']),
+    ) &&
+    (log === undefined || (isRecord(log) && isOptionalString(log['step']) && isStringList(log['lines']) && isString(log['detail'])))
+  );
+}
+
+/** The CI read at the head commit: read or unreadable, with the check runs. */
+function isCiResults(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isOneOf(value['outcome'], ['read', 'unreadable'] as const) &&
+    isString(value['detail']) &&
+    isString(value['headSha']) &&
+    isOptionalString(value['mergeCommit']) &&
+    Array.isArray(value['checks']) &&
+    value['checks'].every(isCheckRun)
   );
 }
 
@@ -516,6 +588,8 @@ export function isReviewResult(value: unknown): value is ReviewResult {
     return false;
   }
   if (!isGrouping(value['grouping']) || !isRanking(value['ranking'])) return false;
+  if (!isPipelineReport(value['pipeline'])) return false;
+  if (value['ci'] !== undefined && !isCiResults(value['ci'])) return false;
   const parts = value['parts'];
   if (!Array.isArray(parts) || !parts.every(isPart)) return false;
   const story = value['story'];

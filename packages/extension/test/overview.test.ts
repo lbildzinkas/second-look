@@ -9,7 +9,7 @@ import {
   sanitiseUntrusted,
   stampText,
 } from '../src/overview.js';
-import { claimsResult, judgedResult, mixedResult, storyResult } from './results.js';
+import { claimsResult, judgedResult, mixedResult, pipelineResult, storyResult } from './results.js';
 import { stub } from './vscode-stub.js';
 
 /** Text spelled in Unicode tag characters, which display as nothing. */
@@ -196,6 +196,54 @@ describe('overviewHtml', () => {
   });
 });
 
+describe('the pipeline and CI on the overview', () => {
+  it('shows a fresh report with its steps and open findings, and its finding first among the claims, labelled', () => {
+    const html = overviewHtml({ result: pipelineResult() }, 'N');
+    expect(html).toContain('<section id="pipeline"><h2>Pipeline and CI</h2><p><span class="att fresh">no-mistakes report: fresh</span>');
+    expect(html).toContain('<div class="note">steps: review completed · ci pending</div>');
+    expect(html).toContain('<p class="note">Open findings, each is a claim, listed first:</p>');
+    expect(html).toContain('<span class="sev warning">warning</span> send gives up after &lt;b&gt;five&lt;/b&gt; attempts.<div class="where">Review step · src/retry.py:6</div>');
+    expect(html).toContain('<div class="where">pipeline report, Review step · src/retry.py:6 · <button type="button" class="pt" data-part="0">');
+    expect(html).toContain('<div class="why">CI log of check / test, line 2 — FAILED test_retry.py::test_gives_up - assert 5 == 3</div>');
+    expect(html).not.toContain('<b>five</b>');
+  });
+
+  it("lists the checks as run on the merge commit, with annotations and a failed job's trimmed log as escaped text", () => {
+    const html = overviewHtml({ result: pipelineResult() }, 'N');
+    expect(html).toContain(
+      '<p class="note">Checks listed at head f00dcaf, ran on merge commit 9f3c2e1: 2 check runs at the head commit, 1 failed; logs are read only for failed jobs.</p>',
+    );
+    expect(html).toContain('<li><span class="check failed">failure</span> check / test<div class="why">failure · src/retry.py:6 — retry: expected 3 attempts, got 5</div>');
+    expect(html).toContain('<div class="why">CI log of the step &quot;pytest&quot;: trimmed to the failing step &quot;pytest&quot;, ending at its last error</div>');
+    expect(html).toContain('<pre class="log">1: ##[group]Run pytest\n2: FAILED test_retry.py::test_gives_up - assert 5 == 3 &lt;img src=x&gt;\n3: ##[error]Process completed with exit code 1.</pre>');
+    expect(html).toContain('<li><span class="check passed">success</span> check / lint</li>');
+    expect(html).not.toContain('<img src=x>');
+  });
+
+  it('shows a stale report as not trusted, and says when no report or CI was read', () => {
+    const shown = pipelineResult();
+    const stale: ReviewResult = {
+      ...shown,
+      pipeline: { ...shown.pipeline, attestation: 'stale', detail: "the report was made at e804c2e, but the pull request's head is now f00dcaf: it is shown, not trusted" },
+    };
+    const html = overviewHtml({ result: stale }, 'N');
+    expect(html).toContain('<span class="att stale">no-mistakes report: stale</span> <span class="note">the report was made at e804c2e, but the pull request&#39;s head is now f00dcaf: it is shown, not trusted.</span>');
+    expect(html).toContain('<p class="note">Open findings, not trusted, so none is a claim:</p>');
+
+    const plain = overviewHtml({ result: judgedResult() }, 'N');
+    expect(plain).toContain('<span class="att missing">no-mistakes report: none</span>');
+    expect(plain).toContain('<p class="note">No CI was read for this review.</p>');
+  });
+
+  it("lists only the pipeline's claims when the agent's listing fell back", () => {
+    const shown = pipelineResult();
+    const fellBack: ReviewResult = { ...shown, claims: { ...shown.claims!, outcome: 'fell back', detail: 'the agent gave no usable answer', claims: shown.claims!.claims.slice(0, 1) } };
+    const html = overviewHtml({ result: fellBack }, 'N');
+    expect(html).toContain("<p class=\"note\">Only the pipeline's claims are listed: the agent gave no usable answer.</p>");
+    expect(html).toContain('<q class="quote">send gives up after &lt;b&gt;five&lt;/b&gt; attempts.</q>');
+  });
+});
+
 describe('the verdicts on the overview', () => {
   it('gives each judged claim its verdict, evidence source, reason and citations, the findings marked', () => {
     const html = overviewHtml({ result: judgedResult() }, 'N');
@@ -205,7 +253,7 @@ describe('the verdicts on the overview', () => {
     expect(html).toContain('<span class="verdict finding">refuted</span>');
     expect(html).toContain('<div class="why">needs the source of requests, which the companion does not have</div>');
     expect(html).toContain('<div class="why">dropped to unverifiable: the model&#39;s memory never yields verified</div>');
-    expect(html).toContain('Each is judged against the change and its read-only copy by pi · zai/glm-4.6 · verdicts prompt v1;');
+    expect(html).toContain('Each is judged against the change, its read-only copy and any failed check&#39;s CI log by pi · zai/glm-4.6 · verdicts prompt v1;');
     expect(html).toContain('<span class="stg done">claims</span><span class="stg done">verdicts</span>');
     expect(html).toContain('<li><b>Verdicts</b> judged by pi · zai/glm-4.6 · verdicts prompt v1: every citation was re-read in the head copy</li>');
   });

@@ -22,7 +22,7 @@
     },
     {
       "id": "verdicts",
-      "version": "1",
+      "version": "2",
       "files": ["packages/engine/src/verdicts.ts"]
     },
     {

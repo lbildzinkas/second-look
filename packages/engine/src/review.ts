@@ -5,6 +5,7 @@ import {
   type AgentSettings,
 } from './agent.js';
 import { ensureCopy } from './cache.js';
+import { readCi } from './ci.js';
 import { findClaims } from './claims.js';
 import { validateCoverage } from './coverage.js';
 import { parseDiff, type ParsedDiff } from './diff.js';
@@ -14,8 +15,9 @@ import { offerLibraryFetches } from './library-fetch.js';
 import { confirmLockfileNoise } from './lockfile.js';
 import { applyNoiseRules } from './noise.js';
 import { groupParts } from './parts.js';
+import { pipelineClaims, readPipelineReport } from './pipeline.js';
 import { REVIEW_RESULT_VERSION } from './protocol.js';
-import type { ChangeCopies, Part, PullRequestSummary, ReviewResult } from './protocol.js';
+import type { ChangeCopies, CiResults, Part, PullRequestSummary, ReviewResult } from './protocol.js';
 import { rankParts } from './rank.js';
 import {
   RANKING_PROMPT_VERSION,
@@ -49,8 +51,9 @@ export interface ReviewOptions {
 /**
  * Everything a review reads about one pull request, fetched once: the
  * metadata, the full diff, the root `.gitattributes` at the head commit,
- * and the read-only copies of both versions. A review of it touches no
- * network, so an evaluation case can replay a recorded one offline.
+ * the read-only copies of both versions, and the CI at the head commit. A
+ * review of it touches no network, so an evaluation case can replay a
+ * recorded one offline.
  */
 export interface ReviewInput {
   pullRequest: PullRequestSummary;
@@ -59,6 +62,8 @@ export interface ReviewInput {
   /** The root `.gitattributes` as stored at the head commit, or null when there is none. */
   gitAttributes: string | null;
   copies: ChangeCopies;
+  /** The check runs, annotations and failed jobs' trimmed logs at the head commit; absent when none were read. */
+  ci?: CiResults;
 }
 
 /**
@@ -81,7 +86,8 @@ export async function reviewPullRequest(
 /**
  * Fetches what a review reads: the pull request's metadata and full diff,
  * the repository's linguist attributes at the head commit (with no
- * checkout), and read-only copies of the base and head versions.
+ * checkout), read-only copies of the base and head versions, and the CI
+ * at the head commit, each failed job's log trimmed to its failing step.
  */
 export async function fetchChange(url: string, options: ReviewOptions): Promise<ReviewInput> {
   const ref = parsePullRequestUrl(url);
@@ -93,8 +99,8 @@ export async function fetchChange(url: string, options: ReviewOptions): Promise<
   }
 
   const client = new GitHubClient({ token: options.token, fetch: options.fetch });
-  const [pullRequest, diff] = await Promise.all([
-    client.getPullRequestSummary(ref),
+  const [{ summary: pullRequest, mergeCommit }, diff] = await Promise.all([
+    client.getPullRequest(ref),
     client.getPullRequestDiff(ref),
   ]);
   const gitAttributes = await client.getGitAttributesAt(ref, pullRequest.headSha);
@@ -110,8 +116,12 @@ export async function fetchChange(url: string, options: ReviewOptions): Promise<
       commit,
       download: (wanted) => client.downloadTarball(ref, wanted),
     });
-  const [base, head] = await Promise.all([copy(mergeBase), copy(pullRequest.headSha)]);
-  return { pullRequest, diff, gitAttributes, copies: { base, head } };
+  const [base, head, ci] = await Promise.all([
+    copy(mergeBase),
+    copy(pullRequest.headSha),
+    readCi(client, ref, pullRequest.headSha, mergeCommit),
+  ]);
+  return { pullRequest, diff, gitAttributes, copies: { base, head }, ci };
 }
 
 /**
@@ -157,8 +167,9 @@ function coverageProblems(diff: ParsedDiff, parts: Part[]): string | undefined {
  * its state and blind spot, runs the parse-only lock file checks against
  * both versions' copies, groups the hunks into parts named after the
  * entities they touch, proves every changed line belongs to exactly one
- * part, sets each part's signals, ranks the parts with the noise last, and
- * returns the typed, versioned result.
+ * part, sets each part's signals, ranks the parts with the noise last,
+ * reads the pipeline report in the description, carries the CI it was
+ * given, and returns the typed, versioned result.
  *
  * With an agent stage, the plain result goes to `onStage` first, then the
  * agent groups related hunks across files and its checked parts are
@@ -194,6 +205,8 @@ export async function reviewChange(
     parts: rankParts(await signalParts(parts, head.path)),
     grouping: { by: 'plain' },
     ranking: { by: 'plain' },
+    pipeline: readPipelineReport(input.pullRequest.description, input.pullRequest.headSha),
+    ...(input.ci ? { ci: input.ci } : {}),
   };
   if (!agentStage) return plain;
   const ranked = await groupAndRank(plain, agentStage, input, parsed, files);
@@ -319,8 +332,9 @@ async function storyStage(
  * The claims stage: the agent lists the claims the change makes
  * about how code or a library behaves, from the description, the
  * docstrings and comments the change adds, and the story when one was
- * written, each attached to a part and not checked yet. A change with no
- * parts makes no claim.
+ * written, each attached to a part and not checked yet. A fresh pipeline
+ * report's open findings come first, whatever the agent answers. A change
+ * with no parts makes no claim.
  */
 async function claimsStage(
   shown: ReviewResult,
@@ -341,16 +355,17 @@ async function claimsStage(
     pullRequest: input.pullRequest,
     ...(shown.story ? { story: shown.story } : {}),
   });
-  return { ...shown, claims };
+  return { ...shown, claims: { ...claims, claims: [...pipelineClaims(shown.pipeline, shown.parts), ...claims.claims] } };
 }
 
 /**
- * The verdicts stage, last: the agent judges each claim it listed against
- * the change and the read-only head copy, and the engine re-checks every
- * citation it gives; a verdict that needs a library the head copy's lock
- * files pin with hashes then offers its library fetch, which downloads
- * nothing until the reviewer presses it. No claims, or claims that fell
- * back, need no judging.
+ * The verdicts stage, last: the agent judges each claim listed against
+ * the change, the read-only head copy and the failed checks' trimmed CI
+ * logs, and the engine re-checks every citation it gives; a verdict that
+ * needs a library the head copy's lock files pin with hashes then offers
+ * its library fetch, which downloads nothing until the reviewer presses
+ * it. No claims need no judging; when the agent's listing fell back, the
+ * pipeline's claims are still judged.
  */
 async function verdictsStage(
   shown: ReviewResult,
@@ -358,7 +373,7 @@ async function verdictsStage(
   input: ReviewInput,
 ): Promise<ReviewResult> {
   const claims = shown.claims;
-  if (claims === undefined || claims.outcome !== 'listed' || claims.claims.length === 0) return shown;
+  if (claims === undefined || claims.claims.length === 0) return shown;
   const settings = agentStage.settings ?? DEFAULT_AGENT_SETTINGS;
   agentStage.onStage?.({
     running: `checking the claims with ${agentStage.adapter.agent}`,
@@ -369,6 +384,7 @@ async function verdictsStage(
     adapter: agentStage.adapter,
     settings,
     root: input.copies.head.path,
+    ...(shown.ci ? { ci: shown.ci } : {}),
   });
   const offered = await offerLibraryFetches(judged.claims, input.copies.head.path);
   return { ...shown, claims: { ...claims, ...judged, claims: offered } };

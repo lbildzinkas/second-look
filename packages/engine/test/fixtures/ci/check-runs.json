@@ -1,0 +1,59 @@
+{
+  "total_count": 3,
+  "check_runs": [
+    {
+      "id": 9001,
+      "head_sha": "f00dcafe1234567890abcdef1234567890abcdef",
+      "node_id": "CR_9001",
+      "external_id": "",
+      "url": "https://api.github.com/repos/example-org/example-repo/check-runs/9001",
+      "html_url": "https://github.com/example-org/example-repo/actions/runs/700/job/9001",
+      "details_url": "https://github.com/example-org/example-repo/actions/runs/700/job/9001",
+      "status": "completed",
+      "conclusion": "failure",
+      "started_at": "2026-09-29T08:31:00Z",
+      "completed_at": "2026-09-29T08:34:12Z",
+      "output": { "title": null, "summary": null, "text": null, "annotations_count": 2, "annotations_url": "https://api.github.com/repos/example-org/example-repo/check-runs/9001/annotations" },
+      "name": "check / test",
+      "check_suite": { "id": 800 },
+      "app": { "id": 15368, "slug": "github-actions", "name": "GitHub Actions" },
+      "pull_requests": []
+    },
+    {
+      "id": 9002,
+      "head_sha": "f00dcafe1234567890abcdef1234567890abcdef",
+      "node_id": "CR_9002",
+      "external_id": "",
+      "url": "https://api.github.com/repos/example-org/example-repo/check-runs/9002",
+      "html_url": "https://github.com/example-org/example-repo/actions/runs/700/job/9002",
+      "details_url": "https://github.com/example-org/example-repo/actions/runs/700/job/9002",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-09-29T08:31:00Z",
+      "completed_at": "2026-09-29T08:32:40Z",
+      "output": { "title": null, "summary": null, "text": null, "annotations_count": 1, "annotations_url": "https://api.github.com/repos/example-org/example-repo/check-runs/9002/annotations" },
+      "name": "check / lint",
+      "check_suite": { "id": 800 },
+      "app": { "id": 15368, "slug": "github-actions", "name": "GitHub Actions" },
+      "pull_requests": []
+    },
+    {
+      "id": 9003,
+      "head_sha": "f00dcafe1234567890abcdef1234567890abcdef",
+      "node_id": "CR_9003",
+      "external_id": "ext-1",
+      "url": "https://api.github.com/repos/example-org/example-repo/check-runs/9003",
+      "html_url": "https://ci.example.com/builds/1",
+      "details_url": "https://ci.example.com/builds/1",
+      "status": "completed",
+      "conclusion": "failure",
+      "started_at": "2026-09-29T08:31:00Z",
+      "completed_at": "2026-09-29T08:40:00Z",
+      "output": { "title": "Coverage", "summary": "Coverage fell", "text": null, "annotations_count": 0, "annotations_url": "https://api.github.com/repos/example-org/example-repo/check-runs/9003/annotations" },
+      "name": "external coverage",
+      "check_suite": { "id": 801 },
+      "app": { "id": 999, "slug": "example-ci", "name": "Example CI" },
+      "pull_requests": []
+    }
+  ]
+}

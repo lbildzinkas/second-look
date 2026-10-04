@@ -44,6 +44,8 @@ export interface PullFixture {
   mergeBase: string;
   base: Record<string, string>;
   head: Record<string, string>;
+  /** Whether the recorded CI in `fixtures/ci` is served at the head commit; no check runs otherwise. */
+  ci?: boolean;
 }
 
 function fixtureText(name: string): string {
@@ -219,7 +221,9 @@ function recordedBody(init: RequestInit | undefined): unknown {
  * the JSON metadata for plain requests, the full diff for requests that ask
  * for the diff media type, the repository's root `.gitattributes` as
  * stored at the head commit, the merge base from the compare endpoint,
- * archives of both versions, and one submitted review for a send. Any
+ * archives of both versions, the check runs at the head commit with their
+ * annotations and the failed job's log when the fixture records CI, and
+ * one submitted review for a send. Any
  * other URL throws, so a test can never touch the live network by
  * accident.
  */
@@ -278,6 +282,19 @@ export function fixtureFetch(pull: PullFixture = pull42()): FixtureTransport {
             : 'application/json; charset=utf-8',
         },
       });
+    }
+    if (url === `${API}/commits/${pull.headSha}/check-runs?per_page=100`) {
+      if (!pull.ci) return Response.json({ total_count: 0, check_runs: [] });
+      return new Response(fixtureText('ci/check-runs.json'), { status: 200, headers: { 'content-type': 'application/json; charset=utf-8' } });
+    }
+    const annotations = /\/check-runs\/(\d+)\/annotations\?per_page=50$/.exec(url);
+    if (pull.ci && url.startsWith(`${API}/check-runs/`) && annotations) {
+      return new Response(fixtureText(`ci/annotations-${annotations[1]}.json`), { status: 200, headers: { 'content-type': 'application/json; charset=utf-8' } });
+    }
+    // GitHub answers the job's log with a redirect to its storage; fetch
+    // follows it, so the recorded answer is the log itself.
+    if (pull.ci && url === `${API}/actions/jobs/9001/logs`) {
+      return new Response(fixtureText('ci/job-9001.log'), { status: 200, headers: { 'content-type': 'text/plain' } });
     }
     if (url === `${API}/compare/${meta.base.sha}...${pull.headSha}?per_page=1`) {
       return Response.json({ merge_base_commit: { sha: pull.mergeBase } });

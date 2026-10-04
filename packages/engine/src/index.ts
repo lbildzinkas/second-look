@@ -36,4 +36,6 @@ export * from './claims.js';
 export * from './verdicts.js';
 export * from './library-fetch.js';
 export * from './library-verdicts.js';
+export * from './pipeline.js';
+export * from './ci.js';
 export { runCli } from './cli.js';
