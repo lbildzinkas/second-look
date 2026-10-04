@@ -68,6 +68,18 @@
         "command": "second-look.discardComment",
         "title": "Discard comment",
         "category": "Second Look"
+      },
+      {
+        "command": "second-look.openOverview",
+        "title": "Open overview",
+        "category": "Second Look",
+        "icon": "$(book)"
+      },
+      {
+        "command": "second-look.whyThisMatters",
+        "title": "Why this matters",
+        "category": "Second Look",
+        "icon": "$(info)"
       }
     ],
     "menus": {
@@ -83,6 +95,11 @@
           "when": "view == second-look.reviewTree",
           "group": "navigation",
           "icon": "$(rocket)"
+        },
+        {
+          "command": "second-look.openOverview",
+          "when": "view == second-look.reviewTree",
+          "group": "navigation"
         }
       ],
       "commandPalette": [
@@ -100,6 +117,10 @@
         },
         {
           "command": "second-look.discardComment",
+          "when": "false"
+        },
+        {
+          "command": "second-look.whyThisMatters",
           "when": "false"
         }
       ],
@@ -126,6 +147,16 @@
           "command": "second-look.commentOnPart",
           "when": "view == second-look.reviewTree && viewItem == noise",
           "group": "navigation"
+        },
+        {
+          "command": "second-look.whyThisMatters",
+          "when": "view == second-look.reviewTree && viewItem == part",
+          "group": "inline"
+        },
+        {
+          "command": "second-look.whyThisMatters",
+          "when": "view == second-look.reviewTree && viewItem == noise",
+          "group": "inline"
         }
       ]
     },

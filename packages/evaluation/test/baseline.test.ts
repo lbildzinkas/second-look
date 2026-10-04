@@ -188,4 +188,25 @@ describe('mergeBaseline', () => {
     const again = { rows: [row({ ...pi, value: 1 })], failures: [], fallbacks: [] };
     expect(mergeBaseline(stored, again).fallbacks).toEqual([]);
   });
+
+  it("keeps an agent's stored rows of the prompts a run did not run, for the same case and agent", () => {
+    const stored = {
+      rows: [row({ ...pi, name: 'grouping-agreement', value: 0.8 }), row({ ...pi, name: 'story-order', value: 0 })],
+      failures: [],
+      fallbacks: [
+        { case: 'example-7', agent: 'pi', prompt: 'grouping', detail: 'the answer was invalid twice' },
+        { case: 'example-7', agent: 'pi', prompt: 'story', detail: 'the answer was invalid twice' },
+      ],
+    };
+    const storyOnly = { rows: [row({ ...pi, name: 'story-order', value: 1 })], failures: [], fallbacks: [] };
+
+    const merged = mergeBaseline(stored, storyOnly);
+
+    expect(merged.rows.map((each) => [each.name, each.value])).toEqual([
+      ['grouping-agreement', 0.8],
+      ['story-order', 1],
+    ]);
+    expect(merged.fallbacks).toEqual([stored.fallbacks[0]]);
+    expect(compareWithBaseline(storyOnly.rows, stored.rows).missing).toEqual([]);
+  });
 });

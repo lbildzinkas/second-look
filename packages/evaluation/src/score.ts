@@ -1,5 +1,5 @@
 import { filesOfPart, parseDiff } from '@second-look/engine';
-import type { FileSlice, NoiseAssessment, Part } from '@second-look/engine';
+import type { FileSlice, NoiseAssessment, Part, StoryChecks } from '@second-look/engine';
 import type { ExpectedClaim, ExpectedNoise, ExpectedResults, Verdict } from './case.js';
 import type { LibraryFetchOffer, PressedClaim } from './claims.js';
 
@@ -11,6 +11,13 @@ export const RANK_SCORES: readonly string[] = ['rank-median', `rank-top-${TOP_K}
 
 /** The score of a grouping against the hand labels: pairwise hunk agreement. */
 export const GROUPING_AGREEMENT = 'grouping-agreement';
+
+/**
+ * The plain checks of a story: the share of must-review parts it links,
+ * the share of stories that first mention the parts in reading order, and
+ * the share of the file and code names it uses that the change shows.
+ */
+export const STORY_SCORES: readonly string[] = ['story-must-review', 'story-order', 'story-names'];
 
 /** One score of a run, with the direction in which it improves. */
 export interface Score {
@@ -72,6 +79,44 @@ export interface Tally {
    * labels do: together in one part when labelled together, apart when not.
    */
   pairs: { total: number; agreed: number };
+  /** The counts behind the story's plain checks. */
+  story: StoryTally;
+}
+
+/** The counts behind a story's plain checks; a story that was not written counts as failing them. */
+export interface StoryTally {
+  /** Stories asked for, written or not. */
+  stories: number;
+  /** Stories whose parts are first mentioned in reading order. */
+  inOrder: number;
+  /** Must-review parts, and those a story links. */
+  mustReview: number;
+  mentioned: number;
+  /** File and code names the stories use, and those the change shows. */
+  names: number;
+  namesInChange: number;
+}
+
+function noStory(): StoryTally {
+  return { stories: 0, inOrder: 0, mustReview: 0, mentioned: 0, names: 0, namesInChange: 0 };
+}
+
+/**
+ * Tallies one story's plain checks: whether every must-review part is
+ * linked, whether the parts are first mentioned in reading order, and how
+ * many of its names the change shows. A story that was not written fails
+ * them: it links no part and keeps no order.
+ */
+export function tallyStory(checks: StoryChecks, written: boolean): StoryTally {
+  const outside = new Set(checks.names.outside);
+  return {
+    stories: 1,
+    inOrder: written && checks.inOrder ? 1 : 0,
+    mustReview: checks.mustReview.ids.length,
+    mentioned: written ? checks.mustReview.mentioned.length : 0,
+    names: checks.names.used.length,
+    namesInChange: checks.names.used.filter((name) => !outside.has(name)).length,
+  };
 }
 
 function noiseClass(noise: NoiseAssessment | ExpectedNoise): string {
@@ -182,6 +227,7 @@ export function tallyCase(
     positions: [],
     claims: tallyClaims(expected.claims, claims),
     pairs: { total: 0, agreed: 0 },
+    story: noStory(),
   };
   if (!parts) return tally;
 
@@ -284,6 +330,7 @@ export function addTallies(tallies: readonly Tally[]): Tally {
       reported: 0,
     },
     pairs: { total: 0, agreed: 0 },
+    story: noStory(),
   };
   for (const tally of tallies) {
     total.changedLines += tally.changedLines;
@@ -291,6 +338,7 @@ export function addTallies(tallies: readonly Tally[]): Tally {
     total.positions.push(...tally.positions);
     total.pairs.total += tally.pairs.total;
     total.pairs.agreed += tally.pairs.agreed;
+    for (const key of Object.keys(total.story) as (keyof StoryTally)[]) total.story[key] += tally.story[key];
     for (const [name, counts] of tally.noise) {
       const sum = total.noise.get(name) ?? { expected: 0, predicted: 0, matched: 0 };
       sum.expected += counts.expected;
@@ -326,9 +374,9 @@ function median(values: readonly number[]): number {
  * The plain scores a tally gives: coverage, noise-label precision and
  * recall per class and state, the median and top-k rank position of the
  * known important parts, the grouping's pairwise hunk agreement with
- * the hand labels, and the claim checks over the hand-labelled claims. A
- * score with nothing to count is left out rather than given a value it
- * did not earn.
+ * the hand labels, the claim checks over the hand-labelled claims, and
+ * the story's plain checks. A score with nothing to count is left out
+ * rather than given a value it did not earn.
  */
 export function scoresOf(tally: Tally): Score[] {
   const scores: Score[] = [];
@@ -353,6 +401,10 @@ export function scoresOf(tally: Tally): Score[] {
     scores.push({ name: GROUPING_AGREEMENT, value: tally.pairs.agreed / tally.pairs.total, better: 'higher' });
   }
   scores.push(...claimScores(tally.claims));
+  const { story } = tally;
+  if (story.mustReview > 0) scores.push({ name: 'story-must-review', value: story.mentioned / story.mustReview, better: 'higher' });
+  if (story.stories > 0) scores.push({ name: 'story-order', value: story.inOrder / story.stories, better: 'higher' });
+  if (story.names > 0) scores.push({ name: 'story-names', value: story.namesInChange / story.names, better: 'higher' });
   return scores;
 }
 

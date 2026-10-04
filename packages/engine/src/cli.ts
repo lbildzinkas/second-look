@@ -54,8 +54,13 @@ signals it used; the validator rejects a missing reason, an uncited or
 unknown signal, or more than a third of the parts at must review, and the
 plain ranking stays then, as it does for an agent, model and effort
 whose evaluation has not matched or beaten the plain ranking. The
-result's ranking says which ranking is shown and why. Each stage is
-announced on stderr while the agent works.
+result's ranking says which ranking is shown and why. Last, the agent
+writes the story: a few sentences telling what the change does, in the
+parts' reading order, each part it mentions linked. The checks reject a
+story that leaves out a must-review part, mentions the parts out of
+order, or names a file or code the change does not show; a rejected
+story is retried once, and then the result says why there is none. Each
+stage is announced on stderr while the agent works.
 
 It keeps read-only copies of the base and head versions, downloaded as
 archives, in a per-pull-request cache: --cache-dir, else the
@@ -93,7 +98,8 @@ and the GitHub token then arrives with each review request — never on the
 command line, where any process could read it — and is used only for that
 request. Each review arrives in stages: the plain result first, in a
 review/stage notification, then the result with the agent's grouping in
-another while the agent ranks, then the result with the agent's ranking.`;
+another while the agent ranks, then the ranked result in another while
+the agent writes the story, then the result with the story.`;
 
 export interface WriteDestination {
   write(chunk: string): boolean;

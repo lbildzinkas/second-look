@@ -307,6 +307,36 @@ function isRanking(value: unknown): boolean {
   return agent['outcome'] !== 'ranked' && (agent['stamp'] === undefined || isAgentStamp(agent['stamp']));
 }
 
+/** One run of a story sentence: text, a code name, or the words linking a part the result has. */
+function isStorySegment(value: unknown, partCount: number): boolean {
+  if (!isRecord(value) || !isString(value['text'])) return false;
+  const part = value['part'];
+  if (part !== undefined && !(Number.isInteger(part) && (part as number) >= 0 && (part as number) < partCount)) return false;
+  return value['code'] === undefined || typeof value['code'] === 'boolean';
+}
+
+/** The story of the result's parts: written with its sentences, or fallen back with none, always stamped. */
+function isStory(value: unknown, partCount: number): boolean {
+  if (!isRecord(value)) return false;
+  const sentences = value['sentences'];
+  if (
+    !isString(value['promptVersion']) ||
+    !isOneOf(value['outcome'], ['written', 'fell back'] as const) ||
+    !isString(value['detail']) ||
+    !isAgentStamp(value['stamp']) ||
+    !Array.isArray(sentences)
+  ) {
+    return false;
+  }
+  if (value['outcome'] === 'fell back') return sentences.length === 0;
+  return sentences.every(
+    (sentence) =>
+      isRecord(sentence) &&
+      Array.isArray(sentence['segments']) &&
+      sentence['segments'].every((segment) => isStorySegment(segment, partCount)),
+  );
+}
+
 function isPullRequestSummary(value: unknown): boolean {
   if (!isRecord(value)) return false;
   return (
@@ -350,7 +380,9 @@ export function isReviewResult(value: unknown): value is ReviewResult {
     return false;
   }
   if (!isGrouping(value['grouping']) || !isRanking(value['ranking'])) return false;
-  return Array.isArray(value['parts']) && value['parts'].every(isPart);
+  const parts = value['parts'];
+  if (!Array.isArray(parts) || !parts.every(isPart)) return false;
+  return value['story'] === undefined || isStory(value['story'], parts.length);
 }
 
 /** Error thrown by {@link parseReviewResult} when the JSON is not a review result. */

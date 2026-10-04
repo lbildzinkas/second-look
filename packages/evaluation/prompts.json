@@ -9,6 +9,11 @@
       "id": "ranking",
       "version": "1",
       "files": ["packages/engine/src/ranking.ts", "packages/engine/src/rank.ts"]
+    },
+    {
+      "id": "story",
+      "version": "1",
+      "files": ["packages/engine/src/story.ts"]
     }
   ]
 }

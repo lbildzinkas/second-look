@@ -34,3 +34,9 @@ export const COMMENT_CONTROLLER_ID = 'second-look' as const;
 
 /** The context value the companion's pending comment threads carry. */
 export const PENDING_THREAD_CONTEXT = 'second-look-pending' as const;
+
+/** Opens the review's overview: the story, the description and who made each result. */
+export const OPEN_OVERVIEW_COMMAND = 'second-look.openOverview' as const;
+
+/** Opens the overview's story at one part: the tree's "why this matters" on each part. */
+export const WHY_THIS_MATTERS_COMMAND = 'second-look.whyThisMatters' as const;

@@ -126,7 +126,7 @@ describe('runRpcServer', () => {
 
     expect(responses[0]!.result).toEqual({ protocolVersion: ENGINE_PROTOCOL_VERSION });
     const first = responses[1]!.result as { version: number; parts: unknown[] };
-    expect(first.version).toBe(5);
+    expect(first.version).toBe(6);
     expect(first.parts).toHaveLength(11);
     const second = responses[2]!.result as { parts: unknown[] };
     expect(second.parts).toHaveLength(11);
@@ -277,7 +277,7 @@ describe('runRpcServer', () => {
 });
 
 describe('runRpcServer with an agent', () => {
-  it('sends the plain result as a stage notification before the answer with the agent parts', async () => {
+  it('sends the plain result as a stage notification before the answer with the agent parts and story', async () => {
     const lines = [
       request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
       request('review', { url: PR_7_URL, token: TOKEN }, 2),
@@ -300,8 +300,8 @@ describe('runRpcServer with an agent', () => {
       },
     );
 
-    const [handshake, stage, final] = written.map((line) => JSON.parse(line) as Record<string, unknown>);
-    expect(written).toHaveLength(3);
+    const [handshake, stage, storyStage, final] = written.map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(written).toHaveLength(4);
     expect(handshake).toMatchObject({ id: 1 });
     // A notification has no id of its own; its params name the review request.
     expect(stage).not.toHaveProperty('id');
@@ -312,10 +312,15 @@ describe('runRpcServer with an agent', () => {
         id: 2,
         running: 'grouping related hunks with fake',
         timeoutMs: 660_000,
-        result: { version: 5, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
+        result: { version: 6, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
       },
     });
-    expect(final).toMatchObject({ id: 2, result: { grouping: { by: 'agent' } } });
+    // The fake agent has no tested ranking, so the story stage follows the grouping.
+    expect(storyStage).toMatchObject({
+      method: REVIEW_STAGE_METHOD,
+      params: { id: 2, running: 'writing the story with fake', result: { grouping: { by: 'agent' } } },
+    });
+    expect(final).toMatchObject({ id: 2, result: { grouping: { by: 'agent' }, story: { outcome: 'fell back' } } });
     expect((final!['result'] as { parts: unknown[] }).parts).toHaveLength(2);
     expect(written.join('\n')).not.toContain(TOKEN);
   });

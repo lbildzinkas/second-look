@@ -45,7 +45,7 @@ export interface RpcServerDeps {
   /** The engine's cache folder, which holds the read-only copies. */
   cacheDir: string;
   /**
-   * The agent that groups and ranks the parts after the plain pass;
+   * The agent that groups and ranks the parts and writes the story after the plain pass;
    * without one, the plain result is the review's only answer.
    */
   agent?: { adapter: AgentAdapter; settings?: AgentSettings };
@@ -72,9 +72,10 @@ export interface RpcServerDeps {
  * With an agent, a review arrives in stages: as soon as the plain result
  * is ready the engine sends it in a {@link REVIEW_STAGE_METHOD}
  * notification naming the stage that runs next, then the grouped result
- * in another while the agent ranks, and the review's response carries
- * the result with the agent's parts and ranking, or the plain ones with
- * the reason they stayed.
+ * in another while the agent ranks, then the ranked result in another
+ * while the agent writes the story, and the review's response carries
+ * the result with the agent's parts, ranking and story, or the plain
+ * parts and ranking with the reason they stayed.
  */
 export async function runRpcServer(
   source: RpcLineSource,

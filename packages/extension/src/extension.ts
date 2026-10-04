@@ -10,10 +10,12 @@ import {
   COMMENT_ON_PART_COMMAND,
   DISCARD_COMMENT_COMMAND,
   OPEN_ALL_PARTS_COMMAND,
+  OPEN_OVERVIEW_COMMAND,
   OPEN_PART_COMMAND,
   REVIEW_COMMAND,
   REVIEW_TREE_VIEW,
   SUBMIT_REVIEW_COMMAND,
+  WHY_THIS_MATTERS_COMMAND,
 } from './commands.js';
 import { CHANGE_SCHEME, ChangeCopiesProvider } from './change-copies.js';
 import { openPartInDiffEditor, openWholeChangeInDiffEditor, PartMarker } from './diff-view.js';
@@ -29,6 +31,7 @@ import {
 } from './tree.js';
 import { ReviewComments } from './comments.js';
 import { isSubmitKind, SendReviewPage } from './send-page.js';
+import { OverviewPanel } from './overview.js';
 import { AgentStatusBar } from './agent-status.js';
 import { readAgentSettings, type AgentSettings } from './agent-settings.js';
 import type { Part, PendingReview, ReviewResult } from '@second-look/engine';
@@ -38,10 +41,12 @@ export {
   COMMENT_ON_PART_COMMAND,
   DISCARD_COMMENT_COMMAND,
   OPEN_ALL_PARTS_COMMAND,
+  OPEN_OVERVIEW_COMMAND,
   OPEN_PART_COMMAND,
   REVIEW_COMMAND,
   REVIEW_TREE_VIEW,
   SUBMIT_REVIEW_COMMAND,
+  WHY_THIS_MATTERS_COMMAND,
 };
 
 /** The parts of the environment tests replace; production uses the real ones. */
@@ -167,7 +172,9 @@ class ReviewTreeProvider implements vscode.TreeDataProvider<TreeNode> {
  * replaces one still running.
  *
  * The session keeps the result it shows, so a part click can open the
- * multi-file diff from the same copies the engine downloaded.
+ * multi-file diff from the same copies the engine downloaded. The review's
+ * overview opens with its first result, without taking the focus from the
+ * tree, and follows every stage.
  */
 class ReviewSession {
   private readonly tree: ReviewTreeProvider;
@@ -187,6 +194,8 @@ class ReviewSession {
   private url: string | undefined;
   /** The Send review page of the review under way, once the reviewer opens it. */
   private page: SendReviewPage | undefined;
+  /** The review's overview: the story, the description and who made each result. */
+  private readonly overview = new OverviewPanel((part) => void this.openPart(part));
 
   constructor(
     tree: ReviewTreeProvider,
@@ -249,7 +258,7 @@ class ReviewSession {
         () =>
           this.engineReview(url.trim(), accessToken, (stage) => {
             if (!current()) return;
-            void this.show(stage.result, shown);
+            void this.show(stage.result, shown, stage.running);
             shown = true;
             this.treeView.message = reviewStatus(stage.result, stage.running);
           }),
@@ -270,12 +279,12 @@ class ReviewSession {
 
   /**
    * Shows a result in the tree. The first result of a review starts its
-   * pending review and reveals the first section; a later one updates the
-   * tree in place and keeps the reviewer's place, reselecting the part
-   * that now holds the selected part's first hunk, with every pending
-   * comment kept.
+   * pending review, opens the overview and reveals the first section; a
+   * later one updates the tree and the overview in place and keeps the
+   * reviewer's place, reselecting the part that now holds the selected
+   * part's first hunk, with every pending comment kept.
    */
-  private async show(result: ReviewResult, update: boolean): Promise<void> {
+  private async show(result: ReviewResult, update: boolean, running?: string): Promise<void> {
     const selected = this.treeView.selection[0];
     const anchor =
       update &&
@@ -298,7 +307,9 @@ class ReviewSession {
       this.comments.setReview(result);
     }
     this.tree.setSections(this.sections());
+    this.overview.update(result, running);
     if (!update) {
+      this.overview.open({ preserveFocus: true });
       await this.revealFirstSection();
       return;
     }
@@ -359,6 +370,30 @@ class ReviewSession {
         error instanceof Error ? error.message : String(error),
       );
     }
+  }
+
+  /** Opens the review's overview at the story's start. */
+  openOverview(): void {
+    if (!this.overview.open()) {
+      vscode.window.showWarningMessage('Review a pull request first, then open its overview.');
+    }
+  }
+
+  /**
+   * A part's "why this matters": opens the overview's story at the first
+   * sentence that mentions the part, or says the story does not. The tree
+   * passes its element, so the part is read out of whatever the argument
+   * carries, and found in the result shown by where it starts.
+   */
+  whyThisMatters(arg?: unknown): void {
+    const part = carriedPart(arg);
+    if (part === undefined || this.result === undefined) {
+      vscode.window.showWarningMessage('Review a pull request first, then read why its parts matter.');
+      return;
+    }
+    const anchor = JSON.stringify(anchorOf(part));
+    const index = this.result.parts.findIndex((each) => JSON.stringify(anchorOf(each)) === anchor);
+    this.overview.open(index >= 0 ? { focus: index } : {});
   }
 
   /** Adds the comment the reviewer wrote in a thread to the pending review. */
@@ -536,6 +571,7 @@ class ReviewSession {
   dispose(): void {
     this.engine?.dispose();
     this.page?.dispose();
+    this.overview.dispose();
   }
 }
 
@@ -545,7 +581,9 @@ class ReviewSession {
  * commands that open a part — or the whole change, in ranked order —
  * in the editor's multi-file diff, the comment threads the reviewer
  * writes the pending review in, the command that submits it to GitHub,
- * and the status bar entry that shows the agent and model in use.
+ * the commands that open the review's overview — at the story's start, or
+ * at one part as its "why this matters" — and the status bar entry that
+ * shows the agent and model in use.
  * Nothing here runs anything from the workspace — the engine is started
  * from the companion's own install, reads GitHub, and writes only the
  * one review the reviewer sends.
@@ -598,6 +636,8 @@ export function activate(
     vscode.commands.registerCommand(DISCARD_COMMENT_COMMAND, (thread?: vscode.CommentThread) =>
       thread === undefined ? undefined : session.discardComment(thread),
     ),
+    vscode.commands.registerCommand(OPEN_OVERVIEW_COMMAND, () => session.openOverview()),
+    vscode.commands.registerCommand(WHY_THIS_MATTERS_COMMAND, (arg?: unknown) => session.whyThisMatters(arg)),
   );
   return tree;
 }

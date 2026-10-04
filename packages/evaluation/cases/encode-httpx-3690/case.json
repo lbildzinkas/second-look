@@ -5,7 +5,8 @@
   "recordedAt": "2026-10-02T18:43:50.469Z",
   "prompts": [
     "grouping",
-    "ranking"
+    "ranking",
+    "story"
   ],
   "pullRequest": {
     "url": "https://github.com/encode/httpx/pull/3690",

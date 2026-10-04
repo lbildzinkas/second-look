@@ -10,7 +10,7 @@
 import type { AgentStamp } from './agent.js';
 
 /** Version of the review result schema. */
-export const REVIEW_RESULT_VERSION = 5 as const;
+export const REVIEW_RESULT_VERSION = 6 as const;
 
 /**
  * Version 2 added the head commit's SHA and each part's noise assessment;
@@ -19,7 +19,7 @@ export const REVIEW_RESULT_VERSION = 5 as const;
  * hunk changes it, and added the lockfile rules lockfile-follows-manifest
  * and lockfile-unexplained; version 4 let a part span files, with each
  * part's origin and the result's grouping; version 5 added the result's
- * ranking.
+ * ranking; version 6 added the result's story.
  */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
@@ -140,6 +140,47 @@ export interface ReviewResult {
   grouping: Grouping;
   /** Who ranked the parts: the plain rule, or the agent, and what came of asking it. */
   ranking: Ranking;
+  /** The story the agent wrote of the parts shown; absent when no agent was asked. */
+  story?: Story;
+}
+
+/**
+ * The story: a few sentences at the top of the review that tell what the
+ * change does, in the order the parts should be read, each part it
+ * mentions linked. The agent writes it of the parts the result shows,
+ * after they are grouped and ranked, and the engine checks it before
+ * showing any.
+ */
+export interface Story {
+  /** The version of the story prompt. */
+  promptVersion: string;
+  /**
+   * `written` when the story is shown; `fell back` when the agent's
+   * answer was missing or failed the checks, so there is no story.
+   */
+  outcome: 'written' | 'fell back';
+  /** One plain line: how the story was checked, or why there is none. */
+  detail: string;
+  stamp: AgentStamp;
+  /** The sentences in reading order; empty when the story fell back. */
+  sentences: StorySentence[];
+}
+
+/** One sentence of the story, as runs of text. */
+export interface StorySentence {
+  segments: StorySegment[];
+}
+
+/**
+ * A run of a story sentence: plain text, a code or file name the change
+ * shows, or the words that link a part.
+ */
+export interface StorySegment {
+  text: string;
+  /** The linked part, by its index in the result's parts. */
+  part?: number;
+  /** True for a code or file name, which the reader sees set as code. */
+  code?: boolean;
 }
 
 /**
