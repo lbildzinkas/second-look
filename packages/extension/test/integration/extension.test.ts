@@ -633,7 +633,9 @@ describe('reading a part in the multi-file diff', () => {
     await expect(workspace.fs.readFile(head('src/retry.py'))).resolves.toEqual(content);
     await expect(
       workspace.fs.writeFile(head('src/retry.py'), new TextEncoder().encode('edited')),
-    ).rejects.toThrow('the base and head copies are read-only');
+    ).rejects.toThrow(
+      'the base and head copies and the fetched libraries are read-only',
+    );
   });
 
   it('opens the whole change in one multi-file diff, in the tree order with the noise last', async () => {
