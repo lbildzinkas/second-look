@@ -130,6 +130,9 @@ export class ReviewComments implements vscode.Disposable {
 
   private result: ReviewResult | undefined;
 
+  /** True while the pending review's one write is under way. */
+  private sending = false;
+
   /** Fires whenever a comment joins or leaves the pending review. */
   readonly onDidChange = this.changed.event;
 
@@ -163,6 +166,22 @@ export class ReviewComments implements vscode.Disposable {
   }
 
   /**
+   * Performs the pending review's one write with the gathering sealed:
+   * while the write is under way — the sign-in it may ask for, the
+   * round-trip to GitHub — no comment joins the review, leaves it, or
+   * is rewritten, so what is written is exactly the review the reviewer
+   * pressed for.
+   */
+  async sendWhileSealed<T>(write: () => Promise<T>): Promise<T> {
+    this.sending = true;
+    try {
+      return await write();
+    } finally {
+      this.sending = false;
+    }
+  }
+
+  /**
    * Turns to a new review: the pending review of the old one is gone, so
    * its comments and threads are too.
    */
@@ -178,6 +197,9 @@ export class ReviewComments implements vscode.Disposable {
    * the part.
    */
   add(reply: vscode.CommentReply): void {
+    if (this.sending) {
+      return;
+    }
     const result = this.result;
     const target = result === undefined ? undefined : commentTargetOf(result, reply.thread.uri);
     if (result === undefined || target === undefined) {
@@ -226,6 +248,9 @@ export class ReviewComments implements vscode.Disposable {
 
   /** Discards one thread of the pending review, gathered comment and all. */
   discard(thread: vscode.CommentThread): void {
+    if (this.sending) {
+      return;
+    }
     const gathered = this.threads.delete(thread);
     thread.dispose();
     if (gathered) {
@@ -238,9 +263,13 @@ export class ReviewComments implements vscode.Disposable {
    * it: its thread shows the new text and the pending review carries it.
    * The comment object itself is rewritten in place, so a hold on it —
    * the page's, a test's — stays valid. False when the comment is not
-   * gathered anymore, dropped elsewhere meanwhile.
+   * gathered anymore, dropped elsewhere meanwhile, or the review's one
+   * write is under way.
    */
   editBody(comment: Comment, body: string): boolean {
+    if (this.sending) {
+      return false;
+    }
     for (const [thread, gathered] of this.threads) {
       if (gathered !== comment) continue;
       comment.body = body;
@@ -254,9 +283,12 @@ export class ReviewComments implements vscode.Disposable {
   /**
    * Drops one gathered comment from the pending review, the way the Send
    * review page discards it, thread and all. False when the comment is
-   * not gathered anymore.
+   * not gathered anymore, or the review's one write is under way.
    */
   remove(comment: Comment): boolean {
+    if (this.sending) {
+      return false;
+    }
     for (const [thread, gathered] of this.threads) {
       if (gathered !== comment) continue;
       this.discard(thread);

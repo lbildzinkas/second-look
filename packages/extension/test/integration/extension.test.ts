@@ -45,6 +45,8 @@ interface FakeEngineOptions {
   /** A stage notification to send before the answer, which then waits this long. */
   stage?: { running: string; timeoutMs: number; result: unknown };
   answerDelayMs?: number;
+  /** How long the engine waits before answering sendReview. */
+  sendDelayMs?: number;
 }
 
 function fakeEngine(options: FakeEngineOptions): ChildProcessWithoutNullStreams {
@@ -62,6 +64,9 @@ function fakeEngine(options: FakeEngineOptions): ChildProcessWithoutNullStreams 
         : {}),
       ...(options.sendError !== undefined
         ? { FAKE_ENGINE_SEND_ERROR: options.sendError }
+        : {}),
+      ...(options.sendDelayMs !== undefined
+        ? { FAKE_ENGINE_SEND_DELAY_MS: String(options.sendDelayMs) }
         : {}),
       FAKE_ENGINE_LOG: join(workDir, options.logName),
     },
@@ -724,6 +729,55 @@ describe('the pending review and sending it', () => {
       comments: [],
     });
     expect(stub.commentControllers[0]!.threads).not.toContain(line);
+  });
+
+  it('keeps the send as pressed: moves from the diff during it change nothing', async () => {
+    const view = await reviewWithFakeEngine({
+      result: mixedResult(),
+      logName: 'seal-during-send.log',
+      sendDelayMs: 500,
+    });
+    const line = stub.commentControllers[0]!.createCommentThread(head('src/retry.py'), new Range(4, 0, 4, 0), []);
+    await registeredCommands().get(ADD_COMMENT_COMMAND)!({ thread: line, text: 'sent as pressed' });
+    await registeredCommands().get(SUBMIT_REVIEW_COMMAND)!() as Promise<void>;
+    drive(sendPage(), { type: 'submit' });
+    await eventually('the write to be under way', () =>
+      engineRequests('seal-during-send.log').some((request) => request.method === 'sendReview')
+        ? true
+        : undefined,
+    );
+
+    // The diff editor's own moves run while the one write is under way:
+    // the gathered thread stays gathered, and a comment written meanwhile
+    // is not taken into the review being sent.
+    await registeredCommands().get(DISCARD_COMMENT_COMMAND)!(line);
+    const late = stub.commentControllers[0]!.createCommentThread(head('src/retry.py'), new Range(6, 0, 6, 0), []);
+    await registeredCommands().get(ADD_COMMENT_COMMAND)!({ thread: late, text: 'written too late' });
+
+    expect(renderedTree(view).slice(0, 2)).toEqual([
+      {
+        label: 'Pending review',
+        tooltip: 'The comments you wrote, sent to GitHub as one review on submit.',
+      },
+      { label: 'src/retry.py:5', description: 'sent as pressed', tooltip: 'sent as pressed', contextValue: 'comment' },
+    ]);
+    expect(stub.commentControllers[0]!.threads).toContain(late);
+
+    await eventually('the review to be sent', () =>
+      stub.informationMessages[0] !== undefined ? true : undefined,
+    );
+    const sent = engineRequests('seal-during-send.log').find((request) => request.method === 'sendReview');
+    expect(sent?.params?.['review']).toMatchObject({
+      submit: 'comment',
+      comments: [
+        { kind: 'line', path: 'src/retry.py', side: 'head', line: 5, body: 'sent as pressed' },
+      ],
+    });
+    // The late comment was neither sent nor destroyed by the send that
+    // emptied the gathering.
+    expect(stub.commentControllers[0]!.threads).toContain(late);
+    expect(stub.commentControllers[0]!.threads).not.toContain(line);
+    expect(renderedTree(view)[0]).toEqual({ label: 'Must review', tooltip: 'The parts to read first.' });
   });
 
   it('starts a part comment from the context menu, which passes the tree element', async () => {

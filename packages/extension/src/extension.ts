@@ -442,42 +442,43 @@ class ReviewSession {
       );
       return false;
     }
+    return this.comments.sendWhileSealed(async () => {
+      let session: vscode.AuthenticationSession | undefined;
+      try {
+        session = await vscode.authentication.getSession('github', ['repo'], {
+          createIfNone: true,
+        });
+      } catch {
+        session = undefined;
+      }
+      if (!session) {
+        vscode.window.showWarningMessage('Sign in to GitHub to send the review.');
+        return false; // The comments stay gathered.
+      }
 
-    let session: vscode.AuthenticationSession | undefined;
-    try {
-      session = await vscode.authentication.getSession('github', ['repo'], {
-        createIfNone: true,
-      });
-    } catch {
-      session = undefined;
-    }
-    if (!session) {
-      vscode.window.showWarningMessage('Sign in to GitHub to send the review.');
-      return false; // The comments stay gathered.
-    }
-
-    try {
-      const sent = await vscode.window.withProgress(
-        { location: { viewId: REVIEW_TREE_VIEW }, title: 'Sending the review…' },
-        () => this.engineSend(this.url!, session!.accessToken, review),
-      );
-      this.comments.clear();
-      vscode.window.showInformationMessage(`Review sent: ${sent.url}`, 'Open on GitHub').then(
-        (open) => {
-          if (open === 'Open on GitHub') {
-            void vscode.env.openExternal(vscode.Uri.parse(sent.url));
-          }
-        },
-        () => undefined,
-      );
-      return true;
-    } catch (error) {
-      // The send failed: every comment stays gathered for another try.
-      vscode.window.showErrorMessage(
-        error instanceof Error ? error.message : String(error),
-      );
-      return false;
-    }
+      try {
+        const sent = await vscode.window.withProgress(
+          { location: { viewId: REVIEW_TREE_VIEW }, title: 'Sending the review…' },
+          () => this.engineSend(this.url!, session!.accessToken, review),
+        );
+        this.comments.clear();
+        vscode.window.showInformationMessage(`Review sent: ${sent.url}`, 'Open on GitHub').then(
+          (open) => {
+            if (open === 'Open on GitHub') {
+              void vscode.env.openExternal(vscode.Uri.parse(sent.url));
+            }
+          },
+          () => undefined,
+        );
+        return true;
+      } catch (error) {
+        // The send failed: every comment stays gathered for another try.
+        vscode.window.showErrorMessage(
+          error instanceof Error ? error.message : String(error),
+        );
+        return false;
+      }
+    });
   }
 
   private async engineSend(

@@ -306,6 +306,42 @@ describe('ReviewComments', () => {
     expect(stub.commentControllers[0]!.threads).not.toContain(thread);
   });
 
+  it('seals the gathering while its review is being written', async () => {
+    const result = mixedResult();
+    const comments = new ReviewComments();
+    comments.setReview(result);
+    const thread = threadOn(docs(result, 'src/retry.py').head, 4);
+    comments.add(replyOf(thread, 'sent as pressed'));
+    const gathered = comments.pending()[0]!;
+    const late = threadOn(docs(result, 'src/retry.py').head, 6);
+    const changes: number[] = [];
+    comments.onDidChange(() => changes.push(comments.pending().length));
+    let release: () => void = () => undefined;
+    const written = comments.sendWhileSealed(
+      () => new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+
+    comments.add(replyOf(late, 'written while the send ran'));
+    comments.discard(thread as unknown as vscode.CommentThread);
+    expect(comments.editBody(gathered, 'blanked while the send ran')).toBe(false);
+    expect(comments.remove(gathered)).toBe(false);
+
+    expect(comments.pending()).toEqual([
+      { kind: 'line', path: 'src/retry.py', side: 'head', line: 5, body: 'sent as pressed' },
+    ]);
+    expect(stub.commentControllers[0]!.threads).toContain(late);
+    expect(changes).toEqual([]);
+
+    release();
+    await written;
+
+    comments.add(replyOf(late, 'written once the send was done'));
+    expect(comments.pending()).toHaveLength(2);
+    expect(changes).toEqual([2]);
+  });
+
   it('reports a comment no longer gathered as unknown to edit and drop', () => {
     const result = mixedResult();
     const comments = new ReviewComments();
