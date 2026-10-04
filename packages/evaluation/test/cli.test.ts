@@ -214,6 +214,7 @@ describe('the record command', () => {
       'example-42',
       'example-7',
       'mine',
+      'misstated-python',
       'pallets-click-3781',
       'seeded-csharp',
       'seeded-python',

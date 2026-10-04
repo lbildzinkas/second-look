@@ -1,0 +1,21 @@
+{
+  "formatVersion": 1,
+  "id": "misstated-python",
+  "source": "https://github.com/example-org/example-repo/pull/9405",
+  "recordedAt": "2026-10-04T00:00:00.000Z",
+  "prompts": ["verdicts"],
+  "pullRequest": {
+    "url": "https://github.com/example-org/example-repo/pull/9405",
+    "number": 9405,
+    "title": "Pad fractional seconds when parsing datetimes",
+    "author": "contributor-login",
+    "description": "Pads the fractional seconds of a datetime on the right with zeros, so `1979-05-27T07:32:00.5` parses with 500000 microseconds.\n\nA time without fractional seconds still parses with 0 microseconds.",
+    "base": "master",
+    "head": "pad-fractional-seconds",
+    "baseCommit": "5656565656565656565656565656565656565656",
+    "headSha": "7878787878787878787878787878787878787878"
+  },
+  "gitAttributes": null,
+  "baseCommit": "5656565656565656565656565656565656565656",
+  "headCommit": "7878787878787878787878787878787878787878"
+}

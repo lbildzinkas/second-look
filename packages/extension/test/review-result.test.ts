@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { REVIEW_RESULT_VERSION, type NoiseAssessment, type ReviewResult } from '@second-look/engine';
 import { ProtocolError, isReviewResult, parseReviewResult } from '../src/index.js';
-import { claimsResult } from './results.js';
+import { claimsResult, judgedResult } from './results.js';
 
 function sampleResult(): ReviewResult {
   return {
@@ -412,6 +412,46 @@ describe('isReviewResult for the claims', () => {
   });
 });
 
+describe('isReviewResult for the verdicts', () => {
+  type Loose = { claims: { judging?: unknown; claims: Record<string, unknown>[] } };
+  const judged = (): Loose => JSON.parse(JSON.stringify(judgedResult())) as Loose;
+  const withVerdict = (verdict: unknown, index = 1): Loose => {
+    const value = judged();
+    value.claims.claims[index]!['verdict'] = verdict;
+    return value;
+  };
+  const refuted = { kind: 'refuted', source: 'the change itself', reason: 'r', evidence: [{ path: 'src/retry.py', line: 6, quote: 'for attempt in range(5):' }] };
+
+  it('accepts judged claims, each verdict with its evidence source, and a judging that fell back with every claim not checked', () => {
+    expect(isReviewResult(judgedResult())).toBe(true);
+    const fellBack = JSON.parse(JSON.stringify(claimsResult())) as Loose;
+    fellBack.claims.judging = { ...judged().claims.judging as object, outcome: 'fell back' };
+    expect(isReviewResult(fellBack)).toBe(true);
+  });
+
+  it("rejects a verdict without its source or reason, verified from the model's memory, citing a bad line, or checked before any judging", () => {
+    const unjudged = judged();
+    delete unjudged.claims.judging;
+    const fellBack = judged();
+    fellBack.claims.judging = { ...fellBack.claims.judging as object, outcome: 'fell back' };
+    const cases: unknown[] = [
+      withVerdict({ ...refuted, source: undefined }),
+      withVerdict({ ...refuted, source: 'a hunch' }),
+      withVerdict({ ...refuted, reason: undefined }),
+      withVerdict({ ...refuted, kind: 'probably' }),
+      withVerdict({ ...refuted, kind: 'verified', source: "the model's memory", evidence: [] }),
+      withVerdict({ ...refuted, kind: 'refuted', source: "the model's memory" }),
+      withVerdict({ ...refuted, evidence: [{ path: 'src/retry.py', line: 0, quote: 'x' }] }),
+      withVerdict({ ...refuted, evidence: [{ path: '', line: 1, quote: 'x' }] }),
+      withVerdict({ ...refuted, needsLibrary: 7 }),
+      unjudged,
+      fellBack,
+      { ...judged(), claims: { ...judged().claims, judging: { outcome: 'judged' } } },
+    ];
+    for (const value of cases) expect(isReviewResult(value)).toBe(false);
+  });
+});
+
 describe('parseReviewResult', () => {
   it('reads the JSON the engine printed', () => {
     const result = parseReviewResult(JSON.stringify(sampleResult()));
@@ -427,6 +467,6 @@ describe('parseReviewResult', () => {
 
 describe('the versioned protocol is shared with the engine', () => {
   it('uses the same version constant', () => {
-    expect(REVIEW_RESULT_VERSION).toBe(7);
+    expect(REVIEW_RESULT_VERSION).toBe(8);
   });
 });

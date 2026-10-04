@@ -7,6 +7,7 @@ import { GROUPING_INSTRUCTIONS, GROUPING_PROMPT_VERSION } from '../../engine/src
 import { RANKING_INSTRUCTIONS, RANKING_PROMPT_VERSION } from '../../engine/src/ranking.js';
 import { STORY_INSTRUCTIONS, STORY_PROMPT_VERSION } from '../../engine/src/story.js';
 import { CLAIMS_INSTRUCTIONS, CLAIMS_PROMPT_VERSION } from '../../engine/src/claims.js';
+import { VERDICTS_INSTRUCTIONS, VERDICTS_PROMPT_VERSION } from '../../engine/src/verdicts.js';
 import { answeringAgent, offeredParts, scriptedAgent } from '../../engine/test/helpers.js';
 import type { AgentAdapter } from '@second-look/engine';
 import { loadCases } from '../src/case.js';
@@ -316,6 +317,63 @@ describe('runEvaluation with the claims prompt', () => {
     ]);
     expect(rowsOf(results.rows, 'fake', 'claims-recall')['canary-python']).toBe(0);
     expect(rowsOf(results.rows, 'fake', 'claims-precision')['canary-python']).toBeUndefined();
+  });
+});
+
+/** Runs one case alone, the agent running only the verdicts prompt. */
+async function runVerdicts(id: string, adapter: AgentAdapter) {
+  const all = await loadCases([join(PACKAGE, 'cases')]);
+  return runEvaluation({
+    cases: all.filter((each) => each.id === id),
+    registry: await loadRegistry(join(PACKAGE, 'prompts.json')),
+    companionVersion: '0.1.0',
+    runsFolder: runs,
+    now: new Date('2026-10-04T00:00:00.000Z'),
+    agent: { adapter },
+    prompts: ['verdicts'],
+  });
+}
+
+const CHANGED_LINE = { file: 'src/tomli/_re.py', line: 83, quote: 'micros = int(micros_str.rjust(6, "0")) if micros_str else 0' };
+
+/** An agent that gives misstated-python's two description claims the given verdicts, citing the changed line. */
+function verdictsAgent(first: string, second: string): AgentAdapter {
+  const verdict = (id: string, kind: string) => ({ id, verdict: kind, source: 'the change itself', reason: 'r', evidence: [CHANGED_LINE], library: null });
+  return answeringAgent((request) =>
+    request.instructions === VERDICTS_INSTRUCTIONS ? { verdicts: [verdict('c1', first), verdict('c2', second)] } : 'not an answer',
+  );
+}
+
+describe('runEvaluation with the verdicts prompt', () => {
+  it("scores the verdicts the agent gives the case's hand-labelled claims, stamped with who answered", async () => {
+    const { folder, results } = await runVerdicts('misstated-python', verdictsAgent('refuted', 'verified'));
+
+    expect(rowsOf(results.rows, 'fake', 'verdict-accuracy')).toEqual({ 'misstated-python': 1, [ALL_CASES]: 1 });
+    expect(rowsOf(results.rows, 'fake', 'false-verified')).toEqual({ 'misstated-python': 0, [ALL_CASES]: 0 });
+    const agentRows = results.rows.filter((row) => row.agent === 'fake');
+    expect(new Set(agentRows.map((row) => row.name))).toEqual(new Set(['verdict-accuracy', 'false-verified']));
+    expect(agentRows.find((row) => row.case === 'misstated-python')).toMatchObject({ model: 'fake/model', promptVersions: { verdicts: VERDICTS_PROMPT_VERSION } });
+    const trace = readFileSync(join(folder, TRACE_FILE), 'utf8').trim().split('\n').map((line) => JSON.parse(line) as AgentCall);
+    expect(trace).toHaveLength(1);
+    expect(trace[0]).toMatchObject({ case: 'misstated-python', prompt: 'verdicts', promptVersion: VERDICTS_PROMPT_VERSION });
+    expect(trace[0]!.input).toContain('Pads the fractional seconds of a datetime on the right with zeros');
+  });
+
+  it('counts a misstatement the agent verified as false-verified', async () => {
+    const { results } = await runVerdicts('misstated-python', verdictsAgent('verified', 'verified'));
+
+    expect(rowsOf(results.rows, 'fake', 'verdict-accuracy')['misstated-python']).toBe(0.5);
+    expect(rowsOf(results.rows, 'fake', 'false-verified')['misstated-python']).toBe(1);
+  });
+
+  it('records verdicts that fell back, every claim left not checked', async () => {
+    const { results } = await runVerdicts('misstated-python', answeringAgent(() => ({ verdicts: [] })));
+
+    expect(results.fallbacks).toEqual([
+      { case: 'misstated-python', agent: 'fake', prompt: 'verdicts', detail: expect.stringMatching(/^the agent gave no usable answer \(invalid-answer: /) },
+    ]);
+    expect(rowsOf(results.rows, 'fake', 'verdict-accuracy')['misstated-python']).toBe(0);
+    expect(rowsOf(results.rows, 'fake', 'false-verified')['misstated-python']).toBe(0);
   });
 });
 

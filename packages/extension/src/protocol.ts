@@ -1,5 +1,7 @@
 import {
+  CHECKED_VERDICT_KINDS,
   CLAIM_SOURCE_ORDER,
+  EVIDENCE_SOURCES,
   IMPORTANCE_ORDER,
   REVIEW_RESULT_VERSION,
   type ChangeKind,
@@ -360,10 +362,48 @@ function isClaimLocation(value: unknown, sentenceCount: number): boolean {
   }
 }
 
+/** One line of the head copy a verdict cites: its file, line and quote. */
+function isCitation(value: unknown): boolean {
+  return isRecord(value) && isNonEmptyString(value['path']) && isLine(value['line']) && isNonEmptyString(value['quote']);
+}
+
+/**
+ * A claim's verdict: not checked, or checked with its evidence source,
+ * reason and citations. The model's memory never yields verified, and
+ * cites no line.
+ */
+function isClaimVerdict(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (value['kind'] === 'not checked') return true;
+  const evidence = value['evidence'];
+  if (
+    !isOneOf(value['kind'], CHECKED_VERDICT_KINDS) ||
+    !isOneOf(value['source'], EVIDENCE_SOURCES) ||
+    !isString(value['reason']) ||
+    !Array.isArray(evidence) ||
+    !evidence.every(isCitation) ||
+    !isOptionalString(value['needsLibrary']) ||
+    !isOptionalString(value['recheck'])
+  ) {
+    return false;
+  }
+  return value['source'] !== "the model's memory" || (value['kind'] !== 'verified' && evidence.length === 0);
+}
+
+/** The judging of the claims: judged or fallen back, always stamped. */
+function isClaimJudging(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isString(value['promptVersion']) &&
+    isOneOf(value['outcome'], ['judged', 'fell back'] as const) &&
+    isString(value['detail']) &&
+    isAgentStamp(value['stamp'])
+  );
+}
+
 /** One claim: its quote, source and location, the part it is attached to, and its verdict. */
 function isClaim(value: unknown, partCount: number, sentenceCount: number): boolean {
   if (!isRecord(value)) return false;
-  const verdict = value['verdict'];
   return (
     isNonEmptyString(value['quote']) &&
     isOneOf(value['source'], CLAIM_SOURCE_ORDER) &&
@@ -372,15 +412,21 @@ function isClaim(value: unknown, partCount: number, sentenceCount: number): bool
     isClaimLocation(value['location'], sentenceCount) &&
     isNumber(value['part']) &&
     value['part'] < partCount &&
-    isRecord(verdict) &&
-    verdict['kind'] === 'not checked'
+    isClaimVerdict(value['verdict'])
   );
 }
 
-/** The claims of the result's parts: listed, or fallen back with none, always stamped. */
+/**
+ * The claims of the result's parts: listed, or fallen back with none,
+ * always stamped; a claim carries a checked verdict only once the claims
+ * were judged.
+ */
 function isClaims(value: unknown, partCount: number, sentenceCount: number): boolean {
   if (!isRecord(value)) return false;
   const claims = value['claims'];
+  const judging = value['judging'];
+  if (judging !== undefined && !isClaimJudging(judging)) return false;
+  const judged = isRecord(judging) && judging['outcome'] === 'judged';
   if (
     !isString(value['promptVersion']) ||
     !isOneOf(value['outcome'], ['listed', 'fell back'] as const) ||
@@ -391,7 +437,9 @@ function isClaims(value: unknown, partCount: number, sentenceCount: number): boo
     return false;
   }
   if (value['outcome'] === 'fell back') return claims.length === 0;
-  return claims.every((claim) => isClaim(claim, partCount, sentenceCount));
+  return claims.every(
+    (claim) => isClaim(claim, partCount, sentenceCount) && (judged || (claim as { verdict: { kind: unknown } }).verdict.kind === 'not checked'),
+  );
 }
 
 function isPullRequestSummary(value: unknown): boolean {

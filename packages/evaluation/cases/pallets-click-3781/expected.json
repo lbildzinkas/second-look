@@ -42,6 +42,14 @@
       "origin": {
         "file": "src/click/termui.py",
         "line": 884
+      },
+      "verdict": {
+        "kind": "verified",
+        "evidence": {
+          "file": "src/click/termui.py",
+          "line": 906,
+          "source": "the change itself"
+        }
       }
     },
     {
@@ -57,6 +65,14 @@
       "origin": {
         "file": "src/click/termui.py",
         "line": 896
+      },
+      "verdict": {
+        "kind": "verified",
+        "evidence": {
+          "file": "src/click/termui.py",
+          "line": 906,
+          "source": "the change itself"
+        }
       }
     },
     {
@@ -64,6 +80,14 @@
       "origin": {
         "file": "tests/test_termui.py",
         "line": 454
+      },
+      "verdict": {
+        "kind": "verified",
+        "evidence": {
+          "file": "src/click/termui.py",
+          "line": 906,
+          "source": "the change itself"
+        }
       }
     },
     {
@@ -71,6 +95,14 @@
       "origin": {
         "file": "tests/typing/typing_edit.py",
         "line": 7
+      },
+      "verdict": {
+        "kind": "verified",
+        "evidence": {
+          "file": "src/click/termui.py",
+          "line": 841,
+          "source": "the change itself"
+        }
       }
     }
   ]

@@ -29,6 +29,7 @@ import {
 import { signalParts } from './signals.js';
 import { writeStory } from './story.js';
 import { analyseParts } from './syntax.js';
+import { judgeClaims } from './verdicts.js';
 
 export interface ReviewOptions {
   /** GitHub token, passed in by the caller; never stored or logged. */
@@ -40,7 +41,7 @@ export interface ReviewOptions {
   fetch?: typeof fetch;
   /** The engine's cache folder, which holds the read-only copies. */
   cacheDir: string;
-  /** Asks the agent to group and rank the parts, write the story and list the claims too, after the plain pass; see {@link reviewChange}. */
+  /** Asks the agent to group and rank the parts, write the story, list the claims and judge them too, after the plain pass; see {@link reviewChange}. */
   agentStage?: AgentStageOptions;
 }
 
@@ -113,9 +114,9 @@ export async function fetchChange(url: string, options: ReviewOptions): Promise<
 }
 
 /**
- * The agent stages, grouping, ranking, the story then the claims, when a
- * review asks the agent to group and rank the parts, write the story and
- * list the claims too.
+ * The agent stages, grouping, ranking, the story, the claims then their
+ * verdicts, when a review asks the agent to group and rank the parts,
+ * write the story, list the claims and judge them too.
  */
 export interface AgentStageOptions {
   adapter: AgentAdapter;
@@ -126,8 +127,10 @@ export interface AgentStageOptions {
   testedRankings?: readonly TestedRanking[];
   /** Whether the agent writes the story after ranking; true when absent. */
   story?: boolean;
-  /** Whether the agent lists the claims last; true when absent. */
+  /** Whether the agent lists the claims; true when absent. */
   claims?: boolean;
+  /** Whether the agent judges the claims it listed, last; true when absent. */
+  verdicts?: boolean;
 }
 
 /** A stage of the review starting, with the result so far. */
@@ -136,7 +139,7 @@ export interface ReviewStage {
   running: string;
   /** The stage ends within this many milliseconds. */
   timeoutMs: number;
-  /** The result so far: the plain pass's, then the grouping, ranking, story and claims stages' in turn. */
+  /** The result so far: the plain pass's, then the grouping, ranking, story, claims and verdicts stages' in turn. */
   result: ReviewResult;
 }
 
@@ -162,8 +165,9 @@ function coverageProblems(diff: ParsedDiff, parts: Part[]): string | undefined {
  * invalid, or its parts fail the coverage check, the plain grouping stays
  * and the result says why. The parts shown then go to `onStage` again
  * while the agent ranks them, see {@link rankStage}, once more while it
- * writes their story, see {@link storyStage}, and last while it lists
- * the claims the change makes, see {@link claimsStage}.
+ * writes their story, see {@link storyStage}, while it lists the claims
+ * the change makes, see {@link claimsStage}, and last while it judges
+ * them, see {@link verdictsStage}.
  */
 export async function reviewChange(
   input: ReviewInput,
@@ -193,7 +197,9 @@ export async function reviewChange(
   if (!agentStage) return plain;
   const ranked = await groupAndRank(plain, agentStage, input, parsed, files);
   const told = agentStage.story === false ? ranked : await storyStage(ranked, agentStage, input);
-  return agentStage.claims === false ? told : claimsStage(told, agentStage, input);
+  if (agentStage.claims === false) return told;
+  const claimed = await claimsStage(told, agentStage, input);
+  return agentStage.verdicts === false ? claimed : verdictsStage(claimed, agentStage, input);
 }
 
 /**
@@ -309,7 +315,7 @@ async function storyStage(
 }
 
 /**
- * The claims stage, last: the agent lists the claims the change makes
+ * The claims stage: the agent lists the claims the change makes
  * about how code or a library behaves, from the description, the
  * docstrings and comments the change adds, and the story when one was
  * written, each attached to a part and not checked yet. A change with no
@@ -335,4 +341,30 @@ async function claimsStage(
     ...(shown.story ? { story: shown.story } : {}),
   });
   return { ...shown, claims };
+}
+
+/**
+ * The verdicts stage, last: the agent judges each claim it listed against
+ * the change and the read-only head copy, and the engine re-checks every
+ * citation it gives. No claims, or claims that fell back, need no judging.
+ */
+async function verdictsStage(
+  shown: ReviewResult,
+  agentStage: AgentStageOptions,
+  input: ReviewInput,
+): Promise<ReviewResult> {
+  const claims = shown.claims;
+  if (claims === undefined || claims.outcome !== 'listed' || claims.claims.length === 0) return shown;
+  const settings = agentStage.settings ?? DEFAULT_AGENT_SETTINGS;
+  agentStage.onStage?.({
+    running: `checking the claims with ${agentStage.adapter.agent}`,
+    timeoutMs: agentStageTimeoutMs(settings),
+    result: shown,
+  });
+  const judged = await judgeClaims(shown.parts, claims.claims, {
+    adapter: agentStage.adapter,
+    settings,
+    root: input.copies.head.path,
+  });
+  return { ...shown, claims: { ...claims, ...judged } };
 }

@@ -30,6 +30,7 @@ import {
   type TreeSection,
 } from './tree.js';
 import { ReviewComments } from './comments.js';
+import { FindingThreads } from './findings.js';
 import { isSubmitKind, SendReviewPage } from './send-page.js';
 import { OverviewPanel } from './overview.js';
 import { AgentStatusBar } from './agent-status.js';
@@ -175,7 +176,8 @@ class ReviewTreeProvider implements vscode.TreeDataProvider<TreeNode> {
  * The session keeps the result it shows, so a part click can open the
  * multi-file diff from the same copies the engine downloaded. The review's
  * overview opens with its first result, without taking the focus from the
- * tree, and follows every stage.
+ * tree, and follows every stage, as do the findings — the refuted and
+ * unverifiable claims — shown as the companion's own threads on the diff.
  */
 class ReviewSession {
   private readonly tree: ReviewTreeProvider;
@@ -195,6 +197,8 @@ class ReviewSession {
   private page: SendReviewPage | undefined;
   /** The review's overview: the story, the claims, the description and who made each result. */
   private readonly overview = new OverviewPanel((part) => void this.openPart(part));
+  /** The review's findings, its refuted and unverifiable claims, as threads on the diff. */
+  private readonly findings = new FindingThreads();
 
   constructor(
     tree: ReviewTreeProvider,
@@ -307,6 +311,7 @@ class ReviewSession {
     }
     this.tree.setSections(this.sections());
     this.overview.update(result, running);
+    this.findings.show(result);
     if (!update) {
       this.overview.open({ preserveFocus: true });
       await this.revealFirstSection();
@@ -562,6 +567,7 @@ class ReviewSession {
     this.engine?.dispose();
     this.page?.dispose();
     this.overview.dispose();
+    this.findings.dispose();
   }
 }
 

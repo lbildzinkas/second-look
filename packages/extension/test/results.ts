@@ -242,3 +242,60 @@ export function claimsResult(copies?: CopyPaths): ReviewResult {
     },
   };
 }
+
+/**
+ * The claims result once the agent judged its claims: the description's
+ * claim verified, the docstring's refuted, the comment's needing library
+ * source, and the story's left unverifiable from the model's memory.
+ */
+export function judgedResult(copies?: CopyPaths): ReviewResult {
+  const shown = claimsResult(copies);
+  const claims = shown.claims!;
+  const [description, docstring, comment, story] = claims.claims;
+  return {
+    ...shown,
+    claims: {
+      ...claims,
+      judging: {
+        promptVersion: '1',
+        outcome: 'judged',
+        detail: 'every citation was re-read in the head copy',
+        stamp: claims.stamp,
+      },
+      claims: [
+        {
+          ...description!,
+          verdict: {
+            kind: 'verified',
+            source: 'the change itself',
+            reason: 'send retries a failed delivery.',
+            evidence: [{ path: 'src/retry.py', line: 5, quote: 'return retry(send)' }],
+          },
+        },
+        {
+          ...docstring!,
+          verdict: {
+            kind: 'refuted',
+            source: 'the change itself',
+            reason: 'The loop runs five times.',
+            evidence: [{ path: 'src/retry.py', line: 6, quote: 'for attempt in range(5):' }],
+          },
+        },
+        {
+          ...comment!,
+          verdict: { kind: 'unverifiable', source: 'the change itself', reason: 'The status check is in the library.', evidence: [], needsLibrary: 'requests' },
+        },
+        {
+          ...story!,
+          verdict: {
+            kind: 'unverifiable',
+            source: "the model's memory",
+            reason: 'Nothing in the change shows it.',
+            evidence: [],
+            recheck: "the model's memory never yields verified",
+          },
+        },
+      ],
+    },
+  };
+}

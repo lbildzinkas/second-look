@@ -20,7 +20,7 @@ import {
 } from '../../src/extension.js';
 import { changeUri } from '../../src/change-copies.js';
 import { SEND_REVIEW_VIEW_TYPE } from '../../src/send-page.js';
-import { claimsResult, mixedResult, storyResult } from '../results.js';
+import { claimsResult, judgedResult, mixedResult, storyResult } from '../results.js';
 import { OVERVIEW_VIEW_TYPE } from '../../src/overview.js';
 import {
   Range,
@@ -215,7 +215,7 @@ describe('activating the companion', () => {
     expect(stub.treeViews.map((view) => view.id)).toEqual([REVIEW_TREE_VIEW]);
     expect(stub.fileSystemProviders.map((entry) => entry.scheme)).toEqual(['second-look-change']);
     expect(stub.fileSystemProviders[0]!.options?.isReadonly).toBeInstanceOf(Object);
-    expect(stub.commentControllers.map((controller) => controller.id)).toEqual(['second-look']);
+    expect(stub.commentControllers.map((controller) => controller.id)).toEqual(['second-look', 'second-look.findings']);
   });
 
   it('shows the placeholder before any review ran, with nothing to open', () => {
@@ -739,6 +739,21 @@ describe('the overview', () => {
     expect(stub.executedCommands).toEqual([
       { id: 'vscode.changes', args: ['src/settings.ts', [[head('src/settings.ts'), base('src/settings.ts'), head('src/settings.ts')]]] },
     ]);
+  });
+
+  it('shows the findings as threads at their cited lines and as badges on their parts', async () => {
+    const view = await reviewWithFakeEngine({ result: judgedResult(), logName: 'findings.log' });
+
+    const rendered = renderedTree(view);
+    expect(rendered.find((node) => node.label === 'src/retry.py')!.description).toBe('⚠ 2 findings · 3 claims · New code the send path now runs on every delivery.');
+    expect(rendered.find((node) => node.label === 'src/settings.ts')!.description).toBe('⚠ 1 finding · 1 claim · Changed code that the retry policy reads.');
+    const findings = stub.commentControllers.find((controller) => controller.id === 'second-look.findings')!;
+    expect(findings.threads.map((thread) => [thread.uri.toString(), thread.range?.start.line, thread.label])).toEqual([
+      [head('src/retry.py').toString(), 2, 'Refuted claim'],
+      [head('src/retry.py').toString(), 8, 'Unverifiable claim'],
+      [head('src/settings.ts').toString(), undefined, 'Unverifiable claim'],
+    ]);
+    expect(overview().webview.html).toContain('<span class="verdict finding">refuted</span>');
   });
 
   it('opens again from its command once closed, and asks for a review before there is one', async () => {

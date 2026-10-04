@@ -3,7 +3,7 @@
   "id": "canary-python",
   "source": "https://github.com/example-org/example-repo/pull/9",
   "recordedAt": "2026-10-02T00:00:00.000Z",
-  "prompts": ["grouping", "ranking", "story", "claims"],
+  "prompts": ["grouping", "ranking", "story", "claims", "verdicts"],
   "pullRequest": {
     "url": "https://github.com/example-org/example-repo/pull/9",
     "number": 9,

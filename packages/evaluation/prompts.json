@@ -19,6 +19,11 @@
       "id": "claims",
       "version": "1",
       "files": ["packages/engine/src/claims.ts"]
+    },
+    {
+      "id": "verdicts",
+      "version": "1",
+      "files": ["packages/engine/src/verdicts.ts"]
     }
   ]
 }

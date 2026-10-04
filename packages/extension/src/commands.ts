@@ -40,3 +40,9 @@ export const OPEN_OVERVIEW_COMMAND = 'second-look.openOverview' as const;
 
 /** Opens the overview's story at one part: the tree's "why this matters" on each part. */
 export const WHY_THIS_MATTERS_COMMAND = 'second-look.whyThisMatters' as const;
+
+/** The id of the comment controller the companion shows its findings with. */
+export const FINDINGS_CONTROLLER_ID = 'second-look.findings' as const;
+
+/** The context value the companion's finding threads carry. */
+export const FINDING_THREAD_CONTEXT = 'second-look-finding' as const;
