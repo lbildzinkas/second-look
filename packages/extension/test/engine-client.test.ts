@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { ProtocolError } from '../src/protocol.js';
-import { EngineClient, spawnEngineProcess, type EngineAgent, type ReviewStageUpdate } from '../src/engine-client.js';
+import { EngineClient, spawnEngineProcess, type ReviewStageUpdate } from '../src/engine-client.js';
 import { mixedResult } from './results.js';
 
 const FAKE_ENGINE = fileURLToPath(new URL('./fixtures/fake-engine.mjs', import.meta.url));
@@ -64,29 +64,21 @@ function loggedRequests(name: string): unknown[] {
 }
 
 describe('spawnEngineProcess', () => {
-  it('starts serve with the chosen agent and model, and nothing else', async () => {
+  it('starts serve with nothing else on the command line', async () => {
     const echo = join(workDir, 'argv-echo.mjs');
     writeFileSync(echo, 'process.stdout.write(JSON.stringify(process.argv.slice(2)))\n');
     const previous = process.env['SECOND_LOOK_ENGINE_ENTRY'];
     process.env['SECOND_LOOK_ENGINE_ENTRY'] = echo;
-    const servedArguments = async (agent: EngineAgent): Promise<string[]> => {
-      const engine = spawnEngineProcess(agent);
+    try {
+      const engine = spawnEngineProcess();
       let out = '';
       engine.stdout.on('data', (chunk: Buffer) => {
         out += String(chunk);
       });
       await new Promise<void>((resolve) => engine.once('exit', () => resolve()));
-      return JSON.parse(out) as string[];
-    };
-    try {
-      expect(await servedArguments({ agent: 'claude-code', model: 'glm-4.6' })).toEqual([
-        'serve',
-        '--agent',
-        'claude-code',
-        '--model',
-        'glm-4.6',
-      ]);
-      expect(await servedArguments({ agent: 'pi', model: '' })).toEqual(['serve', '--agent', 'pi']);
+      // The agent, model and account the settings choose travel with each
+      // review request over the protocol — never on the command line.
+      expect(JSON.parse(out) as string[]).toEqual(['serve']);
     } finally {
       if (previous === undefined) {
         delete process.env['SECOND_LOOK_ENGINE_ENTRY'];
@@ -115,6 +107,23 @@ describe('EngineClient against a fake engine', () => {
     expect(requests[1]).toMatchObject({
       method: 'review',
       params: { url: PR_URL, token: TOKEN },
+    });
+    client.dispose();
+  });
+
+  it('carries the agent, model and account choice with the review request', async () => {
+    const client = new EngineClient(() => fakeEngine({ result: mixedResult(), logName: 'agent-choice.log' }));
+
+    await client.initialize();
+    await client.review(PR_URL, TOKEN, { agent: 'claude-code', model: 'sonnet', account: 'Claude Max (work)' });
+
+    const review = loggedRequests('agent-choice.log').find(
+      (request) => (request as { method: string }).method === 'review',
+    ) as { params: Record<string, unknown> };
+    expect(review.params).toEqual({
+      url: PR_URL,
+      token: TOKEN,
+      agent: { agent: 'claude-code', model: 'sonnet', account: 'Claude Max (work)' },
     });
     client.dispose();
   });
@@ -297,7 +306,7 @@ describe('EngineClient against a fake engine', () => {
     const stages: ReviewStageUpdate[] = [];
 
     await client.initialize();
-    const result = await client.review(PR_URL, TOKEN, (stage) => stages.push(stage));
+    const result = await client.review(PR_URL, TOKEN, undefined, (stage) => stages.push(stage));
 
     expect(stages).toEqual([{ running: 'grouping related hunks with pi', result: plain }]);
     expect(result).toEqual(final);
@@ -311,7 +320,7 @@ describe('EngineClient against a fake engine', () => {
     const stages: ReviewStageUpdate[] = [];
 
     await client.initialize();
-    expect(await client.review(PR_URL, TOKEN, (stage) => stages.push(stage))).toMatchObject({ version: 5 });
+    expect(await client.review(PR_URL, TOKEN, undefined, (stage) => stages.push(stage))).toMatchObject({ version: 5 });
     expect(stages).toEqual([]);
     client.dispose();
   });
@@ -325,7 +334,7 @@ describe('EngineClient against a fake engine', () => {
       let staged!: () => void;
       const stageArrived = new Promise<void>((done) => (staged = done));
       let settled = false;
-      const review = client.review(PR_URL, TOKEN, () => staged());
+      const review = client.review(PR_URL, TOKEN, undefined, () => staged());
       review.catch(() => undefined).finally(() => (settled = true));
       await stageArrived;
 

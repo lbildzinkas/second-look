@@ -13,9 +13,14 @@
  * After the handshake, {@link REVIEW_METHOD} reviews a pull request and
  * {@link SEND_REVIEW_METHOD} sends the pending review to GitHub as one
  * review — the protocol's one write, asked for only when the reviewer
- * presses send (ADR 0002).
+ * presses send (ADR 0002). A review request also carries the reviewer's
+ * agent choice — which installed agent runs the review's agent passes,
+ * with which model — and the reviewer's label for the account it bills,
+ * so switching the choice in the editor's settings reaches the next
+ * review without restarting the engine.
  */
 
+import type { AgentName } from './agents.js';
 import type { PendingReview, ReviewResult, SentReview } from './protocol.js';
 
 /** Version of the JSON-RPC protocol between the extension and the engine. */
@@ -87,6 +92,21 @@ export interface InitializeResult {
 /** The request that reviews one pull request. */
 export const REVIEW_METHOD = 'review' as const;
 
+/**
+ * The agent choice a review request carries: which installed agent runs
+ * the review's agent passes, the model it runs and the reviewer's label
+ * for the account it bills (issue 65). It mirrors the editor's agent
+ * settings; absent from a request, the engine's serve-time choice stands.
+ */
+export interface ReviewAgentChoice {
+  /** The agent that runs every pass of the review: `pi` or `claude-code`. */
+  agent: AgentName;
+  /** The model to ask for; empty or absent is the agent's own default. */
+  model?: string;
+  /** The reviewer's label for the account or subscription the runs bill; empty or absent when unlabelled. */
+  account?: string;
+}
+
 /** One review request; the token travels with the request, never stored. */
 export interface ReviewParams {
   /** The pull request's HTML URL. */
@@ -97,6 +117,8 @@ export interface ReviewParams {
    * request and never stores or echoes it.
    */
   token: string;
+  /** The agent, model and account the review's agent passes run with; see {@link ReviewAgentChoice}. */
+  agent?: ReviewAgentChoice;
 }
 
 /** The review request's result: the engine's typed, versioned review result. */

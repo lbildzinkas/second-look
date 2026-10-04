@@ -11,8 +11,9 @@ import {
  * settings choose, the account or subscription when labelled, and — for
  * Claude Code started with an inherited Anthropic API key — the warning
  * that the key silently overrides the subscription. Every result the
- * companion shows is stamped with the same agent, version, model and login
- * by the engine, so what the reviewer reads here is what answered.
+ * companion shows is stamped with the same agent, version, model, login
+ * and account label by the engine, so what the reviewer reads here is
+ * what answered.
  */
 export class AgentStatusBar {
   private readonly item: vscode.StatusBarItem;
@@ -53,7 +54,7 @@ function tooltip(settings: AgentSettings, warning: string | undefined): string {
     'Second Look drives this agent, locked down, for its model work: file-reading tools only,',
     'on a read-only copy of the change. The agent signs in with its own login, which the',
     'companion never reads. Every result is stamped with the agent, its version, the model,',
-    'the run date, and the tokens and cost the agent reports.',
+    'the run date, the tokens and cost the agent reports, and the account label, when set.',
   ];
   if (settings.agent === 'claude-code') {
     lines.push("Each run's stamp also names the login it used.");

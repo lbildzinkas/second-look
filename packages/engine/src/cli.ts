@@ -1,5 +1,5 @@
 import { DEFAULT_AGENT_SETTINGS, type AgentSettings } from './agent.js';
-import { agentAdapter } from './agents.js';
+import { AGENT_NAMES, agentAdapter, isAgentName } from './agents.js';
 import { defaultCacheDir } from './cache.js';
 import { readFile } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
@@ -8,7 +8,7 @@ import type { PiAdapterOptions } from './pi.js';
 import { runAgentProbe } from './probe.js';
 import { reviewPullRequest } from './review.js';
 import { readPackagePdbs } from './symbols.js';
-import { runRpcServer, type RpcServerDeps } from './server.js';
+import { runRpcServer, type RpcAgentDeps, type RpcServerDeps } from './server.js';
 import { redactToken } from './rpc.js';
 
 export { redactToken };
@@ -93,7 +93,12 @@ and the GitHub token then arrives with each review request — never on the
 command line, where any process could read it — and is used only for that
 request. Each review arrives in stages: the plain result first, in a
 review/stage notification, then the result with the agent's grouping in
-another while the agent ranks, then the result with the agent's ranking.`;
+another while the agent ranks, then the result with the agent's ranking.
+Each review request may also carry the reviewer's agent choice — the
+agent, model and account from the editor's settings — which runs that
+review's agent passes and stamps the account label on their results,
+replacing this command's --agent and --model for that review; a request
+without a choice runs the agent chosen here.`;
 
 export interface WriteDestination {
   write(chunk: string): boolean;
@@ -177,18 +182,22 @@ export async function runCli(
   }
   // The agent is chosen once, before any command runs, so an unknown
   // name is refused the same way everywhere; serve defaults to Pi.
-  let adapter;
-  try {
-    adapter = agentAdapter(agentFlags['--agent']?.at(-1) ?? 'pi', { pi: deps.pi, claudeCode: deps.claudeCode, env });
-  } catch (error) {
-    streams.err.write(`second-look-engine: ${error instanceof Error ? error.message : String(error)}\n`);
+  const agentName = agentFlags['--agent']?.at(-1) ?? 'pi';
+  if (!isAgentName(agentName)) {
+    streams.err.write(
+      `second-look-engine: unknown agent "${agentName}": choose ${AGENT_NAMES.join(' or ')}\n`,
+    );
     return 1;
   }
+  const adapter = agentAdapter(agentName, { pi: deps.pi, claudeCode: deps.claudeCode, env });
   if (command === 'serve') {
-    const agent = { adapter, settings };
+    const agent: RpcAgentDeps = {
+      adapterFor: (name) => agentAdapter(name, { pi: deps.pi, claudeCode: deps.claudeCode, env }),
+      defaultAgent: agentName,
+      settings,
+    };
     return serve(streams, tokenFlag !== undefined, deps, cacheDirFlag ?? defaultCacheDir(env), agent);
   }
-  const agentName = agentFlags['--agent']?.at(-1);
   if (command !== 'review' && command !== 'probe') {
     streams.err.write(`${USAGE}\n`);
     return 1;
@@ -197,7 +206,7 @@ export async function runCli(
     streams.err.write(`second-look-engine: ${command} needs a pull request URL\n`);
     return 1;
   }
-  if (command === 'review' && agentName === undefined) {
+  if (command === 'review' && agentFlags['--agent'] === undefined) {
     const tuning = ['--model', '--effort', '--agent-timeout'].find((flag) => agentFlags[flag] !== undefined);
     if (tuning) {
       streams.err.write(`second-look-engine: ${tuning} tunes the agent; pass --agent to run one\n`);
@@ -241,7 +250,7 @@ export async function runCli(
       token,
       fetch: deps.fetch,
       cacheDir: cacheDirFlag ?? defaultCacheDir(env),
-      ...(agentName
+      ...(agentFlags['--agent'] !== undefined
         ? {
             agentStage: {
               adapter,
