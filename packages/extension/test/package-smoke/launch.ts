@@ -23,23 +23,12 @@ import { trustCompanion } from '../real-host/launch.js';
  * development path.
  */
 
-/** The environment variable through which CI names the package to install. */
-const PACKAGE_ENV = 'SECOND_LOOK_VSIX';
-
 /**
- * Finds the package to install: the one the environment names, else the
- * one a CI run downloaded next to the repository, else the newest one
- * `npm run package` wrote into the extension's dist folder.
+ * Finds the package to install: the one a CI run downloaded next to the
+ * repository, else the newest one `npm run package` wrote into the
+ * extension's dist folder.
  */
-export function findPackage(
-  env: NodeJS.ProcessEnv,
-  repoRoot: string,
-  extensionRoot: string,
-): string {
-  const named = env[PACKAGE_ENV];
-  if (named !== undefined && named !== '') {
-    return named;
-  }
+export function findPackage(repoRoot: string, extensionRoot: string): string {
   for (const folder of [join(repoRoot, 'package'), join(extensionRoot, 'dist')]) {
     if (!existsSync(folder)) {
       continue;
@@ -52,7 +41,7 @@ export function findPackage(
     }
   }
   throw new Error(
-    `no .vsix package found; run npm run package first, or name one through ${PACKAGE_ENV}`,
+    `no .vsix package found; run npm run package first`,
   );
 }
 
@@ -81,7 +70,7 @@ async function main(): Promise<void> {
       publisher: string;
     };
     const repoRoot = join(extensionRoot, '..', '..');
-    const vsixPath = findPackage(process.env, repoRoot, extensionRoot);
+    const vsixPath = findPackage(repoRoot, extensionRoot);
 
     // The same download runTests would make, patched before the launch:
     // later commands reuse the copy already in the cache. The install
