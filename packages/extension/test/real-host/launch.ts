@@ -1,5 +1,5 @@
 import { downloadAndUnzipVSCode, runTests } from '@vscode/test-electron';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -14,10 +14,16 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 export function productJsonPath(vscodeExecutablePath: string): string {
   const appRoot = dirname(vscodeExecutablePath);
   const candidates = [
-    // Linux and Windows: the executable sits beside resources/.
+    // Linux, and Windows archives before their resources moved under a
+    // versioned folder: the executable sits beside resources/.
     join(appRoot, 'resources', 'app', 'product.json'),
     // macOS: the executable sits in <app>.app/Contents/MacOS/.
     join(appRoot, '..', 'Resources', 'app', 'product.json'),
+    // Recent Windows archives nest resources under a folder named after
+    // the build's commit (microsoft/vscode#249239), beside Code.exe.
+    ...readdirSync(appRoot)
+      .filter((entry) => /^[0-9a-f]{10}$/.test(entry))
+      .map((entry) => join(appRoot, entry, 'resources', 'app', 'product.json')),
   ];
   const productJson = candidates.find((path) => existsSync(path));
   if (productJson === undefined) {

@@ -35,6 +35,25 @@ under xvfb: the fast stub-based test (`npm run test:integration`) and the
 real-host test (`npm run test:real-host`), which downloads a real VS Code
 and runs the extension in it end to end against a fake engine process.
 
+## Packaging the extension
+
+`npm run package` builds the one extension package: a single universal
+`.vsix` that carries the extension, the bundled engine and the WASM
+grammars, with no per-OS builds and no native Node modules. The build
+reads no publishing credential and stores none — it writes the file to
+`packages/extension/dist/` and nothing else. Publishing to the VS Code
+Marketplace or Open VSX stays a separate, manual release step.
+
+CI builds the package on every pull request, reports its size, and keeps
+it as a build artifact. To try the companion by hand, download the
+`.vsix` from a CI run's artifacts page, install it from file on a clean
+VS Code (Extensions view → `…` → **Install from VSIX…**), and review a
+public pull request with the **Second Look: Review pull request**
+command. A smoke test installs the package this way into a clean,
+downloaded VS Code on macOS, Linux and Windows in CI and runs one review
+in it (`npm run test:package-smoke` locally, which like the other editor
+launches belongs to CI, not to a local check).
+
 ## Running the review command
 
 Build first (`npm run build`), then give the engine a GitHub token through the environment and point it at any public pull request:

@@ -15,6 +15,8 @@
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:real-host": "npm run build && tsc -p packages/extension/test/real-host && node packages/extension/test/real-host/dist/real-host/launch.js",
+    "package": "npm run build && node packages/extension/scripts/package.mjs",
+    "test:package-smoke": "npm run build && tsc -p packages/extension/test/package-smoke && node packages/extension/test/package-smoke/dist/package-smoke/launch.js",
     "check": "npm run build && tsc -p tsconfig.test.json && npm run lint && npm test",
     "eval": "node packages/evaluation/dist/main.js run --baseline packages/evaluation/baseline.json"
   },
@@ -22,6 +24,8 @@
     "@eslint/js": "^9.39.2",
     "@types/node": "^22.19.27",
     "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^4.0.0",
+    "esbuild": "^0.28.2",
     "eslint": "^9.39.2",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.48.0",
