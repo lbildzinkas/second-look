@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { GROUPING_INSTRUCTIONS } from '../../engine/src/grouping.js';
+import { GROUPING_INSTRUCTIONS, GROUPING_PROMPT_VERSION } from '../../engine/src/grouping.js';
 import { scriptedAgent } from '../../engine/test/helpers.js';
 import type { AgentAdapter } from '@second-look/engine';
 import { loadCases } from '../src/case.js';
@@ -69,7 +69,7 @@ describe('runEvaluation with an agent', () => {
         agentVersion: '1.2.3',
         model: 'fake/model',
         effort: 'default',
-        promptVersions: { grouping: '1' },
+        promptVersions: { grouping: GROUPING_PROMPT_VERSION },
       });
     }
     expect(results.fallbacks).toEqual([]);
@@ -82,7 +82,7 @@ describe('runEvaluation with an agent', () => {
     expect(trace[0]).toMatchObject({
       case: 'example-7',
       prompt: 'grouping',
-      promptVersion: '1',
+      promptVersion: GROUPING_PROMPT_VERSION,
       agent: 'fake',
       model: 'fake/model',
       output: LABELLED_ANSWER,

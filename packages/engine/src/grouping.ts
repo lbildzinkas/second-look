@@ -25,7 +25,7 @@ import { UNTRUSTED_INPUT_RULE, untrustedBlock } from './untrusted.js';
 export const GROUPING_PROMPT_ID = 'grouping';
 
 /** The grouping prompt's version. */
-export const GROUPING_PROMPT_VERSION = '1';
+export const GROUPING_PROMPT_VERSION = '2';
 
 /** The name and origin of the part that holds the hunks the agent left out. */
 export const NOT_GROUPED_BY_AGENT = 'not grouped by the agent';
@@ -122,21 +122,33 @@ function describeFile(file: FileSlice): string {
   return `${JSON.stringify(file.path)} (${kind}${file.isBinary ? ', binary' : ''})`;
 }
 
-/** One change as the prompt shows it: its id, file, entities and its lines as untrusted text. */
+/** One change as the prompt shows it: its id and range outside the untrusted block; its file, the entities it touches and its lines inside it. */
 function describeItem(item: GroupingItem, blockId: string): string {
   const { hunk } = item;
-  if (!hunk) return `[${item.id}] ${describeFile(item.file)}: the whole file, with no lines to show`;
+  if (!hunk) {
+    return [
+      `[${item.id}]`,
+      untrustedBlock(
+        `hunk ${item.id}`,
+        `${describeFile(item.file)}: the whole file, with no lines to show`,
+        blockId,
+      ),
+    ].join('\n');
+  }
   const entities = hunk.entities.map((entity) => `${entity.kind} ${entity.name} (${entity.change})`);
-  const header = [
-    `[${item.id}] ${describeFile(item.file)}`,
-    `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`,
+  const described = [
+    describeFile(item.file),
     entities.length > 0 ? `touches ${entities.join(', ')}` : 'touches no named entity',
   ].join(' ');
   const prefix = { context: ' ', addition: '+', deletion: '-' } as const;
   const lines = hunk.lines.slice(0, SHOWN_LINES).map((line) => `${prefix[line.kind]}${line.text}`);
   const hidden = hunk.lines.length - SHOWN_LINES;
   if (hidden > 0) lines.push(`… ${hidden} more lines; read the file for the rest`);
-  return [header, untrustedBlock(`hunk ${item.id}`, lines.join('\n'), blockId)].join('\n');
+  const range = `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`;
+  return [
+    `[${item.id}] ${range}`,
+    untrustedBlock(`hunk ${item.id}`, [described, ...lines].join('\n'), blockId),
+  ].join('\n');
 }
 
 /** The grouping task: the pull request's own text and the hunks, all marked as untrusted. */
@@ -151,8 +163,8 @@ export function groupingPrompt(
     untrustedBlock('pull request title', pullRequest.title, id),
     untrustedBlock('pull request description', pullRequest.description, id),
     '',
-    `Group these ${items.length} hunks. Each has its id, its file, its range and the entities it`,
-    'touches; its lines follow as untrusted text.',
+    `Group these ${items.length} hunks. Each has its id and its range; its file, the entities it`,
+    'touches and its lines follow as untrusted text.',
     '',
     ...items.map((item) => describeItem(item, id)),
   ].join('\n');
