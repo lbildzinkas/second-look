@@ -7,10 +7,13 @@ import {
   INITIALIZE_METHOD,
   REVIEW_METHOD,
   REVIEW_STAGE_METHOD,
+  SEND_REVIEW_METHOD,
   type InitializeResult,
+  type PendingReview,
   type ReviewResult,
+  type SentReview,
 } from '@second-look/engine';
-import { ProtocolError, isReviewResult } from './protocol.js';
+import { ProtocolError, SendProtocolError, isReviewResult, isSentReview } from './protocol.js';
 import type { AgentSettings } from './agent-settings.js';
 
 /**
@@ -72,6 +75,9 @@ const HANDSHAKE_TIMEOUT_MS = 10_000;
 
 /** How long one review request may take before the engine is given up on. */
 const REVIEW_TIMEOUT_MS = 120_000;
+
+/** How long one send request may take before the engine is given up on. */
+const SEND_REVIEW_TIMEOUT_MS = 60_000;
 
 /** How long a stalled engine gets to die from SIGTERM before it is killed outright. */
 const KILL_GRACE_MS = 2_000;
@@ -204,6 +210,27 @@ export class EngineClient {
     const result = await this.request(REVIEW_METHOD, { url, token }, REVIEW_TIMEOUT_MS, onStage);
     if (!isReviewResult(result)) {
       throw new ProtocolError();
+    }
+    return result;
+  }
+
+  /**
+   * Sends one review request: the pending review, submitted to GitHub as
+   * one review with the token VS Code's GitHub sign-in gave for the send.
+   * The token travels with this request only; the client keeps no copy.
+   * Rejects with the engine's plain message when the send fails.
+   */
+  async sendReview(url: string, token: string, review: PendingReview): Promise<SentReview> {
+    if (!this.handshaken) {
+      throw new Error('the engine has not completed its handshake yet');
+    }
+    const result = await this.request(
+      SEND_REVIEW_METHOD,
+      { url, token, review },
+      SEND_REVIEW_TIMEOUT_MS,
+    );
+    if (!isSentReview(result)) {
+      throw new SendProtocolError();
     }
     return result;
   }

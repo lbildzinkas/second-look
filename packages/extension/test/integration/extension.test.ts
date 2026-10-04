@@ -6,15 +6,19 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type * as vscode from 'vscode';
 import {
+  ADD_COMMENT_COMMAND,
+  COMMENT_ON_PART_COMMAND,
+  DISCARD_COMMENT_COMMAND,
   OPEN_ALL_PARTS_COMMAND,
   OPEN_PART_COMMAND,
   REVIEW_COMMAND,
   REVIEW_TREE_VIEW,
+  SUBMIT_REVIEW_COMMAND,
   activate,
 } from '../../src/extension.js';
 import { changeUri } from '../../src/change-copies.js';
 import { mixedResult } from '../results.js';
-import { stub, stubContext, workspace, type StubTreeView } from '../vscode-stub.js';
+import { Range, stub, stubContext, workspace, type StubTreeView } from '../vscode-stub.js';
 
 const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.meta.url));
 const PR_URL = 'https://github.com/example-org/example-repo/pull/42';
@@ -29,6 +33,7 @@ afterAll(() => {
 interface FakeEngineOptions {
   result?: unknown;
   error?: string;
+  sendError?: string;
   logName: string;
   /** A stage notification to send before the answer, which then waits this long. */
   stage?: { running: string; timeoutMs: number; result: unknown };
@@ -47,6 +52,9 @@ function fakeEngine(options: FakeEngineOptions): ChildProcessWithoutNullStreams 
       ...(options.stage !== undefined ? { FAKE_ENGINE_STAGE: JSON.stringify(options.stage) } : {}),
       ...(options.answerDelayMs !== undefined
         ? { FAKE_ENGINE_ANSWER_DELAY_MS: String(options.answerDelayMs) }
+        : {}),
+      ...(options.sendError !== undefined
+        ? { FAKE_ENGINE_SEND_ERROR: options.sendError }
         : {}),
       FAKE_ENGINE_LOG: join(workDir, options.logName),
     },
@@ -67,6 +75,10 @@ async function reviewWithFakeEngine(options: FakeEngineOptions): Promise<StubTre
     REVIEW_COMMAND,
     OPEN_PART_COMMAND,
     OPEN_ALL_PARTS_COMMAND,
+    SUBMIT_REVIEW_COMMAND,
+    ADD_COMMENT_COMMAND,
+    COMMENT_ON_PART_COMMAND,
+    DISCARD_COMMENT_COMMAND,
   ]);
 
   stub.inputBoxResult = PR_URL;
@@ -175,10 +187,15 @@ describe('activating the companion', () => {
       REVIEW_COMMAND,
       OPEN_PART_COMMAND,
       OPEN_ALL_PARTS_COMMAND,
+      SUBMIT_REVIEW_COMMAND,
+      ADD_COMMENT_COMMAND,
+      COMMENT_ON_PART_COMMAND,
+      DISCARD_COMMENT_COMMAND,
     ]);
     expect(stub.treeViews.map((view) => view.id)).toEqual([REVIEW_TREE_VIEW]);
     expect(stub.fileSystemProviders.map((entry) => entry.scheme)).toEqual(['second-look-change']);
     expect(stub.fileSystemProviders[0]!.options?.isReadonly).toBeInstanceOf(Object);
+    expect(stub.commentControllers.map((controller) => controller.id)).toEqual(['second-look']);
   });
 
   it('shows the placeholder before any review ran, with nothing to open', () => {
@@ -553,5 +570,275 @@ describe('reading a part in the multi-file diff', () => {
       'Review a pull request first, then open all its parts in order.',
     ]);
     expect(stub.executedCommands).toEqual([]);
+  });
+});
+
+describe('the pending review and sending it', () => {
+  const copies = () => mixedResult().copies;
+  const head = (path: string) => changeUri('head', copies().head.commit, path);
+  const base = (path: string) => changeUri('base', copies().base.commit, path);
+  const SENT_URL = 'https://github.com/example-org/example-repo/pull/42#pullrequestreview-4242';
+
+  /** The requests the fake engine logged, as JSON values. */
+  function engineRequests(logName: string): { method: string; params?: Record<string, unknown> }[] {
+    return readFileSync(join(workDir, logName), 'utf8')
+      .split('\n')
+      .filter((line) => line !== '')
+      .map((line) => JSON.parse(line) as { method: string; params?: Record<string, unknown> });
+  }
+
+  it('gathers a line and a part comment, and sends them as one review', async () => {
+    const view = await reviewWithFakeEngine({ result: mixedResult(), logName: 'send.log' });
+    const sessionRequestsBefore = stub.sessionRequests.length;
+    const send = registeredCommands().get(SUBMIT_REVIEW_COMMAND)!;
+
+    // A line comment, written in a thread on the head side of the diff.
+    const line = stub.commentControllers[0]!.createCommentThread(head('src/retry.py'), new Range(4, 0, 4, 0), []);
+    await registeredCommands().get(ADD_COMMENT_COMMAND)!({ thread: line, text: 'this retry loop needs a cap' });
+    // A part comment, started from the tree's part.
+    const click = partClick(view, 'src/retry.py');
+    await registeredCommands().get(COMMENT_ON_PART_COMMAND)!(...(click?.arguments ?? []));
+    const partThread = stub.commentControllers[0]!.threads.at(-1)!;
+    await registeredCommands().get(ADD_COMMENT_COMMAND)!({ thread: partThread, text: 'the loop reads well overall' });
+
+    // The pending review gathers in its own tree section, above the parts,
+    // and nothing has asked for the write yet: no engine send, no session.
+    expect(renderedTree(view).slice(0, 3)).toEqual([
+      {
+        label: 'Pending review',
+        tooltip: 'The comments you wrote, sent to GitHub as one review on submit.',
+      },
+      { label: 'src/retry.py:5', description: 'this retry loop needs a cap', tooltip: 'this retry loop needs a cap', contextValue: 'comment' },
+      { label: 'src/retry.py (part)', description: 'the loop reads well overall', tooltip: 'the loop reads well overall', contextValue: 'comment' },
+    ]);
+    expect(engineRequests('send.log').map((request) => request.method)).toEqual(['initialize', 'review']);
+    expect(stub.sessionRequests).toHaveLength(sessionRequestsBefore);
+
+    // The reviewer picks how to submit and writes the overall comment.
+    stub.quickPickResult = { submit: 'comment' };
+    stub.inputBoxResult = 'One deliberate pass.';
+    stub.informationChoice = 'Open on GitHub';
+    await send() as Promise<void>;
+
+    // The write permission was asked for at send time only, and the engine
+    // got one sendReview: the kind, the overall comment, both comments.
+    expect(stub.sessionRequests).toHaveLength(sessionRequestsBefore + 1);
+    expect(stub.sessionRequests.at(-1)).toEqual({ id: 'github', scopes: ['repo'], createIfNone: true });
+    const requests = engineRequests('send.log');
+    expect(requests.at(-1)).toMatchObject({
+      method: 'sendReview',
+      params: {
+        url: PR_URL,
+        token: TOKEN,
+        review: {
+          submit: 'comment',
+          body: 'One deliberate pass.',
+          comments: [
+            { kind: 'line', path: 'src/retry.py', side: 'head', line: 5, body: 'this retry loop needs a cap' },
+            { kind: 'part', path: 'src/retry.py', body: 'the loop reads well overall' },
+          ],
+        },
+      },
+    });
+    // The review's link shows, and the pending review is empty again.
+    expect(stub.informationMessages).toEqual([`Review sent: ${SENT_URL}`]);
+    expect(stub.openedExternals).toEqual([SENT_URL]);
+    expect(renderedTree(view)[0]).toEqual({ label: 'Must review', tooltip: 'The parts to read first.' });
+    expect(stub.commentControllers[0]!.threads).toHaveLength(0);
+  });
+
+  it('starts a part comment from the context menu, which passes the tree element', async () => {
+    const view = await reviewWithFakeEngine({ result: mixedResult(), logName: 'context-part.log' });
+
+    // The view's context menu hands the command the tree's element — the
+    // node carrying the part — rather than the part itself.
+    const provider = providerOf(view);
+    const node = provider
+      .getChildren()
+      .flatMap((section) => provider.getChildren(section))
+      .find((child) => provider.getTreeItem(child).label === 'src/retry.py');
+    await registeredCommands().get(COMMENT_ON_PART_COMMAND)!(node);
+
+    const thread = stub.commentControllers[0]!.threads.at(-1)!;
+    expect(thread.uri.toString()).toBe(head('src/retry.py').toString());
+    expect(thread.label).toBe('src/retry.py (part)');
+
+    await registeredCommands().get(ADD_COMMENT_COMMAND)!({ thread, text: 'written from the context menu' });
+    stub.quickPickResult = { submit: 'comment' };
+    stub.inputBoxResult = '';
+    await registeredCommands().get(SUBMIT_REVIEW_COMMAND)!() as Promise<void>;
+
+    const sent = engineRequests('context-part.log').find((request) => request.method === 'sendReview');
+    expect(sent?.params?.['review']).toMatchObject({
+      submit: 'comment',
+      comments: [{ kind: 'part', path: 'src/retry.py', body: 'written from the context menu' }],
+    });
+  });
+
+  it('keeps every comment when the send fails', async () => {
+    const view = await reviewWithFakeEngine({
+      result: mixedResult(),
+      sendError: 'GitHub is down',
+      logName: 'send-fails.log',
+    });
+
+    const thread = stub.commentControllers[0]!.createCommentThread(head('src/retry.py'), new Range(4, 0, 4, 0), []);
+    await registeredCommands().get(ADD_COMMENT_COMMAND)!({ thread, text: 'kept after the failure' });
+    stub.quickPickResult = { submit: 'comment' };
+    stub.inputBoxResult = 'tries to send';
+
+    await registeredCommands().get(SUBMIT_REVIEW_COMMAND)!() as Promise<void>;
+
+    expect(stub.errorMessages).toEqual(['GitHub is down']);
+    expect(renderedTree(view)[1]).toMatchObject({ label: 'src/retry.py:5' });
+    expect(stub.commentControllers[0]!.threads).toContain(thread);
+    // The failed send still asked for nothing but the one write attempt.
+    expect(stub.progressTitles.at(-1)).toBe('Sending the review…');
+  });
+
+  it('submits each of the three kinds, one write each', async () => {
+    for (const submit of ['comment', 'approve', 'request changes'] as const) {
+      stub.reset();
+      await reviewWithFakeEngine({ result: mixedResult(), logName: `kind-${submit}.log` });
+      const thread = stub.commentControllers[0]!.createCommentThread(
+        head('src/retry.py'),
+        new Range(4, 0, 4, 0),
+        [],
+      );
+      await registeredCommands().get(ADD_COMMENT_COMMAND)!({ thread, text: 'goes with the review' });
+      stub.quickPickResult = { submit };
+      stub.inputBoxResult = '';
+
+      await registeredCommands().get(SUBMIT_REVIEW_COMMAND)!() as Promise<void>;
+
+      const sent = engineRequests(`kind-${submit}.log`).find((request) => request.method === 'sendReview');
+      expect(sent?.params?.['review']).toMatchObject({
+        submit,
+        comments: [{ kind: 'line', path: 'src/retry.py', side: 'head', line: 5 }],
+      });
+      expect(stub.errorMessages).toEqual([]);
+      expect(stub.informationMessages).toHaveLength(1);
+    }
+  });
+
+  it('asks through the prompts when the tree title button forwards the view context', async () => {
+    await reviewWithFakeEngine({ result: mixedResult(), logName: 'title-button.log' });
+    const thread = stub.commentControllers[0]!.createCommentThread(
+      head('src/retry.py'),
+      new Range(4, 0, 4, 0),
+      [],
+    );
+    await registeredCommands().get(ADD_COMMENT_COMMAND)!({ thread, text: 'sent from the title button' });
+    stub.quickPickResult = { submit: 'approve' };
+    stub.inputBoxResult = '';
+
+    // The rocket button in the tree's title runs the command with the
+    // view-pane context object as its first argument; that is no submit
+    // kind, so the prompts ask and the send carries their choice.
+    await registeredCommands().get(SUBMIT_REVIEW_COMMAND)!({
+      $treeViewId: 'second-look.reviewTree',
+      $focusedTreeItem: true,
+      $selectedTreeItems: true,
+    }) as Promise<void>;
+
+    const sent = engineRequests('title-button.log').find((request) => request.method === 'sendReview');
+    expect(sent?.params?.['review']).toMatchObject({
+      submit: 'approve',
+      comments: [{ kind: 'line', path: 'src/retry.py', side: 'head', line: 5, body: 'sent from the title button' }],
+    });
+    expect(stub.errorMessages).toEqual([]);
+  });
+
+  it('sends nothing when the reviewer dismisses the submit step', async () => {
+    await reviewWithFakeEngine({ result: mixedResult(), logName: 'dismissed-submit.log' });
+    stub.quickPickResult = undefined;
+
+    await registeredCommands().get(SUBMIT_REVIEW_COMMAND)!() as Promise<void>;
+
+    expect(engineRequests('dismissed-submit.log').map((request) => request.method)).toEqual(['initialize', 'review']);
+    expect(stub.sessionRequests).toHaveLength(1); // Only the review's own.
+    expect(stub.progressTitles).toHaveLength(1);
+  });
+
+  it('asks for a review before submitting when none ran yet', async () => {
+    activate(stubContext() as unknown as vscode.ExtensionContext, {
+      spawnEngine: () => {
+        throw new Error('no review ran');
+      },
+    });
+
+    await registeredCommands().get(SUBMIT_REVIEW_COMMAND)!() as Promise<void>;
+
+    expect(stub.warningMessages).toEqual([
+      'Review a pull request first, then write comments and submit them.',
+    ]);
+    expect(stub.sessionRequests).toEqual([]);
+  });
+
+  it('refuses to send a comment review with nothing in it', async () => {
+    await reviewWithFakeEngine({ result: mixedResult(), logName: 'empty-send.log' });
+    stub.quickPickResult = { submit: 'comment' };
+    stub.inputBoxResult = '';
+
+    await registeredCommands().get(SUBMIT_REVIEW_COMMAND)!() as Promise<void>;
+
+    expect(stub.warningMessages).toEqual([
+      'Nothing to send yet: write a comment or an overall comment, or approve.',
+    ]);
+    expect(engineRequests('empty-send.log').map((request) => request.method)).toEqual(['initialize', 'review']);
+  });
+
+  it('refuses an empty request-changes review; an empty approve still sends', async () => {
+    await reviewWithFakeEngine({ result: mixedResult(), logName: 'empty-request-changes.log' });
+    stub.quickPickResult = { submit: 'request changes' };
+    stub.inputBoxResult = '';
+
+    await registeredCommands().get(SUBMIT_REVIEW_COMMAND)!() as Promise<void>;
+
+    expect(stub.warningMessages).toEqual([
+      'Nothing to send yet: write a comment or an overall comment, or approve.',
+    ]);
+    expect(engineRequests('empty-request-changes.log').map((request) => request.method)).toEqual(['initialize', 'review']);
+
+    stub.quickPickResult = { submit: 'approve' };
+    await registeredCommands().get(SUBMIT_REVIEW_COMMAND)!() as Promise<void>;
+
+    const sent = engineRequests('empty-request-changes.log').find((request) => request.method === 'sendReview');
+    expect(sent?.params?.['review']).toMatchObject({ submit: 'approve', comments: [] });
+    expect(stub.warningMessages).toHaveLength(1);
+  });
+
+  it('keeps the comments when the reviewer is not signed in at send time', async () => {
+    const view = await reviewWithFakeEngine({ result: mixedResult(), logName: 'no-sign-in-send.log' });
+    stub.session = undefined;
+    const thread = stub.commentControllers[0]!.createCommentThread(head('src/retry.py'), new Range(4, 0, 4, 0), []);
+    await registeredCommands().get(ADD_COMMENT_COMMAND)!({ thread, text: 'waits for sign-in' });
+    stub.quickPickResult = { submit: 'approve' };
+    stub.inputBoxResult = '';
+
+    await registeredCommands().get(SUBMIT_REVIEW_COMMAND)!() as Promise<void>;
+
+    expect(stub.warningMessages).toEqual(['Sign in to GitHub to send the review.']);
+    expect(renderedTree(view)[1]).toMatchObject({ label: 'src/retry.py:5' });
+    expect(engineRequests('no-sign-in-send.log').map((request) => request.method)).toEqual(['initialize', 'review']);
+  });
+
+  it('discards one pending comment, base side included', async () => {
+    const view = await reviewWithFakeEngine({ result: mixedResult(), logName: 'discard.log' });
+    const onHead = stub.commentControllers[0]!.createCommentThread(head('src/retry.py'), new Range(4, 0, 4, 0), []);
+    await registeredCommands().get(ADD_COMMENT_COMMAND)!({ thread: onHead, text: 'stays' });
+    const onBase = stub.commentControllers[0]!.createCommentThread(base('src/retry.py'), new Range(3, 0, 3, 0), []);
+    await registeredCommands().get(ADD_COMMENT_COMMAND)!({ thread: onBase, text: 'goes' });
+
+    // The base-side comment targets the same file's base side.
+    expect(renderedTree(view)[2]).toMatchObject({ label: 'src/retry.py:4' });
+
+    await registeredCommands().get(DISCARD_COMMENT_COMMAND)!(onBase);
+
+    expect(renderedTree(view).slice(0, 2)).toEqual([
+      { label: 'Pending review', tooltip: 'The comments you wrote, sent to GitHub as one review on submit.' },
+      { label: 'src/retry.py:5', description: 'stays', tooltip: 'stays', contextValue: 'comment' },
+    ]);
+    expect(stub.commentControllers[0]!.threads).not.toContain(onBase);
   });
 });

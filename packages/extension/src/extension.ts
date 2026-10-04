@@ -6,10 +6,14 @@ import {
   type SpawnEngine,
 } from './engine-client.js';
 import {
+  ADD_COMMENT_COMMAND,
+  COMMENT_ON_PART_COMMAND,
+  DISCARD_COMMENT_COMMAND,
   OPEN_ALL_PARTS_COMMAND,
   OPEN_PART_COMMAND,
   REVIEW_COMMAND,
   REVIEW_TREE_VIEW,
+  SUBMIT_REVIEW_COMMAND,
 } from './commands.js';
 import { CHANGE_SCHEME, ChangeCopiesProvider } from './change-copies.js';
 import { openPartInDiffEditor, openWholeChangeInDiffEditor, PartMarker } from './diff-view.js';
@@ -18,14 +22,26 @@ import {
   buildTree,
   findAnchor,
   groupingStatus,
+  pendingReviewSection,
+  type TreeComment,
   type TreePart,
   type TreeSection,
 } from './tree.js';
+import { pickSubmitKind, readOverallComment, ReviewComments } from './comments.js';
 import { AgentStatusBar } from './agent-status.js';
 import { readAgentSettings, type AgentSettings } from './agent-settings.js';
-import type { Part, ReviewResult } from '@second-look/engine';
+import type { Part, ReviewResult, SubmitKind } from '@second-look/engine';
 
-export { OPEN_ALL_PARTS_COMMAND, OPEN_PART_COMMAND, REVIEW_COMMAND, REVIEW_TREE_VIEW };
+export {
+  ADD_COMMENT_COMMAND,
+  COMMENT_ON_PART_COMMAND,
+  DISCARD_COMMENT_COMMAND,
+  OPEN_ALL_PARTS_COMMAND,
+  OPEN_PART_COMMAND,
+  REVIEW_COMMAND,
+  REVIEW_TREE_VIEW,
+  SUBMIT_REVIEW_COMMAND,
+};
 
 /** The parts of the environment tests replace; production uses the real ones. */
 export interface ExtensionDeps {
@@ -41,17 +57,49 @@ const EMPTY_TREE_PLACEHOLDER: TreePart = {
   kind: 'part',
 };
 
-/** A tree node: either a section or a part inside it. */
-type TreeNode = TreeSection | TreePart;
+/** A tree node: a section, a part inside it, or a pending comment. */
+type TreeNode = TreeSection | TreePart | TreeComment;
 
 function isSection(node: TreeNode): node is TreeSection {
   return 'parts' in node;
 }
 
+/** Whether a value is one of the three ways a review is submitted. */
+function isSubmitKind(value: unknown): value is SubmitKind {
+  return value === 'comment' || value === 'approve' || value === 'request changes';
+}
+
+/** Whether a value is a part of the reviewed change. */
+function isPart(value: unknown): value is Part {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as Part).path === 'string' &&
+    Array.isArray((value as Part).hunks)
+  );
+}
+
+/**
+ * The part a command's argument carries: the tree's element, unwrapped,
+ * or the part itself, the way a tree item's own click command passes it.
+ * Anything else reads as absent.
+ */
+function carriedPart(arg: unknown): Part | undefined {
+  if (typeof arg !== 'object' || arg === null) {
+    return undefined;
+  }
+  const node = arg as { part?: unknown };
+  if (node.part !== undefined) {
+    return isPart(node.part) ? node.part : undefined;
+  }
+  return isPart(arg) ? arg : undefined;
+}
+
 /**
  * The side-bar tree: importance groups in order with the reason beside
- * each part and the signals in its tooltip, and the noise last. Clicking
- * a part opens it in the diff editor.
+ * each part and the signals in its tooltip, the noise last, and the
+ * pending review gathering above them all. Clicking a part opens it in
+ * the diff editor.
  */
 class ReviewTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   private readonly change = new vscode.EventEmitter<void>();
@@ -83,7 +131,7 @@ class ReviewTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     item.description = node.description;
     item.tooltip = node.tooltip;
     item.contextValue = node.kind;
-    if (node.part !== undefined) {
+    if (node.kind !== 'comment' && node.part !== undefined) {
       item.id = `part:${JSON.stringify(anchorOf(node.part))}`;
       item.command = {
         command: OPEN_PART_COMMAND,
@@ -129,6 +177,7 @@ class ReviewSession {
   private readonly treeView: vscode.TreeView<TreeNode>;
   private readonly copies: ChangeCopiesProvider;
   private readonly marker: PartMarker;
+  private readonly comments: ReviewComments;
   private readonly spawnEngine: ExtensionDeps['spawnEngine'];
   private engine: EngineClient | undefined;
   /** The agent and model the running engine was started with. */
@@ -138,19 +187,23 @@ class ReviewSession {
   private reviews = 0;
   /** True while a review's engine request is still out. */
   private running = false;
+  private url: string | undefined;
 
   constructor(
     tree: ReviewTreeProvider,
     treeView: vscode.TreeView<TreeNode>,
     copies: ChangeCopiesProvider,
     marker: PartMarker,
+    comments: ReviewComments,
     deps: ExtensionDeps,
   ) {
     this.tree = tree;
     this.treeView = treeView;
     this.copies = copies;
     this.marker = marker;
+    this.comments = comments;
     this.spawnEngine = deps.spawnEngine;
+    this.comments.onDidChange(() => this.refreshTree());
   }
 
   async reviewPullRequest(urlArg?: string): Promise<void> {
@@ -217,20 +270,30 @@ class ReviewSession {
   }
 
   /**
-   * Shows a result in the tree. The first result of a review reveals the
-   * first section; a later one updates the tree in place and keeps the
-   * reviewer's place, reselecting the part that now holds the selected
-   * part's first hunk.
+   * Shows a result in the tree. The first result of a review starts its
+   * pending review and reveals the first section; a later one updates the
+   * tree in place and keeps the reviewer's place, reselecting the part
+   * that now holds the selected part's first hunk, with every pending
+   * comment kept.
    */
   private async show(result: ReviewResult, update: boolean): Promise<void> {
     const selected = this.treeView.selection[0];
     const anchor =
-      update && selected !== undefined && !isSection(selected) && selected.part !== undefined
+      update &&
+      selected !== undefined &&
+      !isSection(selected) &&
+      selected.kind !== 'comment' &&
+      selected.part !== undefined
         ? anchorOf(selected.part)
         : undefined;
     this.result = result;
+    this.url = result.pullRequest.url;
     this.copies.setCopies(result.copies);
-    this.tree.setSections(buildTree(result));
+    // A review's first result starts its pending review afresh; a later
+    // stage of the same review keeps every comment already written, whose
+    // lines and files the regrouping does not change.
+    if (!update) this.comments.setReview(result);
+    this.tree.setSections(this.sections());
     if (!update) {
       await this.revealFirstSection();
       return;
@@ -241,6 +304,25 @@ class ReviewSession {
         () => undefined,
         () => undefined,
       );
+    }
+  }
+
+  /** The tree's sections: the pending review gathering above the ranked parts. */
+  private sections(): TreeSection[] {
+    if (this.result === undefined) {
+      return [];
+    }
+    const pending = this.comments.pending();
+    return [
+      ...(pending.length > 0 ? [pendingReviewSection(pending)] : []),
+      ...buildTree(this.result),
+    ];
+  }
+
+  /** Rebuilds the tree's sections after the pending review changed. */
+  private refreshTree(): void {
+    if (this.result !== undefined) {
+      this.tree.setSections(this.sections());
     }
   }
 
@@ -275,11 +357,133 @@ class ReviewSession {
     }
   }
 
+  /** Adds the comment the reviewer wrote in a thread to the pending review. */
+  addComment(reply: vscode.CommentReply): void {
+    this.comments.add(reply);
+  }
+
+  /**
+   * Starts a comment on a whole part, gathered in the pending review.
+   * The editor's context menu passes the tree's element, so the part is
+   * read out of whatever the argument carries; with nothing usable, or
+   * no review to comment on, the reviewer is told what is missing.
+   */
+  commentOnPart(arg?: unknown): void {
+    const part = carriedPart(arg);
+    if (part === undefined || this.result === undefined) {
+      vscode.window.showWarningMessage(
+        'Review a pull request first, then comment on its parts.',
+      );
+      return;
+    }
+    this.comments.commentOnPart(part);
+  }
+
+  /** Discards one pending comment, with its thread. */
+  discardComment(thread: vscode.CommentThread): void {
+    this.comments.discard(thread);
+  }
+
+  /**
+   * Submits the pending review to GitHub as one review: how the reviewer
+   * chose, with their overall comment, every gathered comment in it. The
+   * GitHub sign-in is asked for here, at send time only — until this
+   * moment nothing of the review has left the companion (ADR 0002) — and
+   * a send that fails keeps every comment for the reviewer to send again.
+   *
+   * The arguments skip the prompts only when they are what they claim:
+   * a genuine submit kind and a string body, the way a test drives the
+   * flow. The editor's menus forward other things — the tree title's
+   * button passes the view's context object — so anything else reads as
+   * absent and the prompts ask.
+   */
+  async submitReview(submitArg?: SubmitKind, bodyArg?: string): Promise<void> {
+    if (this.result === undefined || this.url === undefined) {
+      vscode.window.showWarningMessage(
+        'Review a pull request first, then write comments and submit them.',
+      );
+      return;
+    }
+    const submit = isSubmitKind(submitArg) ? submitArg : await pickSubmitKind();
+    if (submit === undefined) {
+      return; // Dismissed: the deliberate step was not taken.
+    }
+    const body = typeof bodyArg === 'string' ? bodyArg : await readOverallComment();
+    if (body === undefined) {
+      return;
+    }
+    const comments = this.comments.pending();
+    if (comments.length === 0 && body === '' && submit !== 'approve') {
+      vscode.window.showWarningMessage(
+        'Nothing to send yet: write a comment or an overall comment, or approve.',
+      );
+      return;
+    }
+
+    let session: vscode.AuthenticationSession | undefined;
+    try {
+      session = await vscode.authentication.getSession('github', ['repo'], {
+        createIfNone: true,
+      });
+    } catch {
+      session = undefined;
+    }
+    if (!session) {
+      vscode.window.showWarningMessage('Sign in to GitHub to send the review.');
+      return; // The comments stay gathered.
+    }
+
+    try {
+      const sent = await vscode.window.withProgress(
+        { location: { viewId: REVIEW_TREE_VIEW }, title: 'Sending the review…' },
+        () =>
+          this.engineSend(this.url!, session!.accessToken, {
+            submit,
+            ...(body !== '' ? { body } : {}),
+            comments: [...comments],
+          }),
+      );
+      this.comments.clear();
+      vscode.window.showInformationMessage(`Review sent: ${sent.url}`, 'Open on GitHub').then(
+        (open) => {
+          if (open === 'Open on GitHub') {
+            void vscode.env.openExternal(vscode.Uri.parse(sent.url));
+          }
+        },
+        () => undefined,
+      );
+    } catch (error) {
+      // The send failed: every comment stays gathered for another try.
+      vscode.window.showErrorMessage(
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  private async engineSend(
+    url: string,
+    token: string,
+    review: Parameters<EngineClient['sendReview']>[2],
+  ) {
+    const engine = await this.readyEngine();
+    return engine.sendReview(url, token, review);
+  }
+
   private async engineReview(
     url: string,
     token: string,
     onStage: (stage: ReviewStageUpdate) => void,
   ): Promise<ReviewResult> {
+    const engine = await this.readyEngine();
+    return engine.review(url, token, onStage);
+  }
+
+  /**
+   * The engine, started with the agent and model the settings choose and
+   * past its handshake. A settings change since the running engine was
+   * started stops it, so the next request runs on the chosen agent.
+   */
+  private async readyEngine(): Promise<EngineClient> {
     const chosen: Pick<AgentSettings, 'agent' | 'model'> = readAgentSettings();
     if (
       this.engine === undefined ||
@@ -294,7 +498,7 @@ class ReviewSession {
     if (!engine.initialized) {
       await engine.initialize();
     }
-    return engine.review(url, token, onStage);
+    return engine;
   }
 
   private async revealFirstSection(): Promise<void> {
@@ -316,10 +520,12 @@ class ReviewSession {
  * Activates the companion: registers the review command and the review
  * tree, the read-only file system that serves the change's copies, the
  * commands that open a part — or the whole change, in ranked order —
- * in the editor's multi-file diff, and the status bar entry that shows
- * the agent and model in use. Nothing here runs anything from the
- * workspace — the engine is started from the companion's own install and
- * only ever reads GitHub.
+ * in the editor's multi-file diff, the comment threads the reviewer
+ * writes the pending review in, the command that submits it to GitHub,
+ * and the status bar entry that shows the agent and model in use.
+ * Nothing here runs anything from the workspace — the engine is started
+ * from the companion's own install, reads GitHub, and writes only the
+ * one review the reviewer sends.
  *
  * Returns the review tree's data provider, so a test running in a real
  * editor can read the tree the command filled.
@@ -327,19 +533,21 @@ class ReviewSession {
 export function activate(
   context: vscode.ExtensionContext,
   deps: ExtensionDeps = {},
-): vscode.TreeDataProvider<TreeSection | TreePart> {
+): vscode.TreeDataProvider<TreeSection | TreePart | TreeComment> {
   const tree = new ReviewTreeProvider();
   const treeView = vscode.window.createTreeView(REVIEW_TREE_VIEW, {
     treeDataProvider: tree,
   });
   const copies = new ChangeCopiesProvider();
   const marker = new PartMarker();
-  const session = new ReviewSession(tree, treeView, copies, marker, deps);
+  const comments = new ReviewComments();
+  const session = new ReviewSession(tree, treeView, copies, marker, comments, deps);
   const agentStatusBar = new AgentStatusBar(deps.env);
   agentStatusBar.refresh();
   context.subscriptions.push(
     treeView,
     marker,
+    comments,
     { dispose: () => session.dispose() },
     agentStatusBar,
     vscode.workspace.registerFileSystemProvider(CHANGE_SCHEME, copies, {
@@ -355,6 +563,18 @@ export function activate(
       part === undefined ? undefined : session.openPart(part),
     ),
     vscode.commands.registerCommand(OPEN_ALL_PARTS_COMMAND, () => session.openAllParts()),
+    vscode.commands.registerCommand(SUBMIT_REVIEW_COMMAND, (submit?: SubmitKind, body?: string) =>
+      session.submitReview(submit, body),
+    ),
+    vscode.commands.registerCommand(ADD_COMMENT_COMMAND, (reply?: vscode.CommentReply) =>
+      reply === undefined ? undefined : session.addComment(reply),
+    ),
+    vscode.commands.registerCommand(COMMENT_ON_PART_COMMAND, (arg?: unknown) =>
+      session.commentOnPart(arg),
+    ),
+    vscode.commands.registerCommand(DISCARD_COMMENT_COMMAND, (thread?: vscode.CommentThread) =>
+      thread === undefined ? undefined : session.discardComment(thread),
+    ),
   );
   return tree;
 }

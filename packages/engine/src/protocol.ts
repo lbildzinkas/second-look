@@ -63,6 +63,62 @@ export type ChangeKind =
   /** A file copied from another path, with or without edits. */
   | 'copy';
 
+/**
+ * How the reviewer submits the pending review to GitHub: as a plain
+ * comment, an approval, or a request for changes.
+ */
+export type SubmitKind = 'comment' | 'approve' | 'request changes';
+
+/** The side of the change a comment's line sits on: the base or the head. */
+export type CommentSide = 'base' | 'head';
+
+/**
+ * A comment the reviewer wrote in the companion and sends to GitHub as
+ * part of one pending review (ADR 0002): on one line of the diff, or on a
+ * whole part. The companion never posts it anywhere until the reviewer
+ * presses send.
+ */
+export type Comment =
+  | {
+      /** A comment on one line of the diff. */
+      kind: 'line';
+      /** The file, by its path on the new side, as GitHub names it. */
+      path: string;
+      /** The side the line sits on: the base copy or the head copy. */
+      side: CommentSide;
+      /** The line's 1-based number on that side. */
+      line: number;
+      /** The comment's text, exactly as the reviewer wrote it. */
+      body: string;
+    }
+  | {
+      /** A comment on a whole part, which GitHub anchors to the file. */
+      kind: 'part';
+      /** The file, by its path on the new side, as GitHub names it. */
+      path: string;
+      /** The comment's text, exactly as the reviewer wrote it. */
+      body: string;
+    };
+
+/**
+ * The pending review the companion gathers: every comment the reviewer
+ * wrote, plus how they submit it and its overall comment on the whole
+ * pull request. Nothing in it has reached GitHub yet.
+ */
+export interface PendingReview {
+  /** How the reviewer submits: comment, approve or request changes. */
+  submit: SubmitKind;
+  /** The review's overall comment on the whole pull request, when it has one. */
+  body?: string;
+  comments: Comment[];
+}
+
+/** The review that reached GitHub, with the link the reviewer reads it at. */
+export interface SentReview {
+  /** The review's HTML URL on GitHub. */
+  url: string;
+}
+
 /** The review result the engine produces for one pull request. */
 export interface ReviewResult {
   /** Schema version; compare against {@link REVIEW_RESULT_VERSION}. */

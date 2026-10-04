@@ -15,6 +15,7 @@ import {
   type PartRank,
   type PartRole,
   type ReviewResult,
+  type SentReview,
   type SyntaxCheck,
 } from '@second-look/engine';
 
@@ -342,6 +343,28 @@ export class ProtocolError extends Error {
     );
     this.name = 'ProtocolError';
   }
+}
+
+/** Error thrown when a send's answer is not a sent review. */
+export class SendProtocolError extends Error {
+  constructor() {
+    super(`the engine's answer is not the link of a sent review`);
+    this.name = 'SendProtocolError';
+  }
+}
+
+/**
+ * Checks that a value read over the protocol is a sent review: the one
+ * field it carries, the review's link, as a string.
+ */
+export function isSentReview(value: unknown): value is SentReview {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    typeof (value as { url?: unknown }).url === 'string' &&
+    (value as { url: string }).url.length > 0
+  );
 }
 
 /**

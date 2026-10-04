@@ -17,6 +17,10 @@ const GITATTRIBUTES_URL =
 /** One request the fake transport served, with the headers we care about. */
 export interface RecordedRequest {
   url: string;
+  /** The request's HTTP method, so a test can prove which calls wrote. */
+  method: string;
+  /** The request body, parsed when it is JSON; null when there was none. */
+  body: unknown;
   accept: string;
   authorization: string | null;
 }
@@ -193,13 +197,30 @@ export function githubTarball(files: Record<string, string>, commit: string): Bu
 
 const API = 'https://api.github.com/repos/example-org/example-repo';
 
+/** The review the recorded responses hand back for a send. */
+export const SENT_REVIEW_URL = `${PR_URL}#pullrequestreview-4242`;
+
+/** Reads the body a request carried, parsed when it is JSON. */
+function recordedBody(init: RequestInit | undefined): unknown {
+  const raw = init?.body;
+  if (typeof raw !== 'string' || raw === '') {
+    return null;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+}
+
 /**
  * A fetch that serves the recorded GitHub responses from test/fixtures:
  * the JSON metadata for plain requests, the full diff for requests that ask
  * for the diff media type, the repository's root `.gitattributes` as
  * stored at the head commit, the merge base from the compare endpoint,
- * and archives of both versions. Any other URL throws, so a test can never
- * touch the live network by accident.
+ * archives of both versions, and one submitted review for a send. Any
+ * other URL throws, so a test can never touch the live network by
+ * accident.
  */
 export function fixtureFetch(pull: PullFixture = pull42()): FixtureTransport {
   const requests: RecordedRequest[] = [];
@@ -210,6 +231,8 @@ export function fixtureFetch(pull: PullFixture = pull42()): FixtureTransport {
     const headers = new Headers(init?.headers);
     requests.push({
       url,
+      method: init?.method ?? 'GET',
+      body: recordedBody(init),
       accept: headers.get('accept') ?? '',
       authorization: headers.get('authorization'),
     });
@@ -237,6 +260,12 @@ export function fixtureFetch(pull: PullFixture = pull42()): FixtureTransport {
           headers: { 'content-type': 'application/json; charset=utf-8' },
         },
       );
+    }
+    if (url === `${API}/pulls/${pull.number}/reviews`) {
+      if ((init?.method ?? 'GET') !== 'POST') {
+        throw new Error(`unexpected ${init?.method ?? 'GET'} to ${url}: sending is one POST`);
+      }
+      return Response.json({ id: 4242, html_url: SENT_REVIEW_URL, state: 'COMMENTED' });
     }
     if (url === `${API}/pulls/${pull.number}`) {
       const wantsDiff = (headers.get('accept') ?? '').includes('vnd.github.v3.diff');

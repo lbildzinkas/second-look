@@ -3,6 +3,7 @@ import {
   filesOfPart,
   isLabelledNoise,
   noiseSinks,
+  type Comment,
   type FileSlice,
   type Importance,
   type LabelledNoise,
@@ -24,13 +25,24 @@ export interface TreePart {
   part?: Part;
 }
 
-/** One section of the tree: an importance group, the unranked parts, or noise. */
+/** One pending comment as the tree shows it, in the pending review's section. */
+export interface TreeComment {
+  /** Where the comment points: `path:line`, or `path (part)`. */
+  label: string;
+  /** Shown beside the label: the comment's first line. */
+  description?: string;
+  /** Shown on hover: the comment in full. */
+  tooltip?: string;
+  kind: 'comment';
+}
+
+/** One section of the tree: an importance group, the unranked parts, noise, or the pending review. */
 export interface TreeSection {
   /** The section's title. */
   label: string;
   /** What the section means, shown on hover. */
   tooltip: string;
-  parts: TreePart[];
+  parts: (TreePart | TreeComment)[];
 }
 
 /** The title of the section for parts that arrive without a rank. */
@@ -38,6 +50,9 @@ export const NOT_RANKED_YET = 'Not ranked yet';
 
 /** The title of the last section, where the noise parts sink. */
 export const NOISE = 'Noise';
+
+/** The title of the section the pending review gathers in, above the parts. */
+export const PENDING_REVIEW = 'Pending review';
 
 const SECTION_TITLES: Record<Importance, string> = {
   'must review': 'Must review',
@@ -118,8 +133,34 @@ export function buildTree(result: ReviewResult): TreeSection[] {
 export function partsInReadingOrder(result: ReviewResult): Part[] {
   return buildTree(result)
     .flatMap((section) => section.parts)
-    .filter((part) => part.part !== undefined)
-    .map((part) => part.part!);
+    .filter((entry): entry is TreePart => 'part' in entry && entry.part !== undefined)
+    .map((entry) => entry.part!);
+}
+
+/**
+ * The section the pending review gathers in: every comment the reviewer
+ * wrote, where each points, kept until they submit it as one review.
+ */
+export function pendingReviewSection(comments: readonly Comment[]): TreeSection {
+  return {
+    label: PENDING_REVIEW,
+    tooltip: 'The comments you wrote, sent to GitHub as one review on submit.',
+    parts: comments.map((comment) => ({
+      label:
+        comment.kind === 'line'
+          ? `${comment.path}:${comment.line}`
+          : `${comment.path} (part)`,
+      description: preview(comment.body),
+      tooltip: comment.body,
+      kind: 'comment' as const,
+    })),
+  };
+}
+
+/** The comment's first line, cut short for the row beside it. */
+function preview(body: string): string {
+  const firstLine = body.split('\n')[0] ?? '';
+  return firstLine.length > 60 ? `${firstLine.slice(0, 57)}…` : firstLine;
 }
 
 /**
@@ -215,9 +256,13 @@ function holdsAnchor(file: FileSlice, anchor: PartAnchor): boolean {
   return file.hunks.some((each) => each.oldStart === hunk.oldStart && each.newStart === hunk.newStart);
 }
 
-/** The tree node of the part that holds the anchor's hunk, when the tree has one. */
+/**
+ * The tree node of the part that holds the anchor's hunk, when the tree
+ * has one; the pending review's comments are never a part.
+ */
 export function findAnchor(sections: readonly TreeSection[], anchor: PartAnchor): TreePart | undefined {
   return sections
     .flatMap((section) => section.parts)
+    .filter((node): node is TreePart => node.kind !== 'comment')
     .find(({ part }) => part !== undefined && filesOfPart(part).some((file) => holdsAnchor(file, anchor)));
 }

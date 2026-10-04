@@ -94,7 +94,14 @@ describe('buildTree', () => {
     const sections = buildTree(mixedResult());
 
     expect(sections.at(-1)!.label).toBe(NOISE);
-    expect(sections.at(-1)!.parts.map(({ part: _part, ...shown }) => shown)).toEqual([
+    expect(
+      sections.at(-1)!.parts.map((node) => ({
+        label: node.label,
+        description: node.description,
+        tooltip: node.tooltip,
+        kind: node.kind,
+      })),
+    ).toEqual([
       {
         label: 'uv.lock',
         description: 'lockfile · claimed',
@@ -109,9 +116,11 @@ describe('buildTree', () => {
       },
     ]);
     // Every row carries the part it opens in the diff editor.
-    expect(sections.at(-1)!.parts.map((node) => node.part)).toEqual(
-      mixedResult().parts.slice(5),
-    );
+    expect(
+      sections
+        .at(-1)!
+        .parts.map((node) => ('part' in node ? node.part : undefined)),
+    ).toEqual(mixedResult().parts.slice(5));
   });
 
   it('gives every reading part its payload, but the placeholder none', () => {
@@ -119,7 +128,7 @@ describe('buildTree', () => {
 
     const every = [...sections.flatMap((section) => section.parts)];
     expect(every).toHaveLength(7);
-    expect(every.every((node) => node.part?.path === node.label)).toBe(true);
+    expect(every.every((node) => 'part' in node && node.part?.path === node.label)).toBe(true);
   });
 
   it('lists the parts in the order the reviewer reads them, noise last', () => {
