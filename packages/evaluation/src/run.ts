@@ -55,15 +55,15 @@ export interface RunResults {
   failures: { case: string; error: string }[];
   /** Cases whose agent grouping or ranking fell back to the plain one, with the prompt and why. */
   fallbacks?: { case: string; agent: string; prompt?: string; detail: string }[];
-  /** How each agent and model's ranking scored against the plain ranking over the same cases. */
+  /** How each agent, model and effort's ranking scored against the plain ranking over the same cases. */
   rankings?: RankingComparison[];
 }
 
 /**
  * The agent ranking's rank scores beside the plain ranking's, over the
  * cases the agent ranked: the score behind whether the agent ranking is
- * the default for that agent and model. It matches or beats the plain
- * ranking when neither score is worse.
+ * the default for that agent, model and effort. It matches or beats the
+ * plain ranking when neither score is worse.
  */
 export interface RankingComparison {
   agent: string;

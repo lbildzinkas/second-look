@@ -74,8 +74,9 @@ changed since the ref. Without --agent no model is called. With --agent
 pi, the cases tied to the grouping prompt also run it through the
 reviewer's installed Pi, the cases tied to the ranking prompt have their
 plain parts ranked by it, and those rows are stamped with the agent and
-model that answered; the report says whether each agent and model's
-ranking matches or beats the plain ranking over the cases it ranked. Each run writes its stamped results and the trace
+model that answered; the report says whether each agent, model and
+effort's ranking matches or beats the plain ranking over the cases it
+ranked. Each run writes its stamped results and the trace
 of every agent call to its own folder under --runs (default: the
 engine's cache folder). Coverage is a hard gate: the run exits 1 when any
 coverage is below 100%. With --baseline it compares the stamped rows and

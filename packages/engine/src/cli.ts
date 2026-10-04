@@ -52,10 +52,10 @@ keeps the plain grouping, with the reason in the result's grouping. The
 agent then ranks the parts, each with a one-line reason citing the plain
 signals it used; the validator rejects a missing reason, an uncited or
 unknown signal, or more than a third of the parts at must review, and the
-plain ranking stays then, as it does for an agent and model whose
-evaluation has not matched or beaten the plain ranking. The result's
-ranking says which ranking is shown and why. Each stage is announced on
-stderr while the agent works.
+plain ranking stays then, as it does for an agent, model and effort
+whose evaluation has not matched or beaten the plain ranking. The
+result's ranking says which ranking is shown and why. Each stage is
+announced on stderr while the agent works.
 
 It keeps read-only copies of the base and head versions, downloaded as
 archives, in a per-pull-request cache: --cache-dir, else the
