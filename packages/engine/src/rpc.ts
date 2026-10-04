@@ -125,8 +125,8 @@ export type SendReviewRpcResult = SentReview;
 
 /**
  * The notification the engine sends while a review request is still
- * running: the plain result is ready and a further stage, such as the
- * agent grouping the hunks, has started. The review's response then
+ * running: the result so far is ready and a further stage, such as the
+ * agent grouping the hunks or ranking the parts, has started. The review's response then
  * carries the final result. A JSON-RPC notification has no id of its own;
  * its params name the review request it belongs to.
  */

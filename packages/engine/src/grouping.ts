@@ -289,11 +289,3 @@ export async function groupWithAgent(
     grouping: { ...base, outcome: 'grouped', detail, leftOut },
   };
 }
-
-/**
- * How long the grouping stage may take: the agent's probe, and the run
- * with its one retry, each under the agent's timeout.
- */
-export function groupingStageTimeoutMs(settings: AgentSettings): number {
-  return 2 * settings.timeoutMs + 60_000;
-}

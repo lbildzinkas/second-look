@@ -4,7 +4,8 @@
   "source": "https://github.com/encode/httpx/pull/3690",
   "recordedAt": "2026-10-02T18:43:50.469Z",
   "prompts": [
-    "grouping"
+    "grouping",
+    "ranking"
   ],
   "pullRequest": {
     "url": "https://github.com/encode/httpx/pull/3690",

@@ -289,6 +289,24 @@ function isGrouping(value: unknown): boolean {
   );
 }
 
+/** Who ranked the parts, and what came of the agent ranking stage when there was one. */
+function isRanking(value: unknown): boolean {
+  if (!isRecord(value) || !isOneOf(value['by'], ['plain', 'agent'] as const)) return false;
+  const agent = value['agent'];
+  if (agent === undefined) return value['by'] === 'plain';
+  if (
+    !isRecord(agent) ||
+    !isString(agent['promptVersion']) ||
+    !isOneOf(agent['outcome'], ['ranked', 'fell back', 'not tested'] as const) ||
+    !isString(agent['detail'])
+  ) {
+    return false;
+  }
+  // The agent's ranking is shown only when it ranked, and then it says who answered.
+  if (value['by'] === 'agent') return agent['outcome'] === 'ranked' && isAgentStamp(agent['stamp']);
+  return agent['outcome'] !== 'ranked' && (agent['stamp'] === undefined || isAgentStamp(agent['stamp']));
+}
+
 function isPullRequestSummary(value: unknown): boolean {
   if (!isRecord(value)) return false;
   return (
@@ -331,7 +349,7 @@ export function isReviewResult(value: unknown): value is ReviewResult {
   if (typeof parseTimeMs !== 'number' || !Number.isFinite(parseTimeMs) || parseTimeMs < 0) {
     return false;
   }
-  if (!isGrouping(value['grouping'])) return false;
+  if (!isGrouping(value['grouping']) || !isRanking(value['ranking'])) return false;
   return Array.isArray(value['parts']) && value['parts'].every(isPart);
 }
 

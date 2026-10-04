@@ -6,6 +6,9 @@ import type { LibraryFetchOffer, PressedClaim } from './claims.js';
 /** How many leading parts count as the top of the ranking. */
 export const TOP_K = 3;
 
+/** The scores of a ranking: the median and top-k rank position of the known important parts. */
+export const RANK_SCORES: readonly string[] = ['rank-median', `rank-top-${TOP_K}`];
+
 /** The score of a grouping against the hand labels: pairwise hunk agreement. */
 export const GROUPING_AGREEMENT = 'grouping-agreement';
 

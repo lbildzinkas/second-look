@@ -3,7 +3,7 @@
   "id": "seeded-typescript",
   "source": "https://github.com/example-org/example-repo/pull/9279",
   "recordedAt": "2026-10-02T20:08:11.347Z",
-  "prompts": [],
+  "prompts": ["ranking"],
   "pullRequest": {
     "url": "https://github.com/example-org/example-repo/pull/9279",
     "number": 9279,

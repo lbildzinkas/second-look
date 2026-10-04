@@ -69,7 +69,7 @@ Anything the companion reports to the reviewer about a part, such as a refuted c
 _Avoid_: Issue, alert, warning
 
 **Tested model**:
-An agent and model combination the companion's evaluation has been run against, with published results.
+An agent, model and effort combination the companion's evaluation has been run against, with published results.
 _Avoid_: Supported model, certified model
 
 **Ask**:

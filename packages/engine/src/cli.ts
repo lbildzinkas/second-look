@@ -49,7 +49,13 @@ across files into parts — a function, its caller and its test — named by
 the entities they touch. Its answer is checked: hunks it leaves out go to
 a part marked "not grouped by the agent", and a missing or invalid answer
 keeps the plain grouping, with the reason in the result's grouping. The
-plain parts are announced on stderr while the agent works.
+agent then ranks the parts, each with a one-line reason citing the plain
+signals it used; the validator rejects a missing reason, an uncited or
+unknown signal, or more than a third of the parts at must review, and the
+plain ranking stays then, as it does for an agent, model and effort
+whose evaluation has not matched or beaten the plain ranking. The
+result's ranking says which ranking is shown and why. Each stage is
+announced on stderr while the agent works.
 
 It keeps read-only copies of the base and head versions, downloaded as
 archives, in a per-pull-request cache: --cache-dir, else the
@@ -86,7 +92,8 @@ JSON-RPC message per line. The protocol starts with a version handshake,
 and the GitHub token then arrives with each review request — never on the
 command line, where any process could read it — and is used only for that
 request. Each review arrives in stages: the plain result first, in a
-review/stage notification, then the result with the agent's grouping.`;
+review/stage notification, then the result with the agent's grouping in
+another while the agent ranks, then the result with the agent's ranking.`;
 
 export interface WriteDestination {
   write(chunk: string): boolean;
@@ -240,7 +247,8 @@ export async function runCli(
               adapter,
               settings,
               onStage: (stage) => {
-                streams.err.write(`second-look-engine: plain parts ready; ${stage.running}\n`);
+                const parts = stage.result.grouping.by === 'agent' ? "agent's" : 'plain';
+                streams.err.write(`second-look-engine: ${parts} parts ready; ${stage.running}\n`);
               },
             },
           }

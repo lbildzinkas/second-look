@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { compareWithBaseline, hasStamp, mergeBaseline } from '../src/baseline.js';
 import { ALL_CASES, NO_AGENT } from '../src/run.js';
-import type { ResultRow } from '../src/run.js';
+import type { RankingComparison, ResultRow } from '../src/run.js';
 
 function row(overrides: Partial<ResultRow> = {}): ResultRow {
   return {
@@ -129,7 +129,48 @@ describe('mergeBaseline', () => {
       rows: [row({ case: 'example-42', value: 0.5 }), row({ value: 1 }), row({ ...pi, value: 0.5 })],
       failures: [],
       fallbacks: [],
+      rankings: [],
     });
+  });
+
+  it('keeps a stored ranking comparison unless the run ranked with the same agent, model and effort', () => {
+    const comparison = (model: string, verdict: RankingComparison['verdict']): RankingComparison => ({
+      ...pi,
+      model,
+      cases: ['example-7'],
+      plain: { 'rank-median': 2 },
+      ranked: { 'rank-median': 1 },
+      verdict,
+    });
+    const stored = {
+      rows: [row({ ...pi, name: 'rank-median', value: 2, better: 'lower' })],
+      failures: [],
+      rankings: [comparison('zai/glm', 'falls behind the plain ranking'), comparison('other/model', 'falls behind the plain ranking')],
+    };
+    const run = {
+      rows: [row({ ...pi, name: 'rank-median', value: 1, better: 'lower' })],
+      failures: [],
+      rankings: [comparison('zai/glm', 'matches or beats the plain ranking')],
+    };
+
+    expect(mergeBaseline(stored, run).rankings).toEqual([
+      comparison('other/model', 'falls behind the plain ranking'),
+      comparison('zai/glm', 'matches or beats the plain ranking'),
+    ]);
+  });
+
+  it('keeps a stored ranking comparison over a grouping-only run with the same agent', () => {
+    const comparison: RankingComparison = {
+      ...pi,
+      cases: ['example-7'],
+      plain: { 'rank-median': 2 },
+      ranked: { 'rank-median': 1 },
+      verdict: 'matches or beats the plain ranking',
+    };
+    const stored = { rows: [row()], failures: [], rankings: [comparison] };
+    const groupingOnly = { rows: [row({ ...pi, name: 'grouping-agreement', value: 0.9 })], failures: [], fallbacks: [] };
+
+    expect(mergeBaseline(stored, groupingOnly).rankings).toEqual([comparison]);
   });
 
   it('keeps a stored fallback unless the run scored that case with the same agent', () => {

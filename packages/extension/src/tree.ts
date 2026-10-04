@@ -8,6 +8,7 @@ import {
   type Importance,
   type LabelledNoise,
   type Part,
+  type Ranking,
   type ReviewResult,
 } from '@second-look/engine';
 
@@ -17,7 +18,7 @@ export interface TreePart {
   label: string;
   /** Shown beside the label: the one-line reason, or the noise label with its state. */
   description?: string;
-  /** Shown on hover: the part's signals, one per line. */
+  /** Shown on hover: the part's cited signals, one per line, then which ranking is shown. */
   tooltip?: string;
   /** Marks the parts that sank below the ones a reviewer must read. */
   kind: 'part' | 'noise';
@@ -68,8 +69,9 @@ const SECTION_TOOLTIPS: Record<Importance, string> = {
 
 /**
  * Builds the tree the reviewer reads from a review result: the importance
- * groups in order, each part with its reason beside it and its signals in
- * its tooltip, then the parts that arrived without a rank, and the noise
+ * groups in order, each part with its reason beside it and in its tooltip
+ * the signals the reason cites and whether the plain or the agent ranking
+ * is shown, then the parts that arrived without a rank, and the noise
  * last with its label and confirmed or claimed state.
  *
  * A part that arrives without a rank sits in its own section — the tree
@@ -91,7 +93,7 @@ export function buildTree(result: ReviewResult): TreeSection[] {
       continue;
     }
     if (part.rank) {
-      grouped.get(part.rank.importance)!.push(rankedPart(part));
+      grouped.get(part.rank.importance)!.push(rankedPart(part, result.ranking));
       continue;
     }
     notRanked.push(unrankedPart(part));
@@ -184,11 +186,19 @@ function partLabel(part: Part): string {
   return part.name ?? part.path;
 }
 
-function rankedPart(part: Part): TreePart {
+/** Which ranking a part's rank comes from, as its tooltip says. */
+function rankingLine(ranking: Ranking): string {
+  const agent = ranking.agent;
+  if (ranking.by === 'plain' || agent?.stamp === undefined) return 'Plain ranking';
+  const model = agent.stamp.model === null ? '' : ` · ${agent.stamp.model}`;
+  return `Agent ranking: ${agent.stamp.agent}${model} (ranking prompt v${agent.promptVersion})`;
+}
+
+function rankedPart(part: Part, ranking: Ranking): TreePart {
   return {
     label: partLabel(part),
     description: part.rank!.reason,
-    tooltip: [...part.rank!.signals, ...fileLines(part)].join('\n'),
+    tooltip: [...part.rank!.signals, rankingLine(ranking), ...fileLines(part)].join('\n'),
     kind: 'part',
     part,
   };
@@ -215,19 +225,32 @@ function noisePart(part: Part, noise: LabelledNoise): TreePart {
 }
 
 /**
- * The status line above the tree: the stage still running while the plain
- * parts show, then who grouped the parts shown — the agent, with its model
- * and the grouping prompt's version, or the plain pass with the reason the
- * agent's grouping was not used. A result the agent was never asked about
- * needs no line.
+ * The status line above the tree: who grouped the parts shown — the
+ * agent, with its model and the grouping prompt's version, or the plain
+ * pass with the reason the agent's grouping was not used — then who
+ * ranked them the same way, and the stage still running while one does.
+ * A result the agent was never asked about needs no line.
  */
-export function groupingStatus(result: ReviewResult, running?: string): string | undefined {
-  if (running !== undefined) return `Plain parts shown; ${running}…`;
+export function reviewStatus(result: ReviewResult, running?: string): string | undefined {
+  const lines = [groupingLine(result), rankingStatus(result)].filter((line) => line !== undefined);
+  if (running === undefined) return lines.length === 0 ? undefined : lines.join(' ');
+  return lines.length === 0 ? `Plain parts shown; ${running}…` : `${lines.join(' ')} Now ${running}…`;
+}
+
+function groupingLine(result: ReviewResult): string | undefined {
   const agent = result.grouping.agent;
   if (agent === undefined) return undefined;
   if (agent.outcome === 'fell back') return `Plain grouping kept: ${agent.detail}.`;
   const model = agent.stamp.model === null ? '' : ` · ${agent.stamp.model}`;
   return `Grouped by ${agent.stamp.agent}${model} (grouping prompt v${agent.promptVersion}): ${agent.detail}.`;
+}
+
+function rankingStatus(result: ReviewResult): string | undefined {
+  const agent = result.ranking.agent;
+  if (agent === undefined) return undefined;
+  if (result.ranking.by === 'plain' || agent.stamp === undefined) return `Plain ranking kept: ${agent.detail}.`;
+  const model = agent.stamp.model === null ? '' : ` · ${agent.stamp.model}`;
+  return `Ranked by ${agent.stamp.agent}${model} (ranking prompt v${agent.promptVersion}): ${agent.detail}.`;
 }
 
 /**

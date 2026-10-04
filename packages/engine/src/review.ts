@@ -1,15 +1,30 @@
-import { DEFAULT_AGENT_SETTINGS, type AgentAdapter, type AgentSettings } from './agent.js';
+import {
+  DEFAULT_AGENT_SETTINGS,
+  agentStageTimeoutMs,
+  type AgentAdapter,
+  type AgentSettings,
+} from './agent.js';
 import { ensureCopy } from './cache.js';
 import { validateCoverage } from './coverage.js';
 import { parseDiff, type ParsedDiff } from './diff.js';
 import { GitHubClient, parsePullRequestUrl } from './github.js';
-import { groupingItems, groupingStageTimeoutMs, groupWithAgent } from './grouping.js';
+import { groupingItems, groupWithAgent } from './grouping.js';
 import { confirmLockfileNoise } from './lockfile.js';
 import { applyNoiseRules } from './noise.js';
 import { groupParts } from './parts.js';
 import { REVIEW_RESULT_VERSION } from './protocol.js';
 import type { ChangeCopies, Part, PullRequestSummary, ReviewResult } from './protocol.js';
 import { rankParts } from './rank.js';
+import {
+  RANKING_PROMPT_VERSION,
+  TESTED_RANKINGS,
+  isTestedRanking,
+  mayBeTestedRanking,
+  notTestedDetail,
+  rankWithAgent,
+  rankingItems,
+  type TestedRanking,
+} from './ranking.js';
 import { signalParts } from './signals.js';
 import { analyseParts } from './syntax.js';
 
@@ -23,7 +38,7 @@ export interface ReviewOptions {
   fetch?: typeof fetch;
   /** The engine's cache folder, which holds the read-only copies. */
   cacheDir: string;
-  /** Asks the agent to group the parts too, after the plain pass; see {@link reviewChange}. */
+  /** Asks the agent to group and rank the parts too, after the plain pass; see {@link reviewChange}. */
   agentStage?: AgentStageOptions;
 }
 
@@ -95,12 +110,14 @@ export async function fetchChange(url: string, options: ReviewOptions): Promise<
   return { pullRequest, diff, gitAttributes, copies: { base, head } };
 }
 
-/** The agent grouping stage, when a review asks the agent to group the parts too. */
+/** The agent stages, grouping then ranking, when a review asks the agent to group and rank the parts too. */
 export interface AgentStageOptions {
   adapter: AgentAdapter;
   settings?: AgentSettings;
-  /** Hears the plain result as soon as it is ready, with the stage that runs next. */
+  /** Hears the result so far as each agent stage starts, with the stage that runs. */
   onStage?: (stage: ReviewStage) => void;
+  /** Where the agent ranking is the default; {@link TESTED_RANKINGS} when absent. */
+  testedRankings?: readonly TestedRanking[];
 }
 
 /** A stage of the review starting, with the result so far. */
@@ -109,7 +126,7 @@ export interface ReviewStage {
   running: string;
   /** The stage ends within this many milliseconds. */
   timeoutMs: number;
-  /** The result so far: the plain pass's. */
+  /** The result so far: the plain pass's, then the grouping stage's. */
   result: ReviewResult;
 }
 
@@ -133,7 +150,8 @@ function coverageProblems(diff: ParsedDiff, parts: Part[]): string | undefined {
  * agent groups related hunks across files and its checked parts are
  * signalled and ranked the same way. When its answer is missing or
  * invalid, or its parts fail the coverage check, the plain grouping stays
- * and the result says why.
+ * and the result says why. The parts shown then go to `onStage` again
+ * while the agent ranks them; see {@link rankStage}.
  */
 export async function reviewChange(
   input: ReviewInput,
@@ -158,13 +176,15 @@ export async function reviewChange(
     parseTimeMs,
     parts: rankParts(await signalParts(parts, head.path)),
     grouping: { by: 'plain' },
+    ranking: { by: 'plain' },
   };
-  if (!agentStage || groupingItems(files).length < 2) return plain;
+  if (!agentStage) return plain;
+  if (groupingItems(files).length < 2) return rankStage(plain, agentStage, input);
 
   const settings = agentStage.settings ?? DEFAULT_AGENT_SETTINGS;
   agentStage.onStage?.({
     running: `grouping related hunks with ${agentStage.adapter.agent}`,
-    timeoutMs: groupingStageTimeoutMs(settings),
+    timeoutMs: agentStageTimeoutMs(settings),
     result: plain,
   });
   const { parts: grouped, grouping } = await groupWithAgent(files, {
@@ -173,15 +193,60 @@ export async function reviewChange(
     root: head.path,
     pullRequest: input.pullRequest,
   });
-  if (!grouped) return { ...plain, grouping: { by: 'plain', agent: grouping } };
+  if (!grouped) return rankStage({ ...plain, grouping: { by: 'plain', agent: grouping } }, agentStage, input);
   const uncovered = coverageProblems(parsed, grouped);
   if (uncovered) {
     const detail = `the agent's parts failed the coverage check: ${uncovered}`;
-    return { ...plain, grouping: { by: 'plain', agent: { ...grouping, outcome: 'fell back', detail } } };
+    const fellBack: ReviewResult = {
+      ...plain,
+      grouping: { by: 'plain', agent: { ...grouping, outcome: 'fell back', detail } },
+    };
+    return rankStage(fellBack, agentStage, input);
   }
-  return {
+  const regrouped: ReviewResult = {
     ...plain,
     parts: rankParts(await signalParts(grouped, head.path)),
     grouping: { by: 'agent', agent: grouping },
   };
+  return rankStage(regrouped, agentStage, input);
+}
+
+/**
+ * The agent ranking stage, after grouping: the agent ranks the parts the
+ * result shows. Fewer than two parts to rank need no agent. The agent
+ * ranking replaces the plain one only when the validator accepts it and
+ * the agent, model and effort are among the tested rankings; an agent
+ * with no tested model, or a model or effort asked for that is not one,
+ * is not asked. Otherwise the plain ranking stays and the result says why.
+ */
+async function rankStage(
+  shown: ReviewResult,
+  agentStage: AgentStageOptions,
+  input: ReviewInput,
+): Promise<ReviewResult> {
+  if (rankingItems(shown.parts).length < 2) return shown;
+  const settings = agentStage.settings ?? DEFAULT_AGENT_SETTINGS;
+  const { agent } = agentStage.adapter;
+  const tested = agentStage.testedRankings ?? TESTED_RANKINGS;
+  if (!mayBeTestedRanking(tested, agent, settings.model, settings.effort)) {
+    const detail = notTestedDetail(agent, settings.model, settings.effort);
+    return { ...shown, ranking: { by: 'plain', agent: { promptVersion: RANKING_PROMPT_VERSION, outcome: 'not tested', detail } } };
+  }
+  agentStage.onStage?.({
+    running: `ranking the parts with ${agent}`,
+    timeoutMs: agentStageTimeoutMs(settings),
+    result: shown,
+  });
+  const { parts: ranked, ranking } = await rankWithAgent(shown.parts, {
+    adapter: agentStage.adapter,
+    settings,
+    root: input.copies.head.path,
+    pullRequest: input.pullRequest,
+  });
+  if (!ranked) return { ...shown, ranking: { by: 'plain', agent: ranking } };
+  if (!isTestedRanking(tested, ranking.stamp!.agent, ranking.stamp!.model, ranking.stamp!.effort)) {
+    const detail = notTestedDetail(ranking.stamp!.agent, ranking.stamp!.model, ranking.stamp!.effort);
+    return { ...shown, ranking: { by: 'plain', agent: { ...ranking, outcome: 'not tested', detail } } };
+  }
+  return { ...shown, parts: ranked, ranking: { by: 'agent', agent: ranking } };
 }

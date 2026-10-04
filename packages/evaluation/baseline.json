@@ -7,13 +7,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "canary-csharp",
@@ -22,13 +23,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "canary-csharp",
@@ -37,13 +39,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "canary-csharp",
@@ -53,13 +56,14 @@
       "note": "expected failure: the review reports no claims",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "canary-csharp",
@@ -69,13 +73,14 @@
       "note": "expected failure: the review reports no claims",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "canary-csharp",
@@ -85,13 +90,14 @@
       "note": "expected failure: the review reports no claims",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "canary-csharp",
@@ -101,13 +107,14 @@
       "note": "expected failure: the review reports no claims",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "canary-python",
@@ -116,13 +123,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "canary-python",
@@ -131,13 +139,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "canary-python",
@@ -146,13 +155,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "canary-python",
@@ -162,13 +172,14 @@
       "note": "expected failure: the review reports no claims",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "canary-python",
@@ -178,13 +189,14 @@
       "note": "expected failure: the review reports no claims",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "canary-python",
@@ -194,13 +206,14 @@
       "note": "expected failure: the review reports no claims",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "canary-python",
@@ -210,13 +223,14 @@
       "note": "expected failure: the review reports no claims",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "encode-httpx-3690",
@@ -225,13 +239,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "encode-httpx-3690",
@@ -240,13 +255,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "encode-httpx-3690",
@@ -255,13 +271,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "encode-httpx-3690",
@@ -270,13 +287,14 @@
       "better": "lower",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "encode-httpx-3690",
@@ -285,13 +303,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "encode-httpx-3690",
@@ -300,13 +319,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "example-42",
@@ -319,7 +339,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "example-42",
@@ -332,7 +352,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "example-42",
@@ -345,7 +365,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "example-42",
@@ -358,7 +378,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "example-42",
@@ -371,7 +391,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "example-42",
@@ -384,7 +404,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "example-42",
@@ -397,7 +417,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "example-42",
@@ -410,7 +430,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "example-42",
@@ -423,7 +443,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "example-42",
@@ -436,7 +456,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "example-42",
@@ -449,7 +469,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "example-42",
@@ -462,7 +482,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "example-42",
@@ -475,7 +495,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "example-7",
@@ -484,13 +504,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "example-7",
@@ -499,13 +520,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "example-7",
@@ -514,13 +536,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "example-7",
@@ -529,13 +552,14 @@
       "better": "lower",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "example-7",
@@ -544,13 +568,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "example-7",
@@ -559,13 +584,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "pallets-click-3781",
@@ -574,13 +600,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "pallets-click-3781",
@@ -589,13 +616,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "pallets-click-3781",
@@ -604,13 +632,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "pallets-click-3781",
@@ -619,13 +648,14 @@
       "better": "lower",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "pallets-click-3781",
@@ -634,13 +664,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "pallets-click-3781",
@@ -649,13 +680,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "seeded-csharp",
@@ -663,12 +695,14 @@
       "value": 1,
       "better": "higher",
       "companionVersion": "0.1.0",
-      "promptVersions": {},
+      "promptVersions": {
+        "ranking": "1"
+      },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "seeded-csharp",
@@ -676,12 +710,14 @@
       "value": 1,
       "better": "higher",
       "companionVersion": "0.1.0",
-      "promptVersions": {},
+      "promptVersions": {
+        "ranking": "1"
+      },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "seeded-csharp",
@@ -689,12 +725,14 @@
       "value": 1,
       "better": "higher",
       "companionVersion": "0.1.0",
-      "promptVersions": {},
+      "promptVersions": {
+        "ranking": "1"
+      },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "seeded-csharp",
@@ -702,12 +740,14 @@
       "value": 1,
       "better": "lower",
       "companionVersion": "0.1.0",
-      "promptVersions": {},
+      "promptVersions": {
+        "ranking": "1"
+      },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "seeded-csharp",
@@ -715,12 +755,14 @@
       "value": 1,
       "better": "higher",
       "companionVersion": "0.1.0",
-      "promptVersions": {},
+      "promptVersions": {
+        "ranking": "1"
+      },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "seeded-python",
@@ -728,12 +770,14 @@
       "value": 1,
       "better": "higher",
       "companionVersion": "0.1.0",
-      "promptVersions": {},
+      "promptVersions": {
+        "ranking": "1"
+      },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "seeded-python",
@@ -741,12 +785,14 @@
       "value": 1,
       "better": "higher",
       "companionVersion": "0.1.0",
-      "promptVersions": {},
+      "promptVersions": {
+        "ranking": "1"
+      },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "seeded-python",
@@ -754,12 +800,14 @@
       "value": 1,
       "better": "higher",
       "companionVersion": "0.1.0",
-      "promptVersions": {},
+      "promptVersions": {
+        "ranking": "1"
+      },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "seeded-python",
@@ -767,12 +815,14 @@
       "value": 1,
       "better": "lower",
       "companionVersion": "0.1.0",
-      "promptVersions": {},
+      "promptVersions": {
+        "ranking": "1"
+      },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "seeded-python",
@@ -780,12 +830,14 @@
       "value": 1,
       "better": "higher",
       "companionVersion": "0.1.0",
-      "promptVersions": {},
+      "promptVersions": {
+        "ranking": "1"
+      },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "seeded-typescript",
@@ -793,12 +845,14 @@
       "value": 1,
       "better": "higher",
       "companionVersion": "0.1.0",
-      "promptVersions": {},
+      "promptVersions": {
+        "ranking": "1"
+      },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "seeded-typescript",
@@ -806,12 +860,14 @@
       "value": 1,
       "better": "higher",
       "companionVersion": "0.1.0",
-      "promptVersions": {},
+      "promptVersions": {
+        "ranking": "1"
+      },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "seeded-typescript",
@@ -819,12 +875,14 @@
       "value": 1,
       "better": "higher",
       "companionVersion": "0.1.0",
-      "promptVersions": {},
+      "promptVersions": {
+        "ranking": "1"
+      },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "seeded-typescript",
@@ -832,12 +890,14 @@
       "value": 1,
       "better": "lower",
       "companionVersion": "0.1.0",
-      "promptVersions": {},
+      "promptVersions": {
+        "ranking": "1"
+      },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "seeded-typescript",
@@ -845,12 +905,14 @@
       "value": 1,
       "better": "higher",
       "companionVersion": "0.1.0",
-      "promptVersions": {},
+      "promptVersions": {
+        "ranking": "1"
+      },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "sindresorhus-ky-880",
@@ -859,13 +921,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "sindresorhus-ky-880",
@@ -874,13 +937,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "sindresorhus-ky-880",
@@ -889,13 +953,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "sindresorhus-ky-880",
@@ -904,13 +969,14 @@
       "better": "lower",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "sindresorhus-ky-880",
@@ -919,13 +985,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "sindresorhus-ky-880",
@@ -934,13 +1001,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "(all)",
@@ -949,13 +1017,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "(all)",
@@ -964,13 +1033,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "(all)",
@@ -979,13 +1049,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "(all)",
@@ -994,13 +1065,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "(all)",
@@ -1009,13 +1081,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "(all)",
@@ -1024,13 +1097,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "(all)",
@@ -1039,13 +1113,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "(all)",
@@ -1054,13 +1129,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "(all)",
@@ -1069,13 +1145,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "(all)",
@@ -1084,13 +1161,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "(all)",
@@ -1099,13 +1177,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "(all)",
@@ -1114,13 +1193,14 @@
       "better": "lower",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "(all)",
@@ -1129,13 +1209,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "(all)",
@@ -1144,13 +1225,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "(all)",
@@ -1160,13 +1242,14 @@
       "note": "expected failure: the review reports no claims",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "(all)",
@@ -1176,13 +1259,14 @@
       "note": "expected failure: the review reports no claims",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "(all)",
@@ -1192,13 +1276,14 @@
       "note": "expected failure: the review reports no claims",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "(all)",
@@ -1208,13 +1293,14 @@
       "note": "expected failure: the review reports no claims",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "encode-httpx-3690",
@@ -1223,28 +1309,62 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "pi",
       "agentVersion": "0.86.1",
       "model": "zai-coding-cn/glm-5.3",
       "effort": "default",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "encode-httpx-3690",
       "name": "grouping-agreement",
-      "value": 0.4166666666666667,
+      "value": 0.5555555555555556,
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "pi",
       "agentVersion": "0.86.1",
       "model": "zai-coding-cn/glm-5.3",
       "effort": "default",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "rank-median",
+      "value": 3,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-04T06:32:35.720Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "rank-top-3",
+      "value": 0.5,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "example-7",
@@ -1253,13 +1373,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "pi",
       "agentVersion": "0.86.1",
       "model": "zai-coding-cn/glm-5.3",
       "effort": "default",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "example-7",
@@ -1268,13 +1389,46 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "pi",
       "agentVersion": "0.86.1",
       "model": "zai-coding-cn/glm-5.3",
       "effort": "default",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
+    },
+    {
+      "case": "example-7",
+      "name": "rank-median",
+      "value": 1.5,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-04T06:32:35.720Z"
+    },
+    {
+      "case": "example-7",
+      "name": "rank-top-3",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "pallets-click-3781",
@@ -1283,13 +1437,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "pi",
       "agentVersion": "0.86.1",
       "model": "zai-coding-cn/glm-5.3",
       "effort": "default",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "pallets-click-3781",
@@ -1298,13 +1453,136 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "pi",
       "agentVersion": "0.86.1",
       "model": "zai-coding-cn/glm-5.3",
       "effort": "default",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
+    },
+    {
+      "case": "pallets-click-3781",
+      "name": "rank-median",
+      "value": 1.5,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-04T06:32:35.720Z"
+    },
+    {
+      "case": "pallets-click-3781",
+      "name": "rank-top-3",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-04T06:32:35.720Z"
+    },
+    {
+      "case": "seeded-csharp",
+      "name": "rank-median",
+      "value": 1,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-04T06:32:35.720Z"
+    },
+    {
+      "case": "seeded-csharp",
+      "name": "rank-top-3",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-04T06:32:35.720Z"
+    },
+    {
+      "case": "seeded-python",
+      "name": "rank-median",
+      "value": 1,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-04T06:32:35.720Z"
+    },
+    {
+      "case": "seeded-python",
+      "name": "rank-top-3",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-04T06:32:35.720Z"
+    },
+    {
+      "case": "seeded-typescript",
+      "name": "rank-median",
+      "value": 1,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-04T06:32:35.720Z"
+    },
+    {
+      "case": "seeded-typescript",
+      "name": "rank-top-3",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "sindresorhus-ky-880",
@@ -1313,13 +1591,14 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "pi",
       "agentVersion": "0.86.1",
       "model": "zai-coding-cn/glm-5.3",
       "effort": "default",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "sindresorhus-ky-880",
@@ -1328,13 +1607,46 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "grouping": "2"
+        "grouping": "2",
+        "ranking": "1"
       },
       "agent": "pi",
       "agentVersion": "0.86.1",
       "model": "zai-coding-cn/glm-5.3",
       "effort": "default",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
+    },
+    {
+      "case": "sindresorhus-ky-880",
+      "name": "rank-median",
+      "value": 1,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-04T06:32:35.720Z"
+    },
+    {
+      "case": "sindresorhus-ky-880",
+      "name": "rank-top-3",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "(all)",
@@ -1349,12 +1661,12 @@
       "agentVersion": "0.86.1",
       "model": "zai-coding-cn/glm-5.3",
       "effort": "default",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
     },
     {
       "case": "(all)",
       "name": "grouping-agreement",
-      "value": 0.8035714285714286,
+      "value": 0.8482142857142857,
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
@@ -1364,9 +1676,65 @@
       "agentVersion": "0.86.1",
       "model": "zai-coding-cn/glm-5.3",
       "effort": "default",
-      "runDate": "2026-10-04T04:42:00.082Z"
+      "runDate": "2026-10-04T06:32:35.720Z"
+    },
+    {
+      "case": "(all)",
+      "name": "rank-median",
+      "value": 1,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-04T06:32:35.720Z"
+    },
+    {
+      "case": "(all)",
+      "name": "rank-top-3",
+      "value": 0.9,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-04T06:32:35.720Z"
     }
   ],
   "failures": [],
-  "fallbacks": []
+  "fallbacks": [],
+  "rankings": [
+    {
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "cases": [
+        "encode-httpx-3690",
+        "example-7",
+        "pallets-click-3781",
+        "seeded-csharp",
+        "seeded-python",
+        "seeded-typescript",
+        "sindresorhus-ky-880"
+      ],
+      "plain": {
+        "rank-median": 2,
+        "rank-top-3": 0.8
+      },
+      "ranked": {
+        "rank-median": 1,
+        "rank-top-3": 0.9
+      },
+      "verdict": "matches or beats the plain ranking"
+    }
+  ]
 }
