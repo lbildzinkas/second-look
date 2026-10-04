@@ -52,7 +52,13 @@ export interface RpcServerDeps {
 }
 
 /**
- * Serves the JSON-RPC protocol one line at a time until the input ends.
+ * Serves the JSON-RPC protocol one line at a time until the input ends
+ * and every request it accepted has been answered.
+ *
+ * Requests are answered as they arrive, not one after another: a review
+ * with an agent stage stays open for minutes by design, and a sendReview
+ * or any other request that arrives meanwhile is answered alongside it,
+ * each response carrying the id of its own request.
  *
  * The protocol starts with a version handshake: `initialize` must succeed
  * before any other request, and a client speaking another protocol version
@@ -75,9 +81,11 @@ export async function runRpcServer(
   deps: RpcServerDeps,
 ): Promise<void> {
   let initialized = false;
+  const running: Promise<void>[] = [];
   for (;;) {
     const line = await source.readLine();
     if (line === null) {
+      await Promise.all(running);
       return;
     }
     if (line.trim() === '') {
@@ -101,11 +109,11 @@ export async function runRpcServer(
       continue;
     }
     if (value.method === REVIEW_METHOD) {
-      await review(value.params, value.id, sink, initialized, deps);
+      running.push(review(value.params, value.id, sink, initialized, deps));
       continue;
     }
     if (value.method === SEND_REVIEW_METHOD) {
-      await send(value.params, value.id, sink, initialized, deps);
+      running.push(send(value.params, value.id, sink, initialized, deps));
       continue;
     }
     respond(
