@@ -58,6 +58,44 @@ export interface StubStatusBarItem extends StubDisposable {
   hide(): void;
 }
 
+/** A comment the extension put in a thread, as the editor renders it. */
+export interface StubComment {
+  body: string | StubMarkdownString;
+  mode: number;
+  author: { name: string; iconPath?: Uri };
+  label?: string;
+  contextValue?: string;
+}
+
+/** A comment thread the extension created, settable the way the editor sets one. */
+export interface StubCommentThread {
+  readonly uri: Uri;
+  range: Range | undefined;
+  comments: StubComment[];
+  collapsibleState: number;
+  canReply: boolean | { name: string };
+  contextValue?: string;
+  label?: string;
+  state?: number;
+  dispose(): void;
+}
+
+/** A comment controller the extension created, with the threads it shows. */
+export interface StubCommentController extends StubDisposable {
+  id: string;
+  label: string;
+  options?: { placeHolder?: string; prompt?: string };
+  commentingRangeProvider?: {
+    provideCommentingRanges(document: { uri: Uri }, token?: unknown): unknown;
+  };
+  threads: StubCommentThread[];
+  createCommentThread(
+    uri: Uri,
+    range: Range | undefined,
+    comments: StubComment[],
+  ): StubCommentThread;
+}
+
 /** A theme colour the extension asked for, by its id. */
 export class ThemeColor {
   constructor(readonly id: string) {}
@@ -76,6 +114,7 @@ export interface StubState {
   fileSystemProviders: StubFileSystemProvider[];
   decorationTypes: StubDecorationType[];
   statusBarItems: StubStatusBarItem[];
+  commentControllers: StubCommentController[];
   /** The configuration values `getConfiguration` reads, keyed by `section.key`. */
   configuration: Record<string, unknown>;
   /** The editors currently visible; tests set these and fire the change. */
@@ -84,8 +123,17 @@ export interface StubState {
   files: Map<string, Uint8Array>;
   /** What showInputBox resolves with; undefined reads as dismissed. */
   inputBoxResult: string | undefined;
+  /** What showQuickPick resolves with; undefined reads as dismissed. */
+  quickPickResult: unknown;
+  /** The quick picks shown: their titles and the items they offered. */
+  quickPicks: { title: string; items: unknown[] }[];
   warningMessages: string[];
   errorMessages: string[];
+  informationMessages: string[];
+  /** What showInformationMessage resolves with; undefined reads as dismissed. */
+  informationChoice: string | undefined;
+  /** The URIs the extension opened in the browser, as strings. */
+  openedExternals: string[];
   progressTitles: string[];
   sessionRequests: { id: string; scopes: string[]; createIfNone: boolean }[];
   /** What getSession resolves with; undefined reads as no sign-in. */
@@ -109,12 +157,18 @@ export const stub: StubState = {
   fileSystemProviders: [],
   decorationTypes: [],
   statusBarItems: [],
+  commentControllers: [],
   configuration: {},
   visibleTextEditors: [],
   files: new Map(),
   inputBoxResult: undefined,
+  quickPickResult: undefined,
+  quickPicks: [],
   warningMessages: [],
   errorMessages: [],
+  informationMessages: [],
+  informationChoice: undefined,
+  openedExternals: [],
   progressTitles: [],
   sessionRequests: [],
   session: undefined,
@@ -126,14 +180,20 @@ export const stub: StubState = {
     stub.fileSystemProviders = [];
     stub.decorationTypes = [];
     stub.statusBarItems = [];
+    stub.commentControllers = [];
     stub.configuration = {};
     stub.visibleTextEditors = [];
     visibleEditorListeners.clear();
     configurationListeners.clear();
     stub.files = new Map();
     stub.inputBoxResult = undefined;
+    stub.quickPickResult = undefined;
+    stub.quickPicks = [];
     stub.warningMessages = [];
     stub.errorMessages = [];
+    stub.informationMessages = [];
+    stub.informationChoice = undefined;
+    stub.openedExternals = [];
     stub.progressTitles = [];
     stub.sessionRequests = [];
     stub.session = undefined;
@@ -396,6 +456,10 @@ export const window = {
   showInputBox(): Promise<string | undefined> {
     return Promise.resolve(stub.inputBoxResult);
   },
+  showQuickPick(items: unknown[], options?: { title?: string }): Promise<unknown> {
+    stub.quickPicks.push({ title: options?.title ?? '', items });
+    return Promise.resolve(stub.quickPickResult);
+  },
   showWarningMessage(message: string): Promise<void> {
     stub.warningMessages.push(message);
     return Promise.resolve();
@@ -403,6 +467,10 @@ export const window = {
   showErrorMessage(message: string): Promise<void> {
     stub.errorMessages.push(message);
     return Promise.resolve();
+  },
+  showInformationMessage(message: string, ..._items: string[]): Promise<string | undefined> {
+    stub.informationMessages.push(message);
+    return Promise.resolve(stub.informationChoice);
   },
   async withProgress(
     options: { title?: string },
@@ -475,6 +543,58 @@ export const StatusBarAlignment = {
   Left: 0,
   Right: 1,
 } as const;
+
+/** The modes a comment can be shown in. */
+export const CommentMode = {
+  Editing: 0,
+  Preview: 1,
+} as const;
+
+/** The states a comment thread can be shown in. */
+export const CommentThreadCollapsibleState = {
+  Collapsed: 0,
+  Expanded: 1,
+} as const;
+
+/** The comment threads' API, as the slice the companion uses. */
+export const comments = {
+  createCommentController(id: string, label: string): StubCommentController {
+    const controller: StubCommentController = {
+      id,
+      label,
+      threads: [],
+      createCommentThread(uri, range, commentList) {
+        const thread: StubCommentThread = {
+          uri,
+          range,
+          comments: commentList,
+          collapsibleState: CommentThreadCollapsibleState.Collapsed,
+          canReply: true,
+          dispose: (): void => {
+            controller.threads = controller.threads.filter((entry) => entry !== thread);
+          },
+        };
+        controller.threads.push(thread);
+        return thread;
+      },
+      dispose: (): void => {
+        stub.commentControllers = stub.commentControllers.filter(
+          (entry) => entry !== controller,
+        );
+      },
+    };
+    stub.commentControllers.push(controller);
+    return controller;
+  },
+};
+
+/** The environment outside the editor, as the slice the companion uses. */
+export const env = {
+  openExternal(uri: Uri): Thenable<boolean> {
+    stub.openedExternals.push(uri.toString());
+    return Promise.resolve(true);
+  },
+};
 
 export const workspace = {
   getConfiguration(section: string): { get<T>(key: string, defaultValue?: T): T | undefined } {

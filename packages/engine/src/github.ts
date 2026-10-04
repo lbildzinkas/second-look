@@ -1,5 +1,6 @@
 import { Octokit } from '@octokit/rest';
-import type { PullRequestSummary } from './protocol.js';
+import type { PositionedComment } from './positions.js';
+import type { PullRequestSummary, SentReview, SubmitKind } from './protocol.js';
 
 /** The parts of a pull request URL the engine needs. */
 export interface PullRequestRef {
@@ -42,7 +43,9 @@ const silentLog = {
 };
 
 /**
- * The engine's read-only view of GitHub, through the official client.
+ * The engine's view of GitHub, through the official client: read for the
+ * review, and one write — submitting the review — when the reviewer
+ * sends it (ADR 0002).
  *
  * The token lives only in the Octokit instance's memory: the client writes
  * it nowhere and echoes it in no error or log line.
@@ -138,6 +141,44 @@ export class GitHubClient {
   }
 
   /**
+   * Submits the pending review to GitHub as one review: every comment in
+   * it, the overall body when there is one, and the kind the reviewer
+   * chose, on the commit the diff the comments were mapped against was
+   * taken at. One request carries it all — nothing reaches GitHub before
+   * it — and the answer carries the review's link.
+   */
+  async submitReview(
+    ref: PullRequestRef,
+    review: {
+      /** The head commit whose diff the comments' positions were mapped against. */
+      commitId: string;
+      submit: SubmitKind;
+      body?: string;
+      comments: PositionedComment[];
+    },
+  ): Promise<SentReview> {
+    const { data } = await this.octokit.pulls.createReview({
+      owner: ref.owner,
+      repo: ref.repo,
+      pull_number: ref.number,
+      commit_id: review.commitId,
+      ...(review.body !== undefined ? { body: review.body } : {}),
+      event: SUBMIT_EVENTS[review.submit],
+      // The bundled API description predates file-anchored comments
+      // (subject_type) on this endpoint, so the request carries them past
+      // the generated types; GitHub accepts the field.
+      comments: review.comments.map((comment) => ({
+        path: comment.path,
+        body: comment.body,
+        ...(comment.position !== undefined
+          ? { position: comment.position }
+          : { subject_type: 'file' }),
+      })) as NonNullable<Parameters<typeof this.octokit.pulls.createReview>[0]>['comments'],
+    });
+    return { url: data.html_url };
+  }
+
+  /**
    * Reads the repository's root `.gitattributes` as stored at the given
    * commit, without a checkout: the contents endpoint serves the blob at
    * that ref. Returns null when the repository has no such file; any other
@@ -180,3 +221,10 @@ function isNotFound(error: unknown): boolean {
     typeof error === 'object' && error !== null && (error as { status?: unknown }).status === 404
   );
 }
+
+/** How each submit kind reads on GitHub's wire. */
+const SUBMIT_EVENTS: Record<SubmitKind, 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES'> = {
+  comment: 'COMMENT',
+  approve: 'APPROVE',
+  'request changes': 'REQUEST_CHANGES',
+};
