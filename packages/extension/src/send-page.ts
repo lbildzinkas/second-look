@@ -205,6 +205,9 @@ export class SendReviewPage implements vscode.Disposable {
         this.post();
         return;
       case 'edit': {
+        if (this.sending) {
+          return;
+        }
         const comment = this.byDraft(message.id);
         if (comment !== undefined) {
           this.comments.editBody(comment, message.body);
@@ -212,6 +215,9 @@ export class SendReviewPage implements vscode.Disposable {
         return;
       }
       case 'discard': {
+        if (this.sending) {
+          return;
+        }
         const comment = this.byDraft(message.id);
         if (comment !== undefined) {
           this.comments.remove(comment);
@@ -501,6 +507,7 @@ function pageHtml(nonce: string): string {
   function renderDraft(draft) {
     var article = document.createElement('article');
     article.className = 'draft';
+    article.setAttribute('data-id', String(draft.id));
     var head = document.createElement('div');
     head.className = 'draft-head';
     var where = document.createElement('span');
@@ -511,6 +518,7 @@ function pageHtml(nonce: string): string {
     discard.type = 'button';
     discard.title = 'Drop this comment from the review';
     discard.textContent = 'Discard';
+    discard.disabled = state.sending;
     discard.addEventListener('click', function () {
       vscode.postMessage({ type: 'discard', id: draft.id });
     });
@@ -520,6 +528,7 @@ function pageHtml(nonce: string): string {
     body.rows = 3;
     body.setAttribute('data-id', String(draft.id));
     body.value = draft.body;
+    body.disabled = state.sending;
     body.addEventListener('input', function () {
       vscode.postMessage({ type: 'edit', id: draft.id, body: body.value });
     });
@@ -528,16 +537,48 @@ function pageHtml(nonce: string): string {
     return article;
   }
 
+  /** Rerenders a kept draft in place: its text only when the reviewer is
+      not typing in it, its controls only as far as the send has come. */
+  function updateDraft(article, draft) {
+    article.querySelector('.where').textContent = draft.where;
+    var body = article.querySelector('textarea');
+    if (document.activeElement !== body) {
+      body.value = draft.body;
+    }
+    body.disabled = state.sending;
+    article.querySelector('.discard').disabled = state.sending;
+  }
+
   function render() {
+    var focused = document.activeElement;
     var restore = focusToRestore();
     var count = state.drafts.length;
     intro.textContent = count === 0
       ? 'No comments yet. Write them in the diff, or send only the overall comment.'
       : count + ' draft comment' + (count === 1 ? '' : 's') +
         '. They go to GitHub as one review, and only when you press Submit.';
-    drafts.textContent = '';
-    state.drafts.forEach(function (draft) {
-      drafts.appendChild(renderDraft(draft));
+    var kept = {};
+    Array.prototype.slice.call(drafts.children).forEach(function (article) {
+      kept[article.getAttribute('data-id')] = article;
+    });
+    var wanted = state.drafts.map(function (draft) {
+      var id = String(draft.id);
+      var article = kept[id];
+      if (article !== undefined) {
+        delete kept[id];
+        updateDraft(article, draft);
+      } else {
+        article = renderDraft(draft);
+      }
+      return article;
+    });
+    Object.keys(kept).forEach(function (id) {
+      drafts.removeChild(kept[id]);
+    });
+    wanted.forEach(function (article, index) {
+      if (drafts.children[index] !== article) {
+        drafts.insertBefore(article, drafts.children[index] || null);
+      }
     });
     KINDS.forEach(function (kind) {
       kindButtons[kind].setAttribute('aria-checked', kind === state.submit ? 'true' : 'false');
@@ -546,7 +587,9 @@ function pageHtml(nonce: string): string {
       overall.value = state.body;
     }
     submit.disabled = state.sending;
-    restoreFocus(restore);
+    if (focused === null || !focused.isConnected || document.activeElement !== focused) {
+      restoreFocus(restore);
+    }
   }
 
   window.addEventListener('message', function (event) {

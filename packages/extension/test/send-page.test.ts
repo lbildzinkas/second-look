@@ -303,6 +303,30 @@ describe('SendReviewPage', () => {
     expect(recorder.sent).toHaveLength(1);
   });
 
+  it('sends the review as pressed: moves while it is under way change nothing', async () => {
+    const { comments, line, whole } = gatheredComments();
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const recorder = recordingSend(comments, { hold: held });
+    const page = new SendReviewPage({ comments, send: recorder.send });
+    page.open();
+    const panel = stub.webviewPanels[0]!;
+
+    drive(panel, { type: 'submit' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    drive(panel, { type: 'edit', id: 1, body: '' });
+    drive(panel, { type: 'discard', id: 2 });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    release();
+    await eventually('the held send to finish', () =>
+      recorder.sent.length > 0 ? true : undefined,
+    );
+
+    expect(recorder.sent).toEqual([{ submit: 'comment', comments: [line, whole] }]);
+  });
+
   it('keeps every comment and stays open when the send fails', async () => {
     const { comments, line, whole } = gatheredComments();
     const recorder = recordingSend(comments, { failWith: 'GitHub is down' });
