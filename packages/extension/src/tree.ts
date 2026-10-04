@@ -1,5 +1,6 @@
 import {
   IMPORTANCE_ORDER,
+  claimCounts,
   filesOfPart,
   isLabelledNoise,
   noiseSinks,
@@ -23,6 +24,8 @@ export interface TreePart {
   tooltip?: string;
   /** Marks the parts that sank below the ones a reviewer must read. */
   kind: 'part' | 'noise';
+  /** How many claims are attached to the part; absent when it has none. */
+  claims?: number;
   /** The part itself, which clicking opens in the diff editor. */
   part?: Part;
 }
@@ -78,7 +81,8 @@ const SECTION_TOOLTIPS: Record<Importance, string> = {
  * A part that arrives without a rank sits in its own section — the tree
  * shows whatever the engine returns, never inventing a rank. Empty
  * sections are left out, and snapshots and fixtures never sink, because a
- * change there is a behaviour change.
+ * change there is a behaviour change. A part the listed claims are
+ * attached to shows their count beside it.
  */
 export function buildTree(result: ReviewResult): TreeSection[] {
   const grouped = new Map<Importance, TreePart[]>(
@@ -87,18 +91,19 @@ export function buildTree(result: ReviewResult): TreeSection[] {
   const notRanked: TreePart[] = [];
   const noise: TreePart[] = [];
 
-  for (const part of result.parts) {
+  const counts = claimCounts(result.claims, result.parts.length);
+  result.parts.forEach((part, index) => {
     const assessment = part.noise;
     if (assessment && isLabelledNoise(assessment) && noiseSinks(assessment)) {
-      noise.push(noisePart(part, assessment));
-      continue;
+      noise.push(withClaims(noisePart(part, assessment), counts[index]!));
+      return;
     }
     if (part.rank) {
-      grouped.get(part.rank.importance)!.push(rankedPart(part, result.ranking));
-      continue;
+      grouped.get(part.rank.importance)!.push(withClaims(rankedPart(part, result.ranking), counts[index]!));
+      return;
     }
-    notRanked.push(unrankedPart(part));
-  }
+    notRanked.push(withClaims(unrankedPart(part), counts[index]!));
+  });
 
   const sections: TreeSection[] = [];
   for (const importance of IMPORTANCE_ORDER) {
@@ -190,6 +195,27 @@ function rankingLine(ranking: Ranking): string {
   if (ranking.by === 'plain' || agent?.stamp === undefined) return 'Plain ranking';
   const model = agent.stamp.model === null ? '' : ` · ${agent.stamp.model}`;
   return `Agent ranking: ${agent.stamp.agent}${model} (ranking prompt v${agent.promptVersion})`;
+}
+
+/** A claim count in words, such as `2 claims`. */
+export function claimCountText(count: number): string {
+  return `${count} claim${count === 1 ? '' : 's'}`;
+}
+
+/**
+ * A part's node with its claim count: first beside the label, and in the
+ * tooltip with the claims' state. A part with no claim is left as it is.
+ */
+function withClaims(node: TreePart, count: number): TreePart {
+  if (count === 0) return node;
+  const text = claimCountText(count);
+  const line = `${text}, not checked yet; the overview lists them`;
+  return {
+    ...node,
+    claims: count,
+    description: node.description === undefined ? text : `${text} · ${node.description}`,
+    tooltip: node.tooltip === undefined ? line : `${node.tooltip}\n${line}`,
+  };
 }
 
 function rankedPart(part: Part, ranking: Ranking): TreePart {

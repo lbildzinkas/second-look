@@ -1,5 +1,5 @@
 import { filesOfPart, parseDiff } from '@second-look/engine';
-import type { FileSlice, NoiseAssessment, Part, StoryChecks } from '@second-look/engine';
+import type { Claim, FileSlice, NoiseAssessment, Part, StoryChecks } from '@second-look/engine';
 import type { ExpectedClaim, ExpectedNoise, ExpectedResults, Verdict } from './case.js';
 import type { LibraryFetchOffer, PressedClaim } from './claims.js';
 
@@ -18,6 +18,13 @@ export const GROUPING_AGREEMENT = 'grouping-agreement';
  * the share of the file and code names it uses that the change shows.
  */
 export const STORY_SCORES: readonly string[] = ['story-must-review', 'story-order', 'story-names'];
+
+/**
+ * The scores of the claims the agent lists, against the hand lists: the
+ * share of the hand-listed claims it found, and the share of the claims it
+ * listed that the hand lists hold.
+ */
+export const CLAIM_SCORES: readonly string[] = ['claims-recall', 'claims-precision'];
 
 /** One score of a run, with the direction in which it improves. */
 export interface Score {
@@ -42,9 +49,9 @@ interface VerdictCounts {
   matched: number;
 }
 
-/** The counts behind the claim checks, over the hand-labelled claims. */
+/** The counts behind the claim checks, over the hand-labelled claims that carry a verdict. */
 export interface ClaimTally {
-  /** Hand-labelled claims the run expected. */
+  /** Hand-labelled claims with a verdict the run expected. */
   expected: number;
   /** Expected claims the review reported, matched by exact text. */
   found: number;
@@ -81,6 +88,60 @@ export interface Tally {
   pairs: { total: number; agreed: number };
   /** The counts behind the story's plain checks. */
   story: StoryTally;
+  /** The counts behind the claims the agent listed, against the hand lists. */
+  finding: FindingTally;
+}
+
+/**
+ * The counts behind the claims the agent listed: the hand-listed claims a
+ * reviewer must see and those it found, and the claims it listed that
+ * match a required hand-listed claim or none at all. A listed claim that
+ * matches only an optional one counts in neither.
+ */
+export interface FindingTally {
+  required: number;
+  found: number;
+  /** Listed claims that match a required hand-listed claim. */
+  listedRight: number;
+  /** Listed claims that match no hand-listed claim. */
+  listedWrong: number;
+}
+
+function noFinding(): FindingTally {
+  return { required: 0, found: 0, listedRight: 0, listedWrong: 0 };
+}
+
+/** Text as claims are matched: on one line, its runs of white space as one space. */
+function matchText(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Whether a listed claim is a hand-listed one: made in the same place —
+ * the same file, or the description — with the one's text holding the
+ * other's, so a quote of one sentence matches a hand-listed paragraph and
+ * a quote of two sentences matches each one listed alone.
+ */
+export function sameClaim(listed: Claim, wanted: ExpectedClaim): boolean {
+  const samePlace =
+    'file' in wanted.origin
+      ? listed.location.kind === 'file' && listed.location.path === wanted.origin.file
+      : listed.location.kind === 'description';
+  if (!samePlace) return false;
+  const [quote, text] = [matchText(listed.quote), matchText(wanted.text)];
+  return quote.includes(text) || text.includes(quote);
+}
+
+/** Tallies the claims the agent listed against the hand lists: recall over the required claims, precision over what it listed. */
+export function tallyFinding(expected: readonly ExpectedClaim[], listed: readonly Claim[]): FindingTally {
+  const required = expected.filter((wanted) => wanted.optional !== true);
+  const tally: FindingTally = { ...noFinding(), required: required.length };
+  tally.found = required.filter((wanted) => listed.some((claim) => sameClaim(claim, wanted))).length;
+  for (const claim of listed) {
+    if (required.some((wanted) => sameClaim(claim, wanted))) tally.listedRight++;
+    else if (!expected.some((wanted) => sameClaim(claim, wanted))) tally.listedWrong++;
+  }
+  return tally;
 }
 
 /** The counts behind a story's plain checks; a story that was not written counts as failing them. */
@@ -140,6 +201,7 @@ function changedLineKeys(files: readonly FileSlice[]): string[] {
 function matchesPin(wanted: ExpectedClaim, fetch: LibraryFetchOffer | undefined): boolean {
   return (
     fetch !== undefined &&
+    wanted.library !== undefined &&
     fetch.library === wanted.library.name &&
     fetch.pinnedVersion === wanted.library.pinnedVersion
   );
@@ -153,7 +215,7 @@ function matchesPin(wanted: ExpectedClaim, fetch: LibraryFetchOffer | undefined)
  */
 function evidenceMatches(wanted: ExpectedClaim, got: PressedClaim): boolean {
   const evidence = got.verdict?.evidence;
-  if (!evidence) return false;
+  if (!evidence || !wanted.verdict) return false;
   const expected = wanted.verdict.evidence;
   if (
     evidence.file !== expected.file ||
@@ -168,11 +230,17 @@ function evidenceMatches(wanted: ExpectedClaim, got: PressedClaim): boolean {
   );
 }
 
-/** Tallies the claim checks: each hand-labelled claim against what the review reported, after the reviewer's fetch presses. */
+/**
+ * Tallies the claim checks: each hand-labelled claim with a verdict
+ * against what the review reported, after the reviewer's fetch presses.
+ * A claim the case lists without a verdict counts only in the claims the
+ * agent lists ({@link tallyFinding}).
+ */
 export function tallyClaims(
-  expected: readonly ExpectedClaim[],
+  labelled: readonly ExpectedClaim[],
   reported: readonly PressedClaim[],
 ): ClaimTally {
+  const expected = labelled.filter((wanted): wanted is ExpectedClaim & { verdict: NonNullable<ExpectedClaim['verdict']> } => wanted.verdict !== undefined);
   const tally: ClaimTally = {
     expected: expected.length,
     found: 0,
@@ -228,6 +296,7 @@ export function tallyCase(
     claims: tallyClaims(expected.claims, claims),
     pairs: { total: 0, agreed: 0 },
     story: noStory(),
+    finding: noFinding(),
   };
   if (!parts) return tally;
 
@@ -331,6 +400,7 @@ export function addTallies(tallies: readonly Tally[]): Tally {
     },
     pairs: { total: 0, agreed: 0 },
     story: noStory(),
+    finding: noFinding(),
   };
   for (const tally of tallies) {
     total.changedLines += tally.changedLines;
@@ -339,6 +409,7 @@ export function addTallies(tallies: readonly Tally[]): Tally {
     total.pairs.total += tally.pairs.total;
     total.pairs.agreed += tally.pairs.agreed;
     for (const key of Object.keys(total.story) as (keyof StoryTally)[]) total.story[key] += tally.story[key];
+    for (const key of Object.keys(total.finding) as (keyof FindingTally)[]) total.finding[key] += tally.finding[key];
     for (const [name, counts] of tally.noise) {
       const sum = total.noise.get(name) ?? { expected: 0, predicted: 0, matched: 0 };
       sum.expected += counts.expected;
@@ -374,9 +445,10 @@ function median(values: readonly number[]): number {
  * The plain scores a tally gives: coverage, noise-label precision and
  * recall per class and state, the median and top-k rank position of the
  * known important parts, the grouping's pairwise hunk agreement with
- * the hand labels, the claim checks over the hand-labelled claims, and
- * the story's plain checks. A score with nothing to count is left out
- * rather than given a value it did not earn.
+ * the hand labels, the claim checks over the hand-labelled claims, the
+ * story's plain checks, and the recall and precision of the claims the
+ * agent listed. A score with nothing to count is left out rather than
+ * given a value it did not earn.
  */
 export function scoresOf(tally: Tally): Score[] {
   const scores: Score[] = [];
@@ -405,6 +477,10 @@ export function scoresOf(tally: Tally): Score[] {
   if (story.mustReview > 0) scores.push({ name: 'story-must-review', value: story.mentioned / story.mustReview, better: 'higher' });
   if (story.stories > 0) scores.push({ name: 'story-order', value: story.inOrder / story.stories, better: 'higher' });
   if (story.names > 0) scores.push({ name: 'story-names', value: story.namesInChange / story.names, better: 'higher' });
+  const { finding } = tally;
+  if (finding.required > 0) scores.push({ name: 'claims-recall', value: finding.found / finding.required, better: 'higher' });
+  const judged = finding.listedRight + finding.listedWrong;
+  if (judged > 0) scores.push({ name: 'claims-precision', value: finding.listedRight / judged, better: 'higher' });
   return scores;
 }
 

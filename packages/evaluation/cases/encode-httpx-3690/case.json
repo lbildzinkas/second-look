@@ -6,7 +6,8 @@
   "prompts": [
     "grouping",
     "ranking",
-    "story"
+    "story",
+    "claims"
   ],
   "pullRequest": {
     "url": "https://github.com/encode/httpx/pull/3690",

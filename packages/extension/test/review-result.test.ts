@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { REVIEW_RESULT_VERSION, type NoiseAssessment, type ReviewResult } from '@second-look/engine';
 import { ProtocolError, isReviewResult, parseReviewResult } from '../src/index.js';
+import { claimsResult } from './results.js';
 
 function sampleResult(): ReviewResult {
   return {
@@ -371,6 +372,46 @@ describe('isReviewResult for the agent ranking', () => {
   });
 });
 
+describe('isReviewResult for the claims', () => {
+  type Loose = { claims?: unknown; story?: unknown };
+  const loose = (claims: unknown): Loose => ({ ...(JSON.parse(JSON.stringify(claimsResult())) as Loose), claims });
+  const listed = (): { outcome: string; claims: Record<string, unknown>[] } & Record<string, unknown> =>
+    JSON.parse(JSON.stringify(claimsResult().claims)) as { outcome: string; claims: Record<string, unknown>[] } & Record<string, unknown>;
+
+  it('accepts the listed claims, none, and a fall back with none, always stamped', () => {
+    expect(isReviewResult(claimsResult())).toBe(true);
+    expect(isReviewResult(loose({ ...listed(), claims: [] }))).toBe(true);
+    expect(isReviewResult(loose({ ...listed(), outcome: 'fell back', claims: [] }))).toBe(true);
+    expect(isReviewResult(loose(undefined))).toBe(true);
+  });
+
+  it('rejects a claim without its quote, source or location, on a part or sentence the result lacks, or already judged', () => {
+    const withClaim = (change: (claim: Record<string, unknown>) => Record<string, unknown>, index = 1): Loose => {
+      const claims = listed();
+      claims.claims[index] = change(claims.claims[index]!);
+      return loose(claims);
+    };
+    const cases: Loose[] = [
+      withClaim((claim) => ({ ...claim, quote: '' })),
+      withClaim((claim) => ({ ...claim, source: 'issue' })),
+      withClaim(({ location: _location, ...claim }) => claim),
+      withClaim((claim) => ({ ...claim, location: { kind: 'file', path: 'src/retry.py', line: 4, endLine: 3 } })),
+      withClaim((claim) => ({ ...claim, location: { kind: 'file', path: '', line: 1, endLine: 1 } })),
+      withClaim((claim) => ({ ...claim, location: { kind: 'description', line: 0 } })),
+      withClaim((claim) => ({ ...claim, location: { kind: 'story', sentence: 0 } })),
+      withClaim((claim) => ({ ...claim, location: { kind: 'file', path: 'src/retry.py', line: 1, endLine: 1 } }), 3),
+      withClaim((claim) => ({ ...claim, location: { kind: 'story', sentence: 2 } }), 3),
+      withClaim((claim) => ({ ...claim, part: 7 })),
+      withClaim((claim) => ({ ...claim, verdict: { kind: 'verified' } })),
+      loose({ ...listed(), outcome: 'fell back' }),
+      loose({ ...listed(), outcome: 'guessed' }),
+      loose({ ...listed(), stamp: {} }),
+      { ...loose(listed()), story: undefined },
+    ];
+    for (const value of cases) expect(isReviewResult(value)).toBe(false);
+  });
+});
+
 describe('parseReviewResult', () => {
   it('reads the JSON the engine printed', () => {
     const result = parseReviewResult(JSON.stringify(sampleResult()));
@@ -386,6 +427,6 @@ describe('parseReviewResult', () => {
 
 describe('the versioned protocol is shared with the engine', () => {
   it('uses the same version constant', () => {
-    expect(REVIEW_RESULT_VERSION).toBe(6);
+    expect(REVIEW_RESULT_VERSION).toBe(7);
   });
 });

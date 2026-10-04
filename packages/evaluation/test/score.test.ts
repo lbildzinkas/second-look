@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { parseDiff } from '@second-look/engine';
-import type { NoiseAssessment, Part } from '@second-look/engine';
+import type { Claim, NoiseAssessment, Part } from '@second-look/engine';
 import type { ExpectedClaim, ExpectedResults } from '../src/case.js';
 import { pressFetches } from '../src/claims.js';
 import type { PressedClaim } from '../src/claims.js';
-import { addTallies, scoresOf, tallyCase, tallyStory } from '../src/score.js';
+import { addTallies, sameClaim, scoresOf, tallyCase, tallyFinding, tallyStory } from '../src/score.js';
 
 const DIFF = [
   'diff --git a/package-lock.json b/package-lock.json',
@@ -186,7 +186,7 @@ describe('the claim checks', () => {
     const pressed = pressFetches([
       {
         text: CLAIM.text,
-        verdict: { kind: 'refuted', evidence: CLAIM.verdict.evidence },
+        verdict: { kind: 'refuted', evidence: CLAIM.verdict!.evidence },
         fetchOffer: OFFER,
       },
     ]);
@@ -205,7 +205,7 @@ describe('the claim checks', () => {
   it('counts library-source evidence only behind a pressed fetch of the pinned library', () => {
     const unpressed: PressedClaim = {
       text: CLAIM.text,
-      verdict: { kind: 'refuted', evidence: CLAIM.verdict.evidence },
+      verdict: { kind: 'refuted', evidence: CLAIM.verdict!.evidence },
     };
     const neverPressed: PressedClaim = { ...unpressed, fetchOffer: OFFER };
     const wrongPin: PressedClaim = {
@@ -232,6 +232,71 @@ describe('the claim checks', () => {
     expect(scores['claims-found']).toBe(1);
     expect(scores['claims-verdict:unverifiable']).toBe(0);
     expect(scores['claims-verdict:refuted']).toBeUndefined();
+  });
+});
+
+describe('the claims the agent lists', () => {
+  const REDIRECT: ExpectedClaim = { text: 'Any redirect on the way is followed.', origin: { file: 'app/doc_links.py', line: 9 } };
+  const RETURNS: ExpectedClaim = { text: 'Return the page as text.', origin: { file: 'app/doc_links.py', line: 7 } };
+  const SUMMARY: ExpectedClaim = { text: 'Fetch pages over HTTP.', origin: { file: 'app/doc_links.py', line: 1 }, optional: true };
+  const DESCRIBED: ExpectedClaim = { text: 'Redirects are followed.', origin: { in: 'description', line: 2 } };
+
+  function listed(quote: string, path?: string): Claim {
+    return {
+      quote,
+      source: path === undefined ? 'description' : 'docstring',
+      location: path === undefined ? { kind: 'description', line: 2 } : { kind: 'file', path, line: 1, endLine: 1 },
+      part: 0,
+      verdict: { kind: 'not checked' },
+    };
+  }
+
+  it('matches a listed claim made in the same place whose text holds the hand-listed one, or is held by it', () => {
+    expect(sameClaim(listed('Any redirect on the way is followed.', 'app/doc_links.py'), REDIRECT)).toBe(true);
+    expect(sameClaim(listed('Any redirect on the way is followed. Then  the page.', 'app/doc_links.py'), REDIRECT)).toBe(true);
+    expect(sameClaim(listed('Any redirect', 'app/doc_links.py'), REDIRECT)).toBe(true);
+    expect(sameClaim(listed('Any redirect on the way is followed.', 'app/other.py'), REDIRECT)).toBe(false);
+    expect(sameClaim(listed('Any redirect on the way is followed.'), REDIRECT)).toBe(false);
+    expect(sameClaim(listed('Redirects are followed.'), DESCRIBED)).toBe(true);
+    expect(sameClaim(listed('Redirects are followed.', 'app/doc_links.py'), DESCRIBED)).toBe(false);
+  });
+
+  it('scores recall over the required claims, and precision over what was listed, an optional claim counting in neither', () => {
+    const tally = tallyFinding(
+      [REDIRECT, RETURNS, SUMMARY, DESCRIBED],
+      [
+        listed('Any redirect on the way is followed.', 'app/doc_links.py'),
+        listed('Fetch pages over HTTP.', 'app/doc_links.py'),
+        listed('Redirects are followed.'),
+        listed('Never raises.', 'app/doc_links.py'),
+      ],
+    );
+    expect(tally).toEqual({ required: 3, found: 2, listedRight: 2, listedWrong: 1 });
+
+    const scores = byName(scoresOf({ ...tallyCase(DIFF, { noise: {}, importantParts: [], claims: [] }, undefined), finding: tally }));
+    expect(scores['claims-recall']).toBe(2 / 3);
+    expect(scores['claims-precision']).toBe(2 / 3);
+  });
+
+  it('gives no precision when nothing was listed, and no recall to a case with no required claim', () => {
+    const none = byName(scoresOf({ ...tallyCase(DIFF, { noise: {}, importantParts: [], claims: [] }, undefined), finding: tallyFinding([REDIRECT], []) }));
+    expect(none['claims-recall']).toBe(0);
+    expect(none['claims-precision']).toBeUndefined();
+
+    const optionalOnly = byName(
+      scoresOf({ ...tallyCase(DIFF, { noise: {}, importantParts: [], claims: [] }, undefined), finding: tallyFinding([SUMMARY], [listed('Fetch pages over HTTP.', 'app/doc_links.py')]) }),
+    );
+    expect(optionalOnly['claims-recall']).toBeUndefined();
+    expect(optionalOnly['claims-precision']).toBeUndefined();
+  });
+
+  it('adds the listing counts across cases, and leaves them out of the plain scores', () => {
+    const one = { ...tallyCase(DIFF, { noise: {}, importantParts: [], claims: [] }, undefined), finding: tallyFinding([REDIRECT], []) };
+    const two = { ...one, finding: tallyFinding([RETURNS], [listed('Return the page as text.', 'app/doc_links.py')]) };
+    expect(addTallies([one, two]).finding).toEqual({ required: 2, found: 1, listedRight: 1, listedWrong: 0 });
+
+    const plain = scoresOf(tallyCase(DIFF, { noise: {}, importantParts: [], claims: [REDIRECT, RETURNS] }, parts({})));
+    expect(plain.filter((score) => score.name.startsWith('claims'))).toEqual([]);
   });
 });
 

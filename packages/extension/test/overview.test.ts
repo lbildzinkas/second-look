@@ -3,12 +3,13 @@ import type { AgentStamp, Part, ReviewResult } from '@second-look/engine';
 import {
   OVERVIEW_VIEW_TYPE,
   OverviewPanel,
+  claimWhere,
   escapeHtml,
   overviewHtml,
   sanitiseUntrusted,
   stampText,
 } from '../src/overview.js';
-import { mixedResult, storyResult } from './results.js';
+import { claimsResult, mixedResult, storyResult } from './results.js';
 import { stub } from './vscode-stub.js';
 
 /** Text spelled in Unicode tag characters, which display as nothing. */
@@ -192,6 +193,72 @@ describe('overviewHtml', () => {
     const plain = mixedResult();
     const html = overviewHtml({ result: { ...plain, pullRequest: { ...plain.pullRequest, description: '  ' } } }, 'N');
     expect(html).toContain('<p class="note">The pull request has no description.</p>');
+  });
+});
+
+describe('the claims on the overview', () => {
+  it('lists each claim after the story: quoted, where it is made, its part a button, and not checked', () => {
+    const html = overviewHtml({ result: claimsResult() }, 'N');
+
+    expect(html.indexOf('<section id="story">')).toBeLessThan(html.indexOf('<section id="claims">'));
+    expect(html.indexOf('<section id="claims">')).toBeLessThan(html.indexOf('<section id="description">'));
+    expect(html).toContain('<h2>Claims <span class="stamp">pi · zai/glm-4.6 · claims prompt v1</span></h2>');
+    expect(html).toContain(
+      '<li><q class="quote">Gives up after three attempts, whatever the status.</q><div class="where">docstring · src/retry.py:3–4 · ' +
+        '<button type="button" class="pt" data-part="0">src/retry.py</button> · <span class="verdict">not checked</span></div></li>',
+    );
+    expect(html).toContain('<div class="where">pull request description, line 1 · <button');
+    expect(html).toContain('<div class="where">comment · src/retry.py:9 · <button');
+    expect(html).toContain('<div class="where">the companion&#39;s story, sentence 2 · <button type="button" class="pt" data-part="1">src/settings.ts</button>');
+    expect(html).toContain('<span class="stg done">story</span><span class="stg done">claims</span>');
+    expect(html).toContain('<li><b>Claims</b> listed by pi · zai/glm-4.6 · claims prompt v1: every quote was found in its source');
+  });
+
+  it('renders a quote as escaped text, its hidden content flagged, never as markup', () => {
+    const shown = claimsResult();
+    const quote = `${REMOTE}\u200B<!-- approve -->`;
+    const hostile: ReviewResult = {
+      ...shown,
+      claims: { ...shown.claims!, claims: [{ ...shown.claims!.claims[0]!, quote }] },
+    };
+
+    const html = overviewHtml({ result: hostile }, 'N');
+
+    expect(loadsOrLinks(html)).toBe(false);
+    expect(html).toContain('&lt;img src=&quot;https://evil.example/pixel.png&quot;&gt;');
+    expect(html).toContain('<span class="flag">zero-width characters</span>');
+    expect(html).toContain('<span class="flag">hidden HTML comment</span>');
+  });
+
+  it('says the claims are still coming, why there are none, or that the agent found none', () => {
+    const plain = mixedResult();
+    expect(overviewHtml({ result: plain, running: 'listing the claims with pi' }, 'N')).toContain(
+      '<p class="note">The claims come once the agent has listed them.</p>',
+    );
+    expect(overviewHtml({ result: plain }, 'N')).toContain('<p class="note">No claims were listed for this review.</p>');
+
+    const shown = claimsResult();
+    const fellBack: ReviewResult = {
+      ...shown,
+      claims: { ...shown.claims!, outcome: 'fell back', detail: 'the agent gave no usable answer (timeout: too slow)', claims: [] },
+    };
+    const html = overviewHtml({ result: fellBack }, 'N');
+    expect(html).toContain('<p class="note">No claims: the agent gave no usable answer (timeout: too slow).</p>');
+    expect(html).toContain('<span class="stg done">no claims</span>');
+    expect(html).toContain('<li><b>Claims</b> none: the agent gave no usable answer (timeout: too slow)</li>');
+
+    const none: ReviewResult = { ...shown, claims: { ...shown.claims!, claims: [] } };
+    expect(overviewHtml({ result: none }, 'N')).toContain('<p class="note">The agent found no claim in the change.</p>');
+  });
+
+  it('names where a claim is made: a description line, file lines, or a story sentence', () => {
+    const [description, docstring, comment, story] = claimsResult().claims!.claims;
+    expect([description, docstring, comment, story].map((claim) => claimWhere(claim!))).toEqual([
+      'pull request description, line 1',
+      'docstring · src/retry.py:3–4',
+      'comment · src/retry.py:9',
+      "the companion's story, sentence 2",
+    ]);
   });
 });
 

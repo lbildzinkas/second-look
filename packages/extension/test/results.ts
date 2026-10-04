@@ -211,3 +211,34 @@ export function storyResult(copies?: CopyPaths): ReviewResult {
     },
   };
 }
+
+/**
+ * The story result with the claims the agent listed: one from the
+ * description, a docstring's and a comment's on the retry loop, and one
+ * from the story on the settings, each not checked yet.
+ */
+export function claimsResult(copies?: CopyPaths): ReviewResult {
+  const shown = storyResult(copies);
+  const notChecked = { kind: 'not checked' as const };
+  return {
+    ...shown,
+    claims: {
+      promptVersion: '1',
+      outcome: 'listed',
+      detail: 'every quote was found in its source, which locates the claim and, for a docstring or comment, its part',
+      stamp: { agent: 'pi', agentVersion: '0.86.1', model: 'zai/glm-4.6', effort: null, runAt: '2026-10-04T00:00:00.000Z' },
+      claims: [
+        { quote: 'Retries failed sends.', source: 'description', location: { kind: 'description', line: 1 }, part: 0, verdict: notChecked },
+        {
+          quote: 'Gives up after three attempts, whatever the status.',
+          source: 'docstring',
+          location: { kind: 'file', path: 'src/retry.py', line: 3, endLine: 4 },
+          part: 0,
+          verdict: notChecked,
+        },
+        { quote: 'Never retries a 4xx.', source: 'comment', location: { kind: 'file', path: 'src/retry.py', line: 9, endLine: 9 }, part: 0, verdict: notChecked },
+        { quote: 'it reads', source: 'agent', location: { kind: 'story', sentence: 1 }, part: 1, verdict: notChecked },
+      ],
+    },
+  };
+}

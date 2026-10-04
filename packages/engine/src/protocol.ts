@@ -10,7 +10,7 @@
 import type { AgentStamp } from './agent.js';
 
 /** Version of the review result schema. */
-export const REVIEW_RESULT_VERSION = 6 as const;
+export const REVIEW_RESULT_VERSION = 7 as const;
 
 /**
  * Version 2 added the head commit's SHA and each part's noise assessment;
@@ -19,7 +19,8 @@ export const REVIEW_RESULT_VERSION = 6 as const;
  * hunk changes it, and added the lockfile rules lockfile-follows-manifest
  * and lockfile-unexplained; version 4 let a part span files, with each
  * part's origin and the result's grouping; version 5 added the result's
- * ranking; version 6 added the result's story.
+ * ranking; version 6 added the result's story; version 7 added the
+ * result's claims.
  */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
@@ -142,6 +143,90 @@ export interface ReviewResult {
   ranking: Ranking;
   /** The story the agent wrote of the parts shown; absent when no agent was asked. */
   story?: Story;
+  /** The claims the change makes, as the agent listed them; absent when no agent was asked. */
+  claims?: Claims;
+}
+
+/**
+ * The claims a change makes about how code or a library behaves, as the
+ * agent listed them and the engine checked them: every claim quoted from
+ * its source, located there and attached to a part, in the order of its
+ * source's priority. Each starts as not checked.
+ */
+export interface Claims {
+  /** The version of the claims prompt. */
+  promptVersion: string;
+  /**
+   * `listed` when the claims are shown, none being a valid list;
+   * `fell back` when the agent's answer was missing or failed the
+   * checks, so no claim is listed.
+   */
+  outcome: 'listed' | 'fell back';
+  /** One plain line: how the claims were checked, or why there are none. */
+  detail: string;
+  stamp: AgentStamp;
+  /** The claims, in their sources' priority order; empty when the pass fell back. */
+  claims: Claim[];
+}
+
+/**
+ * Where a claim is made, in priority order: the pull request's
+ * description, a docstring or a comment the change adds, or the
+ * companion's own agent, in the story it wrote.
+ */
+export type ClaimSource = 'description' | 'docstring' | 'comment' | 'agent';
+
+/** The claim sources in priority order, the order the claims are listed in. */
+export const CLAIM_SOURCE_ORDER: readonly ClaimSource[] = ['description', 'docstring', 'comment', 'agent'];
+
+/** Where in its source a claim's quote sits. */
+export type ClaimLocation =
+  | {
+      /** In the pull request's description. */
+      kind: 'description';
+      /** The 1-based line of the description the quote starts on. */
+      line: number;
+    }
+  | {
+      /** In lines the change adds to a file. */
+      kind: 'file';
+      /** The file, by its path on the new side. */
+      path: string;
+      /** The 1-based head-side line the quote starts on. */
+      line: number;
+      /** The 1-based head-side line the quote ends on. */
+      endLine: number;
+    }
+  | {
+      /** In the story the companion's agent wrote. */
+      kind: 'story';
+      /** The sentence, by its index in the story's sentences. */
+      sentence: number;
+    };
+
+/**
+ * The outcome of checking a claim (the glossary's verdict). A claim is
+ * listed before any check runs, so it starts as not checked.
+ */
+export interface ClaimVerdict {
+  kind: 'not checked';
+}
+
+/**
+ * A statement about how code or a library behaves (the glossary's claim),
+ * quoted from where the change makes it.
+ */
+export interface Claim {
+  /**
+   * The quote, exactly as its source has it, on one line: runs of white
+   * space as one space, and each line's leading comment marker dropped.
+   */
+  quote: string;
+  source: ClaimSource;
+  location: ClaimLocation;
+  /** The part the claim is about, by its index in the result's parts. */
+  part: number;
+  verdict: ClaimVerdict;
 }
 
 /**

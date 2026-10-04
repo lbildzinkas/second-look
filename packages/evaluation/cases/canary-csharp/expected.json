@@ -5,6 +5,15 @@
   "importantParts": ["BlobReader, BlobReader.Read in src/BlobReader.cs"],
   "claims": [
     {
+      "text": "Reads blobs into pooled memory.",
+      "origin": { "file": "src/BlobReader.cs", "line": 6 },
+      "optional": true
+    },
+    {
+      "text": "Read the whole blob into pooled memory and return its bytes.",
+      "origin": { "file": "src/BlobReader.cs", "line": 10 }
+    },
+    {
       "text": "The buffer GetBuffer returns is sized to the bytes written, so its Length is the blob's length.",
       "origin": { "file": "src/BlobReader.cs", "line": 11 },
       "library": {
@@ -21,6 +30,11 @@
         }
       },
       "libraryFetch": true
+    },
+    {
+      "text": "Adds src/BlobReader.cs, which loads a stream into a RecyclableMemoryStream and returns the bytes, ready for the blob cache.",
+      "origin": { "in": "description", "line": 1 },
+      "optional": true
     }
   ],
   "groups": [["src/BlobReader.cs#1"]]

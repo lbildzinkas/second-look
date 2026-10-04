@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { GROUPING_INSTRUCTIONS, GROUPING_PROMPT_VERSION } from '../../engine/src/grouping.js';
 import { RANKING_INSTRUCTIONS, RANKING_PROMPT_VERSION } from '../../engine/src/ranking.js';
 import { STORY_INSTRUCTIONS, STORY_PROMPT_VERSION } from '../../engine/src/story.js';
+import { CLAIMS_INSTRUCTIONS, CLAIMS_PROMPT_VERSION } from '../../engine/src/claims.js';
 import { answeringAgent, offeredParts, scriptedAgent } from '../../engine/test/helpers.js';
 import type { AgentAdapter } from '@second-look/engine';
 import { loadCases } from '../src/case.js';
@@ -255,6 +256,66 @@ describe('runEvaluation with the story prompt', () => {
     const prompts = new Set(results.fallbacks!.map((fallback) => fallback.prompt));
     expect(prompts).toEqual(new Set(['grouping', 'ranking']));
     expect(rowsOf(results.rows, 'fake', 'story-order')['example-7']).toBe(1);
+  });
+});
+
+/** Runs canary-python alone, the agent running only the claims prompt. */
+async function runCanary(adapter: AgentAdapter) {
+  const all = await loadCases([join(PACKAGE, 'cases')]);
+  return runEvaluation({
+    cases: all.filter((each) => each.id === 'canary-python'),
+    registry: await loadRegistry(join(PACKAGE, 'prompts.json')),
+    companionVersion: '0.1.0',
+    runsFolder: runs,
+    now: new Date('2026-10-02T00:00:00.000Z'),
+    agent: { adapter },
+    prompts: ['claims'],
+  });
+}
+
+/** An agent that lists the given claims of the canary, and gives no other answer. */
+function claimsAgent(claims: unknown[]): AgentAdapter {
+  return answeringAgent((request) => (request.instructions === CLAIMS_INSTRUCTIONS ? { claims } : 'not an answer'));
+}
+
+const docstring = (quote: string, line: number) => ({ source: 'docstring', quote, file: 'app/doc_links.py', line, part: null });
+
+describe('runEvaluation with the claims prompt', () => {
+  it("scores the claims the agent lists of the plain parts against the case's hand list, stamped with who answered", async () => {
+    const agent = claimsAgent([
+      docstring('Any redirect on the way is followed, so the caller always receives the final page rather than a 3xx status.', 9),
+      docstring('Fetch documentation pages over HTTP.', 1),
+      { source: 'comment', quote: 'import httpx', file: 'app/doc_links.py', line: 3, part: null },
+    ]);
+
+    const { folder, results } = await runCanary(agent);
+
+    // Of the two required claims one was found; of the two listed claims the
+    // hand list judges, one is right — the optional summary counts in neither.
+    expect(rowsOf(results.rows, 'fake', 'claims-recall')).toEqual({ 'canary-python': 0.5, [ALL_CASES]: 0.5 });
+    expect(rowsOf(results.rows, 'fake', 'claims-precision')).toEqual({ 'canary-python': 0.5, [ALL_CASES]: 0.5 });
+    const agentRows = results.rows.filter((row) => row.agent === 'fake');
+    expect(new Set(agentRows.map((row) => row.name))).toEqual(new Set(['claims-recall', 'claims-precision']));
+    expect(agentRows.find((row) => row.case === 'canary-python')).toMatchObject({
+      model: 'fake/model',
+      promptVersions: { claims: CLAIMS_PROMPT_VERSION },
+    });
+    // The plain pass lists no claim, so it gives no listing score.
+    expect(rowsOf(results.rows, NO_AGENT, 'claims-recall')).toEqual({});
+    const trace = readFileSync(join(folder, TRACE_FILE), 'utf8').trim().split('\n').map((line) => JSON.parse(line) as AgentCall);
+    expect(trace).toHaveLength(1);
+    expect(trace[0]).toMatchObject({ case: 'canary-python', prompt: 'claims', promptVersion: CLAIMS_PROMPT_VERSION });
+    expect(trace[0]!.input).not.toContain('source="story"');
+  });
+
+  it('records claims that fell back, which find nothing and give no precision', async () => {
+    const { results } = await runCanary(claimsAgent([docstring('Redirects are never followed.', 9)]));
+
+    expect(results.fallbacks).toEqual([
+      { case: 'canary-python', agent: 'fake', prompt: 'claims', detail: expect.stringMatching(/^the agent gave no usable answer \(invalid-answer: /) },
+    ]);
+    expect(rowsOf(results.rows, 'fake', 'claims-recall')['canary-python']).toBe(0);
+    expect(rowsOf(results.rows, 'fake', 'claims-precision')['canary-python']).toBeUndefined();
   });
 });
 

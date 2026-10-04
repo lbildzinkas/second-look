@@ -59,8 +59,13 @@ writes the story: a few sentences telling what the change does, in the
 parts' reading order, each part it mentions linked. The checks reject a
 story that leaves out a must-review part, mentions the parts out of
 order, or names a file or code the change does not show; a rejected
-story is retried once, and then the result says why there is none. Each
-stage is announced on stderr while the agent works.
+story is retried once, and then the result says why there is none. Last,
+the agent lists the claims the change makes about how code or a library
+behaves — from the description, the docstrings and comments the change
+adds, and the story — each quoted from its source, attached to a part
+and not checked yet; a quote not found in its source rejects the answer,
+which is retried once before the result says why no claim is listed.
+Each stage is announced on stderr while the agent works.
 
 It keeps read-only copies of the base and head versions, downloaded as
 archives, in a per-pull-request cache: --cache-dir, else the
@@ -99,7 +104,8 @@ command line, where any process could read it — and is used only for that
 request. Each review arrives in stages: the plain result first, in a
 review/stage notification, then the result with the agent's grouping in
 another while the agent ranks, then the ranked result in another while
-the agent writes the story, then the result with the story. Each review
+the agent writes the story, then the result with the story in another
+while the agent lists the claims, then the result with the claims. Each review
 request may also carry the reviewer's agent choice — the agent, model and
 account from the editor's settings — which runs that review's agent passes
 and stamps the account label on their results, replacing this command's

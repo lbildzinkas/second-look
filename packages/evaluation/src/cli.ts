@@ -65,10 +65,11 @@ noise-label precision and recall per class and state, the median and
 top-3 rank position of the known important parts, the grouping's
 pairwise hunk agreement with the hand labels, the story's plain checks
 (every must-review part linked, reading order, only names the change
-shows), and the claim checks over
-the hand-labelled claims (found, verdict, evidence, fetch offered), which
-fail as expected failures while the engine reports no claims; the stored
-baseline records them at those failing values. It reads the cases in
+shows), the recall and precision of the claims the agent lists against
+the hand lists, and the claim checks over the hand-labelled verdicts
+(found, verdict, evidence, fetch offered), which fail as expected
+failures while the plain pass reports no claims and no claim is checked;
+the stored baseline records them at those failing values. It reads the cases in
 --cases (the repository's own cases when none is given) and in every
 folder of SECOND_LOOK_EVAL_CASES. --model-free keeps the cases tied to no
 prompt; --changed-since keeps the cases tied to the prompts this branch
@@ -77,7 +78,8 @@ Without --agent no model is called. With --agent pi, the cases tied to
 the grouping prompt also run it through the reviewer's installed Pi, the
 cases tied to the ranking prompt have their plain parts ranked by it, the
 cases tied to the story prompt have the story of their plain parts
-written by it, and those rows are stamped with the agent and model that
+written by it, the cases tied to the claims prompt have the claims of
+their plain parts listed by it, and those rows are stamped with the agent and model that
 answered; the report says whether each agent, model and
 effort's ranking matches or beats the plain ranking over the cases it
 ranked. Each run writes its stamped results and the trace

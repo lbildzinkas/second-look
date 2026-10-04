@@ -20,7 +20,7 @@ import {
 } from '../../src/extension.js';
 import { changeUri } from '../../src/change-copies.js';
 import { SEND_REVIEW_VIEW_TYPE } from '../../src/send-page.js';
-import { mixedResult, storyResult } from '../results.js';
+import { claimsResult, mixedResult, storyResult } from '../results.js';
 import { OVERVIEW_VIEW_TYPE } from '../../src/overview.js';
 import {
   Range,
@@ -722,6 +722,22 @@ describe('the overview', () => {
 
     expect(stub.executedCommands).toEqual([
       { id: 'vscode.changes', args: ['src/retry.py', [[head('src/retry.py'), base('src/retry.py'), head('src/retry.py')]]] },
+    ]);
+  });
+
+  it("shows each part's claim count in the tree, lists the claims, and opens the part a claim is attached to", async () => {
+    const view = await reviewWithFakeEngine({ result: claimsResult(), logName: 'claims.log' });
+
+    const rendered = renderedTree(view);
+    expect(rendered.find((node) => node.label === 'src/retry.py')!.description).toBe('3 claims · New code the send path now runs on every delivery.');
+    expect(rendered.find((node) => node.label === 'src/settings.ts')!.description).toBe('1 claim · Changed code that the retry policy reads.');
+    expect(overview().webview.html).toContain('<q class="quote">Gives up after three attempts, whatever the status.</q>');
+
+    overview().webview.receive({ type: 'openPart', part: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(stub.executedCommands).toEqual([
+      { id: 'vscode.changes', args: ['src/settings.ts', [[head('src/settings.ts'), base('src/settings.ts'), head('src/settings.ts')]]] },
     ]);
   });
 

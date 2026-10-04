@@ -4,6 +4,8 @@ import {
   hiddenContent,
   parsePullRequestUrl,
   type AgentStamp,
+  type Claim,
+  type ClaimSource,
   type HiddenKind,
   type Part,
   type ReviewResult,
@@ -41,14 +43,15 @@ function overviewMessage(value: unknown): OverviewMessage | undefined {
  * the recorded design (docs/ux): the pull request's title and where it
  * comes from, a chip for each stage done and the one still running, the
  * story with its stamp, each part it mentions a button that opens the part
- * in the diff editor, the pull request's description in full with its
- * hidden content shown and flagged, and who made each result.
+ * in the diff editor, the claims the change makes with where each is made
+ * and the part it is attached to, the pull request's description in full
+ * with its hidden content shown and flagged, and who made each result.
  *
  * Everything on the page but the companion's own words was written by
- * someone else, the agent's story included, so every byte of it reaches
- * the page as escaped text: no remote image, no link and no markup of
- * theirs renders, under a content security policy that loads nothing but
- * the page's own nonce-marked style and script.
+ * someone else, the agent's story and the claims' quotes included, so
+ * every byte of it reaches the page as escaped text: no remote image, no
+ * link and no markup of theirs renders, under a content security policy
+ * that loads nothing but the page's own nonce-marked style and script.
  */
 export class OverviewPanel implements vscode.Disposable {
   private panel: vscode.WebviewPanel | undefined;
@@ -57,7 +60,7 @@ export class OverviewPanel implements vscode.Disposable {
 
   private disposed = false;
 
-  /** Opens a part the story links, in the diff editor. */
+  /** Opens a part the story links or a claim is attached to, in the diff editor. */
   private readonly openPart: (part: Part) => void;
 
   constructor(openPart: (part: Part) => void) {
@@ -106,7 +109,7 @@ export class OverviewPanel implements vscode.Disposable {
     return true;
   }
 
-  /** The part a story button names, opened in the diff editor. */
+  /** The part a story or claim button names, opened in the diff editor. */
   private handle(value: unknown): void {
     const message = overviewMessage(value);
     const part = message === undefined ? undefined : this.state?.result.parts[message.part];
@@ -226,6 +229,7 @@ function stageChips(state: OverviewState): string {
   const ranking = result.ranking.agent;
   if (ranking) chips.push({ text: result.ranking.by === 'agent' ? 'ranked by the agent' : 'plain ranking kept', done: true });
   if (result.story) chips.push({ text: result.story.outcome === 'written' ? 'story' : 'no story', done: true });
+  if (result.claims) chips.push({ text: result.claims.outcome === 'listed' ? 'claims' : 'no claims', done: true });
   if (state.running !== undefined) chips.push({ text: state.running, done: false });
   return chips
     .map((chip) => `<span class="stg ${chip.done ? 'done' : 'run'}">${escapeHtml(chip.text)}${chip.done ? '' : '…'}</span>`)
@@ -280,6 +284,60 @@ function storySection(state: OverviewState): string {
   return `<h2>Story ${stamp}</h2>${missing}<div class="story">${storySentences(story, focus)}</div>`;
 }
 
+/** How the page names each claim source. */
+const CLAIM_SOURCES: Record<ClaimSource, string> = {
+  description: 'pull request description',
+  docstring: 'docstring',
+  comment: 'comment',
+  agent: "the companion's story",
+};
+
+/** Where a claim is made, in words: its source and its place there. */
+export function claimWhere(claim: Claim): string {
+  const source = CLAIM_SOURCES[claim.source];
+  const { location } = claim;
+  switch (location.kind) {
+    case 'description':
+      return `${source}, line ${location.line}`;
+    case 'story':
+      return `${source}, sentence ${location.sentence + 1}`;
+    case 'file': {
+      const lines = location.endLine > location.line ? `${location.line}–${location.endLine}` : `${location.line}`;
+      return `${source} · ${location.path}:${lines}`;
+    }
+  }
+}
+
+/** One claim: its quote, where it is made, the part it is attached to as a button that opens it, and its verdict. */
+function claimItem(claim: Claim, result: ReviewResult): string {
+  const part = result.parts[claim.part];
+  const button =
+    part === undefined
+      ? ''
+      : ` · <button type="button" class="pt" data-part="${claim.part}">${escapeHtml(part.name ?? part.path)}</button>`;
+  return (
+    `<li><q class="quote">${sanitiseUntrusted(claim.quote).html}</q>` +
+    `<div class="where">${escapeHtml(claimWhere(claim))}${button} · <span class="verdict">${escapeHtml(claim.verdict.kind)}</span></div></li>`
+  );
+}
+
+/** The claims section: the claims with their stamp, why there are none, or that they are still coming. */
+function claimsSection(state: OverviewState): string {
+  const { result } = state;
+  const claims = result.claims;
+  if (claims === undefined) {
+    const why = state.running !== undefined ? 'The claims come once the agent has listed them.' : 'No claims were listed for this review.';
+    return `<h2>Claims</h2><p class="note">${why}</p>`;
+  }
+  const stamp = stampChip(stampText(claims.stamp, 'claims', claims.promptVersion));
+  if (claims.outcome === 'fell back') return `<h2>Claims ${stamp}</h2><p class="note">No claims: ${escapeHtml(claims.detail)}.</p>`;
+  if (claims.claims.length === 0) return `<h2>Claims ${stamp}</h2><p class="note">The agent found no claim in the change.</p>`;
+  const note =
+    '<p class="note">Statements about how code or a library behaves, from the description, the docstrings and comments ' +
+    'the change adds, and the story, in that order. None is checked yet.</p>';
+  return `<h2>Claims ${stamp}</h2>${note}<ol class="claims">${claims.claims.map((claim) => claimItem(claim, result)).join('')}</ol>`;
+}
+
 /** The description section: the description in full, its hidden content shown and flagged. */
 function descriptionSection(result: ReviewResult): string {
   const description = result.pullRequest.description;
@@ -317,6 +375,15 @@ function stampsSection(state: OverviewState): string {
       story.outcome === 'written'
         ? `written by ${stampText(story.stamp, 'story', story.promptVersion)}: ${story.detail}`
         : `none: ${story.detail}`,
+    ]);
+  }
+  const claims = result.claims;
+  if (claims) {
+    rows.push([
+      'Claims',
+      claims.outcome === 'listed'
+        ? `listed by ${stampText(claims.stamp, 'claims', claims.promptVersion)}: ${claims.detail}`
+        : `none: ${claims.detail}`,
     ]);
   }
   const items = rows.map(([what, how]) => `<li><b>${escapeHtml(what)}</b> ${escapeHtml(how)}</li>`).join('');
@@ -399,6 +466,11 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
     font-weight: 600;
     margin-right: 6px;
   }
+  .claims { padding-left: 22px; margin: 0; }
+  .claims li { margin-bottom: 8px; }
+  .quote { overflow-wrap: anywhere; }
+  .where { color: var(--vscode-descriptionForeground); font-size: 12px; margin-top: 2px; }
+  .verdict { font-style: italic; }
   .stamps { padding-left: 18px; margin: 0; }
   .stamps li { margin-bottom: 4px; }
 </style>
@@ -409,6 +481,7 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
   <div class="meta">${metaLine(result)}</div>
   <div class="stages">${stageChips(state)}</div>
   <section id="story">${storySection(state)}</section>
+  <section id="claims">${claimsSection(state)}</section>
   <section id="description">${descriptionSection(result)}</section>
   <section id="stamps">${stampsSection(state)}</section>
 </main>
