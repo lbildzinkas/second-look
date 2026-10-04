@@ -232,21 +232,21 @@ describe('the review command, end to end against a fake engine', () => {
       {
         label: 'src/retry.py',
         description: 'New code the send path now runs on every delivery.',
-        tooltip: 'new code\n2 callers\nno tests before this pull request',
+        tooltip: 'new code\n2 callers\nno tests before this pull request\nPlain ranking',
         contextValue: 'part',
       },
       { label: 'Worth reviewing', tooltip: 'The parts worth a careful read.' },
       {
         label: 'src/settings.ts',
         description: 'Changed code that the retry policy reads.',
-        tooltip: 'changed code',
+        tooltip: 'changed code\nPlain ranking',
         contextValue: 'part',
       },
       { label: 'Context', tooltip: 'The parts that only give background to the change.' },
       {
         label: 'CHANGELOG.md',
         description: 'Release note only.',
-        tooltip: 'documentation only',
+        tooltip: 'documentation only\nPlain ranking',
         contextValue: 'part',
       },
       { label: 'Not ranked yet', tooltip: 'The engine has not ranked these parts yet.' },
@@ -437,6 +437,63 @@ describe('a review arriving in stages', () => {
         ],
       },
     ]);
+  });
+});
+
+describe('the agent ranking arriving', () => {
+  it('re-ranks the tree in place, and the tooltip names the cited signals and the agent ranking', async () => {
+    const plain = mixedResult();
+    const [retry, settings, ...rest] = plain.parts;
+    const stamp = { agent: 'pi', agentVersion: '0.86.1', model: 'zai/glm-4.6', effort: null, runAt: '2026-10-04T00:00:00.000Z' };
+    const ranked = {
+      ...plain,
+      parts: [
+        { ...settings!, rank: { importance: 'must review', reason: 'changes the retry limit every caller reads', signals: ['changed code'] } },
+        { ...retry!, rank: { importance: 'worth reviewing', reason: 'new loop around an unchanged send', signals: ['new code'] } },
+        ...rest,
+      ],
+      ranking: {
+        by: 'agent',
+        agent: { promptVersion: '1', outcome: 'ranked', detail: 'the validator accepted the ranking of 4 parts', stamp },
+      },
+    };
+    activate(stubContext() as unknown as vscode.ExtensionContext, {
+      spawnEngine: () =>
+        fakeEngine({
+          result: ranked,
+          stage: { running: 'ranking the parts with pi', timeoutMs: 60_000, result: plain },
+          answerDelayMs: 500,
+          logName: 'ranked.log',
+        }),
+    });
+    stub.inputBoxResult = PR_URL;
+    stub.session = { accessToken: TOKEN };
+    const reviewed = registeredCommands().get(REVIEW_COMMAND)!() as Promise<void>;
+    const view = stub.treeViews[0]!;
+
+    await until('the plain tree', () => partClick(view, 'src/settings.ts') !== undefined);
+    expect(view.message).toBe('Plain parts shown; ranking the parts with pi…');
+    expect(renderedTree(view)[1]).toMatchObject({ label: 'src/retry.py' });
+    await reviewed;
+
+    expect(renderedTree(view).slice(0, 4)).toEqual([
+      { label: 'Must review', tooltip: 'The parts to read first.' },
+      {
+        label: 'src/settings.ts',
+        description: 'changes the retry limit every caller reads',
+        tooltip: 'changed code\nAgent ranking: pi · zai/glm-4.6 (ranking prompt v1)',
+        contextValue: 'part',
+      },
+      { label: 'Worth reviewing', tooltip: 'The parts worth a careful read.' },
+      {
+        label: 'src/retry.py',
+        description: 'new loop around an unchanged send',
+        tooltip: 'new code\nAgent ranking: pi · zai/glm-4.6 (ranking prompt v1)',
+        contextValue: 'part',
+      },
+    ]);
+    expect(view.message).toBe('Ranked by pi · zai/glm-4.6 (ranking prompt v1): the validator accepted the ranking of 4 parts.');
+    expect(stub.errorMessages).toEqual([]);
   });
 });
 

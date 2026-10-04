@@ -89,6 +89,7 @@ function sampleResult(): ReviewResult {
       },
     ],
     grouping: { by: 'plain' },
+    ranking: { by: 'plain' },
   };
 }
 
@@ -339,6 +340,37 @@ describe('isReviewResult for the agent grouping', () => {
   });
 });
 
+describe('isReviewResult for the agent ranking', () => {
+  type Loose = { ranking?: unknown };
+  const loose = (ranking: unknown): Loose => ({ ...(JSON.parse(JSON.stringify(sampleResult())) as Loose), ranking });
+  const stamp = { agent: 'pi', agentVersion: '0.86.1', model: 'zai/glm-4.6', effort: null, runAt: '2026-10-04T00:00:00.000Z' };
+  const agent = { promptVersion: '1', outcome: 'ranked', detail: 'accepted', stamp };
+
+  it("accepts the agent's ranking with its stamp, and the plain ranking with why it stayed, stamped or not", () => {
+    for (const ranking of [
+      { by: 'agent', agent },
+      { by: 'plain', agent: { ...agent, outcome: 'fell back' } },
+      { by: 'plain', agent: { promptVersion: '1', outcome: 'not tested', detail: 'pi has none' } },
+    ]) {
+      expect(isReviewResult(loose(ranking))).toBe(true);
+    }
+  });
+
+  it("rejects a missing ranking, an agent ranking shown unstamped or unranked, and a plain one claiming the agent's", () => {
+    const { stamp: _stamp, ...unstamped } = agent;
+    for (const ranking of [
+      undefined,
+      { by: 'agent' },
+      { by: 'agent', agent: unstamped },
+      { by: 'agent', agent: { ...agent, outcome: 'fell back' } },
+      { by: 'plain', agent },
+      { by: 'plain', agent: { ...agent, outcome: 'guessed' } },
+    ]) {
+      expect(isReviewResult(loose(ranking))).toBe(false);
+    }
+  });
+});
+
 describe('parseReviewResult', () => {
   it('reads the JSON the engine printed', () => {
     const result = parseReviewResult(JSON.stringify(sampleResult()));
@@ -354,6 +386,6 @@ describe('parseReviewResult', () => {
 
 describe('the versioned protocol is shared with the engine', () => {
   it('uses the same version constant', () => {
-    expect(REVIEW_RESULT_VERSION).toBe(4);
+    expect(REVIEW_RESULT_VERSION).toBe(5);
   });
 });

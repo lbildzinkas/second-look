@@ -107,7 +107,9 @@ function fallbackKey(entry: { case: string; agent: string }): string {
  * A stored baseline with a run's rows written over it: the run replaces
  * every stored row of each case, agent, model and effort it scored, and
  * every other stored row stays, so one baseline file keeps the plain
- * pass's rows beside each agent and model tried.
+ * pass's rows beside each agent and model tried. A stored ranking
+ * comparison stays unless the run ranked with the same agent, model and
+ * effort.
  */
 export function mergeBaseline(stored: RunResults, run: RunResults): RunResults {
   const scored = new Set(run.rows.map(runKey));
@@ -125,5 +127,19 @@ export function mergeBaseline(stored: RunResults, run: RunResults): RunResults {
       ...(stored.fallbacks ?? []).filter((fallback) => !scoredFallbacks.has(fallbackKey(fallback))),
       ...(run.fallbacks ?? []),
     ],
+    rankings: [
+      ...(stored.rankings ?? []).filter((ranking) => !scored.has(rankingKey(ranking, run))),
+      ...(run.rankings ?? []),
+    ],
   };
+}
+
+/**
+ * A stored ranking comparison is replaced when the run ranked any case
+ * with the same agent, model and effort: the run's key for one of its
+ * rows, or a key no row has when it ranked none.
+ */
+function rankingKey(ranking: { agent: string; model: string; effort: string }, run: RunResults): string {
+  const row = run.rows.find((each) => each.agent === ranking.agent && each.model === ranking.model && each.effort === ranking.effort);
+  return row ? runKey(row) : '';
 }

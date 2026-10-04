@@ -4,7 +4,8 @@
   "source": "https://github.com/sindresorhus/ky/pull/880",
   "recordedAt": "2026-10-02T18:43:53.445Z",
   "prompts": [
-    "grouping"
+    "grouping",
+    "ranking"
   ],
   "pullRequest": {
     "url": "https://github.com/sindresorhus/ky/pull/880",

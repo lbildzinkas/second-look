@@ -399,3 +399,31 @@ export function scriptedAgent(answers: readonly string[], probe: Partial<AgentPr
     },
   };
 }
+
+/**
+ * An agent that answers each run with what `answer` makes of the request,
+ * such as a grouping or a ranking built from the prompt, recording each
+ * request.
+ */
+export function answeringAgent(answer: (request: AgentRunRequest) => unknown, model = 'fake/model'): ScriptedAgent {
+  const scripted = scriptedAgent([]);
+  return {
+    ...scripted,
+    run: async (request) => {
+      scripted.requests.push(request);
+      return {
+        status: 'completed',
+        text: JSON.stringify(answer(request)),
+        stamp: { agent: 'fake', agentVersion: '1.2.3', model, effort: null, runAt: '2026-10-04T00:00:00.000Z' },
+      };
+    },
+  };
+}
+
+/** The parts a ranking prompt offers, in its order: each id with the part's name. */
+export function offeredParts(prompt: string): { id: string; name: string }[] {
+  return [...prompt.matchAll(/^\[(p\d+)\] signals: .*\n<untrusted-input [^\n]*\nname: (.*)$/gm)].map((match) => ({
+    id: match[1]!,
+    name: match[2]!,
+  }));
+}

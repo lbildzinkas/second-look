@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { GROUPING_INSTRUCTIONS, GROUPING_PROMPT_VERSION } from '../../engine/src/grouping.js';
-import { scriptedAgent } from '../../engine/test/helpers.js';
+import { RANKING_INSTRUCTIONS, RANKING_PROMPT_VERSION } from '../../engine/src/ranking.js';
+import { answeringAgent, offeredParts, scriptedAgent } from '../../engine/test/helpers.js';
 import type { AgentAdapter } from '@second-look/engine';
 import { loadCases } from '../src/case.js';
 import { loadRegistry } from '../src/prompts.js';
@@ -23,6 +24,32 @@ const LABELLED_ANSWER = JSON.stringify({
     { name: 'deploy', hunks: ['h4'] },
   ],
 });
+
+/** example-7's known important parts, as its expected.json names them. */
+const IMPORTANT = ['Cart.total in web/cart.ts', 'apply_discount in app/dedent.py'];
+
+/**
+ * A ranking of the offered parts: the known important parts first, or
+ * last, as must review and context; every reason cites the part's size.
+ */
+function rankingOf(prompt: string, important: 'first' | 'last'): unknown {
+  const offered = offeredParts(prompt);
+  const known = offered.filter((part) => IMPORTANT.includes(part.name));
+  const others = offered.filter((part) => !IMPORTANT.includes(part.name));
+  const entry = (id: string, importance: string) => ({ part: id, importance, reason: 'its size', signals: ['size'] });
+  const parts =
+    important === 'first'
+      ? [...known.map((part) => entry(part.id, 'must review')), ...others.map((part) => entry(part.id, 'context'))]
+      : [...others.map((part) => entry(part.id, 'worth reviewing')), ...known.map((part) => entry(part.id, 'context'))];
+  return { parts };
+}
+
+/** An agent that groups example-7 as its labels do and ranks its plain parts with the important ones first or last. */
+function labellingAgent(important: 'first' | 'last' = 'first'): AgentAdapter {
+  return answeringAgent((request) =>
+    request.instructions === GROUPING_INSTRUCTIONS ? JSON.parse(LABELLED_ANSWER) : rankingOf(request.prompt, important),
+  );
+}
 
 let runs: string;
 
@@ -55,21 +82,21 @@ function rowsOf(rows: readonly ResultRow[], agent: string, name: string): Record
 
 describe('runEvaluation with an agent', () => {
   it("scores the grouping prompt's cases with the agent too, stamped with who answered, and traces each call", async () => {
-    const { folder, results } = await run([LABELLED_ANSWER]);
+    const { folder, results } = await run([], labellingAgent());
 
     // The plain pass scores every case; the agent only the cases tied to its prompt.
     expect(rowsOf(results.rows, NO_AGENT, 'coverage')).toEqual({ 'example-42': 1, 'example-7': 1, [ALL_CASES]: 1 });
     expect(rowsOf(results.rows, 'fake', 'coverage')).toEqual({ 'example-7': 1, [ALL_CASES]: 1 });
     expect(rowsOf(results.rows, 'fake', 'grouping-agreement')).toEqual({ 'example-7': 1, [ALL_CASES]: 1 });
     expect(rowsOf(results.rows, NO_AGENT, 'grouping-agreement')['example-7']).toBeLessThan(1);
-    const agentRows = results.rows.filter((row) => row.agent === 'fake');
-    expect(agentRows.map((row) => row.name).sort()).toEqual(['coverage', 'coverage', 'grouping-agreement', 'grouping-agreement']);
+    const agentRows = results.rows.filter((row) => row.agent === 'fake' && row.case !== ALL_CASES);
+    expect(agentRows.map((row) => row.name).sort()).toEqual(['coverage', 'grouping-agreement', 'rank-median', 'rank-top-3']);
     for (const row of agentRows) {
       expect(row).toMatchObject({
         agentVersion: '1.2.3',
         model: 'fake/model',
         effort: 'default',
-        promptVersions: { grouping: GROUPING_PROMPT_VERSION },
+        promptVersions: { grouping: GROUPING_PROMPT_VERSION, ranking: RANKING_PROMPT_VERSION },
       });
     }
     expect(results.fallbacks).toEqual([]);
@@ -78,14 +105,16 @@ describe('runEvaluation with an agent', () => {
       .trim()
       .split('\n')
       .map((line) => JSON.parse(line) as AgentCall);
-    expect(trace).toHaveLength(1);
+    expect(trace).toHaveLength(2);
+    expect(trace[1]).toMatchObject({ case: 'example-7', prompt: 'ranking', promptVersion: RANKING_PROMPT_VERSION });
+    expect(trace[1]!.input.startsWith(RANKING_INSTRUCTIONS)).toBe(true);
     expect(trace[0]).toMatchObject({
       case: 'example-7',
       prompt: 'grouping',
       promptVersion: GROUPING_PROMPT_VERSION,
       agent: 'fake',
       model: 'fake/model',
-      output: LABELLED_ANSWER,
+      output: JSON.stringify(JSON.parse(LABELLED_ANSWER)),
     });
     expect(trace[0]!.input.startsWith(GROUPING_INSTRUCTIONS)).toBe(true);
   });
@@ -94,13 +123,17 @@ describe('runEvaluation with an agent', () => {
     const invalid = JSON.stringify({ parts: [{ name: 'all', hunks: ['h99'] }] });
     const { folder, results } = await run([invalid, invalid]);
 
+    const invalidAnswer = expect.stringMatching(/^the agent gave no usable answer \(invalid-answer: /);
     expect(results.fallbacks).toEqual([
-      { case: 'example-7', agent: 'fake', detail: expect.stringMatching(/^the agent gave no usable answer \(invalid-answer: /) },
+      { case: 'example-7', agent: 'fake', prompt: 'grouping', detail: invalidAnswer },
+      { case: 'example-7', agent: 'fake', prompt: 'ranking', detail: invalidAnswer },
     ]);
     expect(rowsOf(results.rows, 'fake', 'grouping-agreement')['example-7']).toBe(
       rowsOf(results.rows, NO_AGENT, 'grouping-agreement')['example-7'],
     );
-    expect(readFileSync(join(folder, TRACE_FILE), 'utf8').trim().split('\n')).toHaveLength(2);
+    // A fallback scores the plain ranking the reviewer would see.
+    expect(rowsOf(results.rows, 'fake', 'rank-median')['example-7']).toBe(rowsOf(results.rows, NO_AGENT, 'rank-median')['example-7']);
+    expect(readFileSync(join(folder, TRACE_FILE), 'utf8').trim().split('\n')).toHaveLength(4);
   });
 
   it('records a coverage row of 0 when the agent pass throws, so the hard gate cannot pass silently', async () => {
@@ -113,7 +146,10 @@ describe('runEvaluation with an agent', () => {
     };
     const { results } = await run([], crashing);
 
-    expect(results.failures).toEqual([{ case: 'example-7', error: 'agent crashed' }]);
+    expect(results.failures).toEqual([
+      { case: 'example-7', error: 'agent crashed' },
+      { case: 'example-7', error: 'agent crashed' },
+    ]);
     const uncovered = belowFullCoverage(results.rows);
     expect(uncovered).toHaveLength(1);
     expect(uncovered[0]).toMatchObject({
@@ -122,6 +158,33 @@ describe('runEvaluation with an agent', () => {
       name: 'coverage',
       value: 0,
     });
+  });
+});
+
+describe('runEvaluation with the ranking prompt', () => {
+  it("compares the agent's ranking of the plain parts with the plain ranking, and says it matches or beats it", async () => {
+    const { results } = await run([], labellingAgent('first'));
+
+    expect(rowsOf(results.rows, 'fake', 'rank-median')).toEqual({ 'example-7': 1.5, [ALL_CASES]: 1.5 });
+    expect(rowsOf(results.rows, 'fake', 'rank-top-3')).toEqual({ 'example-7': 1, [ALL_CASES]: 1 });
+    expect(results.rankings).toEqual([
+      {
+        agent: 'fake',
+        agentVersion: '1.2.3',
+        model: 'fake/model',
+        effort: 'default',
+        cases: ['example-7'],
+        plain: { 'rank-median': rowsOf(results.rows, NO_AGENT, 'rank-median')['example-7'], 'rank-top-3': rowsOf(results.rows, NO_AGENT, 'rank-top-3')['example-7'] },
+        ranked: { 'rank-median': 1.5, 'rank-top-3': 1 },
+        verdict: 'matches or beats the plain ranking',
+      },
+    ]);
+  });
+
+  it('says an agent ranking that puts the known important parts last falls behind the plain ranking', async () => {
+    const { results } = await run([], labellingAgent('last'));
+
+    expect(results.rankings).toMatchObject([{ verdict: 'falls behind the plain ranking', ranked: { 'rank-top-3': 0 } }]);
   });
 });
 

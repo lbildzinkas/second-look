@@ -21,7 +21,7 @@ import {
   anchorOf,
   buildTree,
   findAnchor,
-  groupingStatus,
+  reviewStatus,
   pendingReviewSection,
   type TreeComment,
   type TreePart,
@@ -165,9 +165,10 @@ class ReviewTreeProvider implements vscode.TreeDataProvider<TreeNode> {
  *
  * A review arrives in stages: the tree shows the plain parts first, with
  * a status line naming the stage still running, then updates in place
- * when the agent's parts arrive — keeping the reviewer's place: the part
- * holding the selected part's first hunk stays selected, and the open
- * diff editor stays as it is. A new review replaces one still running.
+ * when the agent's parts arrive and again when its ranking does — keeping
+ * the reviewer's place: the part holding the selected part's first hunk
+ * stays selected, and the open diff editor stays as it is. A new review
+ * replaces one still running.
  *
  * The session keeps the result it shows, so a part click can open the
  * multi-file diff from the same copies the engine downloaded.
@@ -252,12 +253,12 @@ class ReviewSession {
             if (!current()) return;
             void this.show(stage.result, shown);
             shown = true;
-            this.treeView.message = groupingStatus(stage.result, stage.running);
+            this.treeView.message = reviewStatus(stage.result, stage.running);
           }),
       );
       if (!current()) return;
       await this.show(result, shown);
-      this.treeView.message = groupingStatus(result);
+      this.treeView.message = reviewStatus(result);
     } catch (error) {
       if (!current()) return;
       this.treeView.message = undefined;

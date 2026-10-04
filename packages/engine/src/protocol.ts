@@ -10,7 +10,7 @@
 import type { AgentStamp } from './agent.js';
 
 /** Version of the review result schema. */
-export const REVIEW_RESULT_VERSION = 4 as const;
+export const REVIEW_RESULT_VERSION = 5 as const;
 
 /**
  * Version 2 added the head commit's SHA and each part's noise assessment;
@@ -18,7 +18,8 @@ export const REVIEW_RESULT_VERSION = 4 as const;
  * with each part's signals and rank, each entity's visibility and how the
  * hunk changes it, and added the lockfile rules lockfile-follows-manifest
  * and lockfile-unexplained; version 4 let a part span files, with each
- * part's origin and the result's grouping.
+ * part's origin and the result's grouping; version 5 added the result's
+ * ranking.
  */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
@@ -137,6 +138,8 @@ export interface ReviewResult {
   parts: Part[];
   /** Who grouped the parts: the plain pass, or the agent, and what came of asking it. */
   grouping: Grouping;
+  /** Who ranked the parts: the plain rule, or the agent, and what came of asking it. */
+  ranking: Ranking;
 }
 
 /**
@@ -165,6 +168,36 @@ export interface AgentGrouping {
   /** Hunks the agent left out, which went to a part marked not grouped by the agent. */
   leftOut: number;
   stamp: AgentStamp;
+}
+
+/**
+ * Who ranked a result's parts. The plain rule always ranks first; with an
+ * agent, its ranking is shown only when its answer passed the validator
+ * and the agent and model are ones whose evaluation matched or beat the
+ * plain ranking. The sinking noise parts keep their plain rank either way.
+ */
+export interface Ranking {
+  /** The ranking the result shows. */
+  by: 'plain' | 'agent';
+  /** What came of the agent ranking stage; absent when there was none. */
+  agent?: AgentRanking;
+}
+
+/** The agent ranking stage's outcome. */
+export interface AgentRanking {
+  /** The version of the ranking prompt. */
+  promptVersion: string;
+  /**
+   * `ranked` when the agent's ranking is shown; `fell back` when its
+   * answer was missing or the validator rejected it; `not tested` when
+   * the agent and model have no evaluation in which the agent ranking
+   * matched or beat the plain one. The plain ranking stays unless ranked.
+   */
+  outcome: 'ranked' | 'fell back' | 'not tested';
+  /** One plain line: why the plain ranking stayed, or how the agent's was checked. */
+  detail: string;
+  /** Who answered; absent when the agent was not asked. */
+  stamp?: AgentStamp;
 }
 
 /** Pull request metadata the companion keeps alongside the parts. */

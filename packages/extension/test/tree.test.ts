@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import type { AgentGrouping, FileSlice, Hunk } from '@second-look/engine';
+import type { AgentGrouping, AgentRanking, FileSlice, Hunk } from '@second-look/engine';
 import {
   anchorOf,
   buildTree,
   findAnchor,
-  groupingStatus,
   NOISE,
   NOT_RANKED_YET,
   partsInReadingOrder,
+  reviewStatus,
 } from '../src/tree.js';
 import { mixedResult, part, result } from './results.js';
 
@@ -41,6 +41,10 @@ function agentGrouping(overrides: Partial<AgentGrouping>): AgentGrouping {
   return { promptVersion: '1', outcome: 'grouped', detail: 'every hunk was placed by the agent', leftOut: 0, stamp: STAMP, ...overrides };
 }
 
+function agentRanking(overrides: Partial<AgentRanking>): AgentRanking {
+  return { promptVersion: '1', outcome: 'ranked', detail: 'the validator accepted the ranking of 4 parts', stamp: STAMP, ...overrides };
+}
+
 describe('buildTree', () => {
   it('shows the importance groups in order, with the reason beside each part and the signals in its tooltip', () => {
     const sections = buildTree(mixedResult());
@@ -60,7 +64,7 @@ describe('buildTree', () => {
       'New code the send path now runs on every delivery.',
     );
     expect(mustReview.parts[0]!.tooltip).toBe(
-      'new code\n2 callers\nno tests before this pull request',
+      'new code\n2 callers\nno tests before this pull request\nPlain ranking',
     );
     expect(mustReview.parts[0]!.kind).toBe('part');
   });
@@ -201,6 +205,7 @@ describe('parts across files', () => {
       label: 'fresh, with its test',
       tooltip: [
         'new code',
+        'Plain ranking',
         'across app/fresh.py, tests/test_fresh.py',
         'tests/test_fresh.py: fixture · claimed — Only fixture folders are matched.',
       ].join('\n'),
@@ -220,28 +225,62 @@ describe('parts across files', () => {
   });
 });
 
-describe('groupingStatus', () => {
+describe('reviewStatus', () => {
   it('names the stage still running while the plain parts show', () => {
-    expect(groupingStatus(mixedResult(), 'grouping related hunks with pi')).toBe(
+    expect(reviewStatus(mixedResult(), 'grouping related hunks with pi')).toBe(
       'Plain parts shown; grouping related hunks with pi…',
     );
   });
 
   it('says who grouped the parts, with the model and the prompt version', () => {
     const grouped = { ...mixedResult(), grouping: { by: 'agent' as const, agent: agentGrouping({}) } };
-    expect(groupingStatus(grouped)).toBe(
+    expect(reviewStatus(grouped)).toBe(
       'Grouped by pi · zai/glm-4.6 (grouping prompt v1): every hunk was placed by the agent.',
     );
   });
 
   it('says why the plain grouping stayed', () => {
     const agent = agentGrouping({ outcome: 'fell back', detail: 'the agent gave no usable answer (timeout: too slow)' });
-    expect(groupingStatus({ ...mixedResult(), grouping: { by: 'plain', agent } })).toBe(
+    expect(reviewStatus({ ...mixedResult(), grouping: { by: 'plain', agent } })).toBe(
       'Plain grouping kept: the agent gave no usable answer (timeout: too slow).',
     );
   });
 
   it('shows no line when the agent was never asked', () => {
-    expect(groupingStatus(mixedResult())).toBeUndefined();
+    expect(reviewStatus(mixedResult())).toBeUndefined();
+  });
+
+  it('names the ranking stage after the grouping it ranks', () => {
+    const grouped = { ...mixedResult(), grouping: { by: 'agent' as const, agent: agentGrouping({}) } };
+    expect(reviewStatus(grouped, 'ranking the parts with pi')).toBe(
+      'Grouped by pi · zai/glm-4.6 (grouping prompt v1): every hunk was placed by the agent. Now ranking the parts with pi…',
+    );
+  });
+
+  it('says who ranked the parts, or why the plain ranking stayed', () => {
+    const ranked = { ...mixedResult(), ranking: { by: 'agent' as const, agent: agentRanking({}) } };
+    expect(reviewStatus(ranked)).toBe(
+      'Ranked by pi · zai/glm-4.6 (ranking prompt v1): the validator accepted the ranking of 4 parts.',
+    );
+    const notTested = agentRanking({ outcome: 'not tested', detail: 'pi has none', stamp: undefined });
+    expect(reviewStatus({ ...mixedResult(), ranking: { by: 'plain', agent: notTested } })).toBe(
+      'Plain ranking kept: pi has none.',
+    );
+  });
+});
+
+describe('the ranking a tooltip names', () => {
+  it("names the agent ranking, with its model and prompt version, on every ranked part's tooltip", () => {
+    const ranked = { ...mixedResult(), ranking: { by: 'agent' as const, agent: agentRanking({}) } };
+    const mustReview = buildTree(ranked)[0]!;
+
+    expect(mustReview.parts[0]!.tooltip).toBe(
+      'new code\n2 callers\nno tests before this pull request\nAgent ranking: pi · zai/glm-4.6 (ranking prompt v1)',
+    );
+  });
+
+  it('names the plain ranking when the agent ranking fell back', () => {
+    const fellBack = { ...mixedResult(), ranking: { by: 'plain' as const, agent: agentRanking({ outcome: 'fell back' }) } };
+    expect(buildTree(fellBack)[0]!.parts[0]!.tooltip).toMatch(/\nPlain ranking$/);
   });
 });

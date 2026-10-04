@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { removeCopy } from '../../engine/src/cache.js';
 import { GROUPING_PROMPT_VERSION } from '../../engine/src/grouping.js';
+import { RANKING_PROMPT_VERSION } from '../../engine/src/ranking.js';
 import {
   CaptureStream,
   PR_7_URL,
@@ -75,7 +76,10 @@ describe('the run command', () => {
       expect(row).toMatchObject({ agent: NO_AGENT, model: NO_AGENT, effort: NO_AGENT });
     }
     expect(results.rows.find((row) => row.case === 'example-42')!.promptVersions).toEqual({});
-    expect(results.rows.find((row) => row.case === 'example-7')!.promptVersions).toEqual({ grouping: GROUPING_PROMPT_VERSION });
+    expect(results.rows.find((row) => row.case === 'example-7')!.promptVersions).toEqual({
+      grouping: GROUPING_PROMPT_VERSION,
+      ranking: RANKING_PROMPT_VERSION,
+    });
     expect(results.rows.some((row) => row.case === ALL_CASES)).toBe(true);
     // A model-free run calls no agent, so its trace is empty.
     expect(readFileSync(join(runFolder(), TRACE_FILE), 'utf8')).toBe('');

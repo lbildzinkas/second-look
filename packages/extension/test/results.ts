@@ -85,6 +85,7 @@ export function result(parts: Part[], copies?: CopyPaths): ReviewResult {
     parseTimeMs: 0,
     parts,
     grouping: { by: 'plain' },
+    ranking: { by: 'plain' },
   };
 }
 

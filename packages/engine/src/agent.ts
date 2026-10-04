@@ -159,6 +159,15 @@ export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
   concurrency: 2,
 };
 
+/**
+ * How long one agent stage of a review, such as grouping or ranking, may
+ * take: the agent's probe, and the run with its one retry, each under the
+ * agent's timeout.
+ */
+export function agentStageTimeoutMs(settings: AgentSettings): number {
+  return 2 * settings.timeoutMs + 60_000;
+}
+
 /** One question for the agent, with the schema its answer must meet. */
 export interface AgentTask {
   /** The read-only copy the agent works in. */

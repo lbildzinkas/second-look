@@ -1,13 +1,13 @@
 import { appendFile, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { GROUPING_PROMPT_ID, reviewChange } from '@second-look/engine';
+import { GROUPING_PROMPT_ID, RANKING_PROMPT_ID, rankWithAgent, rankingItems, reviewChange } from '@second-look/engine';
 import type { AgentAdapter, AgentSettings, AgentStamp, Part } from '@second-look/engine';
 import { caseInput } from './case.js';
 import type { EvaluationCase } from './case.js';
 import { pressFetches, reportedClaims } from './claims.js';
 import type { PressedClaim } from './claims.js';
 import type { PromptRegistry } from './prompts.js';
-import { GROUPING_AGREEMENT, addTallies, scoresOf, tallyCase } from './score.js';
+import { GROUPING_AGREEMENT, RANK_SCORES, addTallies, scoresOf, tallyCase } from './score.js';
 import type { Score, Tally } from './score.js';
 
 /** The agent stamp of a model-free run: no agent, no model, no effort. */
@@ -53,8 +53,28 @@ export interface RunResults {
   rows: ResultRow[];
   /** Cases whose review failed, with the engine's message. */
   failures: { case: string; error: string }[];
-  /** Cases whose agent grouping fell back to the plain one, with why. */
-  fallbacks?: { case: string; agent: string; detail: string }[];
+  /** Cases whose agent grouping or ranking fell back to the plain one, with the prompt and why. */
+  fallbacks?: { case: string; agent: string; prompt?: string; detail: string }[];
+  /** How each agent and model's ranking scored against the plain ranking over the same cases. */
+  rankings?: RankingComparison[];
+}
+
+/**
+ * The agent ranking's rank scores beside the plain ranking's, over the
+ * cases the agent ranked: the score behind whether the agent ranking is
+ * the default for that agent and model. It matches or beats the plain
+ * ranking when neither score is worse.
+ */
+export interface RankingComparison {
+  agent: string;
+  agentVersion: string;
+  model: string;
+  effort: string;
+  /** The cases the scores count: those the agent ranked, with at least three parts. */
+  cases: string[];
+  plain: Record<string, number>;
+  ranked: Record<string, number>;
+  verdict: 'matches or beats the plain ranking' | 'falls behind the plain ranking';
 }
 
 /**
@@ -64,6 +84,14 @@ export interface RunResults {
  * plain pass.
  */
 export const GROUPING_SCORES: readonly string[] = ['coverage', GROUPING_AGREEMENT];
+
+/**
+ * The scores an agent run of the ranking prompt gives each case tied to
+ * it: the rank position of the known important parts, the plain parts
+ * ranked by the agent, so they compare with the plain ranking of the same
+ * parts.
+ */
+export const RANKING_SCORES: readonly string[] = RANK_SCORES;
 
 /** One agent call, as the run's local trace keeps it. */
 export interface AgentCall {
@@ -97,8 +125,8 @@ export interface RunOptions {
   /** The run's start; the clock when not given. */
   now?: Date;
   /**
-   * The agent that runs the agent prompts the cases are tied to, so far
-   * the grouping prompt; without one the run is model-free.
+   * The agent that runs the agent prompts the cases are tied to, the
+   * grouping and ranking prompts; without one the run is model-free.
    */
   agent?: { adapter: AgentAdapter; settings?: AgentSettings };
 }
@@ -143,8 +171,12 @@ export interface Run {
  * Every case is scored on the plain pass, stamped with no agent. With an
  * agent, each case tied to the grouping prompt is reviewed again with the
  * agent grouping stage, and its {@link GROUPING_SCORES} are stamped with
- * the agent, its version, the model and the effort that answered; a
- * model-free run makes no agent call, so its trace stays empty.
+ * the agent, its version, the model and the effort that answered; each
+ * case tied to the ranking prompt has its plain parts ranked by the agent,
+ * stamped the same way with its {@link RANKING_SCORES}, and each agent and
+ * model's ranking is compared with the plain ranking over the cases it
+ * ranked. A fallback scores what the reviewer would see: the plain parts.
+ * A model-free run makes no agent call, so its trace stays empty.
  */
 export async function runEvaluation(options: RunOptions): Promise<Run> {
   const runDate = (options.now ?? new Date()).toISOString();
@@ -169,9 +201,11 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
   await mkdir(folder, { recursive: true });
   await writeFile(join(folder, TRACE_FILE), '');
 
-  const results: RunResults = { rows: [], failures: [], fallbacks: [] };
+  const results: RunResults = { rows: [], failures: [], fallbacks: [], rankings: [] };
   const tallies: Tally[] = [];
   const agentTallies = new Map<string, { stamp: AgentStamp; tallies: Tally[] }>();
+  const rankingTallies = new Map<string, { stamp: AgentStamp; cases: string[]; tallies: Tally[]; plain: Tally[] }>();
+  const stampKey = (stamp: Stamp): string => JSON.stringify([stamp.agent, stamp.agentVersion, stamp.model, stamp.effort]);
   for (const evaluationCase of options.cases) {
     const input = await caseInput(evaluationCase);
     let parts: Part[] | undefined;
@@ -189,45 +223,68 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
     tallies.push(tally);
     results.rows.push(...rowsOf(evaluationCase.id, tally, stampFor(evaluationCase.record.prompts)));
 
-    if (!options.agent || !evaluationCase.record.prompts.includes(GROUPING_PROMPT_ID)) continue;
-    const adapter = tracingAdapter(options.agent.adapter, (call) =>
-      traceAgentCall(folder, {
-        case: evaluationCase.id,
-        prompt: GROUPING_PROMPT_ID,
-        promptVersion: versions.get(GROUPING_PROMPT_ID) ?? '',
-        ...call,
-      }),
-    );
-    try {
-      const result = await reviewChange(input, { adapter, ...(options.agent.settings ? { settings: options.agent.settings } : {}) });
-      const grouping = result.grouping.agent;
-      if (!grouping) continue;
-      if (grouping.outcome === 'fell back') {
-        results.fallbacks!.push({ case: evaluationCase.id, agent: grouping.stamp.agent, detail: grouping.detail });
-      }
-      const agentTally = tallyCase(input.diff, evaluationCase.expected, result.parts);
-      const stamp = stampFor(evaluationCase.record.prompts, grouping.stamp);
-      results.rows.push(...rowsOf(evaluationCase.id, agentTally, stamp, GROUPING_SCORES));
-      const key = JSON.stringify([stamp.agent, stamp.agentVersion, stamp.model, stamp.effort]);
-      const group = agentTallies.get(key) ?? { stamp: grouping.stamp, tallies: [] };
-      group.tallies.push(agentTally);
-      agentTallies.set(key, group);
-    } catch (error) {
-      results.failures.push({ case: evaluationCase.id, error: messageOf(error) });
-      results.rows.push(
-        ...rowsOf(
-          evaluationCase.id,
-          tallyCase(input.diff, evaluationCase.expected, undefined),
-          {
-            ...stampFor(evaluationCase.record.prompts),
-            agent: options.agent.adapter.agent,
-            agentVersion: '',
-            model: '',
-            effort: '',
-          },
-          GROUPING_SCORES,
-        ),
+    if (!options.agent) continue;
+    const agent = options.agent;
+    const settings = agent.settings ? { settings: agent.settings } : {};
+    const adapterFor = (prompt: string): AgentAdapter =>
+      tracingAdapter(agent.adapter, (call) =>
+        traceAgentCall(folder, {
+          case: evaluationCase.id,
+          prompt,
+          promptVersion: versions.get(prompt) ?? '',
+          ...call,
+        }),
       );
+    const failedAgent = (error: unknown, scores: readonly string[]): void => {
+      results.failures.push({ case: evaluationCase.id, error: messageOf(error) });
+      const stamp = { ...stampFor(evaluationCase.record.prompts), agent: agent.adapter.agent, agentVersion: '', model: '', effort: '' };
+      results.rows.push(...rowsOf(evaluationCase.id, tallyCase(input.diff, evaluationCase.expected, undefined), stamp, scores));
+    };
+
+    if (evaluationCase.record.prompts.includes(GROUPING_PROMPT_ID)) {
+      try {
+        // The ranking prompt is scored on its own below, on the plain parts.
+        const result = await reviewChange(input, { adapter: adapterFor(GROUPING_PROMPT_ID), ...settings, testedRankings: [] });
+        const grouping = result.grouping.agent;
+        if (grouping) {
+          if (grouping.outcome === 'fell back') {
+            results.fallbacks!.push({ case: evaluationCase.id, agent: grouping.stamp.agent, prompt: GROUPING_PROMPT_ID, detail: grouping.detail });
+          }
+          const agentTally = tallyCase(input.diff, evaluationCase.expected, result.parts);
+          const stamp = stampFor(evaluationCase.record.prompts, grouping.stamp);
+          results.rows.push(...rowsOf(evaluationCase.id, agentTally, stamp, GROUPING_SCORES));
+          const group = agentTallies.get(stampKey(stamp)) ?? { stamp: grouping.stamp, tallies: [] };
+          group.tallies.push(agentTally);
+          agentTallies.set(stampKey(stamp), group);
+        }
+      } catch (error) {
+        failedAgent(error, GROUPING_SCORES);
+      }
+    }
+
+    // The agent ranks the plain parts, so its ranking compares with the
+    // plain ranking of the same parts; a single part needs no agent.
+    if (!evaluationCase.record.prompts.includes(RANKING_PROMPT_ID) || !parts || rankingItems(parts).length < 2) continue;
+    try {
+      const { parts: ranked, ranking } = await rankWithAgent(parts, {
+        adapter: adapterFor(RANKING_PROMPT_ID),
+        ...settings,
+        root: input.copies.head.path,
+        pullRequest: input.pullRequest,
+      });
+      if (ranking.outcome === 'fell back') {
+        results.fallbacks!.push({ case: evaluationCase.id, agent: ranking.stamp!.agent, prompt: RANKING_PROMPT_ID, detail: ranking.detail });
+      }
+      const agentTally = tallyCase(input.diff, evaluationCase.expected, ranked ?? parts);
+      const stamp = stampFor(evaluationCase.record.prompts, ranking.stamp);
+      results.rows.push(...rowsOf(evaluationCase.id, agentTally, stamp, RANKING_SCORES));
+      const group = rankingTallies.get(stampKey(stamp)) ?? { stamp: ranking.stamp!, cases: [], tallies: [], plain: [] };
+      if (agentTally.positions.length > 0) group.cases.push(evaluationCase.id);
+      group.tallies.push(agentTally);
+      group.plain.push(tally);
+      rankingTallies.set(stampKey(stamp), group);
+    } catch (error) {
+      failedAgent(error, RANKING_SCORES);
     }
   }
   const allPrompts = [...new Set(options.cases.flatMap((each) => each.record.prompts))].sort();
@@ -235,9 +292,38 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
   for (const { stamp, tallies: byAgent } of agentTallies.values()) {
     results.rows.push(...rowsOf(ALL_CASES, addTallies(byAgent), stampFor([GROUPING_PROMPT_ID], stamp), GROUPING_SCORES));
   }
+  for (const { stamp, cases, tallies: byAgent, plain } of rankingTallies.values()) {
+    const rowStamp = stampFor([RANKING_PROMPT_ID], stamp);
+    results.rows.push(...rowsOf(ALL_CASES, addTallies(byAgent), rowStamp, RANKING_SCORES));
+    results.rankings!.push(compareRankings(rowStamp, cases, addTallies(plain), addTallies(byAgent)));
+  }
 
   await writeFile(join(folder, 'results.json'), `${JSON.stringify(results, null, 2)}\n`);
   return { folder, results };
+}
+
+/** The agent ranking's rank scores beside the plain ranking's over the same cases, and whether it matches or beats it. */
+function compareRankings(stamp: Stamp, cases: string[], plain: Tally, ranked: Tally): RankingComparison {
+  const values = (tally: Tally): Record<string, number> =>
+    Object.fromEntries(scoresOf(tally).filter((score) => RANKING_SCORES.includes(score.name)).map((score) => [score.name, score.value]));
+  const better = new Map(scoresOf(plain).map((score) => [score.name, score.better]));
+  const [plainValues, rankedValues] = [values(plain), values(ranked)];
+  const worse = Object.entries(plainValues).some(([name, value]) => {
+    const agentValue = rankedValues[name];
+    if (agentValue === undefined) return true;
+    return better.get(name) === 'lower' ? agentValue > value : agentValue < value;
+  });
+  const { agent, agentVersion, model, effort } = stamp;
+  return {
+    agent,
+    agentVersion,
+    model,
+    effort,
+    cases,
+    plain: plainValues,
+    ranked: rankedValues,
+    verdict: worse || cases.length === 0 ? 'falls behind the plain ranking' : 'matches or beats the plain ranking',
+  };
 }
 
 /**

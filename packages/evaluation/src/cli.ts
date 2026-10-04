@@ -72,8 +72,10 @@ folder of SECOND_LOOK_EVAL_CASES. --model-free keeps the cases tied to no
 prompt; --changed-since keeps the cases tied to the prompts this branch
 changed since the ref. Without --agent no model is called. With --agent
 pi, the cases tied to the grouping prompt also run it through the
-reviewer's installed Pi, and those rows are stamped with the agent and
-model that answered. Each run writes its stamped results and the trace
+reviewer's installed Pi, the cases tied to the ranking prompt have their
+plain parts ranked by it, and those rows are stamped with the agent and
+model that answered; the report says whether each agent and model's
+ranking matches or beats the plain ranking over the cases it ranked. Each run writes its stamped results and the trace
 of every agent call to its own folder under --runs (default: the
 engine's cache folder). Coverage is a hard gate: the run exits 1 when any
 coverage is below 100%. With --baseline it compares the stamped rows and
@@ -298,7 +300,16 @@ function report(results: RunResults): string {
     lines.push(`FAILED ${failure.case}: ${failure.error}`);
   }
   for (const fallback of results.fallbacks ?? []) {
-    lines.push(`FELL BACK ${fallback.case} (${fallback.agent}): ${fallback.detail}`);
+    const prompt = fallback.prompt ? `, ${fallback.prompt}` : '';
+    lines.push(`FELL BACK ${fallback.case} (${fallback.agent}${prompt}): ${fallback.detail}`);
+  }
+  for (const ranking of results.rankings ?? []) {
+    const scores = (values: Record<string, number>) =>
+      Object.entries(values).map(([name, value]) => `${name} ${format(value)}`).join(', ') || 'no scores';
+    lines.push(
+      `RANKING ${ranking.agent} ${ranking.agentVersion} ${ranking.model || 'unknown model'} ${ranking.effort}: ` +
+        `${ranking.verdict} over ${ranking.cases.length} cases (agent: ${scores(ranking.ranked)}; plain: ${scores(ranking.plain)})`,
+    );
   }
   return `${lines.join('\n')}\n`;
 }

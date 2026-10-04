@@ -49,13 +49,65 @@ function files(count: number): string {
   return `${count} other ${count === 1 ? 'file' : 'files'}`;
 }
 
+function publicSurface(signals: PartSignals): string {
+  return `changes the public surface: ${signals.publicSurface.join(', ')}`;
+}
+
+function references(signals: PartSignals): string {
+  const verb = { new: 'adds', changed: 'changes', removed: 'removes' }[signals.novelty];
+  return `${verb} code named in ${files(signals.references.files)} (name-based)`;
+}
+
+const FORMATTING_ONLY = 'formatting only, confirmed by the syntax trees';
+
+/** Whether every file of the part is a formatting-only change the syntax trees confirmed. */
+function formattingOnly(part: Part): boolean {
+  return filesOfPart(part).every((file) => file.syntax.formattingOnly.status === 'confirmed');
+}
+
+/** The key the agent ranking cites a plain signal by. */
+export type SignalKey = 'public-surface' | 'role' | 'novelty' | 'references' | 'size' | 'formatting-only' | 'noise';
+
+/** One plain signal of a part: the key it is cited by and the phrase the reviewer reads. */
+export interface SignalFact {
+  key: SignalKey;
+  phrase: string;
+}
+
+/**
+ * Every plain signal a part has, in the words the plain rule cites them
+ * with: the public surface it changes, code or test, new, changed or
+ * removed code, how many other files name it, its size, a confirmed
+ * formatting-only change, and each noise label that never sinks it.
+ */
+export function signalFacts(part: Part): SignalFact[] {
+  const signals = part.signals!;
+  const facts: SignalFact[] = [];
+  if (signals.publicSurface.length > 0) facts.push({ key: 'public-surface', phrase: publicSurface(signals) });
+  facts.push({ key: 'role', phrase: signals.role });
+  facts.push({ key: 'novelty', phrase: `${signals.novelty} code` });
+  if (signals.references.files > 0) facts.push({ key: 'references', phrase: references(signals) });
+  facts.push({ key: 'size', phrase: lines(signals.changedLines) });
+  if (formattingOnly(part)) facts.push({ key: 'formatting-only', phrase: FORMATTING_ONLY });
+  const labels = filesOfPart(part).flatMap(({ noise }) =>
+    noise && noise.label !== 'none' ? [`${noise.label} noise (${noise.state})`] : [],
+  );
+  if (labels.length > 0) facts.push({ key: 'noise', phrase: [...new Set(labels)].join(', ') });
+  return facts;
+}
+
+/** How many of the ranked parts may be must review: a third, rounded up. */
+export function mustReviewPlaces(count: number): number {
+  return Math.ceil(count / 3);
+}
+
 /** The points a part's signals earn, with the phrase citing each signal used. */
 function score(signals: PartSignals): { points: number; cited: string[] } {
   let points = 0;
   const cited: string[] = [];
   if (signals.publicSurface.length > 0 && signals.role === 'code') {
     points += 3;
-    cited.push(`changes the public surface: ${signals.publicSurface.join(', ')}`);
+    cited.push(publicSurface(signals));
   }
   if (signals.role === 'code') points += 1;
   cited.push(signals.role);
@@ -65,8 +117,7 @@ function score(signals: PartSignals): { points: number; cited: string[] } {
     cited.push('new code');
   } else if (referring > 0) {
     points += referring >= MANY_REFERENCES ? 2 : 1;
-    const verb = signals.novelty === 'removed' ? 'removes' : 'changes';
-    cited.push(`${verb} code named in ${files(referring)} (name-based)`);
+    cited.push(references(signals));
   }
   if (signals.changedLines >= SOME_LINES) points += signals.changedLines >= MANY_LINES ? 2 : 1;
   cited.push(lines(signals.changedLines));
@@ -76,9 +127,8 @@ function score(signals: PartSignals): { points: number; cited: string[] } {
 /** Scores one ranked part, or fixes it at context when the rule says so. */
 function scored(part: Part, index: number): Scored {
   const signals = part.signals!;
-  if (filesOfPart(part).every((file) => file.syntax.formattingOnly.status === 'confirmed')) {
-    const formatting = 'formatting only, confirmed by the syntax trees';
-    const cited = [formatting, signals.role, lines(signals.changedLines)];
+  if (formattingOnly(part)) {
+    const cited = [FORMATTING_ONLY, signals.role, lines(signals.changedLines)];
     return { part, index, points: 0, importance: 'context', cited };
   }
   const { points, cited } = score(signals);
@@ -102,7 +152,7 @@ function byRank(a: Scored, b: Scored): number {
 }
 
 /** A part sinks with the noise when every file it holds hunks of is sinking noise. */
-function sinksPart(part: Part): boolean {
+export function sinksPart(part: Part): boolean {
   return filesOfPart(part).every((file) => sinks(file.noise));
 }
 
@@ -124,8 +174,7 @@ export function rankParts(parts: readonly Part[]): Part[] {
     .filter(({ part }) => !sinksPart(part))
     .map(({ part, index }) => scored(part, index))
     .sort(byRank);
-  const mustReviewPlaces = Math.ceil(ranked.length / 3);
-  ranked.slice(mustReviewPlaces).forEach((entry) => {
+  ranked.slice(mustReviewPlaces(ranked.length)).forEach((entry) => {
     if (entry.importance !== 'must review') return;
     entry.importance = 'worth reviewing';
     entry.cited.push('must review is kept for the top third of the parts');
