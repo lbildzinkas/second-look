@@ -31,4 +31,5 @@ export * from './agents.js';
 export * from './probe.js';
 export * from './grouping.js';
 export * from './ranking.js';
+export * from './story.js';
 export { runCli } from './cli.js';

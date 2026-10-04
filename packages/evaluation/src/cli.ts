@@ -63,18 +63,22 @@ public code.
 The run command reviews every case offline and scores it: coverage,
 noise-label precision and recall per class and state, the median and
 top-3 rank position of the known important parts, the grouping's
-pairwise hunk agreement with the hand labels, and the claim checks over
+pairwise hunk agreement with the hand labels, the story's plain checks
+(every must-review part linked, reading order, only names the change
+shows), and the claim checks over
 the hand-labelled claims (found, verdict, evidence, fetch offered), which
 fail as expected failures while the engine reports no claims; the stored
 baseline records them at those failing values. It reads the cases in
 --cases (the repository's own cases when none is given) and in every
 folder of SECOND_LOOK_EVAL_CASES. --model-free keeps the cases tied to no
 prompt; --changed-since keeps the cases tied to the prompts this branch
-changed since the ref. Without --agent no model is called. With --agent
-pi, the cases tied to the grouping prompt also run it through the
-reviewer's installed Pi, the cases tied to the ranking prompt have their
-plain parts ranked by it, and those rows are stamped with the agent and
-model that answered; the report says whether each agent, model and
+changed since the ref, and the agent then runs only those prompts.
+Without --agent no model is called. With --agent pi, the cases tied to
+the grouping prompt also run it through the reviewer's installed Pi, the
+cases tied to the ranking prompt have their plain parts ranked by it, the
+cases tied to the story prompt have the story of their plain parts
+written by it, and those rows are stamped with the agent and model that
+answered; the report says whether each agent, model and
 effort's ranking matches or beats the plain ranking over the cases it
 ranked. Each run writes its stamped results and the trace
 of every agent call to its own folder under --runs (default: the
@@ -191,6 +195,7 @@ export async function runCli(
     const problems = mappingProblems(registry, cases, { everyPromptHasACase: values.cases === undefined });
     if (problems.length > 0) throw new Error(problems.join('\n'));
     let selected = cases;
+    let prompts: string[] | undefined;
     if (values['model-free']) {
       selected = selected.filter((each) => each.record.prompts.length === 0);
     }
@@ -200,6 +205,7 @@ export async function runCli(
       const ids = changed.map((prompt) => prompt.id).join(', ') || 'none';
       streams.out.write(`prompts changed since ${since}: ${ids}\n`);
       selected = casesForPrompts(selected, changed);
+      prompts = changed.map((prompt) => prompt.id);
     }
     if (selected.length === 0) {
       streams.out.write('no cases selected; nothing to run\n');
@@ -213,6 +219,7 @@ export async function runCli(
       companionVersion: companionVersion(),
       runsFolder: values.runs ?? join(cacheDir, 'evaluation'),
       ...(agent ? { agent } : {}),
+      ...(prompts ? { prompts } : {}),
     });
     streams.out.write(report(run.results));
     streams.out.write(`results and trace: ${run.folder}\n`);

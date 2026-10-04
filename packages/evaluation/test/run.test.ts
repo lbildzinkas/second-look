@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { GROUPING_INSTRUCTIONS, GROUPING_PROMPT_VERSION } from '../../engine/src/grouping.js';
 import { RANKING_INSTRUCTIONS, RANKING_PROMPT_VERSION } from '../../engine/src/ranking.js';
+import { STORY_INSTRUCTIONS, STORY_PROMPT_VERSION } from '../../engine/src/story.js';
 import { answeringAgent, offeredParts, scriptedAgent } from '../../engine/test/helpers.js';
 import type { AgentAdapter } from '@second-look/engine';
 import { loadCases } from '../src/case.js';
@@ -61,7 +62,8 @@ afterEach(() => {
   rmSync(runs, { recursive: true, force: true });
 });
 
-async function run(answers: string[], adapter: AgentAdapter = scriptedAgent(answers)) {
+/** Runs example-7 and example-42, the agent running the given prompts — the grouping and ranking prompts unless named — or every prompt. */
+async function run(answers: string[], adapter: AgentAdapter = scriptedAgent(answers), prompts: readonly string[] | 'every' = ['grouping', 'ranking']) {
   const all = await loadCases([join(PACKAGE, 'cases')]);
   const cases = all.filter((each) => each.id === 'example-7' || each.id === 'example-42');
   return runEvaluation({
@@ -71,6 +73,7 @@ async function run(answers: string[], adapter: AgentAdapter = scriptedAgent(answ
     runsFolder: runs,
     now: new Date('2026-10-02T00:00:00.000Z'),
     agent: { adapter },
+    ...(prompts === 'every' ? {} : { prompts }),
   });
 }
 
@@ -96,7 +99,7 @@ describe('runEvaluation with an agent', () => {
         agentVersion: '1.2.3',
         model: 'fake/model',
         effort: 'default',
-        promptVersions: { grouping: GROUPING_PROMPT_VERSION, ranking: RANKING_PROMPT_VERSION },
+        promptVersions: { grouping: GROUPING_PROMPT_VERSION, ranking: RANKING_PROMPT_VERSION, story: STORY_PROMPT_VERSION },
       });
     }
     expect(results.fallbacks).toEqual([]);
@@ -185,6 +188,73 @@ describe('runEvaluation with the ranking prompt', () => {
     const { results } = await run([], labellingAgent('last'));
 
     expect(results.rankings).toMatchObject([{ verdict: 'falls behind the plain ranking', ranked: { 'rank-top-3': 0 } }]);
+  });
+});
+
+/** The parts a story prompt offers, in its order: each id with its level and the part's name. */
+function storyParts(prompt: string): { id: string; level: string; name: string }[] {
+  return [...prompt.matchAll(/^\[(p\d+)\] (.*)\n<untrusted-input [^\n]*\nname: (.*)$/gm)].map((match) => ({
+    id: match[1]!,
+    level: match[2]!,
+    name: match[3]!,
+  }));
+}
+
+/** An agent that writes example-7's story with `sentences`, given the offered parts, and gives no other answer. */
+function storyAgent(sentences: (parts: { id: string; level: string; name: string }[]) => string[]): AgentAdapter {
+  return answeringAgent((request) =>
+    request.instructions === STORY_INSTRUCTIONS ? { sentences: sentences(storyParts(request.prompt)) } : 'not an answer',
+  );
+}
+
+describe('runEvaluation with the story prompt', () => {
+  it("scores the agent's story of the plain parts on its plain checks, stamped with who answered, and traces the call", async () => {
+    // example-7's plain ranking: fresh is must review, then the cart total.
+    const agent = storyAgent((parts) => [
+      `It adds [\`fresh\`](${parts[0]!.id}) and taxes [the cart total](${parts[1]!.id}) in \`web/cart.ts\` and \`app/totals.py\`.`,
+    ]);
+    const { folder, results } = await run([], agent, ['story']);
+
+    expect(rowsOf(results.rows, 'fake', 'story-must-review')).toEqual({ 'example-7': 1, [ALL_CASES]: 1 });
+    expect(rowsOf(results.rows, 'fake', 'story-order')).toEqual({ 'example-7': 1, [ALL_CASES]: 1 });
+    // Three names: fresh and web/cart.ts are in the change, app/totals.py is not.
+    expect(rowsOf(results.rows, 'fake', 'story-names')).toEqual({ 'example-7': 2 / 3, [ALL_CASES]: 2 / 3 });
+    // The agent ran only the story prompt.
+    const agentRows = results.rows.filter((row) => row.agent === 'fake');
+    expect(new Set(agentRows.map((row) => row.name))).toEqual(new Set(['story-must-review', 'story-order', 'story-names']));
+    expect(agentRows[0]).toMatchObject({ agentVersion: '1.2.3', model: 'fake/model', effort: 'default' });
+    expect(results.fallbacks).toEqual([]);
+    const trace = readFileSync(join(folder, TRACE_FILE), 'utf8').trim().split('\n').map((line) => JSON.parse(line) as AgentCall);
+    expect(trace).toHaveLength(1);
+    expect(trace[0]).toMatchObject({ case: 'example-7', prompt: 'story', promptVersion: STORY_PROMPT_VERSION });
+    expect(trace[0]!.input.startsWith(STORY_INSTRUCTIONS)).toBe(true);
+  });
+
+  it('scores a story that leaves out the must-review part and mentions the parts out of order', async () => {
+    const agent = storyAgent((parts) => [`Read [the test](${parts[2]!.id}) before [the cart total](${parts[1]!.id}).`]);
+    const { results } = await run([], agent, ['story']);
+
+    expect(rowsOf(results.rows, 'fake', 'story-must-review')['example-7']).toBe(0);
+    expect(rowsOf(results.rows, 'fake', 'story-order')['example-7']).toBe(0);
+  });
+
+  it('records a story that fell back as failing its checks', async () => {
+    const { results } = await run([], storyAgent(() => []), ['story']);
+
+    expect(results.fallbacks).toEqual([
+      { case: 'example-7', agent: 'fake', prompt: 'story', detail: expect.stringMatching(/^the agent gave no usable answer \(invalid-answer: /) },
+    ]);
+    expect(rowsOf(results.rows, 'fake', 'story-must-review')['example-7']).toBe(0);
+    expect(rowsOf(results.rows, 'fake', 'story-order')['example-7']).toBe(0);
+    expect(rowsOf(results.rows, 'fake', 'story-names')['example-7']).toBeUndefined();
+  });
+
+  it('runs every prompt a case is tied to when no prompt is named', async () => {
+    const { results } = await run([], storyAgent(() => ['x']), 'every');
+
+    const prompts = new Set(results.fallbacks!.map((fallback) => fallback.prompt));
+    expect(prompts).toEqual(new Set(['grouping', 'ranking']));
+    expect(rowsOf(results.rows, 'fake', 'story-order')['example-7']).toBe(1);
   });
 });
 

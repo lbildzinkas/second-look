@@ -3,7 +3,7 @@
   "id": "seeded-python",
   "source": "https://github.com/example-org/example-repo/pull/8714",
   "recordedAt": "2026-10-02T20:08:11.763Z",
-  "prompts": ["ranking"],
+  "prompts": ["ranking", "story"],
   "pullRequest": {
     "url": "https://github.com/example-org/example-repo/pull/8714",
     "number": 8714,

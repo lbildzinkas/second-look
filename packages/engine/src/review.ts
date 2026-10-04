@@ -26,6 +26,7 @@ import {
   type TestedRanking,
 } from './ranking.js';
 import { signalParts } from './signals.js';
+import { writeStory } from './story.js';
 import { analyseParts } from './syntax.js';
 
 export interface ReviewOptions {
@@ -38,7 +39,7 @@ export interface ReviewOptions {
   fetch?: typeof fetch;
   /** The engine's cache folder, which holds the read-only copies. */
   cacheDir: string;
-  /** Asks the agent to group and rank the parts too, after the plain pass; see {@link reviewChange}. */
+  /** Asks the agent to group and rank the parts and write the story too, after the plain pass; see {@link reviewChange}. */
   agentStage?: AgentStageOptions;
 }
 
@@ -110,7 +111,10 @@ export async function fetchChange(url: string, options: ReviewOptions): Promise<
   return { pullRequest, diff, gitAttributes, copies: { base, head } };
 }
 
-/** The agent stages, grouping then ranking, when a review asks the agent to group and rank the parts too. */
+/**
+ * The agent stages, grouping, ranking then the story, when a review asks
+ * the agent to group and rank the parts and write the story too.
+ */
 export interface AgentStageOptions {
   adapter: AgentAdapter;
   settings?: AgentSettings;
@@ -118,6 +122,8 @@ export interface AgentStageOptions {
   onStage?: (stage: ReviewStage) => void;
   /** Where the agent ranking is the default; {@link TESTED_RANKINGS} when absent. */
   testedRankings?: readonly TestedRanking[];
+  /** Whether the agent writes the story after ranking; true when absent. */
+  story?: boolean;
 }
 
 /** A stage of the review starting, with the result so far. */
@@ -126,7 +132,7 @@ export interface ReviewStage {
   running: string;
   /** The stage ends within this many milliseconds. */
   timeoutMs: number;
-  /** The result so far: the plain pass's, then the grouping stage's. */
+  /** The result so far: the plain pass's, then the grouping stage's, then the ranking stage's. */
   result: ReviewResult;
 }
 
@@ -151,7 +157,8 @@ function coverageProblems(diff: ParsedDiff, parts: Part[]): string | undefined {
  * signalled and ranked the same way. When its answer is missing or
  * invalid, or its parts fail the coverage check, the plain grouping stays
  * and the result says why. The parts shown then go to `onStage` again
- * while the agent ranks them; see {@link rankStage}.
+ * while the agent ranks them, see {@link rankStage}, and once more while
+ * it writes their story, see {@link storyStage}.
  */
 export async function reviewChange(
   input: ReviewInput,
@@ -179,6 +186,23 @@ export async function reviewChange(
     ranking: { by: 'plain' },
   };
   if (!agentStage) return plain;
+  const ranked = await groupAndRank(plain, agentStage, input, parsed, files);
+  return agentStage.story === false ? ranked : storyStage(ranked, agentStage, input);
+}
+
+/**
+ * The agent grouping stage, then the ranking stage on whichever parts it
+ * leaves shown: the agent's when they pass the coverage check, else the
+ * plain ones with the reason they stayed.
+ */
+async function groupAndRank(
+  plain: ReviewResult,
+  agentStage: AgentStageOptions,
+  input: ReviewInput,
+  parsed: ParsedDiff,
+  files: Part[],
+): Promise<ReviewResult> {
+  const { head } = input.copies;
   if (groupingItems(files).length < 2) return rankStage(plain, agentStage, input);
 
   const settings = agentStage.settings ?? DEFAULT_AGENT_SETTINGS;
@@ -249,4 +273,31 @@ async function rankStage(
     return { ...shown, ranking: { by: 'plain', agent: { ...ranking, outcome: 'not tested', detail } } };
   }
   return { ...shown, parts: ranked, ranking: { by: 'agent', agent: ranking } };
+}
+
+/**
+ * The story stage, last: the agent writes the story of the parts the
+ * result shows, in their reading order. A change with no parts needs no
+ * story. The result carries the story the checks accepted, or says why
+ * there is none.
+ */
+async function storyStage(
+  shown: ReviewResult,
+  agentStage: AgentStageOptions,
+  input: ReviewInput,
+): Promise<ReviewResult> {
+  if (shown.parts.length === 0) return shown;
+  const settings = agentStage.settings ?? DEFAULT_AGENT_SETTINGS;
+  agentStage.onStage?.({
+    running: `writing the story with ${agentStage.adapter.agent}`,
+    timeoutMs: agentStageTimeoutMs(settings),
+    result: shown,
+  });
+  const { story } = await writeStory(shown.parts, {
+    adapter: agentStage.adapter,
+    settings,
+    root: input.copies.head.path,
+    pullRequest: input.pullRequest,
+  });
+  return { ...shown, story };
 }
