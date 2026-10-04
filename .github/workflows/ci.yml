@@ -67,6 +67,10 @@ jobs:
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    # The launcher bounds each of its steps; this backstop ends the job
+    # well before GitHub's own platform timeout would, so even a hang
+    # the step bounds cannot see fails visibly instead of stalling.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
