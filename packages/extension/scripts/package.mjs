@@ -67,12 +67,12 @@ async function main() {
     recursive: true,
   });
 
-  // The extension: one bundled file, with the editor's own API the only
-  // import left external.
+  // The extension: one bundled file, with the editor's own API and the
+  // staged tree-sitter runtime the only imports left external.
   await bundle({
     entryPoints: [join(extensionRoot, 'src', 'index.ts')],
     outfile: join(stage, 'dist', 'index.js'),
-    external: ['vscode'],
+    external: ['vscode', '@vscode/tree-sitter-wasm'],
   });
 
   // The engine: bundled from its compiled output, so the guard file the
