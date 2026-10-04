@@ -114,6 +114,14 @@ export interface VerdictsAnswer {
   verdicts: AnsweredVerdict[];
 }
 
+/**
+ * The last words of the task, where an agent that has read many files
+ * still sees them: its final message is the JSON value alone.
+ */
+const FINAL_ANSWER_RULE =
+  'When you have read enough, give your final message as the JSON value alone: start it with { and end it ' +
+  'with }, with no summary of what you read before or after it.';
+
 /** The verdicts prompt's system prompt: the agent's setting, the rules and the answer's schema. */
 export const VERDICTS_INSTRUCTIONS = [
   'You are the agent of Second Look, a companion that helps a human review a pull request.',
@@ -146,6 +154,7 @@ export const VERDICTS_INSTRUCTIONS = [
   'Answer with only one JSON value and no other text, no words before or after it, matching this',
   'JSON schema:',
   JSON.stringify(VERDICTS_SCHEMA),
+  FINAL_ANSWER_RULE,
 ].join('\n');
 
 /** One claim the prompt offers, with the id it gives it. */
@@ -216,6 +225,8 @@ export function verdictsPrompt(items: readonly VerdictItem[], parts: readonly Pa
     'removes it, and blank when it stays; an added or kept line follows its head-side line number.',
     '',
     ...partLines,
+    '',
+    FINAL_ANSWER_RULE,
   ].join('\n');
 }
 

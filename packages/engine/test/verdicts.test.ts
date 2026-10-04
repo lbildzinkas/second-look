@@ -80,6 +80,7 @@ describe('verdictsPrompt', () => {
     expect(prompt).toContain("[c2] made in the pull request's description, line 1; about part p1");
     expect(prompt).toContain('[p1]\n<untrusted-input id="BLOCK" source="part p1">\nname: send in app/retry.py\nfile "app/retry.py"\n+1: def send(request):');
     expect(prompt).toContain('+3:     for attempt in range(5):');
+    expect(prompt.endsWith('with no summary of what you read before or after it.')).toBe(true);
   });
 
   it("shows a removed line unnumbered, and a noise part's lines not at all", () => {
