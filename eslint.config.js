@@ -32,4 +32,14 @@ export default tseslint.config(
       },
     },
   },
+  {
+    // The packaging script is plain Node script with no types to read.
+    files: ['packages/extension/scripts/*.mjs'],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+      },
+    },
+  },
 );
