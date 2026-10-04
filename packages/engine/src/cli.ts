@@ -26,8 +26,9 @@ Usage:
   second-look-engine serve [--agent <pi|claude-code>] [--model <model>]
       [--effort <level>] [--agent-timeout <seconds>]
 
-The review command fetches a pull request's metadata and full diff, parses
-the diff into files and hunks, and prints a typed, versioned review result
+The review command fetches a pull request's metadata, full diff and CI,
+parses the diff into files and hunks, reads the no-mistakes pipeline
+report in the description, and prints a typed, versioned review result
 as JSON. Each file carries a noise label (lockfile, generated, vendored,
 moved or renamed, snapshot, fixture) with its state — confirmed or claimed
 — and a one-line blind spot, or says that no rule applied. The labels read
@@ -64,10 +65,12 @@ the agent lists the claims the change makes about how code or a library
 behaves — from the description, the docstrings and comments the change
 adds, and the story — each quoted from its source and attached to a part;
 a quote not found in its source rejects the answer, which is retried once
-before the result says why no claim is listed. Last, the agent judges
-each claim against the change and the head copy: verified, refuted or
-unverifiable, with its evidence source and the lines it cites, each of
-which the engine re-reads; a citation that does not match, or the
+before the result says why the agent listed none. A fresh pipeline
+report's open findings are claims too, listed first by the engine. Last,
+the agent judges each claim against the change, the head copy and, when
+a check failed, its trimmed CI log: verified, refuted or unverifiable,
+with its evidence source and the lines it cites, each of which the engine
+re-reads; a citation that does not match, or the
 model's memory alone, keeps a claim from verified. Each stage is
 announced on stderr while the agent works.
 
