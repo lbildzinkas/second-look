@@ -1,0 +1,153 @@
+diff --git a/CHANGES.md b/CHANGES.md
+index 7b5f488c9..42ca48b58 100644
+--- a/CHANGES.md
++++ b/CHANGES.md
+@@ -89,6 +89,8 @@ Unreleased
+   bare `less`. {pr}`3777`
+ - Improve raw mode detection by parsing the option tokens. {issue}`3416`
+   {pr}`3777`
++- {func}`edit` accepts `os.PathLike` values for `filename`, in addition to
++  strings. {issue}`2869` {pr}`3781`
+ 
+ ## Version 8.4.2
+ 
+diff --git a/src/click/_termui_impl.py b/src/click/_termui_impl.py
+index 9fcc7f61a..70aabf8f1 100644
+--- a/src/click/_termui_impl.py
++++ b/src/click/_termui_impl.py
+@@ -710,7 +710,7 @@ def get_editor(self) -> str:
+                 return editor
+         return "vi"
+ 
+-    def edit_files(self, filenames: cabc.Iterable[str]) -> None:
++    def edit_files(self, filenames: cabc.Iterable[str | os.PathLike[str]]) -> None:
+         """Open files in the user's editor."""
+         import shlex
+         import subprocess
+diff --git a/src/click/termui.py b/src/click/termui.py
+index bb53f9c4d..e1315f237 100644
+--- a/src/click/termui.py
++++ b/src/click/termui.py
+@@ -4,6 +4,7 @@
+ import inspect
+ import io
+ import itertools
++import os
+ import re
+ import sys
+ import typing as t
+@@ -837,7 +838,10 @@ def edit(
+     env: cabc.Mapping[str, str] | None = None,
+     require_save: bool = True,
+     extension: str = ".txt",
+-    filename: str | cabc.Iterable[str] | None = None,
++    filename: str
++    | os.PathLike[str]
++    | cabc.Iterable[str | os.PathLike[str]]
++    | None = None,
+ ) -> None: ...
+ 
+ 
+@@ -847,7 +851,10 @@ def edit(
+     env: cabc.Mapping[str, str] | None = None,
+     require_save: bool = True,
+     extension: str = ".txt",
+-    filename: str | cabc.Iterable[str] | None = None,
++    filename: str
++    | os.PathLike[str]
++    | cabc.Iterable[str | os.PathLike[str]]
++    | None = None,
+ ) -> str | bytes | bytearray | None:
+     r"""Edits the given text in the defined editor.  If an editor is given
+     (should be the full path to the executable but the regular operating
+@@ -874,16 +881,20 @@ def edit(
+                       highlighting.
+     :param filename: if provided it will edit this file instead of the
+                      provided text contents.  It will not use a temporary
+-                     file as an indirection in that case. If the editor supports
+-                     editing multiple files at once, a sequence of files may be
+-                     passed as well. Invoke `click.file` once per file instead
+-                     if multiple files cannot be managed at once or editing the
+-                     files serially is desired.
++                     file as an indirection in that case. It accepts a path
++                     or any iterable of paths. If the editor supports
++                     editing multiple files at once, a sequence of files may
++                     be passed as well. Invoke `click.file` once per file
++                     instead if multiple files cannot be managed at once or
++                     editing the files serially is desired.
+ 
+     .. versionchanged:: 8.2.0
+         ``filename`` now accepts any ``Iterable[str]`` in addition to a ``str``
+         if the ``editor`` supports editing multiple files at once.
+ 
++    .. versionchanged:: 8.5.0
++        ``filename`` accepts ``os.PathLike`` values in addition to strings.
++
+     """
+     from ._termui_impl import Editor
+ 
+@@ -892,7 +903,7 @@ def edit(
+     if filename is None:
+         return ed.edit(text)
+ 
+-    if isinstance(filename, str):
++    if isinstance(filename, (str, os.PathLike)):
+         filename = (filename,)
+ 
+     ed.edit_files(filenames=filename)
+diff --git a/tests/test_termui.py b/tests/test_termui.py
+index 9da8ffb21..1825b1987 100644
+--- a/tests/test_termui.py
++++ b/tests/test_termui.py
+@@ -421,13 +421,13 @@ def test_getchar_windows_exceptions(runner, monkeypatch, key_char, exc):
+         click.getchar()
+ 
+ 
+-@pytest.mark.skipif(platform.system() == "Windows", reason="No sed on Windows.")
++@pytest.mark.skipif(WIN, reason="No sed on Windows.")
+ def test_fast_edit(runner):
+     result = click.edit("a\nb", editor="sed -i~ 's/$/Test/'")
+     assert result == "aTest\nbTest\n"
+ 
+ 
+-@pytest.mark.skipif(platform.system() == "Windows", reason="No sed on Windows.")
++@pytest.mark.skipif(WIN, reason="No sed on Windows.")
+ def test_edit(runner):
+     with tempfile.NamedTemporaryFile(mode="w") as named_tempfile:
+         named_tempfile.write("a\nb\n")
+@@ -448,6 +448,19 @@ def test_edit(runner):
+             assert reopened_file.read() == "aTest\nbTest\n"
+ 
+ 
++@pytest.mark.skipif(WIN, reason="No sed on Windows.")
++@pytest.mark.parametrize("use_iterable", [False, True], ids=["single", "iterable"])
++def test_edit_pathlib(runner, tmp_path, use_iterable):
++    """Issue #2869: ``filename`` accepts ``os.PathLike`` values."""
++    file_path = tmp_path / "file.txt"
++    file_path.write_text("a\nb\n", encoding="UTF-8")
++    filename = [file_path] if use_iterable else file_path
++
++    result = click.edit(filename=filename, editor="sed -i~ 's/$/Test/'")
++    assert result is None
++    assert file_path.read_text(encoding="UTF-8") == "aTest\nbTest\n"
++
++
+ @pytest.mark.parametrize(
+     ("editor_cmd", "filenames", "expected_args"),
+     [
+diff --git a/tests/typing/typing_edit.py b/tests/typing/typing_edit.py
+new file mode 100644
+index 000000000..848ba94cb
+--- /dev/null
++++ b/tests/typing/typing_edit.py
+@@ -0,0 +1,10 @@
++from pathlib import Path
++
++from typing_extensions import assert_type
++
++import click
++
++# ``filename`` accepts a path or an iterable of paths.
++assert_type(click.edit(filename="f.txt"), None)
++assert_type(click.edit(filename=Path("f.txt")), None)
++assert_type(click.edit(filename=["f.txt", Path("g.txt")]), None)

@@ -6,7 +6,7 @@ import { PROBE_INSTRUCTIONS, PROBE_SCHEMA, probePrompt, runAgentProbe } from '..
 import { HIDDEN_COMMENT_START, UNTRUSTED_INPUT_RULE } from '../src/untrusted.js';
 import { FAKE_CLAUDE, fakeClaude } from './fake-claude.js';
 import { FAKE_PI, GUARD, fakePi } from './fake-pi.js';
-import { CaptureStream, PR_URL, fixtureFetch, pull42, temporaryCacheDir } from './helpers.js';
+import { CaptureStream, PR_7_URL, PR_URL, fixtureFetch, pull42, pull7, temporaryCacheDir } from './helpers.js';
 
 const TOKEN = 'ghp_probe-token-do-not-pass';
 
@@ -172,5 +172,35 @@ describe('runCli probe', () => {
     expect(code).toBe(1);
     expect(err.text).toContain('unknown agent "codex"');
     expect(out.text).toBe('');
+  });
+});
+
+describe('runCli review with --agent', () => {
+  function streams(): { out: CaptureStream; err: CaptureStream } {
+    return { out: new CaptureStream(), err: new CaptureStream() };
+  }
+
+  it('groups the parts with Pi after announcing the plain parts on stderr', async () => {
+    const answer = { parts: [{ name: 'fresh, with its test', hunks: ['h2', 'h7'] }] };
+    const pi = fakePi({ runs: [{ text: JSON.stringify(answer) }] });
+    const { out, err } = streams();
+    const code = await runCli(
+      ['review', PR_7_URL, '--agent', 'pi', '--model', 'x/y'],
+      { GITHUB_TOKEN: TOKEN, SECOND_LOOK_CACHE_DIR: cacheDir, FAKE_PI_DIR: pi.dir, PATH: process.env['PATH'] },
+      { out, err },
+      { fetch: fixtureFetch(pull7()).fetch, pi: { command: [process.execPath, FAKE_PI], guardPath: GUARD } },
+    );
+    expect(code).toBe(0);
+    expect(err.text).toBe('second-look-engine: plain parts ready; grouping related hunks with pi\n');
+    const result = JSON.parse(out.text) as { grouping: { by: string; agent: { leftOut: number } } };
+    expect(result.grouping).toMatchObject({ by: 'agent', agent: { leftOut: 5 } });
+    expect(out.text).not.toContain(TOKEN);
+  });
+
+  it('refuses an agent it cannot drive', async () => {
+    const { out, err } = streams();
+    const code = await runCli(['review', PR_URL, '--agent', 'codex'], { GITHUB_TOKEN: TOKEN }, { out, err });
+    expect(code).toBe(1);
+    expect(err.text).toContain('unknown agent "codex": choose pi or claude-code');
   });
 });

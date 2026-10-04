@@ -39,7 +39,7 @@ describe('runCli review', () => {
     expect(code).toBe(0);
     expect(err.text).toBe('');
     const result = JSON.parse(out.text) as { version: number; parts: unknown[] };
-    expect(result.version).toBe(3);
+    expect(result.version).toBe(4);
     expect(result.parts).toHaveLength(11);
   });
 
@@ -56,7 +56,7 @@ describe('runCli review', () => {
       version: number;
       copies: { head: { path: string } };
     };
-    expect(result.version).toBe(3);
+    expect(result.version).toBe(4);
     expect(result.copies.head.path.startsWith(cacheDir)).toBe(true);
   });
 
@@ -120,6 +120,24 @@ describe('runCli review', () => {
     expect(err.text).toContain('--cache-dir needs a value');
   });
 
+  it('refuses agent tuning flags when no agent was asked for', async () => {
+    for (const flag of ['--model', '--effort', '--agent-timeout']) {
+      const { out, err } = streams();
+      const code = await runCli(
+        ['review', PR_URL, flag, flag === '--agent-timeout' ? '30' : 'glm-4.6'],
+        { GITHUB_TOKEN: TOKEN, SECOND_LOOK_CACHE_DIR: cacheDir },
+        { out, err },
+        { fetch: fixtureFetch().fetch },
+      );
+
+      expect(code, flag).toBe(1);
+      expect(out.text, flag).toBe('');
+      expect(err.text, flag).toBe(
+        `second-look-engine: ${flag} tunes the agent; pass --agent to run one\n`,
+      );
+    }
+  });
+
   it('prints usage with --help and asks for no token', async () => {
     const { out, err } = streams();
     const code = await runCli(['--help'], {}, { out, err }, {});
@@ -145,6 +163,17 @@ describe('runCli serve', () => {
     expect(out.text).toBe('');
     expect(err.text).toBe(
       'second-look-engine: serve takes the GitHub token with each request, not on the command line\n',
+    );
+  });
+
+  it('refuses an agent it cannot drive, like review does', async () => {
+    const { out, err } = streams();
+    const code = await runCli(['serve', '--agent', 'codex'], {}, { out, err });
+
+    expect(code).toBe(1);
+    expect(out.text).toBe('');
+    expect(err.text).toBe(
+      'second-look-engine: unknown agent "codex": choose pi or claude-code\n',
     );
   });
 });

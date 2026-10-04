@@ -88,6 +88,7 @@ function sampleResult(): ReviewResult {
         },
       },
     ],
+    grouping: { by: 'plain' },
   };
 }
 
@@ -302,6 +303,42 @@ describe('isReviewResult', () => {
   });
 });
 
+describe('isReviewResult for the agent grouping', () => {
+  type Loose = { parts: Record<string, unknown>[]; grouping?: unknown };
+  const loose = (): Loose => JSON.parse(JSON.stringify(sampleResult())) as Loose;
+  const stamp = { agent: 'pi', agentVersion: '0.86.1', model: null, effort: null, runAt: '2026-10-02T00:00:00.000Z' };
+
+  it('accepts a part across files with its origin, and an agent grouping with its stamp', () => {
+    const value = loose();
+    const { name: _name, signals: _signals, ...file } = value.parts[0]!;
+    value.parts[0] = { ...value.parts[0], origin: 'agent', otherFiles: [{ ...file, path: 'src/other.ts' }] };
+    value.grouping = {
+      by: 'agent',
+      agent: { promptVersion: '1', outcome: 'grouped', detail: 'every hunk was placed by the agent', leftOut: 0, stamp },
+    };
+    expect(isReviewResult(value)).toBe(true);
+  });
+
+  it('rejects an unknown origin, a malformed further file, and a missing or malformed grouping', () => {
+    const origin = loose();
+    origin.parts[0]!['origin'] = 'guessed';
+    const otherFiles = loose();
+    otherFiles.parts[0]!['otherFiles'] = [{ path: 'src/other.ts' }];
+    const missing = loose();
+    delete missing.grouping;
+    const agentWithoutOutcome = loose();
+    agentWithoutOutcome.grouping = { by: 'agent' };
+    const unstamped = loose();
+    unstamped.grouping = {
+      by: 'plain',
+      agent: { promptVersion: '1', outcome: 'fell back', detail: 'timeout', leftOut: 0, stamp: {} },
+    };
+    for (const value of [origin, otherFiles, missing, agentWithoutOutcome, unstamped]) {
+      expect(isReviewResult(value)).toBe(false);
+    }
+  });
+});
+
 describe('parseReviewResult', () => {
   it('reads the JSON the engine printed', () => {
     const result = parseReviewResult(JSON.stringify(sampleResult()));
@@ -317,6 +354,6 @@ describe('parseReviewResult', () => {
 
 describe('the versioned protocol is shared with the engine', () => {
   it('uses the same version constant', () => {
-    expect(REVIEW_RESULT_VERSION).toBe(3);
+    expect(REVIEW_RESULT_VERSION).toBe(4);
   });
 });

@@ -1,0 +1,39 @@
+{
+  "noise": {
+    "src/click/termui.py": {
+      "label": "none"
+    },
+    "src/click/_termui_impl.py": {
+      "label": "none"
+    },
+    "tests/test_termui.py": {
+      "label": "none"
+    },
+    "tests/typing/typing_edit.py": {
+      "label": "none"
+    },
+    "CHANGES.md": {
+      "label": "none"
+    }
+  },
+  "importantParts": [
+    "edit in src/click/termui.py",
+    "Editor.edit_files in src/click/_termui_impl.py"
+  ],
+  "groups": [
+    [
+      "CHANGES.md#1",
+      "src/click/_termui_impl.py#1",
+      "src/click/termui.py#1",
+      "src/click/termui.py#2",
+      "src/click/termui.py#3",
+      "src/click/termui.py#4",
+      "src/click/termui.py#5",
+      "tests/test_termui.py#2",
+      "tests/typing/typing_edit.py#1"
+    ],
+    [
+      "tests/test_termui.py#1"
+    ]
+  ]
+}

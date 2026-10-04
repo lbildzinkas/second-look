@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
+import type { AgentAdapter, AgentProbe, AgentRunRequest } from '../src/agent.js';
 import { parseDiff } from '../src/diff.js';
 import type { ChangeKind, DiffLine, Part } from '../src/protocol.js';
 
@@ -360,5 +361,41 @@ export function changedPart(options: {
     additions: options.added?.length ?? 0,
     deletions: options.deleted?.length ?? 0,
     syntax: { formattingOnly: { status: 'not-checked', reason: '' }, checksNotRun: [] },
+  };
+}
+
+export interface ScriptedAgent extends AgentAdapter {
+  /** The requests the agent was run with, in order. */
+  requests: AgentRunRequest[];
+}
+
+/** An agent that answers each run with the next scripted text, recording each request. */
+export function scriptedAgent(answers: readonly string[], probe: Partial<AgentProbe> = {}): ScriptedAgent {
+  const requests: AgentRunRequest[] = [];
+  return {
+    agent: 'fake',
+    requests,
+    probe: async () => ({
+      agent: 'fake',
+      version: '1.2.3',
+      usable: true,
+      supports: { effort: false },
+      lockdown: [],
+      ...probe,
+    }),
+    run: async (request) => {
+      requests.push(request);
+      return {
+        status: 'completed',
+        text: answers[requests.length - 1] ?? '',
+        stamp: {
+          agent: 'fake',
+          agentVersion: '1.2.3',
+          model: 'fake/model',
+          effort: null,
+          runAt: '2026-10-02T00:00:00.000Z',
+        },
+      };
+    },
   };
 }

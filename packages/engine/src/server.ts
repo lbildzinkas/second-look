@@ -1,3 +1,4 @@
+import type { AgentAdapter, AgentSettings } from './agent.js';
 import { reviewPullRequest } from './review.js';
 import { sendReview } from './send.js';
 import {
@@ -10,12 +11,15 @@ import {
   JSON_RPC_PARSE_ERROR,
   NOT_INITIALIZED_CODE,
   REVIEW_METHOD,
+  REVIEW_STAGE_METHOD,
   SEND_REVIEW_METHOD,
   VERSION_MISMATCH_CODE,
   isRpcRequest,
   redactToken,
   type InitializeParams,
   type ReviewParams,
+  type ReviewStageParams,
+  type RpcNotification,
   type RpcResponse,
   type SendReviewParams,
 } from './rpc.js';
@@ -40,10 +44,21 @@ export interface RpcServerDeps {
   fetch?: typeof fetch;
   /** The engine's cache folder, which holds the read-only copies. */
   cacheDir: string;
+  /**
+   * The agent that groups the parts after the plain pass; without one,
+   * the plain result is the review's only answer.
+   */
+  agent?: { adapter: AgentAdapter; settings?: AgentSettings };
 }
 
 /**
- * Serves the JSON-RPC protocol one line at a time until the input ends.
+ * Serves the JSON-RPC protocol one line at a time until the input ends
+ * and every request it accepted has been answered.
+ *
+ * Requests are answered as they arrive, not one after another: a review
+ * with an agent stage stays open for minutes by design, and a sendReview
+ * or any other request that arrives meanwhile is answered alongside it,
+ * each response carrying the id of its own request.
  *
  * The protocol starts with a version handshake: `initialize` must succeed
  * before any other request, and a client speaking another protocol version
@@ -53,6 +68,12 @@ export interface RpcServerDeps {
  * one GitHub review when the reviewer presses send. The token arrives
  * with each request, is used only for that request's GitHub calls, is
  * redacted from every error message, and is never stored.
+ *
+ * With an agent, a review arrives in stages: as soon as the plain result
+ * is ready the engine sends it in a {@link REVIEW_STAGE_METHOD}
+ * notification naming the stage that runs next, and the review's
+ * response carries the result with the agent's parts, or the plain parts
+ * with the reason they stayed.
  */
 export async function runRpcServer(
   source: RpcLineSource,
@@ -60,9 +81,11 @@ export async function runRpcServer(
   deps: RpcServerDeps,
 ): Promise<void> {
   let initialized = false;
+  const running: Promise<void>[] = [];
   for (;;) {
     const line = await source.readLine();
     if (line === null) {
+      await Promise.all(running);
       return;
     }
     if (line.trim() === '') {
@@ -86,11 +109,11 @@ export async function runRpcServer(
       continue;
     }
     if (value.method === REVIEW_METHOD) {
-      await review(value.params, value.id, sink, initialized, deps);
+      running.push(review(value.params, value.id, sink, initialized, deps));
       continue;
     }
     if (value.method === SEND_REVIEW_METHOD) {
-      await send(value.params, value.id, sink, initialized, deps);
+      running.push(send(value.params, value.id, sink, initialized, deps));
       continue;
     }
     respond(
@@ -167,6 +190,14 @@ async function review(
       token,
       cacheDir: deps.cacheDir,
       ...(deps.fetch ? { fetch: deps.fetch } : {}),
+      ...(deps.agent
+        ? {
+            agentStage: {
+              ...deps.agent,
+              onStage: (stage) => notify(sink, REVIEW_STAGE_METHOD, { id, ...stage }),
+            },
+          }
+        : {}),
     });
     respond(sink, { jsonrpc: '2.0', id, result });
   } catch (error) {
@@ -253,6 +284,11 @@ async function send(
 
 function failure(id: number | null, code: number, message: string): RpcResponse {
   return { jsonrpc: '2.0', id, error: { code, message } };
+}
+
+function notify(sink: RpcLineSink, method: string, params: ReviewStageParams): void {
+  const notification: RpcNotification<ReviewStageParams> = { jsonrpc: '2.0', method, params };
+  sink.writeLine(JSON.stringify(notification));
 }
 
 function respond(sink: RpcLineSink, response: RpcResponse): void {

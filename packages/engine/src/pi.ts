@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
+import { trackAgentChild } from './agent-children.js';
 import {
   GITHUB_TOKEN_VARIABLES,
   type AgentAdapter,
@@ -98,12 +99,14 @@ interface Captured {
 /** Runs a short Pi command, such as `--version`, outside any project folder. */
 function capture(command: readonly string[], args: string[], env: NodeJS.ProcessEnv): Promise<Captured> {
   return new Promise((done) => {
-    const child = spawn(command[0]!, [...command.slice(1), ...args], {
-      cwd: tmpdir(),
-      env,
-      stdio: ['ignore', 'pipe', 'ignore'],
-      timeout: 30_000,
-    });
+    const child = trackAgentChild(
+      spawn(command[0]!, [...command.slice(1), ...args], {
+        cwd: tmpdir(),
+        env,
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 30_000,
+      }),
+    );
     let stdout = '';
     child.stdout.setEncoding('utf8').on('data', (chunk: string) => (stdout += chunk));
     child.on('error', (error) => done({ code: null, stdout, error: error.message }));
@@ -191,11 +194,13 @@ export function piAdapter(options: PiAdapterOptions = {}): AgentAdapter {
       return { status: 'failed', text: '', error: probeResult.reason, stamp };
     }
     const args = piArguments(request, guardPath, probeResult.supports.effort);
-    const child = spawn(command[0]!, [...command.slice(1), ...args], {
-      cwd: request.root,
-      env: piEnvironment(env, request.root),
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
+    const child = trackAgentChild(
+      spawn(command[0]!, [...command.slice(1), ...args], {
+        cwd: request.root,
+        env: piEnvironment(env, request.root),
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }),
+    );
     child.stdin.on('error', () => undefined);
     child.stdin.end(request.prompt);
 

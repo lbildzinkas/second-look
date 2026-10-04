@@ -1,4 +1,4 @@
-import type { Entity, Hunk, Part } from './protocol.js';
+import type { Entity, Hunk, Part, FileSlice } from './protocol.js';
 
 /** How many entity names a part's name lists before it counts the rest. */
 const NAMED_ENTITIES = 3;
@@ -35,17 +35,22 @@ function partName(file: Part, hunks: readonly Hunk[]): string {
   return named ? `top-level code in ${file.path}` : file.path;
 }
 
-/** A part holding some of a file's hunks, with its own name and line counts. */
-function partOf(file: Part, hunks: Hunk[]): Part {
+/** Some of a file's hunks, with the file's own fields and line counts of just those hunks. */
+export function fileSlice(file: FileSlice, hunks: Hunk[]): FileSlice {
   const count = (kind: 'addition' | 'deletion'): number =>
     hunks.reduce((sum, hunk) => sum + hunk.lines.filter((line) => line.kind === kind).length, 0);
-  return {
-    ...file,
-    name: partName(file, hunks),
-    hunks,
-    additions: count('addition'),
-    deletions: count('deletion'),
-  };
+  return { ...file, hunks, additions: count('addition'), deletions: count('deletion') };
+}
+
+/** A plain part holding some of a file's hunks, with its own name and line counts. */
+function partOf(file: Part, hunks: Hunk[]): Part {
+  return { ...fileSlice(file, hunks), name: partName(file, hunks), origin: 'plain' };
+}
+
+/** Every file a part holds hunks of, its own first file first, in diff order. */
+export function filesOfPart(part: Part): FileSlice[] {
+  const { name: _name, signals: _signals, rank: _rank, origin: _origin, otherFiles, ...first } = part;
+  return [first, ...(otherFiles ?? [])];
 }
 
 /**

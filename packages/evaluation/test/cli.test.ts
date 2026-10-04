@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { removeCopy } from '../../engine/src/cache.js';
+import { GROUPING_PROMPT_VERSION } from '../../engine/src/grouping.js';
 import {
   CaptureStream,
   PR_7_URL,
@@ -52,16 +53,10 @@ function runFolder(): string {
 
 describe('the run command', () => {
   it('scores the repository cases with no drop against the stored baseline', async () => {
-    const { code, out } = await cli([
-      'run',
-      '--model-free',
-      '--baseline',
-      BASELINE,
-      '--runs',
-      join(scratch, 'runs'),
-    ]);
+    const { code, out } = await cli(['run', '--baseline', BASELINE, '--runs', join(scratch, 'runs')]);
     expect(out).toContain('example-42  noise-recall:lockfile:claimed  1');
     expect(out).toContain('example-7  rank-top-3  0.5');
+    expect(out).toContain('pallets-click-3781  coverage  1');
     // The canaries' noise and parts pass while their claim checks fail as
     // expected failures, because the review reports no claims yet.
     expect(out).toContain('canary-python  claims-found  0');
@@ -73,10 +68,14 @@ describe('the run command', () => {
 
     const results = JSON.parse(readFileSync(join(runFolder(), 'results.json'), 'utf8')) as RunResults;
     expect(results.failures).toEqual([]);
+    // Without --agent no model is called: every row is the plain pass's,
+    // stamped with the versions of the prompts its case is tied to.
     for (const row of results.rows) {
       expect(hasStamp(row)).toBe(true);
-      expect(row).toMatchObject({ agent: NO_AGENT, model: NO_AGENT, effort: NO_AGENT, promptVersions: {} });
+      expect(row).toMatchObject({ agent: NO_AGENT, model: NO_AGENT, effort: NO_AGENT });
     }
+    expect(results.rows.find((row) => row.case === 'example-42')!.promptVersions).toEqual({});
+    expect(results.rows.find((row) => row.case === 'example-7')!.promptVersions).toEqual({ grouping: GROUPING_PROMPT_VERSION });
     expect(results.rows.some((row) => row.case === ALL_CASES)).toBe(true);
     // A model-free run calls no agent, so its trace is empty.
     expect(readFileSync(join(runFolder(), TRACE_FILE), 'utf8')).toBe('');
@@ -90,9 +89,11 @@ describe('the run command', () => {
     delete recorded.claims;
     delete recorded.importantParts;
     delete recorded.noise;
+    delete recorded.groups;
     writeFileSync(expectedPath, `${JSON.stringify(recorded, null, 2)}\n`);
 
     const loaded = await loadCase(legacy);
+    expect(loaded.expected.groups).toBeUndefined();
     expect(loaded.expected.claims).toEqual([]);
     expect(loaded.expected.importantParts).toEqual([]);
     expect(loaded.expected.noise).toEqual({});
@@ -138,6 +139,23 @@ describe('the run command', () => {
     expect(code).toBe(0);
     const results = JSON.parse(readFileSync(written, 'utf8')) as RunResults;
     expect(results.rows.length).toBeGreaterThan(0);
+  });
+
+  it('keeps only the cases tied to no prompt with --model-free', async () => {
+    const { code, out } = await cli(['run', '--model-free', '--runs', join(scratch, 'runs')]);
+    expect(out).toContain('example-42  coverage  1');
+    expect(out).not.toContain('example-7  coverage');
+    expect(code).toBe(0);
+  });
+
+  it.each([
+    [['--agent', 'codex'], '--agent codex is not supported; the one agent so far is pi'],
+    [['--agent', 'pi', '--model-free'], '--model-free runs no agent; leave out --agent'],
+    [['--agent', 'pi', '--agent-timeout', '0'], '--agent-timeout needs a number of seconds above zero'],
+  ])('refuses agent options %j it cannot honour', async (flags, message) => {
+    const { code, err } = await cli(['run', ...flags, '--runs', join(scratch, 'runs')]);
+    expect(err).toContain(message);
+    expect(code).toBe(1);
   });
 
   it('selects no case when no prompt changed since the ref', async () => {
@@ -186,12 +204,15 @@ describe('the record command', () => {
     expect(cases.map((each) => each.id)).toEqual([
       'canary-csharp',
       'canary-python',
+      'encode-httpx-3690',
       'example-42',
       'example-7',
       'mine',
+      'pallets-click-3781',
       'seeded-csharp',
       'seeded-python',
       'seeded-typescript',
+      'sindresorhus-ky-880',
     ]);
     const run = await cli(['run', '--runs', join(scratch, 'runs')], env);
     expect(run.out).toContain('mine  coverage  1');

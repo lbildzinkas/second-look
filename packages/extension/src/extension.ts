@@ -1,5 +1,10 @@
 import * as vscode from 'vscode';
-import { EngineClient, spawnEngineProcess, type SpawnEngine } from './engine-client.js';
+import {
+  EngineClient,
+  spawnEngineProcess,
+  type ReviewStageUpdate,
+  type SpawnEngine,
+} from './engine-client.js';
 import {
   ADD_COMMENT_COMMAND,
   COMMENT_ON_PART_COMMAND,
@@ -13,7 +18,10 @@ import {
 import { CHANGE_SCHEME, ChangeCopiesProvider } from './change-copies.js';
 import { openPartInDiffEditor, openWholeChangeInDiffEditor, PartMarker } from './diff-view.js';
 import {
+  anchorOf,
   buildTree,
+  findAnchor,
+  groupingStatus,
   pendingReviewSection,
   type TreeComment,
   type TreePart,
@@ -21,6 +29,7 @@ import {
 } from './tree.js';
 import { pickSubmitKind, readOverallComment, ReviewComments } from './comments.js';
 import { AgentStatusBar } from './agent-status.js';
+import { readAgentSettings, type AgentSettings } from './agent-settings.js';
 import type { Part, ReviewResult, SubmitKind } from '@second-look/engine';
 
 export {
@@ -103,10 +112,19 @@ class ReviewTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     this.change.fire();
   }
 
+  /** The sections the tree shows now. */
+  get current(): readonly TreeSection[] {
+    return this.sections;
+  }
+
   getTreeItem(node: TreeNode): vscode.TreeItem {
     if (isSection(node)) {
       const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Expanded);
       item.tooltip = node.tooltip;
+      // Stable ids keep a section's expanded state, and a part's selection,
+      // across a regrouping; a part is known by where it starts, since every
+      // hunk belongs to exactly one part.
+      item.id = `section:${node.label}`;
       return item;
     }
     const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
@@ -114,6 +132,7 @@ class ReviewTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     item.tooltip = node.tooltip;
     item.contextValue = node.kind;
     if (node.kind !== 'comment' && node.part !== undefined) {
+      item.id = `part:${JSON.stringify(anchorOf(node.part))}`;
       item.command = {
         command: OPEN_PART_COMMAND,
         title: 'Open part in the diff editor',
@@ -129,6 +148,11 @@ class ReviewTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     }
     return isSection(node) ? node.parts : [];
   }
+
+  getParent(node: TreeNode): TreeNode | undefined {
+    if (isSection(node)) return undefined;
+    return this.sections.find((section) => section.parts.includes(node));
+  }
 }
 
 /**
@@ -138,6 +162,12 @@ class ReviewTreeProvider implements vscode.TreeDataProvider<TreeNode> {
  * that sign-in — the token travels with the request and is never stored.
  * Progress shows while the engine works, and an engine failure reads as
  * its plain message.
+ *
+ * A review arrives in stages: the tree shows the plain parts first, with
+ * a status line naming the stage still running, then updates in place
+ * when the agent's parts arrive — keeping the reviewer's place: the part
+ * holding the selected part's first hunk stays selected, and the open
+ * diff editor stays as it is. A new review replaces one still running.
  *
  * The session keeps the result it shows, so a part click can open the
  * multi-file diff from the same copies the engine downloaded.
@@ -150,7 +180,13 @@ class ReviewSession {
   private readonly comments: ReviewComments;
   private readonly spawnEngine: ExtensionDeps['spawnEngine'];
   private engine: EngineClient | undefined;
+  /** The agent and model the running engine was started with. */
+  private engineAgent: Pick<AgentSettings, 'agent' | 'model'> | undefined;
   private result: ReviewResult | undefined;
+  /** Counts the reviews started, so a replaced review's late answers are dropped. */
+  private reviews = 0;
+  /** True while a review's engine request is still out. */
+  private running = false;
   private url: string | undefined;
 
   constructor(
@@ -197,20 +233,76 @@ class ReviewSession {
     }
     const accessToken = session.accessToken;
 
+    // A new review replaces one still running: stopping the engine drops
+    // the old request, and the next request starts a fresh engine.
+    if (this.running) {
+      this.engine?.dispose();
+      this.engine = undefined;
+    }
+    const review = ++this.reviews;
+    const current = (): boolean => review === this.reviews;
+    let shown = false;
+    this.running = true;
+    this.treeView.message = undefined;
     try {
       const result = await vscode.window.withProgress(
         { location: { viewId: REVIEW_TREE_VIEW }, title: 'Reading the pull request…' },
-        () => this.engineReview(url.trim(), accessToken),
+        () =>
+          this.engineReview(url.trim(), accessToken, (stage) => {
+            if (!current()) return;
+            void this.show(stage.result, shown);
+            shown = true;
+            this.treeView.message = groupingStatus(stage.result, stage.running);
+          }),
       );
-      this.result = result;
-      this.url = result.pullRequest.url;
-      this.copies.setCopies(result.copies);
-      this.comments.setReview(result);
-      this.tree.setSections(this.sections());
-      await this.revealFirstSection();
+      if (!current()) return;
+      await this.show(result, shown);
+      this.treeView.message = groupingStatus(result);
     } catch (error) {
+      if (!current()) return;
+      this.treeView.message = undefined;
       vscode.window.showErrorMessage(
         error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      if (current()) this.running = false;
+    }
+  }
+
+  /**
+   * Shows a result in the tree. The first result of a review starts its
+   * pending review and reveals the first section; a later one updates the
+   * tree in place and keeps the reviewer's place, reselecting the part
+   * that now holds the selected part's first hunk, with every pending
+   * comment kept.
+   */
+  private async show(result: ReviewResult, update: boolean): Promise<void> {
+    const selected = this.treeView.selection[0];
+    const anchor =
+      update &&
+      selected !== undefined &&
+      !isSection(selected) &&
+      selected.kind !== 'comment' &&
+      selected.part !== undefined
+        ? anchorOf(selected.part)
+        : undefined;
+    this.result = result;
+    this.url = result.pullRequest.url;
+    this.copies.setCopies(result.copies);
+    // A review's first result starts its pending review afresh; a later
+    // stage of the same review keeps every comment already written, whose
+    // lines and files the regrouping does not change.
+    if (!update) this.comments.setReview(result);
+    this.tree.setSections(this.sections());
+    if (!update) {
+      await this.revealFirstSection();
+      return;
+    }
+    const node = anchor === undefined ? undefined : findAnchor(this.tree.current, anchor);
+    if (node !== undefined) {
+      await this.treeView.reveal(node, { select: true, focus: false }).then(
+        () => undefined,
+        () => undefined,
       );
     }
   }
@@ -373,23 +465,40 @@ class ReviewSession {
     token: string,
     review: Parameters<EngineClient['sendReview']>[2],
   ) {
-    if (this.engine === undefined) {
-      this.engine = new EngineClient(this.spawnEngine ?? spawnEngineProcess);
-    }
-    if (!this.engine.initialized) {
-      await this.engine.initialize();
-    }
-    return this.engine.sendReview(url, token, review);
+    const engine = await this.readyEngine();
+    return engine.sendReview(url, token, review);
   }
 
-  private async engineReview(url: string, token: string) {
-    if (this.engine === undefined) {
-      this.engine = new EngineClient(this.spawnEngine ?? spawnEngineProcess);
+  private async engineReview(
+    url: string,
+    token: string,
+    onStage: (stage: ReviewStageUpdate) => void,
+  ): Promise<ReviewResult> {
+    const engine = await this.readyEngine();
+    return engine.review(url, token, onStage);
+  }
+
+  /**
+   * The engine, started with the agent and model the settings choose and
+   * past its handshake. A settings change since the running engine was
+   * started stops it, so the next request runs on the chosen agent.
+   */
+  private async readyEngine(): Promise<EngineClient> {
+    const chosen: Pick<AgentSettings, 'agent' | 'model'> = readAgentSettings();
+    if (
+      this.engine === undefined ||
+      this.engineAgent?.agent !== chosen.agent ||
+      this.engineAgent?.model !== chosen.model
+    ) {
+      this.engine?.dispose();
+      this.engineAgent = chosen;
+      this.engine = new EngineClient(this.spawnEngine ?? (() => spawnEngineProcess(chosen)));
     }
-    if (!this.engine.initialized) {
-      await this.engine.initialize();
+    const engine = this.engine;
+    if (!engine.initialized) {
+      await engine.initialize();
     }
-    return this.engine.review(url, token);
+    return engine;
   }
 
   private async revealFirstSection(): Promise<void> {

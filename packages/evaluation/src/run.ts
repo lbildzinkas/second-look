@@ -1,13 +1,13 @@
 import { appendFile, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { reviewChange } from '@second-look/engine';
-import type { Part } from '@second-look/engine';
+import { GROUPING_PROMPT_ID, reviewChange } from '@second-look/engine';
+import type { AgentAdapter, AgentSettings, AgentStamp, Part } from '@second-look/engine';
 import { caseInput } from './case.js';
 import type { EvaluationCase } from './case.js';
 import { pressFetches, reportedClaims } from './claims.js';
 import type { PressedClaim } from './claims.js';
 import type { PromptRegistry } from './prompts.js';
-import { addTallies, scoresOf, tallyCase } from './score.js';
+import { GROUPING_AGREEMENT, addTallies, scoresOf, tallyCase } from './score.js';
 import type { Score, Tally } from './score.js';
 
 /** The agent stamp of a model-free run: no agent, no model, no effort. */
@@ -53,7 +53,17 @@ export interface RunResults {
   rows: ResultRow[];
   /** Cases whose review failed, with the engine's message. */
   failures: { case: string; error: string }[];
+  /** Cases whose agent grouping fell back to the plain one, with why. */
+  fallbacks?: { case: string; agent: string; detail: string }[];
 }
+
+/**
+ * The scores an agent run of the grouping prompt gives each case tied to
+ * it: the coverage of its parts, a hard gate at 100%, and their pairwise
+ * hunk agreement with the hand labels. The other scores stay with the
+ * plain pass.
+ */
+export const GROUPING_SCORES: readonly string[] = ['coverage', GROUPING_AGREEMENT];
 
 /** One agent call, as the run's local trace keeps it. */
 export interface AgentCall {
@@ -86,6 +96,37 @@ export interface RunOptions {
   runsFolder: string;
   /** The run's start; the clock when not given. */
   now?: Date;
+  /**
+   * The agent that runs the agent prompts the cases are tied to, so far
+   * the grouping prompt; without one the run is model-free.
+   */
+  agent?: { adapter: AgentAdapter; settings?: AgentSettings };
+}
+
+/** An adapter that appends every run it makes to the run's local trace. */
+function tracingAdapter(
+  adapter: AgentAdapter,
+  trace: (call: Omit<AgentCall, 'case' | 'prompt' | 'promptVersion'>) => Promise<void>,
+): AgentAdapter {
+  return {
+    agent: adapter.agent,
+    probe: () => adapter.probe(),
+    run: async (request) => {
+      const started = Date.now();
+      const outcome = await adapter.run(request);
+      await trace({
+        agent: outcome.stamp.agent,
+        agentVersion: outcome.stamp.agentVersion,
+        model: outcome.stamp.model ?? '',
+        effort: outcome.stamp.effort ?? '',
+        startedAt: new Date(started).toISOString(),
+        durationMs: Date.now() - started,
+        input: `${request.instructions}\n\n${request.prompt}`,
+        output: outcome.text,
+      });
+      return outcome;
+    },
+  };
 }
 
 /** A finished run: its folder and what it wrote there. */
@@ -97,26 +138,40 @@ export interface Run {
 /**
  * Runs the engine over every case offline and scores it. Writes the
  * stamped rows to `results.json` in a new run folder, beside the local
- * trace of every agent call; a model-free run makes none, so its trace
- * stays empty.
+ * trace of every agent call.
+ *
+ * Every case is scored on the plain pass, stamped with no agent. With an
+ * agent, each case tied to the grouping prompt is reviewed again with the
+ * agent grouping stage, and its {@link GROUPING_SCORES} are stamped with
+ * the agent, its version, the model and the effort that answered; a
+ * model-free run makes no agent call, so its trace stays empty.
  */
 export async function runEvaluation(options: RunOptions): Promise<Run> {
   const runDate = (options.now ?? new Date()).toISOString();
   const versions = new Map(options.registry.prompts.map((prompt) => [prompt.id, prompt.version]));
-  const stampFor = (prompts: readonly string[]): Stamp => ({
+  const stampFor = (prompts: readonly string[], agent?: AgentStamp): Stamp => ({
     companionVersion: options.companionVersion,
     promptVersions: Object.fromEntries(prompts.map((id) => [id, versions.get(id) ?? ''])),
-    agent: NO_AGENT,
-    agentVersion: NO_AGENT,
-    model: NO_AGENT,
-    effort: NO_AGENT,
+    agent: agent?.agent ?? NO_AGENT,
+    agentVersion: agent?.agentVersion ?? NO_AGENT,
+    // A run that ended before naming its model leaves the stamp incomplete,
+    // so its rows are never compared.
+    model: agent ? (agent.model ?? '') : NO_AGENT,
+    effort: agent ? (agent.effort ?? 'default') : NO_AGENT,
     runDate,
   });
-  const rowsOf = (name: string, tally: Tally, stamp: Stamp): ResultRow[] =>
-    scoresOf(tally).map((score) => ({ case: name, ...score, ...stamp }));
+  const rowsOf = (name: string, tally: Tally, stamp: Stamp, only?: readonly string[]): ResultRow[] =>
+    scoresOf(tally)
+      .filter((score) => only === undefined || only.includes(score.name))
+      .map((score) => ({ case: name, ...score, ...stamp }));
 
-  const results: RunResults = { rows: [], failures: [] };
+  const folder = join(options.runsFolder, runDate.replace(/[:.]/g, '-'));
+  await mkdir(folder, { recursive: true });
+  await writeFile(join(folder, TRACE_FILE), '');
+
+  const results: RunResults = { rows: [], failures: [], fallbacks: [] };
   const tallies: Tally[] = [];
+  const agentTallies = new Map<string, { stamp: AgentStamp; tallies: Tally[] }>();
   for (const evaluationCase of options.cases) {
     const input = await caseInput(evaluationCase);
     let parts: Part[] | undefined;
@@ -128,19 +183,71 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
       // the review offered, so the checks see what a press unlocked.
       claims = pressFetches(reportedClaims(result));
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      results.failures.push({ case: evaluationCase.id, error: message });
+      results.failures.push({ case: evaluationCase.id, error: messageOf(error) });
     }
     const tally = tallyCase(input.diff, evaluationCase.expected, parts, claims);
     tallies.push(tally);
     results.rows.push(...rowsOf(evaluationCase.id, tally, stampFor(evaluationCase.record.prompts)));
+
+    if (!options.agent || !evaluationCase.record.prompts.includes(GROUPING_PROMPT_ID)) continue;
+    const adapter = tracingAdapter(options.agent.adapter, (call) =>
+      traceAgentCall(folder, {
+        case: evaluationCase.id,
+        prompt: GROUPING_PROMPT_ID,
+        promptVersion: versions.get(GROUPING_PROMPT_ID) ?? '',
+        ...call,
+      }),
+    );
+    try {
+      const result = await reviewChange(input, { adapter, ...(options.agent.settings ? { settings: options.agent.settings } : {}) });
+      const grouping = result.grouping.agent;
+      if (!grouping) continue;
+      if (grouping.outcome === 'fell back') {
+        results.fallbacks!.push({ case: evaluationCase.id, agent: grouping.stamp.agent, detail: grouping.detail });
+      }
+      const agentTally = tallyCase(input.diff, evaluationCase.expected, result.parts);
+      const stamp = stampFor(evaluationCase.record.prompts, grouping.stamp);
+      results.rows.push(...rowsOf(evaluationCase.id, agentTally, stamp, GROUPING_SCORES));
+      const key = JSON.stringify([stamp.agent, stamp.agentVersion, stamp.model, stamp.effort]);
+      const group = agentTallies.get(key) ?? { stamp: grouping.stamp, tallies: [] };
+      group.tallies.push(agentTally);
+      agentTallies.set(key, group);
+    } catch (error) {
+      results.failures.push({ case: evaluationCase.id, error: messageOf(error) });
+      results.rows.push(
+        ...rowsOf(
+          evaluationCase.id,
+          tallyCase(input.diff, evaluationCase.expected, undefined),
+          {
+            ...stampFor(evaluationCase.record.prompts),
+            agent: options.agent.adapter.agent,
+            agentVersion: '',
+            model: '',
+            effort: '',
+          },
+          GROUPING_SCORES,
+        ),
+      );
+    }
   }
   const allPrompts = [...new Set(options.cases.flatMap((each) => each.record.prompts))].sort();
   results.rows.push(...rowsOf(ALL_CASES, addTallies(tallies), stampFor(allPrompts)));
+  for (const { stamp, tallies: byAgent } of agentTallies.values()) {
+    results.rows.push(...rowsOf(ALL_CASES, addTallies(byAgent), stampFor([GROUPING_PROMPT_ID], stamp), GROUPING_SCORES));
+  }
 
-  const folder = join(options.runsFolder, runDate.replace(/[:.]/g, '-'));
-  await mkdir(folder, { recursive: true });
   await writeFile(join(folder, 'results.json'), `${JSON.stringify(results, null, 2)}\n`);
-  await writeFile(join(folder, TRACE_FILE), '');
   return { folder, results };
+}
+
+/**
+ * The coverage rows below 100%: coverage is a hard gate, so any of them
+ * fails the run, whatever the baseline says.
+ */
+export function belowFullCoverage(rows: readonly ResultRow[]): ResultRow[] {
+  return rows.filter((row) => row.name === 'coverage' && row.value < 1);
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

@@ -1,14 +1,23 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   ENGINE_FAILED_CODE,
   ENGINE_PROTOCOL_VERSION,
   JSON_RPC_INVALID_PARAMS,
   NOT_INITIALIZED_CODE,
+  REVIEW_STAGE_METHOD,
   VERSION_MISMATCH_CODE,
 } from '../src/rpc.js';
 import { runRpcServer } from '../src/server.js';
 import { removeCopy } from '../src/cache.js';
-import { PR_URL, SENT_REVIEW_URL, fixtureFetch, temporaryCacheDir } from './helpers.js';
+import {
+  PR_7_URL,
+  PR_URL,
+  SENT_REVIEW_URL,
+  fixtureFetch,
+  pull7,
+  scriptedAgent,
+  temporaryCacheDir,
+} from './helpers.js';
 
 const TOKEN = 'ghp_test-token-do-not-print';
 
@@ -81,18 +90,43 @@ describe('runRpcServer', () => {
 
   it('reviews a pull request after the handshake, using each request\u2019s token', async () => {
     const transport = fixtureFetch();
-    const responses = await serve(
-      [
-        request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
-        request('review', { url: PR_URL, token: TOKEN }, 2),
-        request('review', { url: PR_URL, token: 'ghp_another-token' }, 3),
-      ],
-      transport.fetch,
+    const written: string[] = [];
+    let firstReviewAnswered!: () => void;
+    const answered = new Promise<void>((resolve) => {
+      firstReviewAnswered = resolve;
+    });
+    const lines = [
+      request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+      request('review', { url: PR_URL, token: TOKEN }, 2),
+    ];
+    let index = 0;
+    await runRpcServer(
+      {
+        // A client that reviews one pull request at a time sends its next
+        // review only after the previous one was answered.
+        readLine: async () => {
+          if (index < lines.length) return lines[index++]!;
+          if (index === lines.length) {
+            index++;
+            await answered;
+            return request('review', { url: PR_URL, token: 'ghp_another-token' }, 3);
+          }
+          return null;
+        },
+      },
+      {
+        writeLine: (line) => {
+          written.push(line);
+          if ((JSON.parse(line) as Response).id === 2) firstReviewAnswered();
+        },
+      },
+      { fetch: transport.fetch, cacheDir },
     );
+    const responses = written.map((line) => JSON.parse(line) as Response);
 
     expect(responses[0]!.result).toEqual({ protocolVersion: ENGINE_PROTOCOL_VERSION });
     const first = responses[1]!.result as { version: number; parts: unknown[] };
-    expect(first.version).toBe(3);
+    expect(first.version).toBe(4);
     expect(first.parts).toHaveLength(11);
     const second = responses[2]!.result as { parts: unknown[] };
     expect(second.parts).toHaveLength(11);
@@ -239,5 +273,103 @@ describe('runRpcServer', () => {
   it('ends when the input ends', async () => {
     const responses = await serve([request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION })]);
     expect(responses).toHaveLength(1);
+  });
+});
+
+describe('runRpcServer with an agent', () => {
+  it('sends the plain result as a stage notification before the answer with the agent parts', async () => {
+    const lines = [
+      request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+      request('review', { url: PR_7_URL, token: TOKEN }, 2),
+    ];
+    const answer = {
+      parts: [
+        { name: 'fresh, with its test', hunks: ['h2', 'h7'] },
+        { name: 'the rest', hunks: ['h1', 'h3', 'h4', 'h5', 'h6'] },
+      ],
+    };
+    let index = 0;
+    const written: string[] = [];
+    await runRpcServer(
+      { readLine: async () => (index < lines.length ? (lines[index++] as string) : null) },
+      { writeLine: (line) => written.push(line) },
+      {
+        cacheDir,
+        fetch: fixtureFetch(pull7()).fetch,
+        agent: { adapter: scriptedAgent([JSON.stringify(answer)]) },
+      },
+    );
+
+    const [handshake, stage, final] = written.map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(written).toHaveLength(3);
+    expect(handshake).toMatchObject({ id: 1 });
+    // A notification has no id of its own; its params name the review request.
+    expect(stage).not.toHaveProperty('id');
+    expect(stage).toMatchObject({
+      jsonrpc: '2.0',
+      method: REVIEW_STAGE_METHOD,
+      params: {
+        id: 2,
+        running: 'grouping related hunks with fake',
+        timeoutMs: 660_000,
+        result: { version: 4, grouping: { by: 'plain' } },
+      },
+    });
+    expect(final).toMatchObject({ id: 2, result: { grouping: { by: 'agent' } } });
+    expect((final!['result'] as { parts: unknown[] }).parts).toHaveLength(2);
+    expect(written.join('\n')).not.toContain(TOKEN);
+  });
+
+  it('answers a send while a review is still running its agent stage', async () => {
+    const answer = {
+      parts: [
+        { name: 'fresh, with its test', hunks: ['h2', 'h7'] },
+        { name: 'the rest', hunks: ['h1', 'h3', 'h4', 'h5', 'h6'] },
+      ],
+    };
+    const base = scriptedAgent([JSON.stringify(answer)]);
+    let stageStarted = false;
+    let releaseStage!: () => void;
+    const stage = new Promise<void>((resolve) => {
+      releaseStage = resolve;
+    });
+    const adapter: typeof base = {
+      ...base,
+      run: async (request) => {
+        stageStarted = true;
+        await stage;
+        return base.run(request);
+      },
+    };
+    const lines = [
+      request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+      request('review', { url: PR_7_URL, token: TOKEN }, 2),
+      request(
+        'sendReview',
+        { url: PR_7_URL, token: TOKEN, review: { submit: 'comment', comments: [] } },
+        3,
+      ),
+    ];
+    let index = 0;
+    const written: string[] = [];
+    const server = runRpcServer(
+      { readLine: async () => (index < lines.length ? (lines[index++] as string) : null) },
+      { writeLine: (line) => written.push(line) },
+      { cacheDir, fetch: fixtureFetch(pull7()).fetch, agent: { adapter } },
+    );
+    await vi.waitFor(() => expect(stageStarted).toBe(true));
+    await vi.waitFor(() => {
+      expect(written.some((line) => (JSON.parse(line) as Response).id === 3)).toBe(true);
+    });
+    expect(written.some((line) => (JSON.parse(line) as Response).id === 2)).toBe(false);
+    releaseStage();
+    await server;
+    const responses = written.map((line) => JSON.parse(line) as Response);
+    const send = responses.find((response) => response.id === 3);
+    const review = responses.find((response) => response.id === 2);
+    expect(responses.indexOf(send!)).toBeLessThan(responses.indexOf(review!));
+    expect(send!.result).toEqual({ url: SENT_REVIEW_URL });
+    expect(review!.result).toMatchObject({ grouping: { by: 'agent' } });
+    expect((review!.result as { parts: unknown[] }).parts).toHaveLength(2);
   });
 });

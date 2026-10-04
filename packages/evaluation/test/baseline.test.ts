@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compareWithBaseline, hasStamp } from '../src/baseline.js';
+import { compareWithBaseline, hasStamp, mergeBaseline } from '../src/baseline.js';
 import { ALL_CASES, NO_AGENT } from '../src/run.js';
 import type { ResultRow } from '../src/run.js';
 
@@ -106,5 +106,45 @@ describe('compareWithBaseline', () => {
       [row({ case: ALL_CASES, value: 1 }), row({ case: ALL_CASES, name: 'rank-top-3' })],
     );
     expect(comparison).toMatchObject({ drops: [], missing: [], withoutBaseline: [], unchanged: 0 });
+  });
+});
+
+describe('mergeBaseline', () => {
+  const pi = { agent: 'pi', agentVersion: '0.86.1', model: 'zai/glm', effort: 'default' };
+
+  it("replaces the stored rows of each case and agent the run scored, and keeps every other", () => {
+    const stored = {
+      rows: [
+        row({ value: 0.5 }),
+        row({ case: 'example-42', value: 0.5 }),
+        row({ ...pi, value: 0.5 }),
+        row({ name: 'rank-median', value: 3, better: 'lower' }),
+      ],
+      failures: [{ case: 'example-7', error: 'old' }],
+    };
+    const run = { rows: [row({ value: 1 })], failures: [], fallbacks: [] };
+
+    expect(mergeBaseline(stored, run)).toEqual({
+      // The plain rows first; the run's rows of example-7 replace all its stored plain rows.
+      rows: [row({ case: 'example-42', value: 0.5 }), row({ value: 1 }), row({ ...pi, value: 0.5 })],
+      failures: [],
+      fallbacks: [],
+    });
+  });
+
+  it('keeps a stored fallback unless the run scored that case with the same agent', () => {
+    const stored = {
+      rows: [row()],
+      failures: [],
+      fallbacks: [{ case: 'example-7', agent: 'pi', detail: 'the answer was invalid twice' }],
+    };
+    const plain = { rows: [row({ value: 1 })], failures: [], fallbacks: [] };
+    expect(mergeBaseline(stored, plain).fallbacks).toEqual(stored.fallbacks);
+
+    const another = { rows: [row({ ...pi, agent: 'claude', value: 1 })], failures: [], fallbacks: [] };
+    expect(mergeBaseline(stored, another).fallbacks).toEqual(stored.fallbacks);
+
+    const again = { rows: [row({ ...pi, value: 1 })], failures: [], fallbacks: [] };
+    expect(mergeBaseline(stored, again).fallbacks).toEqual([]);
   });
 });

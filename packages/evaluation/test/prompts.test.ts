@@ -1,9 +1,12 @@
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { GROUPING_PROMPT_ID, GROUPING_PROMPT_VERSION } from '@second-look/engine';
 import type { EvaluationCase } from '../src/case.js';
 import {
   casesForPrompts,
   changedPathsSince,
   changedPrompts,
+  loadRegistry,
   mappingProblems,
 } from '../src/prompts.js';
 import type { PromptRegistry } from '../src/prompts.js';
@@ -58,5 +61,26 @@ describe('changedPathsSince', () => {
     await expect(changedPathsSince('--output=x', process.cwd())).rejects.toThrow(
       'not a git ref: --output=x',
     );
+  });
+});
+
+describe("the repository's prompt registry", () => {
+  it('registers the grouping prompt at the version the engine sends', async () => {
+    const registry = await loadRegistry(fileURLToPath(new URL('../prompts.json', import.meta.url)));
+    expect(registry.prompts).toContainEqual({
+      id: GROUPING_PROMPT_ID,
+      version: GROUPING_PROMPT_VERSION,
+      files: ['packages/engine/src/grouping.ts'],
+    });
+  });
+});
+
+describe('the mapping over other folders', () => {
+  it("checks only that a case's prompts are registered, since the prompts' own cases live in the repository", () => {
+    const cases = [evaluationCase('private', ['story'])];
+    expect(mappingProblems(REGISTRY, cases, { everyPromptHasACase: false })).toEqual([]);
+    expect(mappingProblems(REGISTRY, [evaluationCase('private', ['nope'])], { everyPromptHasACase: false })).toEqual([
+      'case private names the unregistered prompt nope',
+    ]);
   });
 });

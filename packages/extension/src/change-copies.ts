@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { pathInCopy, type ChangeCopies, type Part } from '@second-look/engine';
+import { filesOfPart, pathInCopy, type ChangeCopies, type Part } from '@second-look/engine';
 
 /**
  * The URI scheme the companion serves the change's copies under: the
@@ -38,27 +38,27 @@ export interface PartFile {
 }
 
 /**
- * The files a part is made of, base on the left and head on the right. A
- * part is exactly one file at this step, but every reader stays a list, so
- * grouping related files into one part later needs no change here. The
- * side a change kind does not have gets the empty stand-in, so additions
- * and deletions open like the pull request shows them; renames read the
- * base copy under the previous path; binary files open like any other.
+ * The files a part is made of, in the part's order, base on the left and
+ * head on the right: one file for a plain part, several when the agent
+ * grouped related hunks across files. The side a change kind does not
+ * have gets the empty stand-in, so additions and deletions open like the
+ * pull request shows them; renames read the base copy under the previous
+ * path; binary files open like any other.
  */
 export function partFiles(copies: ChangeCopies, part: Part): PartFile[] {
-  const previousPath = part.previousPath ?? part.path;
-  return [
-    {
+  return filesOfPart(part).map((file) => {
+    const previousPath = file.previousPath ?? file.path;
+    return {
       original:
-        part.changeKind === 'addition'
+        file.changeKind === 'addition'
           ? emptyChangeUri(previousPath)
           : changeUri('base', copies.base.commit, previousPath),
       modified:
-        part.changeKind === 'deletion'
-          ? emptyChangeUri(part.path)
-          : changeUri('head', copies.head.commit, part.path),
-    },
-  ];
+        file.changeKind === 'deletion'
+          ? emptyChangeUri(file.path)
+          : changeUri('head', copies.head.commit, file.path),
+    };
+  });
 }
 
 /** What a change URI resolves to in the engine's cache. */

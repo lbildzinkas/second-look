@@ -16,7 +16,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
-      # The model-free evaluation cases, scored against the stored
+      # Every case, with no agent, scored against the stored
       # baseline; the step fails when any score drops.
       - run: npm run eval
       # The extension integration tests run in CI only, under xvfb; the

@@ -7,15 +7,18 @@
  * shape changes in a way readers must check.
  */
 
+import type { AgentStamp } from './agent.js';
+
 /** Version of the review result schema. */
-export const REVIEW_RESULT_VERSION = 3 as const;
+export const REVIEW_RESULT_VERSION = 4 as const;
 
 /**
  * Version 2 added the head commit's SHA and each part's noise assessment;
  * version 3 split files into named parts by the entities their hunks touch,
  * with each part's signals and rank, each entity's visibility and how the
  * hunk changes it, and added the lockfile rules lockfile-follows-manifest
- * and lockfile-unexplained.
+ * and lockfile-unexplained; version 4 let a part span files, with each
+ * part's origin and the result's grouping.
  */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
@@ -132,6 +135,36 @@ export interface ReviewResult {
    * printing.
    */
   parts: Part[];
+  /** Who grouped the parts: the plain pass, or the agent, and what came of asking it. */
+  grouping: Grouping;
+}
+
+/**
+ * Who grouped a result's parts. The plain pass always runs first; when
+ * the agent is asked to group too, its outcome says whether its parts
+ * replaced the plain ones or why the plain grouping stayed.
+ */
+export interface Grouping {
+  /** The pass whose parts the result shows. */
+  by: 'plain' | 'agent';
+  /** What came of asking the agent; absent when it was not asked. */
+  agent?: AgentGrouping;
+}
+
+/** The agent grouping stage's outcome, stamped with who answered. */
+export interface AgentGrouping {
+  /** The version of the grouping prompt the agent was given. */
+  promptVersion: string;
+  /**
+   * `grouped` when the agent's parts are shown; `fell back` when its
+   * answer was missing or invalid, so the plain grouping stayed.
+   */
+  outcome: 'grouped' | 'fell back';
+  /** One plain line: why the plain grouping stayed, or how the agent's parts were checked. */
+  detail: string;
+  /** Hunks the agent left out, which went to a part marked not grouped by the agent. */
+  leftOut: number;
+  stamp: AgentStamp;
 }
 
 /** Pull request metadata the companion keeps alongside the parts. */
@@ -252,12 +285,23 @@ export type NoiseAssessment =
     };
 
 /**
- * A named group of related edits. At this step a part holds the hunks of
+ * Who grouped a part's hunks: the plain pass (one file's hunks that touch
+ * the same entities), the agent (related hunks across files), or nobody,
+ * for the hunks the agent left out.
+ */
+export type PartOrigin = 'plain' | 'agent' | 'not grouped by the agent';
+
+/** One file's share of a part: the file's own fields and the hunks of it the part holds. */
+export type FileSlice = Omit<Part, 'name' | 'signals' | 'rank' | 'origin' | 'otherFiles'>;
+
+/**
+ * A named group of related edits. The plain pass gives a part the hunks of
  * one file that touch the same entities, so a file splits into one part
- * per group of entities, plus one part for the hunks that touch no entity.
- * The file's own fields (path, change kind, modes, noise, syntax) are
- * repeated on each of its parts. Every changed line belongs to exactly one
- * part.
+ * per group of entities, plus one part for the hunks that touch no entity;
+ * the agent's parts can group related hunks across files. The part's own
+ * file fields (path, change kind, modes, hunks, line counts, noise,
+ * syntax) describe its first file, and {@link Part.otherFiles} holds the
+ * rest. Every changed line belongs to exactly one part.
  */
 export interface Part {
   /**
@@ -306,6 +350,13 @@ export interface Part {
    * guessing an importance for it.
    */
   rank?: PartRank;
+  /** Who grouped the part's hunks; set on every part before printing. */
+  origin?: PartOrigin;
+  /**
+   * The part's share of further files, in diff order, when it groups
+   * hunks across files; absent when the part stays within one file.
+   */
+  otherFiles?: FileSlice[];
 }
 
 /** Whether a part's code is new, changed or removed. */

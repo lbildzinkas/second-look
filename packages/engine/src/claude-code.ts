@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { createInterface } from 'node:readline';
+import { trackAgentChild } from './agent-children.js';
 import {
   GITHUB_TOKEN_VARIABLES,
   type AgentAdapter,
@@ -148,12 +149,14 @@ interface Captured {
 /** Runs a short Claude Code command, such as `--version`, outside any project folder. */
 function capture(command: readonly string[], args: string[], env: NodeJS.ProcessEnv): Promise<Captured> {
   return new Promise((done) => {
-    const child = spawn(command[0]!, [...command.slice(1), ...args], {
-      cwd: tmpdir(),
-      env,
-      stdio: ['ignore', 'pipe', 'ignore'],
-      timeout: 30_000,
-    });
+    const child = trackAgentChild(
+      spawn(command[0]!, [...command.slice(1), ...args], {
+        cwd: tmpdir(),
+        env,
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 30_000,
+      }),
+    );
     let stdout = '';
     child.stdout.setEncoding('utf8').on('data', (chunk: string) => (stdout += chunk));
     child.on('error', (error) => done({ code: null, stdout, error: error.message }));
@@ -235,11 +238,13 @@ export function claudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}): Agent
     if (!probeResult.usable) {
       return { status: 'failed', text: '', error: probeResult.reason, stamp };
     }
-    const child = spawn(command[0]!, [...command.slice(1), ...claudeArguments(request, probeResult.supports.effort)], {
-      cwd: request.root,
-      env: claudeEnvironment(env),
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
+    const child = trackAgentChild(
+      spawn(command[0]!, [...command.slice(1), ...claudeArguments(request, probeResult.supports.effort)], {
+        cwd: request.root,
+        env: claudeEnvironment(env),
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }),
+    );
     child.stdin.on('error', () => undefined);
     child.stdin.end(request.prompt);
 

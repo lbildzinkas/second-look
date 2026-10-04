@@ -123,6 +123,34 @@ export interface SendReviewParams {
 /** The send request's result: the review's link on GitHub. */
 export type SendReviewRpcResult = SentReview;
 
+/**
+ * The notification the engine sends while a review request is still
+ * running: the plain result is ready and a further stage, such as the
+ * agent grouping the hunks, has started. The review's response then
+ * carries the final result. A JSON-RPC notification has no id of its own;
+ * its params name the review request it belongs to.
+ */
+export const REVIEW_STAGE_METHOD = 'review/stage' as const;
+
+/** One stage notification's params. */
+export interface ReviewStageParams {
+  /** The id of the review request this stage belongs to. */
+  id: number;
+  /** The stage now running, in words for the reviewer. */
+  running: string;
+  /** The stage ends within this many milliseconds. */
+  timeoutMs: number;
+  /** The result so far. */
+  result: ReviewResult;
+}
+
+/** A notification the engine writes: no id, a method and its params. */
+export interface RpcNotification<P = unknown> {
+  jsonrpc: '2.0';
+  method: string;
+  params: P;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

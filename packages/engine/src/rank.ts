@@ -1,4 +1,5 @@
 import { sinks } from './noise.js';
+import { filesOfPart } from './parts.js';
 import {
   IMPORTANCE_ORDER,
   type Importance,
@@ -75,7 +76,7 @@ function score(signals: PartSignals): { points: number; cited: string[] } {
 /** Scores one ranked part, or fixes it at context when the rule says so. */
 function scored(part: Part, index: number): Scored {
   const signals = part.signals!;
-  if (part.syntax.formattingOnly.status === 'confirmed') {
+  if (filesOfPart(part).every((file) => file.syntax.formattingOnly.status === 'confirmed')) {
     const formatting = 'formatting only, confirmed by the syntax trees';
     const cited = [formatting, signals.role, lines(signals.changedLines)];
     return { part, index, points: 0, importance: 'context', cited };
@@ -100,6 +101,11 @@ function byRank(a: Scored, b: Scored): number {
   );
 }
 
+/** A part sinks with the noise when every file it holds hunks of is sinking noise. */
+function sinksPart(part: Part): boolean {
+  return filesOfPart(part).every((file) => sinks(file.noise));
+}
+
 function withRank(part: Part, importance: Importance, cited: string[]): Part {
   const rank: PartRank = { importance, reason: cited.join('; '), signals: cited };
   return { ...part, rank };
@@ -115,7 +121,7 @@ function withRank(part: Part, importance: Importance, cited: string[]): Part {
 export function rankParts(parts: readonly Part[]): Part[] {
   const ranked = parts
     .map((part, index) => ({ part, index }))
-    .filter(({ part }) => !sinks(part.noise))
+    .filter(({ part }) => !sinksPart(part))
     .map(({ part, index }) => scored(part, index))
     .sort(byRank);
   const mustReviewPlaces = Math.ceil(ranked.length / 3);
@@ -127,7 +133,7 @@ export function rankParts(parts: readonly Part[]): Part[] {
   ranked.sort(byRank);
   const noise = parts.flatMap((part) => {
     const { noise: assessment, signals } = part;
-    if (!sinks(assessment)) return [];
+    if (!sinksPart(part) || !sinks(assessment)) return [];
     const cited = [`${assessment.label} noise (${assessment.state})`, lines(signals!.changedLines)];
     return [withRank(part, 'context', cited)];
   });
