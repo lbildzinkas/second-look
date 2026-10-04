@@ -10,7 +10,8 @@
  * itself; the review result it carries keeps its own
  * `REVIEW_RESULT_VERSION`.
  *
- * After the handshake, {@link REVIEW_METHOD} reviews a pull request and
+ * After the handshake, {@link REVIEW_METHOD} reviews a pull request,
+ * {@link FETCH_LIBRARY_METHOD} presses one finding's library fetch, and
  * {@link SEND_REVIEW_METHOD} sends the pending review to GitHub as one
  * review — the protocol's one write, asked for only when the reviewer
  * presses send (ADR 0002). A review request also carries the reviewer's
@@ -123,6 +124,28 @@ export interface ReviewParams {
 
 /** The review request's result: the engine's typed, versioned review result. */
 export type ReviewRpcResult = ReviewResult;
+
+/**
+ * The request that presses one claim's library fetch, sent only when the
+ * reviewer presses it (ADR 0003): the engine downloads the library at the
+ * version the lock file pins, checks its hash, unpacks it read-only and
+ * has the agent judge the claim again in its source. The claim is one of
+ * the engine's own latest review of the pull request, by its index.
+ */
+export const FETCH_LIBRARY_METHOD = 'fetchLibrary' as const;
+
+/** One fetch request: the reviewed pull request, the claim and the agent that judges it again. */
+export interface FetchLibraryParams {
+  /** The pull request's HTML URL, as the review result names it. */
+  url: string;
+  /** The claim, by its index in the result's claims. */
+  claim: number;
+  /** The agent, model and account that judge the claim again; see {@link ReviewAgentChoice}. */
+  agent?: ReviewAgentChoice;
+}
+
+/** The fetch request's result: the review result with the claim judged against the library's source. */
+export type FetchLibraryRpcResult = ReviewResult;
 
 /** The request that sends the pending review to GitHub as one review. */
 export const SEND_REVIEW_METHOD = 'sendReview' as const;

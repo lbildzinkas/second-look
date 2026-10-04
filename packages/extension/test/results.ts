@@ -299,3 +299,64 @@ export function judgedResult(copies?: CopyPaths): ReviewResult {
     },
   };
 }
+
+/** The library fetch the judged result's comment claim offers, for the source of `requests`. */
+export const REQUESTS_FETCH = {
+  library: 'requests',
+  pinnedVersion: '2.32.3',
+  pinnedBy: 'requirements.txt',
+  reason: 'The change alone cannot settle this claim: it turns on how requests behaves, so checking it needs the source of requests 2.32.3, as requirements.txt pins it.',
+};
+
+/** The judged result, its comment claim offering a library fetch of the library it needs. */
+export function offeredResult(copies?: CopyPaths): ReviewResult {
+  const shown = judgedResult(copies);
+  const claims = shown.claims!;
+  return {
+    ...shown,
+    claims: {
+      ...claims,
+      claims: claims.claims.map((claim, index) =>
+        index === 2 && claim.verdict.kind !== 'not checked' ? { ...claim, verdict: { ...claim.verdict, libraryFetch: REQUESTS_FETCH } } : claim,
+      ),
+    },
+  };
+}
+
+/** The offered result after the reviewer pressed the fetch: the comment claim refuted from the source of `requests`. */
+export function fetchedResult(libraryPath = '/cache/github.com/example-org/example-repo/pull-42/libraries/requests-2.32.3-0123456789ab', copies?: CopyPaths): ReviewResult {
+  const shown = offeredResult(copies);
+  const claims = shown.claims!;
+  const comment = claims.claims[2]!;
+  return {
+    ...shown,
+    claims: {
+      ...claims,
+      claims: claims.claims.map((claim, index) =>
+        index !== 2
+          ? claim
+          : {
+              ...comment,
+              verdict: {
+                kind: 'refuted',
+                source: 'library source at the pinned version',
+                reason: 'raise_for_status raises only for 4xx and 5xx statuses.',
+                evidence: [{ path: 'requests/models.py', line: 1021, quote: 'if 400 <= self.status_code < 500:' }],
+                libraryFetch: REQUESTS_FETCH,
+                library: {
+                  library: 'requests',
+                  pinnedVersion: '2.32.3',
+                  pinnedBy: 'requirements.txt',
+                  file: 'requests-2.32.3-py3-none-any.whl',
+                  sha256: '0'.repeat(64),
+                  archive: 'wheel',
+                  path: libraryPath,
+                  promptVersion: '1',
+                  stamp: claims.stamp,
+                },
+              },
+            },
+      ),
+    },
+  };
+}

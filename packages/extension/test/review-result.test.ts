@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { REVIEW_RESULT_VERSION, type NoiseAssessment, type ReviewResult } from '@second-look/engine';
 import { ProtocolError, isReviewResult, parseReviewResult } from '../src/index.js';
-import { claimsResult, judgedResult } from './results.js';
+import { REQUESTS_FETCH, claimsResult, fetchedResult, judgedResult, offeredResult } from './results.js';
 
 function sampleResult(): ReviewResult {
   return {
@@ -450,6 +450,23 @@ describe('isReviewResult for the verdicts', () => {
     ];
     for (const value of cases) expect(isReviewResult(value)).toBe(false);
   });
+
+  it('accepts a verdict offering a library fetch, and one judged against the fetched library', () => {
+    expect(isReviewResult(offeredResult())).toBe(true);
+    expect(isReviewResult(fetchedResult())).toBe(true);
+  });
+
+  it('rejects a malformed library fetch offer or fetched library', () => {
+    const library = (fetchedResult().claims!.claims[2]!.verdict as unknown as { library: Record<string, unknown> }).library;
+    const cases: unknown[] = [
+      withVerdict({ ...refuted, libraryFetch: { ...REQUESTS_FETCH, pinnedVersion: '' } }),
+      withVerdict({ ...refuted, libraryFetch: { ...REQUESTS_FETCH, reason: undefined } }),
+      withVerdict({ ...refuted, library: { ...library, archive: 'egg' } }),
+      withVerdict({ ...refuted, library: { ...library, path: undefined } }),
+      withVerdict({ ...refuted, library: { ...library, stamp: undefined } }),
+    ];
+    for (const value of cases) expect(isReviewResult(value)).toBe(false);
+  });
 });
 
 describe('parseReviewResult', () => {
@@ -467,6 +484,6 @@ describe('parseReviewResult', () => {
 
 describe('the versioned protocol is shared with the engine', () => {
   it('uses the same version constant', () => {
-    expect(REVIEW_RESULT_VERSION).toBe(8);
+    expect(REVIEW_RESULT_VERSION).toBe(9);
   });
 });

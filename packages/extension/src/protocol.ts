@@ -367,10 +367,39 @@ function isCitation(value: unknown): boolean {
   return isRecord(value) && isNonEmptyString(value['path']) && isLine(value['line']) && isNonEmptyString(value['quote']);
 }
 
+/** A library fetch a verdict offers: the library, its pinned version, the lock file and why. */
+function isLibraryFetchOffer(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isNonEmptyString(value['library']) &&
+    isNonEmptyString(value['pinnedVersion']) &&
+    isNonEmptyString(value['pinnedBy']) &&
+    isString(value['reason'])
+  );
+}
+
+/** The library source a verdict was judged against: the file fetched, where it landed, and who judged. */
+function isFetchedLibrary(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isNonEmptyString(value['library']) &&
+    isNonEmptyString(value['pinnedVersion']) &&
+    isNonEmptyString(value['pinnedBy']) &&
+    isNonEmptyString(value['file']) &&
+    isNonEmptyString(value['sha256']) &&
+    isOneOf(value['archive'], ['wheel', 'source archive'] as const) &&
+    isNonEmptyString(value['path']) &&
+    isOptionalString(value['note']) &&
+    isString(value['promptVersion']) &&
+    isAgentStamp(value['stamp'])
+  );
+}
+
 /**
  * A claim's verdict: not checked, or checked with its evidence source,
- * reason and citations. The model's memory never yields verified, and
- * cites no line.
+ * reason and citations, the library fetch it offers and the library
+ * source it was judged against. The model's memory never yields
+ * verified, and cites no line.
  */
 function isClaimVerdict(value: unknown): boolean {
   if (!isRecord(value)) return false;
@@ -383,6 +412,8 @@ function isClaimVerdict(value: unknown): boolean {
     !Array.isArray(evidence) ||
     !evidence.every(isCitation) ||
     !isOptionalString(value['needsLibrary']) ||
+    (value['libraryFetch'] !== undefined && !isLibraryFetchOffer(value['libraryFetch'])) ||
+    (value['library'] !== undefined && !isFetchedLibrary(value['library'])) ||
     !isOptionalString(value['recheck'])
   ) {
     return false;

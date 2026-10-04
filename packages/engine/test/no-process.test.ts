@@ -2,9 +2,11 @@ import childProcess from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
+import { join } from 'node:path';
 import { removeCopy } from '../src/cache.js';
+import { fetchLibrary } from '../src/library-fetch.js';
 import { reviewPullRequest } from '../src/review.js';
-import { PR_7_URL, PR_8_URL, fixtureFetch, pull7, pull8, temporaryCacheDir } from './helpers.js';
+import { PR_7_URL, PR_8_URL, fixtureFetch, pull7, pull8, pypiFetch, sha256Hex, tarball, temporaryCacheDir, zipArchive } from './helpers.js';
 
 // A file of its own, so the reviews below are the first in this module
 // graph: the WASM runtime and grammars load while every way to start a
@@ -77,6 +79,32 @@ describe('a review', () => {
             part.noise?.label === 'lockfile' && part.noise.state === 'confirmed',
         ),
       ).toBe(true);
+    } finally {
+      guard.restore();
+    }
+    for (const spy of guard.spies) expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('fetches and unpacks a library without running anything: no install, no build, no script', async () => {
+    const wheel = zipArchive([
+      { name: 'httpx/__init__.py', content: 'import os\nos.system("echo never")\n' },
+      { name: 'httpx-0.27.2.data/scripts/httpx', content: '#!/bin/sh\necho never\n', mode: 0o100755 },
+    ]);
+    const sdist = tarball([
+      { path: 'anyio-4.4.0/setup.py', content: 'import os\nos.system("echo never")\n' },
+      { path: 'anyio-4.4.0/src/anyio/__init__.py', content: '' },
+    ]);
+    const librariesDir = join(cacheDir, 'libraries');
+    const guard = forbidProcesses();
+    try {
+      await fetchLibrary(
+        { name: 'httpx', version: '0.27.2', pinnedBy: 'requirements.txt', hashes: [sha256Hex(wheel)] },
+        { librariesDir, fetch: pypiFetch('httpx', '0.27.2', [{ filename: 'httpx-0.27.2-py3-none-any.whl', bytes: wheel }]).fetch },
+      );
+      await fetchLibrary(
+        { name: 'anyio', version: '4.4.0', pinnedBy: 'requirements.txt', hashes: [sha256Hex(sdist)] },
+        { librariesDir, fetch: pypiFetch('anyio', '4.4.0', [{ filename: 'anyio-4.4.0.tar.gz', bytes: sdist }]).fetch },
+      );
     } finally {
       guard.restore();
     }

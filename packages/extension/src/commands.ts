@@ -46,3 +46,13 @@ export const FINDINGS_CONTROLLER_ID = 'second-look.findings' as const;
 
 /** The context value the companion's finding threads carry. */
 export const FINDING_THREAD_CONTEXT = 'second-look-finding' as const;
+
+/**
+ * Presses one finding's library fetch: the engine downloads the library
+ * at its pinned version and judges the claim again. Runs only from the
+ * link in the finding's thread, which the reviewer presses.
+ */
+export const FETCH_LIBRARY_COMMAND = 'second-look.fetchLibrary' as const;
+
+/** Opens one file a verdict cites in a fetched library's source, read-only, at the cited line. */
+export const OPEN_LIBRARY_EVIDENCE_COMMAND = 'second-look.openLibraryEvidence' as const;

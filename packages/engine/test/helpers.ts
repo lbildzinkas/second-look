@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, sep } from 'node:path';
@@ -430,4 +431,95 @@ export function offeredParts(prompt: string): { id: string; name: string }[] {
     id: match[1]!,
     name: match[2]!,
   }));
+}
+
+/** One entry of a hand-built ZIP archive, such as a wheel's file. */
+export interface ZipFixtureEntry {
+  name: string;
+  content?: string | Buffer;
+  /** The Unix mode recorded for it: a regular file by default, `0o120777` for a symbolic link. */
+  mode?: number;
+}
+
+/** Builds a ZIP archive of stored entries, made on Unix so each records its mode. */
+export function zipArchive(entries: ZipFixtureEntry[]): Buffer {
+  const locals: Buffer[] = [];
+  const centrals: Buffer[] = [];
+  let offset = 0;
+  for (const entry of entries) {
+    const name = Buffer.from(entry.name, 'utf8');
+    const body = Buffer.from(entry.content ?? '');
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt32LE(body.length, 18);
+    local.writeUInt32LE(body.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE((3 << 8) | 20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt32LE(body.length, 20);
+    central.writeUInt32LE(body.length, 24);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt32LE(((entry.mode ?? 0o100644) << 16) >>> 0, 38);
+    central.writeUInt32LE(offset, 42);
+    locals.push(local, name, body);
+    centrals.push(central, name);
+    offset += local.length + name.length + body.length;
+  }
+  const directory = Buffer.concat(centrals);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(directory.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, directory, end]);
+}
+
+/** The SHA-256 of some bytes, as lowercase hex. */
+export function sha256Hex(bytes: Buffer): string {
+  return createHash('sha256').update(bytes).digest('hex');
+}
+
+/** One file a recorded PyPI release lists, with the bytes its download serves. */
+export interface PyPIFixtureFile {
+  filename: string;
+  bytes: Buffer;
+  /** The download's URL; PyPI's own file host by default. */
+  url?: string;
+  /** The SHA-256 PyPI lists for it; the bytes' own by default. */
+  sha256?: string;
+}
+
+/**
+ * A fetch that serves one recorded PyPI release: its JSON API answer
+ * listing the files, and each file's download. Any other URL throws, so a
+ * test can never touch the live network by accident.
+ */
+export function pypiFetch(name: string, version: string, files: readonly PyPIFixtureFile[]): FixtureTransport {
+  const requests: RecordedRequest[] = [];
+  const listed = files.map((file) => ({
+    ...file,
+    url: file.url ?? `https://files.pythonhosted.org/packages/ab/cd/${file.filename}`,
+  }));
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    requests.push({ url, method: init?.method ?? 'GET', body: null, accept: new Headers(init?.headers).get('accept') ?? '', authorization: null });
+    if (url === `https://pypi.org/pypi/${name}/${version}/json`) {
+      return Response.json({
+        urls: listed.map((file) => ({
+          filename: file.filename,
+          url: file.url,
+          packagetype: file.filename.endsWith('.whl') ? 'bdist_wheel' : 'sdist',
+          digests: { sha256: file.sha256 ?? sha256Hex(file.bytes) },
+        })),
+      });
+    }
+    const file = listed.find((each) => each.url === url);
+    if (file) return new Response(file.bytes, { status: 200 });
+    throw new Error(`unexpected request to ${url}: tests run against recorded responses only`);
+  };
+  return { fetch: fetchImpl, requests };
 }

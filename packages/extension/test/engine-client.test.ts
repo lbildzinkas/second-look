@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { ProtocolError } from '../src/protocol.js';
 import { EngineClient, spawnEngineProcess, type ReviewStageUpdate } from '../src/engine-client.js';
-import { mixedResult } from './results.js';
+import { fetchedResult, mixedResult } from './results.js';
 
 const FAKE_ENGINE = fileURLToPath(new URL('./fixtures/fake-engine.mjs', import.meta.url));
 const PR_URL = 'https://github.com/example-org/example-repo/pull/42';
@@ -28,6 +28,8 @@ interface FakeEngineOptions {
   logName?: string;
   stage?: unknown;
   stageOnly?: boolean;
+  fetchResult?: unknown;
+  fetchError?: string;
 }
 
 /** Starts the fake engine as a separate process, speaking real stdio. */
@@ -51,6 +53,8 @@ function fakeEngine(options: FakeEngineOptions = {}): ChildProcessWithoutNullStr
         : {}),
       ...(options.stage !== undefined ? { FAKE_ENGINE_STAGE: JSON.stringify(options.stage) } : {}),
       ...(options.stageOnly ? { FAKE_ENGINE_STAGE_ONLY: '1' } : {}),
+      ...(options.fetchResult !== undefined ? { FAKE_ENGINE_FETCH_RESULT: JSON.stringify(options.fetchResult) } : {}),
+      ...(options.fetchError !== undefined ? { FAKE_ENGINE_FETCH_ERROR: options.fetchError } : {}),
     },
   });
 }
@@ -96,7 +100,7 @@ describe('EngineClient against a fake engine', () => {
     await client.initialize();
     const result = await client.review(PR_URL, TOKEN);
 
-    expect(result.version).toBe(8);
+    expect(result.version).toBe(9);
     expect(result.parts).toHaveLength(7);
 
     const requests = loggedRequests('round-trip.log') as {
@@ -108,6 +112,29 @@ describe('EngineClient against a fake engine', () => {
       method: 'review',
       params: { url: PR_URL, token: TOKEN },
     });
+    client.dispose();
+  });
+
+  it('presses a library fetch by the claim, with the agent choice, and returns the result with its new verdict', async () => {
+    const client = new EngineClient(() => fakeEngine({ fetchResult: fetchedResult(), logName: 'fetch-library.log' }));
+
+    await client.initialize();
+    const result = await client.fetchLibrary(PR_URL, 2, { agent: 'pi', model: 'pi/model' });
+
+    expect(result.claims!.claims[2]!.verdict).toMatchObject({ kind: 'refuted', library: { library: 'requests' } });
+    const fetch = loggedRequests('fetch-library.log').find((request) => (request as { method: string }).method === 'fetchLibrary') as { params: unknown };
+    // A fetch carries no token: it reads nothing from GitHub.
+    expect(fetch.params).toEqual({ url: PR_URL, claim: 2, agent: { agent: 'pi', model: 'pi/model' } });
+    client.dispose();
+  });
+
+  it("reads a fetch's failure, such as a hash mismatch, as the engine's plain message", async () => {
+    const message = 'the download of requests-2.32.3-py3-none-any.whl does not match the hash requirements.txt pins';
+    const client = new EngineClient(() => fakeEngine({ fetchError: message }));
+
+    await client.initialize();
+
+    await expect(client.fetchLibrary(PR_URL, 2)).rejects.toThrow(message);
     client.dispose();
   });
 
@@ -289,7 +316,7 @@ describe('EngineClient against a fake engine', () => {
       await timedOut;
 
       await client.initialize();
-      expect(await client.review(PR_URL, TOKEN)).toMatchObject({ version: 8 });
+      expect(await client.review(PR_URL, TOKEN)).toMatchObject({ version: 9 });
       expect(spawns).toBe(2);
       client.dispose();
     } finally {
@@ -320,7 +347,7 @@ describe('EngineClient against a fake engine', () => {
     const stages: ReviewStageUpdate[] = [];
 
     await client.initialize();
-    expect(await client.review(PR_URL, TOKEN, undefined, (stage) => stages.push(stage))).toMatchObject({ version: 8 });
+    expect(await client.review(PR_URL, TOKEN, undefined, (stage) => stages.push(stage))).toMatchObject({ version: 9 });
     expect(stages).toEqual([]);
     client.dispose();
   });

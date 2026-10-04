@@ -172,7 +172,7 @@ export function verdictItems(claims: readonly Claim[]): VerdictItem[] {
 }
 
 /** Where a claim is made, in words: its source and its place there. */
-function claimPlace(claim: Claim): string {
+export function claimPlace(claim: Claim): string {
   const { location } = claim;
   if (location.kind === 'description') return `the pull request's description, line ${location.line}`;
   if (location.kind === 'story') return `the story the companion's agent wrote, sentence ${location.sentence + 1}`;
@@ -181,7 +181,7 @@ function claimPlace(claim: Claim): string {
 }
 
 /** A part's diff lines, each marked and numbered, up to {@link SHOWN_LINES} across its files. */
-function diffLines(part: Part): string[] {
+export function diffLines(part: Part): string[] {
   const shown: string[] = [];
   let count = 0;
   for (const file of filesOfPart(part)) {
@@ -268,23 +268,25 @@ export function copyReader(root: string): ReadLines {
 }
 
 /**
- * Re-checks one citation against the head copy: the file must exist, the
- * line must be one of its lines, and the quote must start on that line,
- * as written there, running over at most {@link CITED_SPAN} lines; a
- * quote shorter than {@link MIN_CITED_QUOTE} characters must be the whole
- * line, so a stray bracket proves nothing. Returns
- * the citation as kept, or what is wrong with it.
+ * Re-checks one citation against the head copy, or another read-only
+ * copy such as a fetched library's source, named by `copy`: the file must
+ * exist, the line must be one of its lines, and the quote must start on
+ * that line, as written there, running over at most {@link CITED_SPAN}
+ * lines; a quote shorter than {@link MIN_CITED_QUOTE} characters must be
+ * the whole line, so a stray bracket proves nothing. Returns the citation
+ * as kept, or what is wrong with it.
  */
 export async function recheckCitation(
   read: ReadLines,
   cited: { file: string; line: number; quote: string },
+  copy = 'the head copy',
 ): Promise<Citation | string> {
   const where = `${cited.file}:${cited.line}`;
   const quote = oneLine(cited.quote);
   if (quote === '') return `the citation ${where} quotes nothing`;
   if (quote.length > MAX_CITED_QUOTE) return `the citation ${where} quotes over ${MAX_CITED_QUOTE} characters`;
   const lines = await read(cited.file);
-  if (lines === undefined) return `the citation ${where} names a file the head copy does not have`;
+  if (lines === undefined) return `the citation ${where} names a file ${copy} does not have`;
   if (cited.line < 1 || cited.line > lines.length) return `the citation ${where} names a line ${cited.file} does not have`;
   const first = oneLine(lines[cited.line - 1]!);
   if (first === '') return `the citation ${where} names a blank line`;
@@ -311,7 +313,7 @@ export async function recheckCitation(
  * - A claim that needs library source the companion does not have is
  *   never verified.
  */
-export function settleVerdict(answered: AnsweredVerdict, rechecked: readonly (Citation | string)[]): ClaimVerdict {
+export function settleVerdict(answered: AnsweredVerdict, rechecked: readonly (Citation | string)[], evidenceIn = 'the change'): ClaimVerdict {
   const library = answered.library === null ? undefined : oneLine(answered.library);
   const base = {
     source: answered.source,
@@ -327,7 +329,7 @@ export function settleVerdict(answered: AnsweredVerdict, rechecked: readonly (Ci
   const failed = rechecked.filter((each): each is string => typeof each === 'string');
   if (answered.verdict === 'unverifiable') return { kind: 'unverifiable', ...base, evidence: kept };
   if (failed.length > 0) return drop(failed.join('; '), kept);
-  if (kept.length === 0) return drop('the verdict cites no line of the change', kept);
+  if (kept.length === 0) return drop(`the verdict cites no line of ${evidenceIn}`, kept);
   if (answered.verdict === 'verified' && library) return drop(`the claim needs the source of ${library}, which the companion does not have`, kept);
   return { kind: answered.verdict, ...base, evidence: kept };
 }
@@ -354,13 +356,14 @@ export function findingCounts(claims: Claims | undefined, partCount: number): nu
 
 /**
  * Where a finding's thread sits on the diff: the head-side line a claim
- * from a docstring or comment starts on, else the first line its verdict
- * cites; none for a claim from the description or the story that cites
- * nothing, whose thread sits on its part.
+ * from a docstring or comment starts on, else the first line of the head
+ * copy its verdict cites; none for a claim from the description or the
+ * story that cites nothing there, such as one judged against a library's
+ * source, whose thread sits on its part.
  */
 export function findingAnchor(claim: Claim): { path: string; line: number } | undefined {
   if (claim.location.kind === 'file') return { path: claim.location.path, line: claim.location.line };
-  const [first] = claim.verdict.kind === 'not checked' ? [] : claim.verdict.evidence;
+  const [first] = claim.verdict.kind === 'not checked' || claim.verdict.library !== undefined ? [] : claim.verdict.evidence;
   return first === undefined ? undefined : { path: first.path, line: first.line };
 }
 

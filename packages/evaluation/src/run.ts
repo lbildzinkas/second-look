@@ -4,23 +4,27 @@ import {
   CLAIMS_PROMPT_ID,
   DEFAULT_EFFORT,
   GROUPING_PROMPT_ID,
+  LIBRARY_VERDICTS_PROMPT_ID,
   RANKING_PROMPT_ID,
   STORY_PROMPT_ID,
   VERDICTS_PROMPT_ID,
   changeText,
   findClaims,
   judgeClaims,
+  offerLibraryFetches,
+  pressLibraryFetch,
   rankWithAgent,
+  removeCopy,
   rankingItems,
   reviewChange,
   storyChecks,
   storyItems,
   writeStory,
 } from '@second-look/engine';
-import type { AgentAdapter, AgentSettings, AgentStamp, Part } from '@second-look/engine';
-import { caseInput } from './case.js';
+import type { AgentAdapter, AgentSettings, AgentStamp, Claim, Part } from '@second-look/engine';
+import { caseInput, recordedFetch } from './case.js';
 import type { EvaluationCase } from './case.js';
-import { labelledClaims, pressFetches, reportedClaims } from './claims.js';
+import { labelledClaims, reportClaims, reportedClaims } from './claims.js';
 import type { PressedClaim } from './claims.js';
 import type { PromptRegistry } from './prompts.js';
 import {
@@ -30,6 +34,7 @@ import {
   STORY_SCORES,
   VERDICT_SCORES,
   addTallies,
+  isClaimCheck,
   scoresOf,
   tallyCase,
   tallyFinding,
@@ -134,6 +139,7 @@ export function promptOfScore(row: { name: string; agent: string }): string | un
   if (STORY_SCORES.includes(row.name)) return STORY_PROMPT_ID;
   if (CLAIM_SCORES.includes(row.name)) return CLAIMS_PROMPT_ID;
   if (VERDICT_SCORES.includes(row.name)) return VERDICTS_PROMPT_ID;
+  if (isClaimCheck(row.name)) return LIBRARY_VERDICTS_PROMPT_ID;
   return undefined;
 }
 
@@ -275,9 +281,9 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
     try {
       const result = await reviewChange(input);
       parts = result.parts;
-      // The evaluation stands in for the reviewer and presses every fetch
-      // the review offered, so the checks see what a press unlocked.
-      claims = pressFetches(reportedClaims(result));
+      // The plain pass lists no claims, so it offers no fetch to press;
+      // the library verdicts run below presses the fetches the verdicts offer.
+      claims = reportedClaims(result);
     } catch (error) {
       results.failures.push({ case: evaluationCase.id, error: messageOf(error) });
     }
@@ -381,29 +387,63 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
       }
     }
 
-    if (runs(VERDICTS_PROMPT_ID) && parts && parts.length > 0) {
+    const judgesVerdicts = runs(VERDICTS_PROMPT_ID);
+    const pressesFetches = runs(LIBRARY_VERDICTS_PROMPT_ID);
+    if ((judgesVerdicts || pressesFetches) && parts && parts.length > 0) {
+      let judged: { claims: Claim[]; stamp: AgentStamp } | undefined;
       try {
         const labelled = labelledClaims(parts, input.pullRequest.description, evaluationCase.expected.claims);
-        const judged = await judgeClaims(
+        const verdicts = await judgeClaims(
           parts,
           labelled.map((each) => each.claim),
           { adapter: adapterFor(VERDICTS_PROMPT_ID), ...settings, root: input.copies.head.path },
         );
-        const { judging } = judged;
-        if (judging.outcome === 'fell back') {
-          results.fallbacks!.push({ case: evaluationCase.id, agent: judging.stamp.agent, prompt: VERDICTS_PROMPT_ID, detail: judging.detail });
+        const { judging } = verdicts;
+        judged = { claims: verdicts.claims, stamp: judging.stamp };
+        if (judgesVerdicts) {
+          if (judging.outcome === 'fell back') {
+            results.fallbacks!.push({ case: evaluationCase.id, agent: judging.stamp.agent, prompt: VERDICTS_PROMPT_ID, detail: judging.detail });
+          }
+          const verdictsTally: Tally = {
+            ...tallyCase(input.diff, evaluationCase.expected, undefined),
+            judging: tallyJudging(labelled.map((each, index) => ({ wanted: each.wanted, got: verdicts.claims[index]!.verdict }))),
+          };
+          const stamp = stampFor(evaluationCase.record.prompts, judging.stamp);
+          results.rows.push(...rowsOf(evaluationCase.id, verdictsTally, stamp, VERDICT_SCORES));
+          const group = verdictTallies.get(stampKey(stamp)) ?? { stamp: judging.stamp, tallies: [] };
+          group.tallies.push(verdictsTally);
+          verdictTallies.set(stampKey(stamp), group);
         }
-        const verdictsTally: Tally = {
-          ...tallyCase(input.diff, evaluationCase.expected, undefined),
-          judging: tallyJudging(labelled.map((each, index) => ({ wanted: each.wanted, got: judged.claims[index]!.verdict }))),
-        };
-        const stamp = stampFor(evaluationCase.record.prompts, judging.stamp);
-        results.rows.push(...rowsOf(evaluationCase.id, verdictsTally, stamp, VERDICT_SCORES));
-        const group = verdictTallies.get(stampKey(stamp)) ?? { stamp: judging.stamp, tallies: [] };
-        group.tallies.push(verdictsTally);
-        verdictTallies.set(stampKey(stamp), group);
       } catch (error) {
-        failedAgent(error, VERDICT_SCORES);
+        failedAgent(error, judgesVerdicts ? VERDICT_SCORES : claimChecksOf(input.diff, evaluationCase));
+      }
+
+      // The evaluation stands in for the reviewer: it presses every fetch
+      // the verdicts offer, served from the case's recorded downloads, and
+      // the claim checks see what each press unlocked.
+      if (pressesFetches && judged) {
+        // The libraries land read-only, as in the reviewer's cache, and
+        // are removed once scored so the run folder stays removable.
+        const librariesDir = join(folder, 'libraries', evaluationCase.id);
+        try {
+          const pressed = await pressOfferedFetches(parts, judged.claims, {
+            adapter: adapterFor(LIBRARY_VERDICTS_PROMPT_ID),
+            ...settings,
+            headRoot: input.copies.head.path,
+            librariesDir,
+            fetch: recordedFetch(evaluationCase.folder),
+          });
+          for (const detail of pressed.fallbacks) {
+            results.fallbacks!.push({ case: evaluationCase.id, agent: pressed.stamp?.agent ?? agent.adapter.agent, prompt: LIBRARY_VERDICTS_PROMPT_ID, detail });
+          }
+          const checksTally = tallyCase(input.diff, evaluationCase.expected, undefined, reportClaims(pressed.claims));
+          const stamp = stampFor(evaluationCase.record.prompts, pressed.stamp ?? judged.stamp);
+          results.rows.push(...rowsOf(evaluationCase.id, checksTally, stamp, claimChecksOf(input.diff, evaluationCase)));
+        } catch (error) {
+          failedAgent(error, claimChecksOf(input.diff, evaluationCase));
+        } finally {
+          await removeCopy(librariesDir);
+        }
       }
     }
 
@@ -454,6 +494,40 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
 
   await writeFile(join(folder, 'results.json'), `${JSON.stringify(results, null, 2)}\n`);
   return { folder, results };
+}
+
+/** The claim checks a case gives: found, each verdict kind, evidence and fetch offered, over its claims with a verdict. */
+function claimChecksOf(diff: string, evaluationCase: EvaluationCase): string[] {
+  return scoresOf(tallyCase(diff, evaluationCase.expected, undefined)).map((score) => score.name).filter(isClaimCheck);
+}
+
+/**
+ * Presses the library fetch of every claim whose verdict offers one, as
+ * the reviewer would, one after another: each fetch downloads the pinned
+ * library and the agent judges the claim again in its source. Returns the
+ * claims as they stand after the presses, the stamp of the last judging,
+ * and why any judging fell back.
+ */
+async function pressOfferedFetches(
+  parts: readonly Part[],
+  judged: readonly Claim[],
+  options: Parameters<typeof pressLibraryFetch>[2],
+): Promise<{ claims: Claim[]; stamp?: AgentStamp; fallbacks: string[] }> {
+  const offered = await offerLibraryFetches(judged, options.headRoot);
+  const claims: Claim[] = [];
+  const fallbacks: string[] = [];
+  let stamp: AgentStamp | undefined;
+  for (const claim of offered) {
+    if (claim.verdict.kind === 'not checked' || claim.verdict.libraryFetch === undefined) {
+      claims.push(claim);
+      continue;
+    }
+    const judging = await pressLibraryFetch(parts, claim, options);
+    stamp = judging.stamp;
+    if (judging.outcome === 'fell back') fallbacks.push(judging.detail);
+    claims.push(judging.claim);
+  }
+  return { claims, ...(stamp ? { stamp } : {}), fallbacks };
 }
 
 /** The agent ranking's rank scores beside the plain ranking's over the same cases, and whether it matches or beats it. */

@@ -34,4 +34,6 @@ export * from './ranking.js';
 export * from './story.js';
 export * from './claims.js';
 export * from './verdicts.js';
+export * from './library-fetch.js';
+export * from './library-verdicts.js';
 export { runCli } from './cli.js';

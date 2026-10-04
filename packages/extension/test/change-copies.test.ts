@@ -5,10 +5,11 @@ import {
   changeFileOf,
   changeUri,
   emptyChangeUri,
+  libraryUri,
   partFiles,
 } from '../src/change-copies.js';
 import { FileSystemError, stub, Uri, workspace } from './vscode-stub.js';
-import { mixedResult, part, result } from './results.js';
+import { fetchedResult, mixedResult, part, result } from './results.js';
 
 const COPIES = mixedResult().copies;
 
@@ -160,7 +161,7 @@ describe('ChangeCopiesProvider', () => {
       FileSystemError,
     );
     expect(() => provider.writeFile(uri, new Uint8Array(), { create: true, overwrite: false })).toThrow(
-      'the base and head copies are read-only; nothing from the pull request is written',
+      'the base and head copies and the fetched libraries are read-only; nothing from the pull request is written',
     );
     expect(() => provider.createDirectory(uri)).toThrow(FileSystemError);
     expect(() => provider.delete(uri, { recursive: false })).toThrow(FileSystemError);
@@ -186,5 +187,28 @@ describe('ChangeCopiesProvider', () => {
     await expect(
       workspace.fs.readFile(changeUri('head', COPIES.head.commit, 'src/legacy.ts')),
     ).resolves.toEqual(content);
+  });
+});
+
+describe('libraryUri', () => {
+  const LIBRARY = '/cache/github.com/example-org/example-repo/pull-42/libraries/requests-2.32.3-0123456789ab';
+
+  it("serves a cited file from the same read-only library cache the agent read, once a result names the library", async () => {
+    const fetched = fetchedResult(LIBRARY);
+    const verdict = fetched.claims!.claims[2]!.verdict as { library: Parameters<typeof libraryUri>[0] };
+    const uri = libraryUri(verdict.library, 'requests/models.py');
+    const provider = new ChangeCopiesProvider();
+
+    expect(uri.toString()).toBe(`${CHANGE_SCHEME}://library/requests-2.32.3-0123456789ab/requests/models.py`);
+    await expect(provider.stat(uri)).rejects.toBeInstanceOf(FileSystemError);
+    provider.setLibraries(fetched);
+    const content = new TextEncoder().encode('if 400 <= self.status_code < 500:\n');
+    stub.files.set(`${LIBRARY}/requests/models.py`, content);
+    await expect(provider.readFile(uri)).resolves.toEqual(content);
+    await expect(provider.stat(uri)).resolves.toMatchObject({ permissions: 1 });
+    expect(changeFileOf(new Map([['library/requests-2.32.3-0123456789ab', LIBRARY]]), libraryUri(verdict.library, '../../../outside.py'))).toBeUndefined();
+    expect(() => provider.writeFile(uri, new Uint8Array(), { create: true, overwrite: true })).toThrow(
+      'the base and head copies and the fetched libraries are read-only; nothing from the pull request is written',
+    );
   });
 });

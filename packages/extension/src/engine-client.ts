@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import {
   ENGINE_PROTOCOL_VERSION,
+  FETCH_LIBRARY_METHOD,
   INITIALIZE_METHOD,
   REVIEW_METHOD,
   REVIEW_STAGE_METHOD,
@@ -66,6 +67,9 @@ const HANDSHAKE_TIMEOUT_MS = 10_000;
 
 /** How long one review request may take before the engine is given up on. */
 const REVIEW_TIMEOUT_MS = 120_000;
+
+/** How long one library fetch may take, its download and the agent judging the claim again. */
+const FETCH_LIBRARY_TIMEOUT_MS = 900_000;
 
 /** How long one send request may take before the engine is given up on. */
 const SEND_REVIEW_TIMEOUT_MS = 60_000;
@@ -206,6 +210,29 @@ export class EngineClient {
       { url, token, ...(agent !== undefined ? { agent } : {}) },
       REVIEW_TIMEOUT_MS,
       onStage,
+    );
+    if (!isReviewResult(result)) {
+      throw new ProtocolError();
+    }
+    return result;
+  }
+
+  /**
+   * Presses one claim's library fetch, sent only when the reviewer presses
+   * it: the engine downloads the library its latest review of the pull
+   * request offers, checks its pinned hash, unpacks it read-only and has
+   * the agent the settings picked judge the claim again. Resolves with the
+   * review result holding the new verdict; rejects with the engine's plain
+   * message, such as a hash mismatch.
+   */
+  async fetchLibrary(url: string, claim: number, agent?: ReviewAgentChoice): Promise<ReviewResult> {
+    if (!this.handshaken) {
+      throw new Error('the engine has not completed its handshake yet');
+    }
+    const result = await this.request(
+      FETCH_LIBRARY_METHOD,
+      { url, claim, ...(agent !== undefined ? { agent } : {}) },
+      FETCH_LIBRARY_TIMEOUT_MS,
     );
     if (!isReviewResult(result)) {
       throw new ProtocolError();

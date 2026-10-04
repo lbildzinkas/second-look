@@ -8,6 +8,8 @@
 //   FAKE_ENGINE_SEND_RESULT       JSON sent review to return for sendReview
 //   FAKE_ENGINE_SEND_ERROR        answer sendReview with this plain error message
 //   FAKE_ENGINE_SEND_DELAY_MS      wait this long before answering sendReview
+//   FAKE_ENGINE_FETCH_RESULT      JSON review result to return for fetchLibrary
+//   FAKE_ENGINE_FETCH_ERROR       answer fetchLibrary with this plain error message
 //   FAKE_ENGINE_PROTOCOL_VERSION  protocol version to speak (default 1)
 //   FAKE_ENGINE_EXIT_ON           exit right after this method, answering nothing
 //   FAKE_ENGINE_STALL_ON          receive this method, answer nothing, stay alive
@@ -31,6 +33,8 @@ const sendResult = process.env.FAKE_ENGINE_SEND_RESULT
   ? JSON.parse(process.env.FAKE_ENGINE_SEND_RESULT)
   : { url: 'https://github.com/example-org/example-repo/pull/42#pullrequestreview-4242' };
 const sendError = process.env.FAKE_ENGINE_SEND_ERROR;
+const fetchResult = process.env.FAKE_ENGINE_FETCH_RESULT ? JSON.parse(process.env.FAKE_ENGINE_FETCH_RESULT) : null;
+const fetchError = process.env.FAKE_ENGINE_FETCH_ERROR;
 const sendDelayMs = Number(process.env.FAKE_ENGINE_SEND_DELAY_MS ?? '0');
 const exitOn = process.env.FAKE_ENGINE_EXIT_ON;
 const stallOn = process.env.FAKE_ENGINE_STALL_ON;
@@ -108,6 +112,11 @@ function handle(line) {
     const answer = () => send({ jsonrpc: '2.0', id: request.id, result: sendResult });
     if (sendDelayMs > 0) setTimeout(answer, sendDelayMs);
     else answer();
+    return;
+  }
+  if (request.method === 'fetchLibrary') {
+    if (fetchError) fail(request.id, -32002, fetchError);
+    else send({ jsonrpc: '2.0', id: request.id, result: fetchResult });
     return;
   }
   fail(request.id, -32601, `unknown method: ${request.method}`);

@@ -10,7 +10,7 @@
 import type { AgentStamp } from './agent.js';
 
 /** Version of the review result schema. */
-export const REVIEW_RESULT_VERSION = 8 as const;
+export const REVIEW_RESULT_VERSION = 9 as const;
 
 /**
  * Version 2 added the head commit's SHA and each part's noise assessment;
@@ -21,7 +21,9 @@ export const REVIEW_RESULT_VERSION = 8 as const;
  * part's origin and the result's grouping; version 5 added the result's
  * ranking; version 6 added the result's story; version 7 added the
  * result's claims; version 8 added each claim's checked verdict, with its
- * evidence and evidence source, and the claims' judging.
+ * evidence and evidence source, and the claims' judging; version 9 added
+ * the library fetch a verdict offers and the library source a verdict was
+ * judged against once the reviewer pressed it.
  */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
@@ -290,9 +292,66 @@ export type ClaimVerdict =
        * (ADR 0003).
        */
       needsLibrary?: string;
+      /**
+       * The library fetch the companion offers for that library, when the
+       * project pins it in a lock file that records its hashes; nothing is
+       * downloaded until the reviewer presses it. A verdict judged against
+       * the library's source keeps the offer that was pressed.
+       */
+      libraryFetch?: LibraryFetchOffer;
+      /**
+       * The library source the verdict was judged against, once the
+       * reviewer pressed its library fetch; its citations are paths in
+       * that source, not in the head copy.
+       */
+      library?: FetchedLibrary;
       /** Why the engine dropped the agent's verdict to unverifiable, when it did. */
       recheck?: string;
     };
+
+/**
+ * A library fetch the companion offers with a verdict (the glossary's
+ * library fetch): the download of one library's source at the version
+ * the project pins, offered with its reason only when a claim cannot be
+ * checked without it, and started only by the reviewer (ADR 0003).
+ */
+export interface LibraryFetchOffer {
+  /** The library, by the name the lock file gives it. */
+  library: string;
+  /** The version the project pins, which the fetch downloads. */
+  pinnedVersion: string;
+  /** The lock file that pins it, by its path in the head copy. */
+  pinnedBy: string;
+  /** The companion's one-line reason for needing the library's source. */
+  reason: string;
+}
+
+/**
+ * One pressed library fetch as it landed: the exact file the lock file
+ * pins, its hash checked before anything was unpacked, unpacked read-only
+ * into the pull request's library cache, never built, installed or run.
+ * The agent judged the claim in that folder, and the reviewer opens the
+ * cited files from it.
+ */
+export interface FetchedLibrary {
+  library: string;
+  pinnedVersion: string;
+  pinnedBy: string;
+  /** The file downloaded, by the name the package index gives it. */
+  file: string;
+  /** The file's SHA-256, as the lock file pins it and the download matched. */
+  sha256: string;
+  /** A built wheel, or a source archive when the lock file pins no wheel. */
+  archive: 'wheel' | 'source archive';
+  /** Absolute path of the unpacked, read-only source in the engine's cache. */
+  path: string;
+  /** What the reviewer should know about the source, such as that only a source archive exists. */
+  note?: string;
+  /** The version of the prompt that judged the claim against this source. */
+  promptVersion: string;
+  /** Who judged the claim against this source. */
+  stamp: AgentStamp;
+}
 
 /**
  * A statement about how code or a library behaves (the glossary's claim),

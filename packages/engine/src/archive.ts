@@ -2,6 +2,7 @@ import { chmod, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 import { createGunzip } from 'node:zlib';
 import { Readable } from 'node:stream';
+import { readZipEntries } from './zip.js';
 
 /** What extracting one archive wrote and what it left out. */
 export interface ExtractedArchive {
@@ -98,20 +99,86 @@ function paxRecords(body: Buffer): { path?: string; size?: number } {
 }
 
 /**
- * The entry's path inside the copy: the single top-level folder GitHub
- * wraps every archive in is dropped. Undefined for the folder itself and
- * for any path that is absolute or climbs out of the copy.
+ * The entry's path inside the copy, with its first `dropped` folders left
+ * out: a GitHub archive wraps every file in one top-level folder, and so
+ * does a library's source archive. Undefined for those folders themselves
+ * and for any path that is absolute or climbs out of the copy.
  */
-function copyPath(entryPath: string): string | undefined {
+function archivePath(entryPath: string, dropped: number): string | undefined {
   if (entryPath.startsWith('/')) return undefined;
   const segments = entryPath.split('/').filter((segment) => segment !== '' && segment !== '.');
-  if (segments.length < 2 || segments.includes('..')) return undefined;
-  return segments.slice(1).join('/');
+  if (segments.length <= dropped || segments.includes('..')) return undefined;
+  return segments.slice(dropped).join('/');
+}
+
+/** How much an archive may unpack to; far above any real repository or library. */
+export interface ExtractLimits {
+  /** The most bytes all regular files together may take. */
+  maxBytes?: number;
+}
+
+/** The default cap on what one archive unpacks to: 1 GiB. */
+const MAX_UNPACKED_BYTES = 1024 * 1024 * 1024;
+
+/** Where an archive's entries land: the root, its folders, and what was written. */
+interface Destination {
+  root: string;
+  dirs: Set<string>;
+  result: ExtractedArchive;
+  /** Bytes still allowed before the archive is refused. */
+  budget: number;
+}
+
+function destination(dir: string, limits: ExtractLimits): Destination {
+  const root = resolve(dir);
+  return { root, dirs: new Set([root]), result: { files: 0, skipped: [] }, budget: limits.maxBytes ?? MAX_UNPACKED_BYTES };
+}
+
+const TOO_LARGE = 'the archive unpacks to more than the companion allows; nothing of it is kept';
+
+/**
+ * Writes one regular file at its path inside the root, read-only and never
+ * executable; a path that would leave the root is skipped. Throws once the
+ * archive's files exceed the byte budget.
+ */
+async function writeEntry(into: Destination, entryPath: string, relative: string | undefined, content: Uint8Array): Promise<void> {
+  const { root, dirs, result } = into;
+  const target = relative === undefined ? undefined : resolve(root, relative);
+  if (target === undefined || !target.startsWith(root + sep)) {
+    result.skipped.push(`${entryPath}: path leaves the copy`);
+    return;
+  }
+  into.budget -= content.length;
+  if (into.budget < 0) throw new Error(TOO_LARGE);
+
+  await mkdir(dirname(target), { recursive: true });
+  for (let parent = dirname(target); parent.startsWith(root + sep); parent = dirname(parent)) {
+    dirs.add(parent);
+  }
+  try {
+    await writeFile(target, content, { mode: READ_ONLY_FILE, flag: 'wx' });
+    result.files++;
+  } catch (error) {
+    // Two paths that differ only in case land on one file on a
+    // case-insensitive file system; the first one wins.
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    result.skipped.push(`${relative}: another entry already wrote this path`);
+  }
+}
+
+/** Makes every folder written read-only, deepest first, so none turns read-only before its children. */
+async function sealFolders(into: Destination): Promise<ExtractedArchive> {
+  const ordered = [...into.dirs].sort((a, b) => b.split(sep).length - a.split(sep).length);
+  for (const directory of ordered) {
+    await chmod(directory, READ_ONLY_DIR);
+  }
+  return into.result;
 }
 
 /**
  * Extracts a gzipped tarball of one commit, as GitHub serves it, into
- * `dir` as a read-only copy.
+ * `dir` as a read-only copy. A library's source archive is laid out the
+ * same way, under one top-level folder.
  *
  * Only regular files are written, each read-only and never executable;
  * symbolic links, hard links and special files are skipped and never
@@ -121,33 +188,53 @@ function copyPath(entryPath: string): string | undefined {
 export async function extractTarball(
   archive: AsyncIterable<Uint8Array>,
   dir: string,
+  limits: ExtractLimits = {},
 ): Promise<ExtractedArchive> {
-  const root = resolve(dir);
+  const into = destination(dir, limits);
   const source = Readable.from(archive);
   const gunzip = createGunzip();
   source.on('error', (error) => gunzip.destroy(error));
   const reader = byteReader(source.pipe(gunzip));
   try {
-    const directories = await extractEntries(reader, root);
-    // Deepest first, so no directory turns read-only before its children.
-    const ordered = [...directories.dirs].sort((a, b) => b.split(sep).length - a.split(sep).length);
-    for (const directory of ordered) {
-      await chmod(directory, READ_ONLY_DIR);
-    }
-    return directories.result;
+    await extractEntries(reader, into);
+    return await sealFolders(into);
   } finally {
     await reader.close();
     source.destroy();
   }
 }
 
-/** Writes every entry of the tar stream; returns the directories it made. */
-async function extractEntries(
-  { read }: ByteReader,
-  root: string,
-): Promise<{ result: ExtractedArchive; dirs: Set<string> }> {
-  const result: ExtractedArchive = { files: 0, skipped: [] };
-  const dirs = new Set<string>([root]);
+/**
+ * Extracts a ZIP archive, such as a Python wheel, into `dir` as a
+ * read-only copy, keeping every path as the archive has it. The same
+ * rules as {@link extractTarball} hold: regular files only, each
+ * read-only; symbolic links and special files skipped, never followed;
+ * paths that would leave `dir` refused; the folders read-only at the end.
+ */
+export async function extractZip(bytes: Uint8Array, dir: string, limits: ExtractLimits = {}): Promise<ExtractedArchive> {
+  const into = destination(dir, limits);
+  const entries = readZipEntries(bytes);
+  const declared = entries.reduce((sum, entry) => sum + entry.size, 0);
+  if (declared > into.budget) throw new Error(TOO_LARGE);
+  await mkdir(into.root, { recursive: true });
+  for (const entry of entries) {
+    if (entry.name.endsWith('/')) continue;
+    const type = entry.unixMode & FILE_TYPE_BITS;
+    if (type !== 0 && type !== REGULAR_FILE) {
+      into.result.skipped.push(`${entry.name}: not a regular file`);
+      continue;
+    }
+    await writeEntry(into, entry.name, archivePath(entry.name, 0), entry.read());
+  }
+  return sealFolders(into);
+}
+
+/** The file-type bits of a Unix mode, and the value that marks a regular file. */
+const FILE_TYPE_BITS = 0o170000;
+const REGULAR_FILE = 0o100000;
+
+/** Writes every entry of the tar stream. */
+async function extractEntries({ read }: ByteReader, into: Destination): Promise<void> {
   let pending: { path?: string; size?: number } = {};
 
   for (;;) {
@@ -179,36 +266,13 @@ async function extractEntries(
     pending = {};
 
     if (type === '5') continue;
-    const relative = copyPath(entryPath);
+    const relative = archivePath(entryPath, 1);
     if (type !== '0' && type !== '\0') {
-      result.skipped.push(`${relative ?? entryPath}: not a regular file`);
+      into.result.skipped.push(`${relative ?? entryPath}: not a regular file`);
       continue;
     }
-    if (relative === undefined) {
-      result.skipped.push(`${entryPath}: path leaves the copy`);
-      continue;
-    }
-    const target = resolve(root, relative);
-    if (!target.startsWith(root + sep)) {
-      result.skipped.push(`${entryPath}: path leaves the copy`);
-      continue;
-    }
-
-    await mkdir(dirname(target), { recursive: true });
-    for (let parent = dirname(target); parent.startsWith(root + sep); parent = dirname(parent)) {
-      dirs.add(parent);
-    }
-    try {
-      await writeFile(target, content, { mode: READ_ONLY_FILE, flag: 'wx' });
-      result.files++;
-    } catch (error) {
-      // Two paths that differ only in case land on one file on a
-      // case-insensitive file system; the first one wins.
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      result.skipped.push(`${relative}: another entry already wrote this path`);
-    }
+    await writeEntry(into, entryPath, relative, content);
   }
-  return { result, dirs };
 }
 
 /**

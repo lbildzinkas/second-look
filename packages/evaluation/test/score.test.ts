@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { parseDiff } from '@second-look/engine';
 import type { Claim, ClaimVerdict, NoiseAssessment, Part } from '@second-look/engine';
 import type { ExpectedClaim, ExpectedResults } from '../src/case.js';
-import { pressFetches } from '../src/claims.js';
 import type { PressedClaim } from '../src/claims.js';
 import { addTallies, sameClaim, scoresOf, tallyCase, tallyFinding, tallyJudging, tallyStory, verdictBeforeFetch } from '../src/score.js';
 
@@ -183,13 +182,14 @@ describe('the claim checks', () => {
   });
 
   it('scores a claim the review found, refuted with evidence behind a pressed fetch', () => {
-    const pressed = pressFetches([
+    const pressed: PressedClaim[] = [
       {
         text: CLAIM.text,
         verdict: { kind: 'refuted', evidence: CLAIM.verdict!.evidence },
         fetchOffer: OFFER,
+        pressedFetch: OFFER,
       },
-    ]);
+    ];
     const scores = scoresOf(tallyCase(DIFF, expecting([CLAIM]), parts({}), pressed));
     expect(byName(scores)).toMatchObject({
       'claims-found': 1,

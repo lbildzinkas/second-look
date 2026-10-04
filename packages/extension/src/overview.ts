@@ -313,15 +313,24 @@ export function claimWhere(claim: Claim): string {
 
 /**
  * A checked verdict's evidence source, reason, citations, the library it
- * needs and why the engine dropped it, when it did; nothing for a claim
- * not checked.
+ * needs — with the library fetch offered for it, or the library source it
+ * was judged against — and why the engine dropped it, when it did;
+ * nothing for a claim not checked.
  */
 function verdictDetail(claim: Claim): string {
   const { verdict } = claim;
   if (verdict.kind === 'not checked') return '';
   const lines = [`${verdict.source}: ${verdict.reason}`];
   for (const cited of verdict.evidence) lines.push(`${cited.path}:${cited.line} — ${cited.quote}`);
-  if (verdict.needsLibrary !== undefined) lines.push(`needs the source of ${verdict.needsLibrary}, which the companion does not have`);
+  const { library, libraryFetch: offer } = verdict;
+  if (library !== undefined) {
+    lines.push(`judged against the source of ${library.library} ${library.pinnedVersion}, as ${library.pinnedBy} pins it (${library.file})`);
+    if (library.note !== undefined) lines.push(library.note);
+  } else if (offer !== undefined) {
+    lines.push(`library fetch offered: ${offer.reason} Press it on the finding's thread.`);
+  } else if (verdict.needsLibrary !== undefined) {
+    lines.push(`needs the source of ${verdict.needsLibrary}, which the companion does not have`);
+  }
   if (verdict.recheck !== undefined) lines.push(`dropped to unverifiable: ${verdict.recheck}`);
   return lines.map((line) => `<div class="why">${escapeHtml(line)}</div>`).join('');
 }

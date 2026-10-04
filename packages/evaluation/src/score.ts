@@ -552,6 +552,11 @@ export function scoresOf(tally: Tally): Score[] {
   return scores;
 }
 
+/** Whether a score is one of the claim checks: found, a verdict kind, evidence, or fetch offered. */
+export function isClaimCheck(name: string): boolean {
+  return ['claims-found', 'claims-evidence', 'claims-fetch-offered'].includes(name) || name.startsWith('claims-verdict:');
+}
+
 /** The claim checks: found, verdict per kind, evidence, and fetch offered. */
 function claimScores(claims: ClaimTally): Score[] {
   if (claims.expected === 0) return [];

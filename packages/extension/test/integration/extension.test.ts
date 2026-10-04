@@ -9,7 +9,9 @@ import {
   ADD_COMMENT_COMMAND,
   COMMENT_ON_PART_COMMAND,
   DISCARD_COMMENT_COMMAND,
+  FETCH_LIBRARY_COMMAND,
   OPEN_ALL_PARTS_COMMAND,
+  OPEN_LIBRARY_EVIDENCE_COMMAND,
   OPEN_OVERVIEW_COMMAND,
   OPEN_PART_COMMAND,
   REVIEW_COMMAND,
@@ -18,9 +20,9 @@ import {
   WHY_THIS_MATTERS_COMMAND,
   activate,
 } from '../../src/extension.js';
-import { changeUri } from '../../src/change-copies.js';
+import { changeUri, libraryUri } from '../../src/change-copies.js';
 import { SEND_REVIEW_VIEW_TYPE } from '../../src/send-page.js';
-import { claimsResult, judgedResult, mixedResult, storyResult } from '../results.js';
+import { claimsResult, fetchedResult, judgedResult, mixedResult, offeredResult, storyResult } from '../results.js';
 import { OVERVIEW_VIEW_TYPE } from '../../src/overview.js';
 import {
   Range,
@@ -51,6 +53,8 @@ interface FakeEngineOptions {
   answerDelayMs?: number;
   /** How long the engine waits before answering sendReview. */
   sendDelayMs?: number;
+  /** The result the engine answers a library fetch with. */
+  fetchResult?: unknown;
 }
 
 function fakeEngine(options: FakeEngineOptions): ChildProcessWithoutNullStreams {
@@ -72,6 +76,7 @@ function fakeEngine(options: FakeEngineOptions): ChildProcessWithoutNullStreams 
       ...(options.sendDelayMs !== undefined
         ? { FAKE_ENGINE_SEND_DELAY_MS: String(options.sendDelayMs) }
         : {}),
+      ...(options.fetchResult !== undefined ? { FAKE_ENGINE_FETCH_RESULT: JSON.stringify(options.fetchResult) } : {}),
       FAKE_ENGINE_LOG: join(workDir, options.logName),
     },
   });
@@ -97,6 +102,8 @@ async function reviewWithFakeEngine(options: FakeEngineOptions): Promise<StubTre
     DISCARD_COMMENT_COMMAND,
     OPEN_OVERVIEW_COMMAND,
     WHY_THIS_MATTERS_COMMAND,
+    FETCH_LIBRARY_COMMAND,
+    OPEN_LIBRARY_EVIDENCE_COMMAND,
   ]);
 
   stub.inputBoxResult = PR_URL;
@@ -211,6 +218,8 @@ describe('activating the companion', () => {
       DISCARD_COMMENT_COMMAND,
       OPEN_OVERVIEW_COMMAND,
       WHY_THIS_MATTERS_COMMAND,
+      FETCH_LIBRARY_COMMAND,
+      OPEN_LIBRARY_EVIDENCE_COMMAND,
     ]);
     expect(stub.treeViews.map((view) => view.id)).toEqual([REVIEW_TREE_VIEW]);
     expect(stub.fileSystemProviders.map((entry) => entry.scheme)).toEqual(['second-look-change']);
@@ -754,6 +763,35 @@ describe('the overview', () => {
       [head('src/settings.ts').toString(), undefined, 'Unverifiable claim'],
     ]);
     expect(overview().webview.html).toContain('<span class="verdict finding">refuted</span>');
+  });
+
+  it("fetches a finding's library only when pressed, then shows the claim judged against it and opens the cited library file read-only", async () => {
+    const fetched = fetchedResult();
+    await reviewWithFakeEngine({ result: offeredResult(), fetchResult: fetched, logName: 'fetch-library.log' });
+    const findings = stub.commentControllers.find((controller) => controller.id === 'second-look.findings')!;
+    const offered = (findings.threads[1]!.comments[0]!.body as { value: string }).value;
+    expect(offered).toContain('command:second-look.fetchLibrary');
+    const logged = (): { method: string; params: unknown }[] =>
+      readFileSync(join(workDir, 'fetch-library.log'), 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line) as { method: string; params: unknown });
+    expect(logged().map((request) => request.method)).toEqual(['initialize', 'review']);
+
+    await registeredCommands().get(FETCH_LIBRARY_COMMAND)!(2);
+
+    expect(logged().at(-1)).toMatchObject({ method: 'fetchLibrary', params: { url: PR_URL, claim: 2 } });
+    const judged = (findings.threads[1]!.comments[0]!.body as { value: string }).value;
+    expect(judged).toContain('**Refuted** · evidence source: library source at the pinned version');
+    expect(judged).toContain('command:second-look.openLibraryEvidence');
+
+    await registeredCommands().get(OPEN_LIBRARY_EVIDENCE_COMMAND)!(2, 0);
+
+    const library = (fetched.claims!.claims[2]!.verdict as { library: Parameters<typeof libraryUri>[0] }).library;
+    expect(stub.executedCommands.at(-1)).toEqual({
+      id: 'vscode.open',
+      args: [libraryUri(library, 'requests/models.py'), { selection: new Range(1020, 0, 1020, 0), preview: true }],
+    });
+    const content = new TextEncoder().encode('if 400 <= self.status_code < 500:\n');
+    stub.files.set(`${library.path}/requests/models.py`, content);
+    await expect(workspace.fs.readFile(libraryUri(library, 'requests/models.py'))).resolves.toEqual(content);
   });
 
   it('opens again from its command once closed, and asks for a review before there is one', async () => {

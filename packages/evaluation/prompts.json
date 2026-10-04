@@ -24,6 +24,11 @@
       "id": "verdicts",
       "version": "1",
       "files": ["packages/engine/src/verdicts.ts"]
+    },
+    {
+      "id": "library-verdicts",
+      "version": "1",
+      "files": ["packages/engine/src/library-verdicts.ts"]
     }
   ]
 }
