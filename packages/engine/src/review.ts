@@ -136,7 +136,7 @@ export interface ReviewStage {
   running: string;
   /** The stage ends within this many milliseconds. */
   timeoutMs: number;
-  /** The result so far: the plain pass's, then the grouping, ranking and story stages' in turn. */
+  /** The result so far: the plain pass's, then the grouping, ranking, story and claims stages' in turn. */
   result: ReviewResult;
 }
 
