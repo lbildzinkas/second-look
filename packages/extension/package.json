@@ -147,7 +147,7 @@
             "claude-code"
           ],
           "default": "pi",
-          "description": "The installed coding agent the companion drives for every agent pass of a review: Pi or Claude Code. The choice travels with each review request, so switching it and re-running a review runs the next review's passes — grouping and ranking — on the new agent, and every agent-produced result is stamped with it. The status bar shows the agent in use. An agent that is missing, or a version too old for the companion's lockdown, is never run: the engine's agent probe reports what is missing."
+          "description": "The installed coding agent the companion drives for every agent pass of a review: Pi or Claude Code. The choice travels with each review request, so switching it and re-running a review needs no engine restart and stamps every agent-produced result with the new agent: the grouping pass always runs on it, and the ranking pass runs on it only where the agent, model and effort have an evaluation whose ranking matched or beat the plain one — each result's ranking says which ranking is shown and why. The status bar shows the agent in use. An agent that is missing, or a version too old for the companion's lockdown, is never run: the engine's agent probe reports what is missing."
         },
         "second-look.agentModel": {
           "type": "string",
