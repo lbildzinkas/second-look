@@ -115,8 +115,10 @@ export async function run(): Promise<void> {
   });
 
   try {
-    // The installed package is the extension under test, the only one
-    // the editor has.
+    // The installed package is the code under test: the launch loaded
+    // the folder the install created as the development extension the
+    // editor's test runner requires, so what runs here is the packaged
+    // code, not the repository's source tree.
     const extension = vscode.extensions.getExtension(EXTENSION_ID);
     ok(extension, `the ${EXTENSION_ID} extension is not installed from the package`);
     await withTimeout(extension.activate(), `activation of ${EXTENSION_ID}`);

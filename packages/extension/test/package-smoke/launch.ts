@@ -9,18 +9,23 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { trustCompanion } from '../real-host/launch.js';
 
 /**
- * Launches a clean, downloaded VS Code with nothing but the packaged
- * extension, installed from its .vsix file, and runs the package smoke
- * test inside it. CI calls this on macOS, Linux and Windows after a
- * build job has packaged the extension and this job has downloaded the
- * artifact; no local check runs it, because it opens a real editor
- * window.
+ * Launches a clean, downloaded VS Code with the packaged extension,
+ * installed from its .vsix file, and runs the package smoke test inside
+ * it. CI calls this on macOS, Linux and Windows after a build job has
+ * packaged the extension and this job has downloaded the artifact; no
+ * local check runs it, because it opens a real editor window.
  *
- * The launch goes through `runVSCodeCommand` rather than `runTests`,
- * because `runTests` always loads a development extension — and the
- * development copy would take the installed package's place, defeating
- * the test. The flags below are `runTests`' own launch recipe minus the
- * development path.
+ * The editor's test runner only starts when a development extension is
+ * named alongside `--extensionTestsPath`: without one it silently opens
+ * a normal window, never runs the tests and never exits — a stall, not
+ * a failure. The launch therefore names the installed package's own
+ * folder as that development path, so the code under test is the
+ * installed package, not the repository's source tree. It goes through
+ * `runVSCodeCommand` rather than `runTests` because `runTests` would
+ * point the development path at the workspace's extension folder. Every
+ * step is bounded, and the editor's output is inherited into this
+ * process's streams, so a stall fails the check naming itself and shows
+ * the editor's own log instead of hanging until cancellation.
  */
 
 /**
@@ -45,7 +50,41 @@ export function findPackage(repoRoot: string, extensionRoot: string): string {
   );
 }
 
-/** The launch flags `runTests` uses, minus the development path it requires. */
+/**
+ * Where the install step puts extensions. The launch passes this
+ * explicitly, so the folder it later loads as the development path is
+ * the one it installed into, whatever the tool's default would be.
+ */
+export function smokeExtensionsDir(repoRoot: string): string {
+  return join(repoRoot, '.vscode-test', 'smoke-extensions');
+}
+
+/**
+ * The installed package's folder: `code --install-extension` names it
+ * `<publisher>.<name>-<version>` inside the extensions folder. Throws a
+ * plain error when the install left no such folder, because the test
+ * launch has nothing to load otherwise.
+ */
+export function installedPackageFolder(
+  extensionsDir: string,
+  publisher: string,
+  name: string,
+): string {
+  const prefix = `${publisher}.${name}-`;
+  const found = existsSync(extensionsDir)
+    ? readdirSync(extensionsDir)
+        .filter((entry) => entry.startsWith(prefix))
+        .sort()
+    : [];
+  if (found.length === 0) {
+    throw new Error(
+      `installing the package created no ${prefix}<version> folder in ${extensionsDir}`,
+    );
+  }
+  return join(extensionsDir, found[found.length - 1]!);
+}
+
+/** The launch flags `runTests` uses; the development path is added at launch. */
 const TEST_LAUNCH_FLAGS: readonly string[] = [
   // https://github.com/microsoft/vscode/issues/84238
   '--no-sandbox',
@@ -105,41 +144,52 @@ async function main(): Promise<void> {
     };
     const repoRoot = join(extensionRoot, '..', '..');
     const vsixPath = findPackage(repoRoot, extensionRoot);
+    const extensionsDir = smokeExtensionsDir(repoRoot);
 
     // The same download runTests would make, patched before the launch:
-    // later commands reuse the copy already in the cache. The install
-    // and the test launch then share the cache's extensions folder, so
-    // the editor the test runs in is the one the package was installed
-    // into. Every step below is bounded, so a stalled one fails this
-    // launcher naming itself instead of hanging the check.
+    // later commands reuse the copy already in the cache. Every step
+    // below is bounded and inherits its streams, so a stalled one fails
+    // this launcher naming itself, with the editor's own log visible.
     const vscodeExecutablePath = await withStepTimeout(
       'downloading VS Code',
       () => downloadAndUnzipVSCode(),
     );
     trustCompanion(vscodeExecutablePath, `${manifest.publisher}.${manifest.name}`);
     await withStepTimeout('installing the extension package into VS Code', (signal) =>
-      runVSCodeCommand(['--install-extension', vsixPath], { spawn: { signal } }),
+      runVSCodeCommand(
+        ['--install-extension', vsixPath, `--extensions-dir=${extensionsDir}`],
+        { spawn: { signal, stdio: 'inherit' } },
+      ),
     );
+
+    // The folder the install created: the packaged code the test run
+    // loads as its development extension.
+    const installedFolder = installedPackageFolder(
+      extensionsDir,
+      manifest.publisher,
+      manifest.name,
+    );
+
     const exitCode = await withStepTimeout(
       'running the package smoke test in VS Code',
       (signal) =>
         runVSCodeCommand(
           [
             ...TEST_LAUNCH_FLAGS,
+            `--extensions-dir=${extensionsDir}`,
+            `--extensionDevelopmentPath=${installedFolder}`,
             `--extensionTestsPath=${fileURLToPath(new URL('./run.js', import.meta.url))}`,
             // The built-in GitHub sign-in must not offer itself: the test
             // serves the session through its own authentication provider.
             '--disable-extension=vscode.github-authentication',
           ],
-          { spawn: { signal } },
+          { spawn: { signal, stdio: 'inherit' } },
         ).then(
           () => 0,
-          (error: { stdout?: string; stderr?: string; exitCode?: number }) => {
-            // A test failure reads as the editor exiting nonzero; the
-            // captured streams carry the test's own output.
-            console.error(error.stdout ?? '', error.stderr ?? '');
-            return error.exitCode ?? 1;
-          },
+          (error: { exitCode?: number }) =>
+            // A test failure reads as the editor exiting nonzero; its
+            // output is already in this process's inherited streams.
+            error.exitCode ?? 1,
         ),
     );
     process.exitCode = exitCode;
