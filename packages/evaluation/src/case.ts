@@ -99,6 +99,12 @@ export interface ExpectedClaim {
       line: number;
       source: EvidenceSource;
     };
+    /**
+     * Other lines that prove the verdict just as well, from the same
+     * evidence source, such as the same default declared again where the
+     * change's own type declares it; a first citation at any of them counts.
+     */
+    otherEvidence?: { file: string; line: number }[];
   };
   /** That the companion offers a library fetch before checking this claim. */
   libraryFetch?: true;

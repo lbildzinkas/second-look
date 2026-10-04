@@ -418,6 +418,12 @@ describe('runEvaluation with the library verdicts prompt', () => {
     expect(existsSync(join(folder, 'libraries', 'canary-python'))).toBe(false);
   });
 
+  it("accepts the case's other evidence line, the same default where the change's own type declares it", async () => {
+    const { results } = await runVerdicts('canary-python', libraryAgent({ file: 'httpx/_client.py', line: 643, quote: 'follow_redirects: bool = False,' }), ['library-verdicts']);
+
+    expect(rowsOf(results.rows, 'fake', 'claims-evidence')['canary-python']).toBe(1);
+  });
+
   it('fails the evidence check when the citation is not in the library at the pinned version', async () => {
     const { results } = await runVerdicts('canary-python', libraryAgent({ file: 'httpx/_client.py', line: 170, quote: 'follow_redirects: bool = False,' }), ['library-verdicts']);
 

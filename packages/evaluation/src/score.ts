@@ -270,17 +270,18 @@ function matchesPin(wanted: ExpectedClaim, fetch: LibraryFetchOffer | undefined)
 
 /**
  * Whether a reported claim's verdict carries the expected evidence: the
- * same file, line and source, with library source counting only behind a
- * pressed fetch of the pinned library, since that is the only way the
- * check may read it (ADR 0003).
+ * same file and line, or one of the case's other lines, and the same
+ * source, with library source counting only behind a pressed fetch of the
+ * pinned library, since that is the only way the check may read it (ADR
+ * 0003).
  */
 function evidenceMatches(wanted: ExpectedClaim, got: PressedClaim): boolean {
   const evidence = got.verdict?.evidence;
   if (!evidence || !wanted.verdict) return false;
   const expected = wanted.verdict.evidence;
+  const places = [expected, ...(wanted.verdict.otherEvidence ?? [])];
   if (
-    evidence.file !== expected.file ||
-    evidence.line !== expected.line ||
+    !places.some((place) => evidence.file === place.file && evidence.line === place.line) ||
     evidence.source !== expected.source
   ) {
     return false;
