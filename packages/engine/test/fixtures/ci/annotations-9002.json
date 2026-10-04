@@ -10,5 +10,17 @@
     "title": "no-unused-vars",
     "message": "'unused' is assigned a value but never used.",
     "raw_details": null
+  },
+  {
+    "path": ".github/workflows/lint.yml",
+    "blob_href": "https://github.com/example-org/example-repo/blob/f00dcafe1234567890abcdef1234567890abcdef/.github/workflows/lint.yml",
+    "start_line": null,
+    "start_column": null,
+    "end_line": null,
+    "end_column": null,
+    "annotation_level": "notice",
+    "title": null,
+    "message": "The workflow sets no timeout-minutes.",
+    "raw_details": null
   }
 ]

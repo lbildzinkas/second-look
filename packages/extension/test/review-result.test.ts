@@ -484,6 +484,10 @@ describe('isReviewResult for the pipeline and CI', () => {
     fellBack.claims.outcome = 'fell back';
     fellBack.claims.claims = fellBack.claims.claims.slice(0, 1);
     expect(isReviewResult(fellBack)).toBe(true);
+    // A file-level annotation, whose lines GitHub leaves null, is listed like any other.
+    const fileLevel = shown();
+    fileLevel.ci.checks[1]!['annotations'] = [{ path: '.github/workflows/lint.yml', level: 'notice', message: 'The workflow sets no timeout-minutes.' }];
+    expect(isReviewResult(fileLevel)).toBe(true);
   });
 
   it('rejects a missing or malformed pipeline report, malformed CI, a pipeline claim out of place, or CI log evidence mislabelled', () => {

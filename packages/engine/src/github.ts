@@ -120,14 +120,20 @@ export class GitHubClient {
       check_run_id: checkRunId,
       per_page: MAX_ANNOTATIONS,
     });
-    return data.map((annotation) => ({
-      path: annotation.path,
-      startLine: annotation.start_line,
-      endLine: annotation.end_line,
-      level: annotation.annotation_level === 'failure' || annotation.annotation_level === 'warning' ? annotation.annotation_level : 'notice',
-      message: annotation.message ?? '',
-      ...(annotation.title ? { title: annotation.title } : {}),
-    }));
+    return data.map((annotation) => {
+      // The bundled API description types an annotation's lines as always
+      // present; GitHub leaves both null on a file-level annotation.
+      const startLine = annotation.start_line as number | null;
+      const endLine = annotation.end_line as number | null;
+      return {
+        path: annotation.path,
+        ...(startLine === null ? {} : { startLine }),
+        ...(endLine === null ? {} : { endLine }),
+        level: annotation.annotation_level === 'failure' || annotation.annotation_level === 'warning' ? annotation.annotation_level : 'notice',
+        message: annotation.message ?? '',
+        ...(annotation.title ? { title: annotation.title } : {}),
+      };
+    });
   }
 
   /**

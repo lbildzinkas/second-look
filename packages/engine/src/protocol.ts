@@ -236,8 +236,10 @@ export interface CheckRun {
 /** One annotation a check run left on a file. */
 export interface CheckAnnotation {
   path: string;
-  startLine: number;
-  endLine: number;
+  /** The 1-based line it starts on; absent on a file-level annotation. */
+  startLine?: number;
+  /** The 1-based line it ends on; absent on a file-level annotation. */
+  endLine?: number;
   level: 'notice' | 'warning' | 'failure';
   message: string;
   title?: string;

@@ -425,9 +425,14 @@ function checkItem(check: CheckRun): string {
   const tone = checkFailed(check.conclusion) ? 'failed' : check.conclusion === 'success' ? 'passed' : 'other';
   const annotations = check.annotations
     .map((annotation) => {
-      const lines = annotation.endLine > annotation.startLine ? `${annotation.startLine}–${annotation.endLine}` : `${annotation.startLine}`;
+      const lines =
+        annotation.startLine === undefined
+          ? ''
+          : annotation.endLine !== undefined && annotation.endLine > annotation.startLine
+            ? `:${annotation.startLine}–${annotation.endLine}`
+            : `:${annotation.startLine}`;
       const title = annotation.title === undefined ? '' : `${annotation.title}: `;
-      return `<div class="why">${escapeHtml(`${annotation.level} · ${annotation.path}:${lines} — ${title}${annotation.message}`)}</div>`;
+      return `<div class="why">${escapeHtml(`${annotation.level} · ${annotation.path}${lines} — ${title}${annotation.message}`)}</div>`;
     })
     .join('');
   const { log } = check;

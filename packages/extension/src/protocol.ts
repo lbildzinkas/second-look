@@ -522,8 +522,8 @@ function isCheckRun(value: unknown): boolean {
       (annotation) =>
         isRecord(annotation) &&
         isString(annotation['path']) &&
-        isNumber(annotation['startLine']) &&
-        isNumber(annotation['endLine']) &&
+        (annotation['startLine'] === undefined || isNumber(annotation['startLine'])) &&
+        (annotation['endLine'] === undefined || isNumber(annotation['endLine'])) &&
         isOneOf(annotation['level'], ['notice', 'warning', 'failure'] as const) &&
         isString(annotation['message']) &&
         isOptionalString(annotation['title']),

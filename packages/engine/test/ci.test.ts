@@ -72,6 +72,7 @@ describe('readCi against recorded responses', () => {
     expect(test!.log!.lines).toContain('AssertionError: expected 3000 to be 30');
     expect(lint!.annotations).toEqual([
       { path: 'src/fresh.ts', startLine: 3, endLine: 4, level: 'warning', message: "'unused' is assigned a value but never used.", title: 'no-unused-vars' },
+      { path: '.github/workflows/lint.yml', level: 'notice', message: 'The workflow sets no timeout-minutes.' },
     ]);
     // A check that passed has no log, and a failed check of another app has none to read.
     expect(lint!.log).toBeUndefined();
@@ -83,6 +84,12 @@ describe('readCi against recorded responses', () => {
     expect(logs.map((request) => request.url)).toEqual([`${API}/actions/jobs/9001/logs`]);
     // A check run that left no annotations is not asked for any.
     expect(transport.requests.some((request) => request.url.includes('/check-runs/9003/annotations'))).toBe(false);
+  });
+
+  it('lists a file-level annotation, whose lines GitHub leaves null, without line fields', async () => {
+    const transport = fixtureFetch({ ...pull42(), ci: true });
+    const ci = await readCi(new GitHubClient({ token: 'test-token', fetch: transport.fetch }), ref, HEAD, MERGE);
+    expect(ci.checks[1]!.annotations).toContainEqual({ path: '.github/workflows/lint.yml', level: 'notice', message: 'The workflow sets no timeout-minutes.' });
   });
 
   it('gives the failed logs that have lines their ids, for the verdicts prompt', async () => {

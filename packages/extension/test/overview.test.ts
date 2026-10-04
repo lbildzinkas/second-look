@@ -220,6 +220,15 @@ describe('the pipeline and CI on the overview', () => {
     expect(html).not.toContain('<img src=x>');
   });
 
+  it('lists a file-level annotation without a line', () => {
+    const shown = pipelineResult();
+    shown.ci!.checks[1]!.annotations = [{ path: '.github/workflows/lint.yml', level: 'notice', message: 'The workflow sets no timeout-minutes.' }];
+    const html = overviewHtml({ result: shown }, 'N');
+    expect(html).toContain(
+      '<li><span class="check passed">success</span> check / lint<div class="why">notice · .github/workflows/lint.yml — The workflow sets no timeout-minutes.</div></li>',
+    );
+  });
+
   it('shows a stale report as not trusted, and says when no report or CI was read', () => {
     const shown = pipelineResult();
     const stale: ReviewResult = {
