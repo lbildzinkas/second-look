@@ -10,6 +10,7 @@ import {
   type Part,
   type ReviewResult,
 } from '@second-look/engine';
+import { commentLocation } from './comments.js';
 
 /** One part as the tree shows it. */
 export interface TreePart {
@@ -146,10 +147,7 @@ export function pendingReviewSection(comments: readonly Comment[]): TreeSection 
     label: PENDING_REVIEW,
     tooltip: 'The comments you wrote, sent to GitHub as one review on submit.',
     parts: comments.map((comment) => ({
-      label:
-        comment.kind === 'line'
-          ? `${comment.path}:${comment.line}`
-          : `${comment.path} (part)`,
+      label: commentLocation(comment),
       description: preview(comment.body),
       tooltip: comment.body,
       kind: 'comment' as const,

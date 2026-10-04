@@ -9,7 +9,7 @@ The **ranked tree** throughout, with a **Send review page** for submitting the r
 - The ranked tree is the accepted base surface: a side-bar tree of parts in importance order with reviewed checkboxes and badges, VS Code's own multi-file diff over read-only files, findings as comment threads on the exact lines, and an overview tab with the story, the acceptance criteria and the checks.
 - Sending the review is the one moment taken from another option, the story reader: a page that lists every draft comment for one last pass before the reviewer submits them as one GitHub review.
 
-Sending currently ships as an interim quick pick — the kind, then the overall comment — until the Send review page lands; the page above stays the recorded target.
+Sending ships as the **Send review page** — the interim quick pick it first shipped as, the kind then the overall comment, was replaced by the page.
 
 ## Main screens
 

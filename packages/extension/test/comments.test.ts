@@ -274,6 +274,48 @@ describe('ReviewComments', () => {
     expect(stub.commentControllers[0]!.threads).not.toContain(outside);
   });
 
+  it('rewrites one gathered comment, as the Send review page edits it', () => {
+    const result = mixedResult();
+    const comments = new ReviewComments();
+    comments.setReview(result);
+    const thread = threadOn(docs(result, 'src/retry.py').head, 4);
+    comments.add(replyOf(thread, 'first take'));
+    const gathered = comments.pending()[0]!;
+
+    expect(comments.editBody(gathered, 'tightened on the page')).toBe(true);
+
+    // The comment object itself is rewritten, so a hold on it stays valid.
+    expect(comments.pending()).toEqual([
+      { kind: 'line', path: 'src/retry.py', side: 'head', line: 5, body: 'tightened on the page' },
+    ]);
+    expect(gathered.body).toBe('tightened on the page');
+    expect(thread.comments[0]).toMatchObject({ body: 'tightened on the page' });
+  });
+
+  it('drops one gathered comment by the comment, as the Send review page discards it', () => {
+    const result = mixedResult();
+    const comments = new ReviewComments();
+    comments.setReview(result);
+    const thread = threadOn(docs(result, 'src/retry.py').head, 4);
+    comments.add(replyOf(thread, 'gone from the page'));
+    const gathered = comments.pending()[0]!;
+
+    expect(comments.remove(gathered)).toBe(true);
+
+    expect(comments.pending()).toEqual([]);
+    expect(stub.commentControllers[0]!.threads).not.toContain(thread);
+  });
+
+  it('reports a comment no longer gathered as unknown to edit and drop', () => {
+    const result = mixedResult();
+    const comments = new ReviewComments();
+    comments.setReview(result);
+    const stray: Comment = { kind: 'part', path: 'elsewhere.ts', body: 'never gathered' };
+
+    expect(comments.editBody(stray, 'edited')).toBe(false);
+    expect(comments.remove(stray)).toBe(false);
+  });
+
   it('empties on a new review and on clear, disposing the threads', () => {
     const result = mixedResult();
     const comments = new ReviewComments();
