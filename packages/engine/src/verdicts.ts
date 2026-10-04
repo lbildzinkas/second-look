@@ -43,7 +43,7 @@ import { UNTRUSTED_INPUT_RULE, untrustedBlock } from './untrusted.js';
 export const VERDICTS_PROMPT_ID = 'verdicts';
 
 /** The verdicts prompt's version. */
-export const VERDICTS_PROMPT_VERSION = '2';
+export const VERDICTS_PROMPT_VERSION = '3';
 
 /** The evidence sources the agent can cite: the change, or its own memory, and a CI log when one is shown. */
 function answerSources(withLogs: boolean): readonly EvidenceSource[] {
@@ -199,12 +199,21 @@ export function claimPlace(claim: Claim): string {
   const { location } = claim;
   if (location.kind === 'description') return `the pull request's description, line ${location.line}`;
   if (location.kind === 'story') return `the story the companion's agent wrote, sentence ${location.sentence + 1}`;
-  if (location.kind === 'pipeline') {
-    const at = location.path === undefined ? '' : ` about ${JSON.stringify(location.path)}${location.line === undefined ? '' : `, line ${location.line}`}`;
-    return `a finding of the ${location.step} step of the pipeline report in the description${at}`;
-  }
+  if (location.kind === 'pipeline') return 'a finding of the pipeline report in the description';
   const lines = location.endLine > location.line ? `lines ${location.line}-${location.endLine}` : `line ${location.line}`;
   return `a ${claim.source} the change adds to ${JSON.stringify(location.path)}, ${lines}`;
+}
+
+/**
+ * The text the prompts fence for a claim: its quote, with a pipeline
+ * finding's step and named place ahead of it, both the report's own
+ * words, so they never ride outside the block.
+ */
+export function claimText(claim: Claim): string {
+  const { location } = claim;
+  if (location.kind !== 'pipeline') return claim.quote;
+  const at = location.path === undefined ? '' : ` about ${JSON.stringify(location.path)}${location.line === undefined ? '' : `, line ${location.line}`}`;
+  return `finding of the ${location.step} step${at}\n${claim.quote}`;
 }
 
 /** A part's diff lines, each marked and numbered, up to {@link SHOWN_LINES} across its files. */
@@ -225,16 +234,17 @@ export function diffLines(part: Part): string[] {
   return shown;
 }
 
-/** The failed checks' trimmed logs, each with its id outside the untrusted block and its numbered lines inside it. */
+/** The failed checks' trimmed logs, each with its id outside the untrusted block and its check's name, failing step and numbered lines inside it. */
 function logLines(logs: readonly CiLogItem[], id: string): string[] {
   if (logs.length === 0) return [];
+  const head = (item: CiLogItem): string => `check ${JSON.stringify(item.check.name)}${item.log.step ? `, failing step ${JSON.stringify(item.log.step)}` : ''}`;
   return [
     'The logs of the checks that failed, run on the merge commit, each trimmed to its failing step. Each',
-    'line follows its number in the log.',
+    "log opens with its check's name and failing step; every line follows its number in the log.",
     '',
     ...logs.flatMap((item) => [
-      `[${item.id}] check ${JSON.stringify(item.check.name)}${item.log.step ? `, failing step ${JSON.stringify(item.log.step)}` : ''}`,
-      untrustedBlock(`log ${item.id}`, item.log.lines.map((line, at) => `${at + 1}: ${line}`).join('\n'), id),
+      `[${item.id}]`,
+      untrustedBlock(`log ${item.id}`, [head(item), ...item.log.lines.map((line, at) => `${at + 1}: ${line}`)].join('\n'), id),
     ]),
     '',
   ];
@@ -250,7 +260,7 @@ export function verdictsPrompt(items: readonly VerdictItem[], parts: readonly Pa
   const about = [...new Set(items.map((item) => item.claim.part))].sort((a, b) => a - b);
   const claimLines = items.flatMap((item) => [
     `[${item.id}] made in ${claimPlace(item.claim)}; about part p${item.claim.part + 1}`,
-    untrustedBlock(`claim ${item.id}`, item.claim.quote, id),
+    untrustedBlock(`claim ${item.id}`, claimText(item.claim), id),
   ]);
   const partLines = about.flatMap((index) => {
     const part = parts[index]!;
