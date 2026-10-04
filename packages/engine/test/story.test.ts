@@ -161,6 +161,13 @@ describe('storyChecks', () => {
     expect(storyCheckProblems(checks)).toEqual([]);
   });
 
+  it('passes a name the change does not show as written when it shows every identifier in it, such as a signature', () => {
+    const answer = { sentences: ['Start with [the retry rule](p1) and [the sender](p2), now `send_webhook(retry_policy, status)`.'] };
+    expect(storyChecks(items, answer, change).names.outside).toEqual([]);
+    const invented = { sentences: ['Start with [the retry rule](p1) and [the sender](p2), now `send_webhook(retry_budget)`.'] };
+    expect(storyChecks(items, invented, change).names.outside).toEqual(['send_webhook(retry_budget)']);
+  });
+
   it('fails a story that leaves out a must-review part', () => {
     const checks = storyChecks(items, { sentences: ['Read [the retry rule](p1) and [the timeout](p3).'] }, change);
     expect(checks.mustReview).toEqual({ ids: ['p1', 'p2'], mentioned: ['p1'] });
@@ -188,7 +195,7 @@ describe('storyChecks', () => {
 
 describe('namesIn', () => {
   it('reads names in backticks and code-like names outside them, but no link target and no slashed prose', () => {
-    expect(namesIn('Read [`Cart.total`](p2) and `fresh()`, then app/dedent.py, the and/or rule, e.g. a fix.')).toEqual([
+    expect(namesIn('Read [`Cart.total`](p2) and `fresh()`, then app/dedent.py, the and/or rule, e.g. a fix of `.5` and `+=`.')).toEqual([
       'Cart.total',
       'fresh',
       'app/dedent.py',
