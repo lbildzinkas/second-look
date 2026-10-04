@@ -100,6 +100,15 @@ describe('findLibraryPin', () => {
     await expect(findLibraryPin(root, 'private-lib')).resolves.toBeUndefined();
   });
 
+  it('reads requirements.txt before a dev file that pins another version', async () => {
+    const root = headWith({
+      'requirements-dev.txt': `httpx==0.28.0 --hash=sha256:${HASH_B}\n`,
+      'requirements.txt': `httpx==0.27.2 --hash=sha256:${HASH_A}\n`,
+    });
+
+    await expect(findLibraryPin(root, 'httpx')).resolves.toEqual({ name: 'httpx', version: '0.27.2', pinnedBy: 'requirements.txt', hashes: [HASH_A] });
+  });
+
   it("reads poetry.lock's files, and poetry 1's metadata files", async () => {
     const poetry2 = headWith({
       'poetry.lock': ['[[package]]', 'name = "httpx"', 'version = "0.27.2"', `files = [{ file = "httpx-0.27.2-py3-none-any.whl", hash = "sha256:${HASH_A}" }]`].join('\n'),

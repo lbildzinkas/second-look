@@ -87,16 +87,19 @@ function requirementPins(text: string, pinnedBy: string): LibraryPin[] {
   });
 }
 
-/** The lock files read for a pin, in the order they are trusted, by their name at the head copy's root. */
+/** The lock files read for a pin, in the order they are trusted: uv.lock, then poetry.lock, then `requirements.txt` before every other requirements file, then the rest by name. */
 async function lockFiles(root: string): Promise<string[]> {
   const names = await readdir(root).catch(() => [] as string[]);
-  const requirements = names.filter((name) => /requirements.*\.txt$/i.test(name)).sort();
+  const requirements = names
+    .filter((name) => /requirements.*\.txt$/i.test(name))
+    .sort((a, b) => Number(/^requirements\.txt$/i.test(b)) - Number(/^requirements\.txt$/i.test(a)) || a.localeCompare(b));
   return ['uv.lock', 'poetry.lock', ...requirements].filter((name) => names.includes(name));
 }
 
 /**
  * The pin of one library in the head copy's lock files at its root: uv.lock,
- * then poetry.lock, then requirements files. Only a pin that records at
+ * then poetry.lock, then `requirements.txt` before every other requirements
+ * file. Only a pin that records at
  * least one SHA-256 hash counts, since a fetch must check what it
  * downloads; undefined when no lock file pins the library so.
  */
