@@ -338,7 +338,7 @@ const CHANGED_LINE = { file: 'src/tomli/_re.py', line: 83, quote: 'micros = int(
 
 /** An agent that gives misstated-python's two description claims the given verdicts, citing the changed line. */
 function verdictsAgent(first: string, second: string): AgentAdapter {
-  const verdict = (claim: string, kind: string) => ({ claim, verdict: kind, source: 'the change itself', reason: 'r', evidence: [CHANGED_LINE], library: null });
+  const verdict = (id: string, kind: string) => ({ id, verdict: kind, source: 'the change itself', reason: 'r', evidence: [CHANGED_LINE], library: null });
   return answeringAgent((request) =>
     request.instructions === VERDICTS_INSTRUCTIONS ? { verdicts: [verdict('c1', first), verdict('c2', second)] } : 'not an answer',
   );

@@ -71,9 +71,9 @@ export const VERDICTS_SCHEMA: JsonSchema = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['claim', 'verdict', 'source', 'reason', 'evidence', 'library'],
+        required: ['id', 'verdict', 'source', 'reason', 'evidence', 'library'],
         properties: {
-          claim: { type: 'string' },
+          id: { type: 'string' },
           verdict: { type: 'string', enum: ['verified', 'refuted', 'unverifiable'] },
           source: { type: 'string', enum: ANSWER_SOURCES },
           reason: { type: 'string' },
@@ -100,7 +100,7 @@ export const VERDICTS_SCHEMA: JsonSchema = {
 /** One verdict as the agent answers it, before the engine re-checks it. */
 export interface AnsweredVerdict {
   /** The claim's id, such as `c2`. */
-  claim: string;
+  id: string;
   verdict: CheckedVerdictKind;
   source: EvidenceSource;
   reason: string;
@@ -141,7 +141,8 @@ export const VERDICTS_INSTRUCTIONS = [
   '  library to null.',
   '- Tests the change adds show what its author expects, not that the code does it: judge the code.',
   '- The reason is one plain sentence a reviewer reads beside the verdict.',
-  '- Answer every claim exactly once, by its id.',
+  '- Answer every claim exactly once. Set id to the claim\'s id exactly as given, such as c1, and nothing',
+  '  else: never its quote or a description of it.',
   'Answer with only one JSON value and no other text, no words before or after it, matching this',
   'JSON schema:',
   JSON.stringify(VERDICTS_SCHEMA),
@@ -224,9 +225,9 @@ export function verdictProblems(items: readonly VerdictItem[], answer: VerdictsA
   const seen = new Set<string>();
   const problems: string[] = [];
   for (const verdict of answer.verdicts) {
-    if (!offered.has(verdict.claim)) problems.push(`${JSON.stringify(verdict.claim)} is not a claim id`);
-    else if (seen.has(verdict.claim)) problems.push(`${verdict.claim} is answered twice`);
-    seen.add(verdict.claim);
+    if (!offered.has(verdict.id)) problems.push(`${JSON.stringify(verdict.id)} is not a claim id`);
+    else if (seen.has(verdict.id)) problems.push(`${verdict.id} is answered twice`);
+    seen.add(verdict.id);
   }
   const missing = items.filter((item) => !seen.has(item.id)).map((item) => item.id);
   if (missing.length > 0) problems.push(`no verdict for ${missing.join(', ')}`);
@@ -391,7 +392,7 @@ export async function judgeClaims(
     return { claims: [...claims], judging: { ...base, outcome: 'fell back', detail } };
   }
   const read = copyReader(options.root);
-  const byId = new Map((result.answer as VerdictsAnswer).verdicts.map((verdict) => [verdict.claim, verdict]));
+  const byId = new Map((result.answer as VerdictsAnswer).verdicts.map((verdict) => [verdict.id, verdict]));
   const judged = await Promise.all(
     items.map(async (item) => ({ ...item.claim, verdict: await judgeVerdict(read, byId.get(item.id)!) })),
   );
