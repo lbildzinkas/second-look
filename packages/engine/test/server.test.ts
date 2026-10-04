@@ -458,10 +458,11 @@ describe('runRpcServer with an agent', () => {
       },
     );
 
-    // Both reviews grouped and ranked through the same engine, each pass
-    // asking for the model the request named.
-    expect(pi.requests.map((run) => run.model)).toEqual(['pi/model', 'pi/model']);
-    expect(claude.requests.map((run) => run.model)).toEqual(['claude/model', 'claude/model']);
+    // Both reviews grouped, ranked and wrote their story through the same
+    // engine, each pass asking for the model the request named; the fake's
+    // story answer is refused and retried once, so the story costs two runs.
+    expect(pi.requests.map((run) => run.model)).toEqual(['pi/model', 'pi/model', 'pi/model', 'pi/model']);
+    expect(claude.requests.map((run) => run.model)).toEqual(['claude/model', 'claude/model', 'claude/model', 'claude/model']);
     const first = answers(2).result as {
       grouping: { by: string; agent?: { stamp?: { agent: string; model: string; account?: string } } };
       ranking: { by: string; agent?: { stamp?: { agent: string; model: string; account?: string } } };
@@ -488,10 +489,12 @@ describe('runRpcServer with an agent', () => {
       },
     );
 
-    // Only the grouping pass ran: the serve default agent has no tested
-    // ranking here, so the plain ranking stayed and said so.
+    // The grouping and story passes ran: the serve default agent has no
+    // tested ranking here, so the plain ranking stayed and said so; the
+    // fake's story answer is refused and retried once, so the story costs
+    // two runs.
     expect(pi.requests).toHaveLength(0);
-    expect(claude.requests).toHaveLength(1);
+    expect(claude.requests).toHaveLength(3);
     expect(claude.requests[0]!.model).toBe('claude/model');
     expect(answers(2).result).toMatchObject({
       grouping: { by: 'agent', agent: { stamp: { agent: 'claude-code', model: 'claude/model' } } },
