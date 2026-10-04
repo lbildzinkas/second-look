@@ -9,7 +9,7 @@ import {
   sanitiseUntrusted,
   stampText,
 } from '../src/overview.js';
-import { claimsResult, mixedResult, storyResult } from './results.js';
+import { claimsResult, judgedResult, mixedResult, storyResult } from './results.js';
 import { stub } from './vscode-stub.js';
 
 /** Text spelled in Unicode tag characters, which display as nothing. */
@@ -193,6 +193,44 @@ describe('overviewHtml', () => {
     const plain = mixedResult();
     const html = overviewHtml({ result: { ...plain, pullRequest: { ...plain.pullRequest, description: '  ' } } }, 'N');
     expect(html).toContain('<p class="note">The pull request has no description.</p>');
+  });
+});
+
+describe('the verdicts on the overview', () => {
+  it('gives each judged claim its verdict, evidence source, reason and citations, the findings marked', () => {
+    const html = overviewHtml({ result: judgedResult() }, 'N');
+
+    expect(html).toContain('<span class="verdict">verified</span></div><div class="why">the change itself: send retries a failed delivery.</div>');
+    expect(html).toContain('<div class="why">src/retry.py:5 — return retry(send)</div>');
+    expect(html).toContain('<span class="verdict finding">refuted</span>');
+    expect(html).toContain('<div class="why">needs the source of requests, which the companion does not have</div>');
+    expect(html).toContain('<div class="why">dropped to unverifiable: the model&#39;s memory never yields verified</div>');
+    expect(html).toContain('Each is judged against the change and its read-only copy by pi · zai/glm-4.6 · verdicts prompt v1;');
+    expect(html).toContain('<span class="stg done">claims</span><span class="stg done">verdicts</span>');
+    expect(html).toContain('<li><b>Verdicts</b> judged by pi · zai/glm-4.6 · verdicts prompt v1: every citation was re-read in the head copy</li>');
+  });
+
+  it('says why no claim was checked when the judging fell back', () => {
+    const shown = judgedResult();
+    const fellBack: ReviewResult = {
+      ...claimsResult(),
+      claims: { ...claimsResult().claims!, judging: { ...shown.claims!.judging!, outcome: 'fell back', detail: 'the agent gave no usable answer' } },
+    };
+    const html = overviewHtml({ result: fellBack }, 'N');
+    expect(html).toContain('None is checked: the agent gave no usable answer.');
+    expect(html).toContain('<span class="stg done">no verdicts</span>');
+  });
+
+  it('renders a reason and a citation as escaped text, never as markup', () => {
+    const shown = judgedResult();
+    const [first, ...rest] = shown.claims!.claims;
+    const hostile: ReviewResult = {
+      ...shown,
+      claims: { ...shown.claims!, claims: [{ ...first!, verdict: { kind: 'refuted', source: 'the change itself', reason: REMOTE, evidence: [{ path: 'a.py', line: 1, quote: REMOTE }] } }, ...rest] },
+    };
+    const html = overviewHtml({ result: hostile }, 'N');
+    expect(loadsOrLinks(html)).toBe(false);
+    expect(html).toContain('<div class="why">the change itself: &lt;img src=&quot;https://evil.example/pixel.png&quot;&gt;');
   });
 });
 

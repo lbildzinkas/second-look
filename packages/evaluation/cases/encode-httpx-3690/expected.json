@@ -46,6 +46,14 @@
       "origin": {
         "file": "src/ahttpx/_parsers.py",
         "line": 229
+      },
+      "verdict": {
+        "kind": "verified",
+        "evidence": {
+          "file": "src/ahttpx/_parsers.py",
+          "line": 232,
+          "source": "the change itself"
+        }
       }
     },
     {
@@ -53,6 +61,14 @@
       "origin": {
         "file": "src/ahttpx/_parsers.py",
         "line": 465
+      },
+      "verdict": {
+        "kind": "verified",
+        "evidence": {
+          "file": "src/ahttpx/_parsers.py",
+          "line": 470,
+          "source": "the change itself"
+        }
       }
     },
     {
@@ -60,6 +76,14 @@
       "origin": {
         "file": "src/ahttpx/_parsers.py",
         "line": 466
+      },
+      "verdict": {
+        "kind": "verified",
+        "evidence": {
+          "file": "src/ahttpx/_parsers.py",
+          "line": 469,
+          "source": "the change itself"
+        }
       }
     },
     {
@@ -67,6 +91,14 @@
       "origin": {
         "file": "src/ahttpx/_server.py",
         "line": 36
+      },
+      "verdict": {
+        "kind": "verified",
+        "evidence": {
+          "file": "src/ahttpx/_server.py",
+          "line": 35,
+          "source": "the change itself"
+        }
       }
     },
     {
@@ -98,6 +130,14 @@
       "origin": {
         "file": "src/httpx/_parsers.py",
         "line": 229
+      },
+      "verdict": {
+        "kind": "verified",
+        "evidence": {
+          "file": "src/httpx/_parsers.py",
+          "line": 232,
+          "source": "the change itself"
+        }
       }
     },
     {
@@ -105,6 +145,14 @@
       "origin": {
         "file": "src/httpx/_parsers.py",
         "line": 465
+      },
+      "verdict": {
+        "kind": "verified",
+        "evidence": {
+          "file": "src/httpx/_parsers.py",
+          "line": 470,
+          "source": "the change itself"
+        }
       }
     },
     {
@@ -112,6 +160,14 @@
       "origin": {
         "file": "src/httpx/_parsers.py",
         "line": 466
+      },
+      "verdict": {
+        "kind": "verified",
+        "evidence": {
+          "file": "src/httpx/_parsers.py",
+          "line": 469,
+          "source": "the change itself"
+        }
       }
     },
     {
@@ -119,6 +175,14 @@
       "origin": {
         "file": "src/httpx/_server.py",
         "line": 36
+      },
+      "verdict": {
+        "kind": "verified",
+        "evidence": {
+          "file": "src/httpx/_server.py",
+          "line": 35,
+          "source": "the change itself"
+        }
       }
     },
     {

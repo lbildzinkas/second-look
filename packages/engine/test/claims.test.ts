@@ -349,13 +349,14 @@ describe('reviewChange with the claims stage', () => {
     );
   }
 
-  it("lists the Python canary's docstring claim last, quoted, attached to its part and not checked", async () => {
+  it("lists the Python canary's docstring claim, quoted, attached to its part and not checked", async () => {
     const stages: ReviewStage[] = [];
     const agent = canaryAgent();
 
     const result = await reviewChange(await pythonCanary(), { adapter: agent, onStage: (stage) => stages.push(stage) });
 
-    expect(stages.map((stage) => stage.running)).toEqual(['writing the story with fake', 'listing the claims with fake']);
+    // The canary agent gives the verdicts prompt no usable answer, so the claim stays not checked.
+    expect(stages.map((stage) => stage.running)).toEqual(['writing the story with fake', 'listing the claims with fake', 'checking the claims with fake']);
     expect(stages[1]!.result.story).toMatchObject({ outcome: 'written' });
     expect(stages[1]!.result.claims).toBeUndefined();
     expect(agent.requests[1]!.prompt).toContain('[s1] Start with the helper.');

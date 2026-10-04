@@ -10,7 +10,7 @@
 import type { AgentStamp } from './agent.js';
 
 /** Version of the review result schema. */
-export const REVIEW_RESULT_VERSION = 7 as const;
+export const REVIEW_RESULT_VERSION = 8 as const;
 
 /**
  * Version 2 added the head commit's SHA and each part's noise assessment;
@@ -20,7 +20,8 @@ export const REVIEW_RESULT_VERSION = 7 as const;
  * and lockfile-unexplained; version 4 let a part span files, with each
  * part's origin and the result's grouping; version 5 added the result's
  * ranking; version 6 added the result's story; version 7 added the
- * result's claims.
+ * result's claims; version 8 added each claim's checked verdict, with its
+ * evidence and evidence source, and the claims' judging.
  */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
@@ -151,7 +152,8 @@ export interface ReviewResult {
  * The claims a change makes about how code or a library behaves, as the
  * agent listed them and the engine checked them: every claim quoted from
  * its source, located there and attached to a part, in the order of its
- * source's priority. Each starts as not checked.
+ * source's priority. Each starts as not checked, and keeps that verdict
+ * until the agent judges it.
  */
 export interface Claims {
   /** The version of the claims prompt. */
@@ -167,6 +169,26 @@ export interface Claims {
   stamp: AgentStamp;
   /** The claims, in their sources' priority order; empty when the pass fell back. */
   claims: Claim[];
+  /** What came of asking the agent to judge the claims; absent until it was asked. */
+  judging?: ClaimJudging;
+}
+
+/**
+ * The verdicts stage's outcome: the agent judged each claim against the
+ * change and the read-only copy, and the engine re-checked every citation.
+ */
+export interface ClaimJudging {
+  /** The version of the verdicts prompt. */
+  promptVersion: string;
+  /**
+   * `judged` when the claims carry the agent's verdicts, as the re-check
+   * left them; `fell back` when its answer was missing or invalid, so
+   * every claim stays not checked.
+   */
+  outcome: 'judged' | 'fell back';
+  /** One plain line: how the verdicts were checked, or why there are none. */
+  detail: string;
+  stamp: AgentStamp;
 }
 
 /**
@@ -205,12 +227,72 @@ export type ClaimLocation =
     };
 
 /**
- * The outcome of checking a claim (the glossary's verdict). A claim is
- * listed before any check runs, so it starts as not checked.
+ * Where a verdict's evidence came from (the glossary's evidence source):
+ * the change itself — its diff and the read-only copy of its head —
+ * library source at the pinned version, a CI log, the issue text, or the
+ * model's memory, which never yields verified.
  */
-export interface ClaimVerdict {
-  kind: 'not checked';
+export type EvidenceSource =
+  | 'the change itself'
+  | 'library source at the pinned version'
+  | 'a CI log'
+  | 'the issue text'
+  | "the model's memory";
+
+/** The evidence sources, in the glossary's order. */
+export const EVIDENCE_SOURCES: readonly EvidenceSource[] = [
+  'the change itself',
+  'library source at the pinned version',
+  'a CI log',
+  'the issue text',
+  "the model's memory",
+];
+
+/** A checked verdict's kind: what judging a claim can come to. */
+export type CheckedVerdictKind = 'verified' | 'refuted' | 'unverifiable';
+
+/** The checked verdict kinds, the order a reviewer reads them in. */
+export const CHECKED_VERDICT_KINDS: readonly CheckedVerdictKind[] = ['refuted', 'unverifiable', 'verified'];
+
+/**
+ * One line of the head copy a verdict cites as evidence: the file, the
+ * line its quote starts on and the quote. The engine re-reads every
+ * citation and keeps only those whose line holds the quote.
+ */
+export interface Citation {
+  /** The file, by its path in the head copy. */
+  path: string;
+  /** The 1-based line the quote starts on. */
+  line: number;
+  /** The quote, on one line: runs of white space as one space. */
+  quote: string;
 }
+
+/**
+ * The outcome of checking a claim (the glossary's verdict). A claim is
+ * listed before any check runs, so it starts as not checked; once judged,
+ * it is verified, refuted or unverifiable, always with its evidence source
+ * and its reason.
+ */
+export type ClaimVerdict =
+  | { kind: 'not checked' }
+  | {
+      kind: CheckedVerdictKind;
+      /** Where the evidence came from; the model's memory never yields verified. */
+      source: EvidenceSource;
+      /** One plain line saying why the claim has this verdict. */
+      reason: string;
+      /** The lines of the head copy that bear the verdict out, each re-checked by the engine. */
+      evidence: Citation[];
+      /**
+       * The library whose source the claim needs, when the change cannot
+       * settle it without; the companion never fetches it on its own
+       * (ADR 0003).
+       */
+      needsLibrary?: string;
+      /** Why the engine dropped the agent's verdict to unverifiable, when it did. */
+      recheck?: string;
+    };
 
 /**
  * A statement about how code or a library behaves (the glossary's claim),

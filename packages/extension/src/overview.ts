@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { randomUUID } from 'node:crypto';
 import {
   hiddenContent,
+  isFinding,
   parsePullRequestUrl,
   type AgentStamp,
   type Claim,
@@ -230,6 +231,8 @@ function stageChips(state: OverviewState): string {
   if (ranking) chips.push({ text: result.ranking.by === 'agent' ? 'ranked by the agent' : 'plain ranking kept', done: true });
   if (result.story) chips.push({ text: result.story.outcome === 'written' ? 'story' : 'no story', done: true });
   if (result.claims) chips.push({ text: result.claims.outcome === 'listed' ? 'claims' : 'no claims', done: true });
+  const judging = result.claims?.judging;
+  if (judging) chips.push({ text: judging.outcome === 'judged' ? 'verdicts' : 'no verdicts', done: true });
   if (state.running !== undefined) chips.push({ text: state.running, done: false });
   return chips
     .map((chip) => `<span class="stg ${chip.done ? 'done' : 'run'}">${escapeHtml(chip.text)}${chip.done ? '' : '…'}</span>`)
@@ -308,7 +311,22 @@ export function claimWhere(claim: Claim): string {
   }
 }
 
-/** One claim: its quote, where it is made, the part it is attached to as a button that opens it, and its verdict. */
+/**
+ * A checked verdict's evidence source, reason, citations, the library it
+ * needs and why the engine dropped it, when it did; nothing for a claim
+ * not checked.
+ */
+function verdictDetail(claim: Claim): string {
+  const { verdict } = claim;
+  if (verdict.kind === 'not checked') return '';
+  const lines = [`${verdict.source}: ${verdict.reason}`];
+  for (const cited of verdict.evidence) lines.push(`${cited.path}:${cited.line} — ${cited.quote}`);
+  if (verdict.needsLibrary !== undefined) lines.push(`needs the source of ${verdict.needsLibrary}, which the companion does not have`);
+  if (verdict.recheck !== undefined) lines.push(`dropped to unverifiable: ${verdict.recheck}`);
+  return lines.map((line) => `<div class="why">${escapeHtml(line)}</div>`).join('');
+}
+
+/** One claim: its quote, where it is made, the part it is attached to as a button that opens it, and its verdict with its evidence. */
 function claimItem(claim: Claim, result: ReviewResult): string {
   const part = result.parts[claim.part];
   const button =
@@ -317,7 +335,19 @@ function claimItem(claim: Claim, result: ReviewResult): string {
       : ` · <button type="button" class="pt" data-part="${claim.part}">${escapeHtml(part.name ?? part.path)}</button>`;
   return (
     `<li><q class="quote">${sanitiseUntrusted(claim.quote).html}</q>` +
-    `<div class="where">${escapeHtml(claimWhere(claim))}${button} · <span class="verdict">${escapeHtml(claim.verdict.kind)}</span></div></li>`
+    `<div class="where">${escapeHtml(claimWhere(claim))}${button} · <span class="verdict${isFinding(claim) ? ' finding' : ''}">${escapeHtml(claim.verdict.kind)}</span></div>` +
+    `${verdictDetail(claim)}</li>`
+  );
+}
+
+/** What the claims section says of their verdicts: judged, why none was, or that none is yet. */
+function verdictsNote(claims: NonNullable<ReviewResult['claims']>): string {
+  const judging = claims.judging;
+  if (judging === undefined) return 'None is checked yet.';
+  if (judging.outcome === 'fell back') return `None is checked: ${judging.detail}.`;
+  return (
+    `Each is judged against the change and its read-only copy by ${stampText(judging.stamp, 'verdicts', judging.promptVersion)}; ` +
+    'the refuted and unverifiable ones are findings, each a thread on the diff.'
   );
 }
 
@@ -334,7 +364,7 @@ function claimsSection(state: OverviewState): string {
   if (claims.claims.length === 0) return `<h2>Claims ${stamp}</h2><p class="note">The agent found no claim in the change.</p>`;
   const note =
     '<p class="note">Statements about how code or a library behaves, from the description, the docstrings and comments ' +
-    'the change adds, and the story, in that order. None is checked yet.</p>';
+    `the change adds, and the story, in that order. ${escapeHtml(verdictsNote(claims))}</p>`;
   return `<h2>Claims ${stamp}</h2>${note}<ol class="claims">${claims.claims.map((claim) => claimItem(claim, result)).join('')}</ol>`;
 }
 
@@ -384,6 +414,15 @@ function stampsSection(state: OverviewState): string {
       claims.outcome === 'listed'
         ? `listed by ${stampText(claims.stamp, 'claims', claims.promptVersion)}: ${claims.detail}`
         : `none: ${claims.detail}`,
+    ]);
+  }
+  const judging = claims?.judging;
+  if (judging) {
+    rows.push([
+      'Verdicts',
+      judging.outcome === 'judged'
+        ? `judged by ${stampText(judging.stamp, 'verdicts', judging.promptVersion)}: ${judging.detail}`
+        : `none: ${judging.detail}`,
     ]);
   }
   const items = rows.map(([what, how]) => `<li><b>${escapeHtml(what)}</b> ${escapeHtml(how)}</li>`).join('');
@@ -471,6 +510,8 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
   .quote { overflow-wrap: anywhere; }
   .where { color: var(--vscode-descriptionForeground); font-size: 12px; margin-top: 2px; }
   .verdict { font-style: italic; }
+  .verdict.finding { color: var(--vscode-editorWarning-foreground); font-weight: 600; }
+  .why { color: var(--vscode-descriptionForeground); font-size: 12px; overflow-wrap: anywhere; }
   .stamps { padding-left: 18px; margin: 0; }
   .stamps li { margin-bottom: 4px; }
 </style>

@@ -1,5 +1,5 @@
 import { filesOfPart, parseDiff } from '@second-look/engine';
-import type { Claim, FileSlice, NoiseAssessment, Part, StoryChecks } from '@second-look/engine';
+import type { Claim, ClaimVerdict, FileSlice, NoiseAssessment, Part, StoryChecks } from '@second-look/engine';
 import type { ExpectedClaim, ExpectedNoise, ExpectedResults, Verdict } from './case.js';
 import type { LibraryFetchOffer, PressedClaim } from './claims.js';
 
@@ -25,6 +25,13 @@ export const STORY_SCORES: readonly string[] = ['story-must-review', 'story-orde
  * listed that the hand lists hold.
  */
 export const CLAIM_SCORES: readonly string[] = ['claims-recall', 'claims-precision'];
+
+/**
+ * The scores of the verdicts the agent gives the hand-labelled claims:
+ * the share it gave the hand verdict, and the share of the claims that do
+ * not deserve verified that it verified anyway.
+ */
+export const VERDICT_SCORES: readonly string[] = ['verdict-accuracy', 'false-verified'];
 
 /** One score of a run, with the direction in which it improves. */
 export interface Score {
@@ -90,6 +97,60 @@ export interface Tally {
   story: StoryTally;
   /** The counts behind the claims the agent listed, against the hand lists. */
   finding: FindingTally;
+  /** The counts behind the verdicts the agent gave the hand-labelled claims. */
+  judging: JudgingTally;
+}
+
+/**
+ * The counts behind the verdicts the agent gave: the hand-labelled claims
+ * judged and those given the hand verdict, and the claims that do not
+ * deserve verified and those verified anyway.
+ */
+export interface JudgingTally {
+  labelled: number;
+  right: number;
+  notVerified: number;
+  falseVerified: number;
+}
+
+function noJudging(): JudgingTally {
+  return { labelled: 0, right: 0, notVerified: 0, falseVerified: 0 };
+}
+
+/**
+ * The verdict the verdicts pass deserves for a hand-labelled claim, from
+ * the change alone: the case's verdict, except that a claim the case
+ * checks behind a library fetch is unverifiable until the fetch, and its
+ * verdict must name the library (ADR 0003). Undefined for a claim the
+ * case gives no verdict.
+ */
+export function verdictBeforeFetch(wanted: ExpectedClaim): { kind: Verdict; library?: string } | undefined {
+  if (wanted.verdict === undefined) return undefined;
+  if (wanted.libraryFetch && wanted.library) return { kind: 'unverifiable', library: wanted.library.name };
+  return { kind: wanted.verdict.kind };
+}
+
+/**
+ * Tallies the verdicts the agent gave the hand-labelled claims, each
+ * against the verdict it deserves from the change alone: right when the
+ * kind matches and, for a claim that needs library source, the verdict
+ * names that library.
+ */
+export function tallyJudging(judged: readonly { wanted: ExpectedClaim; got: ClaimVerdict }[]): JudgingTally {
+  const tally = noJudging();
+  for (const { wanted, got } of judged) {
+    const deserved = verdictBeforeFetch(wanted);
+    if (deserved === undefined) continue;
+    tally.labelled++;
+    const library = got.kind === 'not checked' ? undefined : got.needsLibrary;
+    const namesLibrary = deserved.library === undefined || library?.toLowerCase() === deserved.library.toLowerCase();
+    if (got.kind === deserved.kind && namesLibrary) tally.right++;
+    if (deserved.kind !== 'verified') {
+      tally.notVerified++;
+      if (got.kind === 'verified') tally.falseVerified++;
+    }
+  }
+  return tally;
 }
 
 /**
@@ -297,6 +358,7 @@ export function tallyCase(
     pairs: { total: 0, agreed: 0 },
     story: noStory(),
     finding: noFinding(),
+    judging: noJudging(),
   };
   if (!parts) return tally;
 
@@ -401,6 +463,7 @@ export function addTallies(tallies: readonly Tally[]): Tally {
     pairs: { total: 0, agreed: 0 },
     story: noStory(),
     finding: noFinding(),
+    judging: noJudging(),
   };
   for (const tally of tallies) {
     total.changedLines += tally.changedLines;
@@ -410,6 +473,7 @@ export function addTallies(tallies: readonly Tally[]): Tally {
     total.pairs.agreed += tally.pairs.agreed;
     for (const key of Object.keys(total.story) as (keyof StoryTally)[]) total.story[key] += tally.story[key];
     for (const key of Object.keys(total.finding) as (keyof FindingTally)[]) total.finding[key] += tally.finding[key];
+    for (const key of Object.keys(total.judging) as (keyof JudgingTally)[]) total.judging[key] += tally.judging[key];
     for (const [name, counts] of tally.noise) {
       const sum = total.noise.get(name) ?? { expected: 0, predicted: 0, matched: 0 };
       sum.expected += counts.expected;
@@ -446,9 +510,10 @@ function median(values: readonly number[]): number {
  * recall per class and state, the median and top-k rank position of the
  * known important parts, the grouping's pairwise hunk agreement with
  * the hand labels, the claim checks over the hand-labelled claims, the
- * story's plain checks, and the recall and precision of the claims the
- * agent listed. A score with nothing to count is left out rather than
- * given a value it did not earn.
+ * story's plain checks, the recall and precision of the claims the agent
+ * listed, and the accuracy and false-verified rate of the verdicts it
+ * gave. A score with nothing to count is left out rather than given a
+ * value it did not earn.
  */
 export function scoresOf(tally: Tally): Score[] {
   const scores: Score[] = [];
@@ -481,6 +546,9 @@ export function scoresOf(tally: Tally): Score[] {
   if (finding.required > 0) scores.push({ name: 'claims-recall', value: finding.found / finding.required, better: 'higher' });
   const judged = finding.listedRight + finding.listedWrong;
   if (judged > 0) scores.push({ name: 'claims-precision', value: finding.listedRight / judged, better: 'higher' });
+  const { judging } = tally;
+  if (judging.labelled > 0) scores.push({ name: 'verdict-accuracy', value: judging.right / judging.labelled, better: 'higher' });
+  if (judging.notVerified > 0) scores.push({ name: 'false-verified', value: judging.falseVerified / judging.notVerified, better: 'lower' });
   return scores;
 }
 

@@ -1,0 +1,24 @@
+{
+  "noise": {
+    "src/tomli/_re.py": { "label": "none" }
+  },
+  "importantParts": ["match_to_datetime in src/tomli/_re.py"],
+  "claims": [
+    {
+      "text": "Pads the fractional seconds of a datetime on the right with zeros, so `1979-05-27T07:32:00.5` parses with 500000 microseconds.",
+      "origin": { "in": "description", "line": 1 },
+      "verdict": {
+        "kind": "refuted",
+        "evidence": { "file": "src/tomli/_re.py", "line": 83, "source": "the change itself" }
+      }
+    },
+    {
+      "text": "A time without fractional seconds still parses with 0 microseconds.",
+      "origin": { "in": "description", "line": 3 },
+      "verdict": {
+        "kind": "verified",
+        "evidence": { "file": "src/tomli/_re.py", "line": 83, "source": "the change itself" }
+      }
+    }
+  ]
+}

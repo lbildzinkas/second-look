@@ -4,13 +4,14 @@ import {
   anchorOf,
   buildTree,
   claimCountText,
+  findingBadge,
   findAnchor,
   NOISE,
   NOT_RANKED_YET,
   partsInReadingOrder,
   reviewStatus,
 } from '../src/tree.js';
-import { claimsResult, mixedResult, part, result } from './results.js';
+import { claimsResult, judgedResult, mixedResult, part, result } from './results.js';
 
 /** A hunk adding one line at the given place, on both sides. */
 function hunkAt(oldStart: number, newStart: number): Hunk {
@@ -214,6 +215,29 @@ describe('claim counts in the tree', () => {
 
   it('says the count in words', () => {
     expect([claimCountText(1), claimCountText(2)]).toEqual(['1 claim', '2 claims']);
+    expect([findingBadge(1), findingBadge(2)]).toEqual(['⚠ 1 finding', '⚠ 2 findings']);
+  });
+
+  it('badges each part with its findings once the claims are judged', () => {
+    const [mustReview, worthReviewing] = buildTree(judgedResult());
+
+    expect(mustReview!.parts[0]).toMatchObject({
+      claims: 3,
+      findings: 2,
+      description: '⚠ 2 findings · 3 claims · New code the send path now runs on every delivery.',
+    });
+    expect(mustReview!.parts[0]!.tooltip).toContain('3 claims, 2 refuted or unverifiable, each a thread on the diff; the overview lists them');
+    expect(worthReviewing!.parts[0]).toMatchObject({ claims: 1, findings: 1, description: '⚠ 1 finding · 1 claim · Changed code that the retry policy reads.' });
+  });
+
+  it('badges no part whose judged claims are all verified', () => {
+    const shown = judgedResult();
+    const [verified] = shown.claims!.claims;
+    const allVerified = { ...shown, claims: { ...shown.claims!, claims: [verified!] } };
+    const [mustReview] = buildTree(allVerified);
+    expect(mustReview!.parts[0]).not.toHaveProperty('findings');
+    expect(mustReview!.parts[0]!.description).toBe('1 claim · New code the send path now runs on every delivery.');
+    expect(mustReview!.parts[0]!.tooltip).toContain('1 claim, all verified; the overview lists them');
   });
 });
 

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { parseDiff } from '@second-look/engine';
-import type { Claim, NoiseAssessment, Part } from '@second-look/engine';
+import type { Claim, ClaimVerdict, NoiseAssessment, Part } from '@second-look/engine';
 import type { ExpectedClaim, ExpectedResults } from '../src/case.js';
 import { pressFetches } from '../src/claims.js';
 import type { PressedClaim } from '../src/claims.js';
-import { addTallies, sameClaim, scoresOf, tallyCase, tallyFinding, tallyStory } from '../src/score.js';
+import { addTallies, sameClaim, scoresOf, tallyCase, tallyFinding, tallyJudging, tallyStory, verdictBeforeFetch } from '../src/score.js';
 
 const DIFF = [
   'diff --git a/package-lock.json b/package-lock.json',
@@ -391,3 +391,49 @@ describe('the story checks', () => {
   });
 });
 
+describe('the verdicts the agent gives', () => {
+  const evidence = { file: 'app/x.py', line: 3, source: 'the change itself' as const };
+  const verified: ExpectedClaim = { text: 'Returns the page.', origin: { file: 'app/x.py', line: 1 }, verdict: { kind: 'verified', evidence } };
+  const refuted: ExpectedClaim = { text: 'Pads on the right.', origin: { in: 'description', line: 1 }, verdict: { kind: 'refuted', evidence } };
+  const library: ExpectedClaim = {
+    text: 'Redirects are followed.',
+    origin: { file: 'app/x.py', line: 2 },
+    library: { name: 'httpx', pinnedVersion: '0.27.2', pinnedBy: 'requirements.txt' },
+    verdict: { kind: 'refuted', evidence: { file: 'httpx/_client.py', line: 171, source: 'library source at the pinned version' } },
+    libraryFetch: true,
+  };
+  const got = (kind: 'verified' | 'refuted' | 'unverifiable', needsLibrary?: string): ClaimVerdict => ({
+    kind,
+    source: 'the change itself',
+    reason: 'r',
+    evidence: [],
+    ...(needsLibrary ? { needsLibrary } : {}),
+  });
+
+  it('deserve the hand verdict, except that a claim checked behind a library fetch is unverifiable before it, naming the library', () => {
+    expect(verdictBeforeFetch(verified)).toEqual({ kind: 'verified' });
+    expect(verdictBeforeFetch(library)).toEqual({ kind: 'unverifiable', library: 'httpx' });
+    expect(verdictBeforeFetch({ text: 't', origin: { file: 'a', line: 1 } })).toBeUndefined();
+  });
+
+  it('score their accuracy and the share of claims not deserving verified that were verified', () => {
+    const tally = tallyJudging([
+      { wanted: verified, got: got('verified') },
+      { wanted: refuted, got: got('verified') },
+      { wanted: library, got: got('unverifiable', 'HTTPX') },
+      { wanted: { text: 'unlabelled', origin: { file: 'a', line: 1 } }, got: got('verified') },
+    ]);
+    expect(tally).toEqual({ labelled: 3, right: 2, notVerified: 2, falseVerified: 1 });
+    const scores = scoresOf({ ...tallyCase('', { noise: {}, importantParts: [], claims: [] }, undefined), judging: tally });
+    expect(scores).toEqual([
+      { name: 'verdict-accuracy', value: 2 / 3, better: 'higher' },
+      { name: 'false-verified', value: 0.5, better: 'lower' },
+    ]);
+  });
+
+  it('miss a library claim whose verdict names no library or another one, and a claim left not checked', () => {
+    expect(tallyJudging([{ wanted: library, got: got('unverifiable') }]).right).toBe(0);
+    expect(tallyJudging([{ wanted: library, got: got('unverifiable', 'requests') }]).right).toBe(0);
+    expect(tallyJudging([{ wanted: refuted, got: { kind: 'not checked' } }])).toEqual({ labelled: 1, right: 0, notVerified: 1, falseVerified: 0 });
+  });
+});

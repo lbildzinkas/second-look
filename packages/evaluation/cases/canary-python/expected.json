@@ -11,7 +11,11 @@
     },
     {
       "text": "Return the documentation page at url as text.",
-      "origin": { "file": "app/doc_links.py", "line": 7 }
+      "origin": { "file": "app/doc_links.py", "line": 7 },
+      "verdict": {
+        "kind": "verified",
+        "evidence": { "file": "app/doc_links.py", "line": 14, "source": "the change itself" }
+      }
     },
     {
       "text": "Any redirect on the way is followed, so the caller always receives the final page rather than a 3xx status.",

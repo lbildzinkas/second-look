@@ -1,0 +1,13 @@
+diff --git a/src/tomli/_re.py b/src/tomli/_re.py
+index fc374ed..ede4976 100644
+--- a/src/tomli/_re.py
++++ b/src/tomli/_re.py
+@@ -80,7 +80,7 @@ def match_to_datetime(match: re.Match[str]) -> datetime | date:
+         return date(year, month, day)
+     hour, minute = int(hour_str), int(minute_str)
+     sec = int(sec_str) if sec_str else 0
+-    micros = int(micros_str.ljust(6, "0")) if micros_str else 0
++    micros = int(micros_str.rjust(6, "0")) if micros_str else 0
+     if offset_sign_str:
+         tz: tzinfo | None = cached_tz(
+             offset_hour_str, offset_minute_str, offset_sign_str

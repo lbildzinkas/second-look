@@ -2,6 +2,7 @@ import {
   IMPORTANCE_ORDER,
   claimCounts,
   filesOfPart,
+  findingCounts,
   isLabelledNoise,
   noiseSinks,
   type Comment,
@@ -26,6 +27,8 @@ export interface TreePart {
   kind: 'part' | 'noise';
   /** How many claims are attached to the part; absent when it has none. */
   claims?: number;
+  /** How many of its claims are findings, refuted or unverifiable; absent when none is. */
+  findings?: number;
   /** The part itself, which clicking opens in the diff editor. */
   part?: Part;
 }
@@ -82,7 +85,8 @@ const SECTION_TOOLTIPS: Record<Importance, string> = {
  * shows whatever the engine returns, never inventing a rank. Empty
  * sections are left out, and snapshots and fixtures never sink, because a
  * change there is a behaviour change. A part the listed claims are
- * attached to shows their count beside it.
+ * attached to shows their count beside it, and a badge counting its
+ * findings once the claims are judged.
  */
 export function buildTree(result: ReviewResult): TreeSection[] {
   const grouped = new Map<Importance, TreePart[]>(
@@ -92,17 +96,20 @@ export function buildTree(result: ReviewResult): TreeSection[] {
   const noise: TreePart[] = [];
 
   const counts = claimCounts(result.claims, result.parts.length);
+  const findings = findingCounts(result.claims, result.parts.length);
+  const judged = result.claims?.judging?.outcome === 'judged';
+  const withCounts = (node: TreePart, index: number): TreePart => withClaims(node, counts[index]!, findings[index]!, judged);
   result.parts.forEach((part, index) => {
     const assessment = part.noise;
     if (assessment && isLabelledNoise(assessment) && noiseSinks(assessment)) {
-      noise.push(withClaims(noisePart(part, assessment), counts[index]!));
+      noise.push(withCounts(noisePart(part, assessment), index));
       return;
     }
     if (part.rank) {
-      grouped.get(part.rank.importance)!.push(withClaims(rankedPart(part, result.ranking), counts[index]!));
+      grouped.get(part.rank.importance)!.push(withCounts(rankedPart(part, result.ranking), index));
       return;
     }
-    notRanked.push(withClaims(unrankedPart(part), counts[index]!));
+    notRanked.push(withCounts(unrankedPart(part), index));
   });
 
   const sections: TreeSection[] = [];
@@ -202,17 +209,30 @@ export function claimCountText(count: number): string {
   return `${count} claim${count === 1 ? '' : 's'}`;
 }
 
+/** A finding count as the part's badge, such as `⚠ 2 findings`. */
+export function findingBadge(count: number): string {
+  return `⚠ ${count} finding${count === 1 ? '' : 's'}`;
+}
+
 /**
- * A part's node with its claim count: first beside the label, and in the
- * tooltip with the claims' state. A part with no claim is left as it is.
+ * A part's node with its claim count and, once the claims are judged, the
+ * badge counting its findings: first beside the label, and in the tooltip
+ * with the claims' state. A part with no claim is left as it is.
  */
-function withClaims(node: TreePart, count: number): TreePart {
+function withClaims(node: TreePart, count: number, findings: number, judged: boolean): TreePart {
   if (count === 0) return node;
-  const text = claimCountText(count);
-  const line = `${text}, not checked yet; the overview lists them`;
+  const badge = findings > 0 ? `${findingBadge(findings)} · ` : '';
+  const text = `${badge}${claimCountText(count)}`;
+  const state = !judged
+    ? 'not checked yet; the overview lists them'
+    : findings > 0
+      ? `${findings} refuted or unverifiable, each a thread on the diff; the overview lists them`
+      : 'all verified; the overview lists them';
+  const line = `${claimCountText(count)}, ${state}`;
   return {
     ...node,
     claims: count,
+    ...(findings > 0 ? { findings } : {}),
     description: node.description === undefined ? text : `${text} · ${node.description}`,
     tooltip: node.tooltip === undefined ? line : `${node.tooltip}\n${line}`,
   };

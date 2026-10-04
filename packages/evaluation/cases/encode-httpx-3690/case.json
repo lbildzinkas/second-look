@@ -7,7 +7,8 @@
     "grouping",
     "ranking",
     "story",
-    "claims"
+    "claims",
+    "verdicts"
   ],
   "pullRequest": {
     "url": "https://github.com/encode/httpx/pull/3690",

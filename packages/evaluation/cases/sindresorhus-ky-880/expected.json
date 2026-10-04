@@ -33,6 +33,14 @@
       "origin": {
         "file": "source/types/ky.ts",
         "line": 100
+      },
+      "verdict": {
+        "kind": "verified",
+        "evidence": {
+          "file": "source/utils/merge.ts",
+          "line": 229,
+          "source": "the change itself"
+        }
       }
     },
     {

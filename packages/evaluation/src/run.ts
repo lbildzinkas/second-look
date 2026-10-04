@@ -6,8 +6,10 @@ import {
   GROUPING_PROMPT_ID,
   RANKING_PROMPT_ID,
   STORY_PROMPT_ID,
+  VERDICTS_PROMPT_ID,
   changeText,
   findClaims,
+  judgeClaims,
   rankWithAgent,
   rankingItems,
   reviewChange,
@@ -18,7 +20,7 @@ import {
 import type { AgentAdapter, AgentSettings, AgentStamp, Part } from '@second-look/engine';
 import { caseInput } from './case.js';
 import type { EvaluationCase } from './case.js';
-import { pressFetches, reportedClaims } from './claims.js';
+import { labelledClaims, pressFetches, reportedClaims } from './claims.js';
 import type { PressedClaim } from './claims.js';
 import type { PromptRegistry } from './prompts.js';
 import {
@@ -26,10 +28,12 @@ import {
   GROUPING_AGREEMENT,
   RANK_SCORES,
   STORY_SCORES,
+  VERDICT_SCORES,
   addTallies,
   scoresOf,
   tallyCase,
   tallyFinding,
+  tallyJudging,
   tallyStory,
 } from './score.js';
 import type { Score, Tally } from './score.js';
@@ -77,7 +81,7 @@ export interface RunResults {
   rows: ResultRow[];
   /** Cases whose review failed, with the engine's message. */
   failures: { case: string; error: string }[];
-  /** Cases whose agent grouping, ranking, story or claims fell back, with the prompt and why. */
+  /** Cases whose agent grouping, ranking, story, claims or verdicts fell back, with the prompt and why. */
   fallbacks?: { case: string; agent: string; prompt?: string; detail: string }[];
   /** How each agent, model and effort's ranking scored against the plain ranking over the same cases. */
   rankings?: RankingComparison[];
@@ -117,7 +121,7 @@ export const GROUPING_SCORES: readonly string[] = ['coverage', GROUPING_AGREEMEN
  */
 export const RANKING_SCORES: readonly string[] = RANK_SCORES;
 
-export { CLAIM_SCORES, STORY_SCORES };
+export { CLAIM_SCORES, STORY_SCORES, VERDICT_SCORES };
 
 /**
  * The prompt an agent row's score belongs to: each agent prompt gives its
@@ -129,6 +133,7 @@ export function promptOfScore(row: { name: string; agent: string }): string | un
   if (RANKING_SCORES.includes(row.name)) return RANKING_PROMPT_ID;
   if (STORY_SCORES.includes(row.name)) return STORY_PROMPT_ID;
   if (CLAIM_SCORES.includes(row.name)) return CLAIMS_PROMPT_ID;
+  if (VERDICT_SCORES.includes(row.name)) return VERDICTS_PROMPT_ID;
   return undefined;
 }
 
@@ -165,8 +170,8 @@ export interface RunOptions {
   now?: Date;
   /**
    * The agent that runs the agent prompts the cases are tied to, the
-   * grouping, ranking, story and claims prompts; without one the run is
-   * model-free.
+   * grouping, ranking, story, claims and verdicts prompts; without one
+   * the run is model-free.
    */
   agent?: { adapter: AgentAdapter; settings?: AgentSettings };
   /** The agent prompts the agent runs, by id; every prompt a case is tied to when absent. */
@@ -222,10 +227,13 @@ export interface Run {
  * {@link STORY_SCORES} — the agent's own answer, which the run does not
  * hold to those checks; and each case tied to the claims prompt has the
  * claims of its plain parts listed by the agent, with no story to read,
- * scored against the case's hand list with its {@link CLAIM_SCORES}. A
- * grouping or ranking fallback scores what the reviewer would see, the
- * plain parts; a story fallback fails the story's checks, and a claims
- * fallback lists no claim. With `prompts`, the agent runs only those
+ * scored against the case's hand list with its {@link CLAIM_SCORES}; and
+ * each case tied to the verdicts prompt has its hand-labelled claims
+ * judged by the agent, scored against the hand verdicts with its
+ * {@link VERDICT_SCORES}. A grouping or ranking fallback scores what the
+ * reviewer would see, the plain parts; a story fallback fails the
+ * story's checks, a claims fallback lists no claim, and a verdicts
+ * fallback leaves every claim not checked. With `prompts`, the agent runs only those
  * prompts. A model-free run makes no agent call, so its trace stays
  * empty.
  */
@@ -258,6 +266,7 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
   const rankingTallies = new Map<string, { stamp: AgentStamp; cases: string[]; tallies: Tally[]; plain: Tally[] }>();
   const storyTallies = new Map<string, { stamp: AgentStamp; tallies: Tally[] }>();
   const claimTallies = new Map<string, { stamp: AgentStamp; tallies: Tally[] }>();
+  const verdictTallies = new Map<string, { stamp: AgentStamp; tallies: Tally[] }>();
   const stampKey = (stamp: Stamp): string => JSON.stringify([stamp.agent, stamp.agentVersion, stamp.model, stamp.effort]);
   for (const evaluationCase of options.cases) {
     const input = await caseInput(evaluationCase);
@@ -298,7 +307,7 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
 
     if (runs(GROUPING_PROMPT_ID)) {
       try {
-        // The ranking, story and claims prompts are scored on their own below, on the plain parts.
+        // The ranking, story, claims and verdicts prompts are scored on their own below, on the plain parts.
         const result = await reviewChange(input, {
           adapter: adapterFor(GROUPING_PROMPT_ID),
           ...settings,
@@ -372,6 +381,32 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
       }
     }
 
+    if (runs(VERDICTS_PROMPT_ID) && parts && parts.length > 0) {
+      try {
+        const labelled = labelledClaims(parts, input.pullRequest.description, evaluationCase.expected.claims);
+        const judged = await judgeClaims(
+          parts,
+          labelled.map((each) => each.claim),
+          { adapter: adapterFor(VERDICTS_PROMPT_ID), ...settings, root: input.copies.head.path },
+        );
+        const { judging } = judged;
+        if (judging.outcome === 'fell back') {
+          results.fallbacks!.push({ case: evaluationCase.id, agent: judging.stamp.agent, prompt: VERDICTS_PROMPT_ID, detail: judging.detail });
+        }
+        const verdictsTally: Tally = {
+          ...tallyCase(input.diff, evaluationCase.expected, undefined),
+          judging: tallyJudging(labelled.map((each, index) => ({ wanted: each.wanted, got: judged.claims[index]!.verdict }))),
+        };
+        const stamp = stampFor(evaluationCase.record.prompts, judging.stamp);
+        results.rows.push(...rowsOf(evaluationCase.id, verdictsTally, stamp, VERDICT_SCORES));
+        const group = verdictTallies.get(stampKey(stamp)) ?? { stamp: judging.stamp, tallies: [] };
+        group.tallies.push(verdictsTally);
+        verdictTallies.set(stampKey(stamp), group);
+      } catch (error) {
+        failedAgent(error, VERDICT_SCORES);
+      }
+    }
+
     // The agent ranks the plain parts, so its ranking compares with the
     // plain ranking of the same parts; a single part needs no agent.
     if (!runs(RANKING_PROMPT_ID) || !parts || rankingItems(parts).length < 2) continue;
@@ -412,6 +447,9 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
   }
   for (const { stamp, tallies: byAgent } of claimTallies.values()) {
     results.rows.push(...rowsOf(ALL_CASES, addTallies(byAgent), stampFor([CLAIMS_PROMPT_ID], stamp), CLAIM_SCORES));
+  }
+  for (const { stamp, tallies: byAgent } of verdictTallies.values()) {
+    results.rows.push(...rowsOf(ALL_CASES, addTallies(byAgent), stampFor([VERDICTS_PROMPT_ID], stamp), VERDICT_SCORES));
   }
 
   await writeFile(join(folder, 'results.json'), `${JSON.stringify(results, null, 2)}\n`);
