@@ -39,6 +39,8 @@ export interface ContractScenario {
 export interface RecordedRun {
   prompt: string;
   cwd: string;
+  /** The fake's process id, so a test can tell whether it is still running. */
+  pid: number;
   env: Record<string, string>;
   at: number;
 }

@@ -52,6 +52,7 @@ record({
   args,
   cwd: process.cwd(),
   stdin,
+  pid: process.pid,
   env: pick(['GITHUB_TOKEN', 'GH_TOKEN', 'SECOND_LOOK_READ_ROOT', 'PI_OFFLINE', 'PI_TELEMETRY', 'FAKE_AGENT_LOGIN']),
   at: Date.now(),
 });

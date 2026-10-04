@@ -25,7 +25,7 @@ export interface FakeCall extends RecordedRun {
 export interface FakePiScenario extends ContractScenario {
   /** Flags the fake's help leaves out. */
   missingFlags?: string[];
-  runs: (ContractRun & { toolUse?: boolean })[];
+  runs: (ContractRun & { toolUse?: boolean; ignoreTerm?: boolean })[];
 }
 
 /** A fake Pi playing the scenario, and the calls it recorded. */
