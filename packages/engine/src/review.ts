@@ -215,9 +215,9 @@ export async function reviewChange(
  * The agent ranking stage, after grouping: the agent ranks the parts the
  * result shows. Fewer than two parts to rank need no agent. The agent
  * ranking replaces the plain one only when the validator accepts it and
- * the agent and model are among the tested rankings; an agent with no
- * tested model, or a model asked for that is not one, is not asked.
- * Otherwise the plain ranking stays and the result says why.
+ * the agent, model and effort are among the tested rankings; an agent
+ * with no tested model, or a model or effort asked for that is not one,
+ * is not asked. Otherwise the plain ranking stays and the result says why.
  */
 async function rankStage(
   shown: ReviewResult,
@@ -228,8 +228,8 @@ async function rankStage(
   const settings = agentStage.settings ?? DEFAULT_AGENT_SETTINGS;
   const { agent } = agentStage.adapter;
   const tested = agentStage.testedRankings ?? TESTED_RANKINGS;
-  if (!mayBeTestedRanking(tested, agent, settings.model)) {
-    const detail = notTestedDetail(agent, settings.model);
+  if (!mayBeTestedRanking(tested, agent, settings.model, settings.effort)) {
+    const detail = notTestedDetail(agent, settings.model, settings.effort);
     return { ...shown, ranking: { by: 'plain', agent: { promptVersion: RANKING_PROMPT_VERSION, outcome: 'not tested', detail } } };
   }
   agentStage.onStage?.({
@@ -244,8 +244,8 @@ async function rankStage(
     pullRequest: input.pullRequest,
   });
   if (!ranked) return { ...shown, ranking: { by: 'plain', agent: ranking } };
-  if (!isTestedRanking(tested, ranking.stamp!.agent, ranking.stamp!.model)) {
-    const detail = notTestedDetail(ranking.stamp!.agent, ranking.stamp!.model);
+  if (!isTestedRanking(tested, ranking.stamp!.agent, ranking.stamp!.model, ranking.stamp!.effort)) {
+    const detail = notTestedDetail(ranking.stamp!.agent, ranking.stamp!.model, ranking.stamp!.effort);
     return { ...shown, ranking: { by: 'plain', agent: { ...ranking, outcome: 'not tested', detail } } };
   }
   return { ...shown, parts: ranked, ranking: { by: 'agent', agent: ranking } };

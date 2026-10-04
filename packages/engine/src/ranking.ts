@@ -27,24 +27,29 @@ export const RANKING_PROMPT_ID = 'ranking';
 /** The ranking prompt's version. */
 export const RANKING_PROMPT_VERSION = '1';
 
-/** An agent and model whose ranking the evaluation scored at or above the plain ranking. */
+/** The effort label of a run that asks for no effort level: the agent's own default, as the evaluation's stamps record it. */
+export const DEFAULT_EFFORT = 'default';
+
+/** An agent, model and effort whose ranking the evaluation scored at or above the plain ranking. */
 export interface TestedRanking {
   agent: string;
   /** `provider/model`, as the agent's stamp reports it. */
   model: string;
+  /** The effort level the evaluation ran at; {@link DEFAULT_EFFORT} for the agent's own default. */
+  effort: string;
 }
 
 /**
- * Where the agent ranking is the default: the agents and models whose
- * ranking prompt matched or beat the plain ranking's rank position of the
- * known important parts over the prompt's evaluation cases. Elsewhere the
- * plain ranking stays. The evaluation's README records each run behind
- * this list.
+ * Where the agent ranking is the default: the agents, models and efforts
+ * whose ranking prompt matched or beat the plain ranking's rank position
+ * of the known important parts over the prompt's evaluation cases.
+ * Elsewhere the plain ranking stays. The evaluation's README records each
+ * run behind this list.
  */
 export const TESTED_RANKINGS: readonly TestedRanking[] = [
   // Ranking prompt v1 with Pi 0.86.1 at its default effort: rank median 1
   // and top-3 share 0.9 over seven cases, against 2 and 0.8 plain.
-  { agent: 'pi', model: 'zai-coding-cn/glm-5.3' },
+  { agent: 'pi', model: 'zai-coding-cn/glm-5.3', effort: DEFAULT_EFFORT },
 ];
 
 /** How many lines of a part the prompt shows; the agent can read the rest. */
@@ -309,22 +314,38 @@ export async function rankWithAgent(
   };
 }
 
-/** Whether the agent ranking is the default for this agent and model. */
-export function isTestedRanking(tested: readonly TestedRanking[], agent: string, model: string | null): boolean {
-  return tested.some((entry) => entry.agent === agent && entry.model === model);
+/** Whether the agent ranking is the default for this agent, model and effort. */
+export function isTestedRanking(
+  tested: readonly TestedRanking[],
+  agent: string,
+  model: string | null,
+  effort?: string | null,
+): boolean {
+  const level = effort ?? DEFAULT_EFFORT;
+  return tested.some((entry) => entry.agent === agent && entry.model === model && entry.effort === level);
 }
 
 /**
  * Whether the agent ranking could be the default before the agent runs:
- * the agent has a tested model, and the model asked for, when one is, is
- * among them. With no model asked for, only the run's stamp tells.
+ * the agent has a tested model, and the model asked for, when one is, and
+ * the effort asked for — with none asked for, the agent's own default —
+ * are among them. With no model asked for, only the run's stamp tells.
  */
-export function mayBeTestedRanking(tested: readonly TestedRanking[], agent: string, model?: string): boolean {
-  return tested.some((entry) => entry.agent === agent && (model === undefined || entry.model === model));
+export function mayBeTestedRanking(
+  tested: readonly TestedRanking[],
+  agent: string,
+  model?: string,
+  effort?: string,
+): boolean {
+  const level = effort ?? DEFAULT_EFFORT;
+  return tested.some(
+    (entry) => entry.agent === agent && (model === undefined || entry.model === model) && entry.effort === level,
+  );
 }
 
-/** Why the plain ranking stays for an agent and model the evaluation has not tested. */
-export function notTestedDetail(agent: string, model: string | null | undefined): string {
-  const who = model ? `${agent} with ${model}` : agent;
+/** Why the plain ranking stays for an agent, model and effort the evaluation has not tested. */
+export function notTestedDetail(agent: string, model: string | null | undefined, effort?: string | null): string {
+  const level = effort ?? DEFAULT_EFFORT;
+  const who = `${model ? `${agent} with ${model}` : agent} ${level === DEFAULT_EFFORT ? 'at its default effort' : `at effort ${level}`}`;
   return `the agent ranking is the default only where its evaluation matched or beat the plain ranking, and ${who} has none`;
 }

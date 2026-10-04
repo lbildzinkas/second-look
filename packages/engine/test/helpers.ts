@@ -405,7 +405,11 @@ export function scriptedAgent(answers: readonly string[], probe: Partial<AgentPr
  * such as a grouping or a ranking built from the prompt, recording each
  * request.
  */
-export function answeringAgent(answer: (request: AgentRunRequest) => unknown, model = 'fake/model'): ScriptedAgent {
+export function answeringAgent(
+  answer: (request: AgentRunRequest) => unknown,
+  model = 'fake/model',
+  effort: string | null = null,
+): ScriptedAgent {
   const scripted = scriptedAgent([]);
   return {
     ...scripted,
@@ -414,7 +418,7 @@ export function answeringAgent(answer: (request: AgentRunRequest) => unknown, mo
       return {
         status: 'completed',
         text: JSON.stringify(answer(request)),
-        stamp: { agent: 'fake', agentVersion: '1.2.3', model, effort: null, runAt: '2026-10-04T00:00:00.000Z' },
+        stamp: { agent: 'fake', agentVersion: '1.2.3', model, effort, runAt: '2026-10-04T00:00:00.000Z' },
       };
     },
   };

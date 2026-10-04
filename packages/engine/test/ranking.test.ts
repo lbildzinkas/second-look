@@ -6,6 +6,7 @@ import { GROUPING_INSTRUCTIONS } from '../src/grouping.js';
 import type { NoiseAssessment, Part, PartSignals } from '../src/protocol.js';
 import { rankParts, signalFacts } from '../src/rank.js';
 import {
+  DEFAULT_EFFORT,
   RANKING_PROMPT_VERSION,
   partsFromRanking,
   rankingItems,
@@ -217,7 +218,7 @@ const GROUPING = {
  * reverse, the first it lists must review, unless a scripted ranking is
  * given.
  */
-function rankingAgent(options: { model?: string; ranking?: (ids: string[]) => unknown } = {}) {
+function rankingAgent(options: { model?: string; effort?: string; ranking?: (ids: string[]) => unknown } = {}) {
   return answeringAgent((request) => {
     if (request.instructions === GROUPING_INSTRUCTIONS) return GROUPING;
     const ids = offeredParts(request.prompt).map((offered) => offered.id);
@@ -226,10 +227,10 @@ function rankingAgent(options: { model?: string; ranking?: (ids: string[]) => un
         parts: [...ids].reverse().map((id, index) => entry(id, index === 0 ? 'must review' : 'worth reviewing')),
       }
     );
-  }, options.model);
+  }, options.model, options.effort ?? null);
 }
 
-const TESTED: TestedRanking[] = [{ agent: 'fake', model: 'fake/model' }];
+const TESTED: TestedRanking[] = [{ agent: 'fake', model: 'fake/model', effort: DEFAULT_EFFORT }];
 
 describe('reviewChange with the agent ranking stage', () => {
   async function pull7Input(): Promise<ReviewInput> {
@@ -295,7 +296,7 @@ describe('reviewChange with the agent ranking stage', () => {
       agent: {
         promptVersion: RANKING_PROMPT_VERSION,
         outcome: 'not tested',
-        detail: 'the agent ranking is the default only where its evaluation matched or beat the plain ranking, and fake has none',
+        detail: 'the agent ranking is the default only where its evaluation matched or beat the plain ranking, and fake at its default effort has none',
       },
     });
   });
@@ -307,7 +308,46 @@ describe('reviewChange with the agent ranking stage', () => {
     const result = await reviewChange(input, { adapter: agent, testedRankings: TESTED, settings: { timeoutMs: 1000, concurrency: 1, model: 'fake/other' } });
 
     expect(agent.requests).toHaveLength(1);
-    expect(result.ranking.agent).toMatchObject({ outcome: 'not tested', detail: expect.stringContaining('fake with fake/other has none') });
+    expect(result.ranking.agent).toMatchObject({ outcome: 'not tested', detail: expect.stringContaining('fake with fake/other at its default effort has none') });
+  });
+
+  it('shows the agent ranking for the effort the evaluation tested', async () => {
+    const input = await pull7Input();
+    const agent = rankingAgent({ effort: 'low' });
+
+    const result = await reviewChange(input, {
+      adapter: agent,
+      testedRankings: [{ agent: 'fake', model: 'fake/model', effort: 'low' }],
+      settings: { timeoutMs: 1000, concurrency: 1, effort: 'low' },
+    });
+
+    expect(result.ranking).toMatchObject({ by: 'agent', agent: { stamp: { effort: 'low' } } });
+  });
+
+  it('does not ask for an effort the evaluation has not tested, and says why', async () => {
+    const input = await pull7Input();
+    const agent = rankingAgent();
+
+    const result = await reviewChange(input, {
+      adapter: agent,
+      testedRankings: TESTED,
+      settings: { timeoutMs: 1000, concurrency: 1, model: 'fake/model', effort: 'high' },
+    });
+
+    expect(agent.requests).toHaveLength(1);
+    expect(result.ranking.agent).toMatchObject({
+      outcome: 'not tested',
+      detail: expect.stringContaining('fake with fake/model at effort high has none'),
+    });
+  });
+
+  it('treats no effort setting as the default effort the evaluation tested', async () => {
+    const input = await pull7Input();
+    const agent = rankingAgent();
+
+    const result = await reviewChange(input, { adapter: agent, testedRankings: TESTED, settings: { timeoutMs: 1000, concurrency: 1 } });
+
+    expect(result.ranking).toMatchObject({ by: 'agent', agent: { stamp: { effort: null } } });
   });
 
   it("keeps the plain ranking when the agent's default model turns out not to be a tested one", async () => {
@@ -321,7 +361,7 @@ describe('reviewChange with the agent ranking stage', () => {
     expect(result.parts).toEqual(stages[1]!.result.parts);
     expect(result.ranking).toMatchObject({
       by: 'plain',
-      agent: { outcome: 'not tested', stamp: { model: 'fake/untested' }, detail: expect.stringContaining('fake with fake/untested has none') },
+      agent: { outcome: 'not tested', stamp: { model: 'fake/untested' }, detail: expect.stringContaining('fake with fake/untested at its default effort has none') },
     });
   });
 });

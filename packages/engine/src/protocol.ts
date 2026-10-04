@@ -173,8 +173,9 @@ export interface AgentGrouping {
 /**
  * Who ranked a result's parts. The plain rule always ranks first; with an
  * agent, its ranking is shown only when its answer passed the validator
- * and the agent and model are ones whose evaluation matched or beat the
- * plain ranking. The sinking noise parts keep their plain rank either way.
+ * and the agent, model and effort are ones whose evaluation matched or
+ * beat the plain ranking. The sinking noise parts keep their plain rank
+ * either way.
  */
 export interface Ranking {
   /** The ranking the result shows. */
@@ -190,8 +191,8 @@ export interface AgentRanking {
   /**
    * `ranked` when the agent's ranking is shown; `fell back` when its
    * answer was missing or the validator rejected it; `not tested` when
-   * the agent and model have no evaluation in which the agent ranking
-   * matched or beat the plain one. The plain ranking stays unless ranked.
+   * the agent, model or effort has no evaluation in which the agent
+   * ranking matched or beat the plain one. The plain ranking stays unless ranked.
    */
   outcome: 'ranked' | 'fell back' | 'not tested';
   /** One plain line: why the plain ranking stayed, or how the agent's was checked. */
