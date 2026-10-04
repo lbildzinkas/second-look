@@ -130,6 +130,14 @@ describe('storyFormProblems', () => {
     ]);
   });
 
+  it('rejects a link that spans a newline, on the one-lined text the story renders', () => {
+    const answer = { sentences: ['See [the sender](p\n1) and [the\nsender](p9).'] };
+    expect(storyFormProblems(items, answer)).toEqual([
+      'sentence 1 links "p 1", which is not a part id',
+      'sentence 1 links "p9", which is not a part id',
+    ]);
+  });
+
   it('rejects a link to anything but an offered part, and a link with no words', () => {
     const answer = { sentences: ['See [this](https://evil.example/x) and [it](p9).', 'Read [``](p1).'] };
     expect(storyFormProblems(items, answer)).toEqual([
@@ -217,6 +225,14 @@ describe('sentenceSegments', () => {
       { text: '.' },
     ]);
   });
+
+  it('reads a link whose target names no offered part as plain text instead of throwing', () => {
+    expect(sentenceSegments('See [the sender](p\n1).', storyItems(parts()))).toEqual([
+      { text: 'See ' },
+      { text: '[the sender](p 1)' },
+      { text: '.' },
+    ]);
+  });
 });
 
 /** An agent that answers a story prompt with what `story` makes of its offered parts, and anything else with no answer. */
@@ -277,6 +293,18 @@ describe('writeStory', () => {
     expect(agent.requests[1]!.prompt).toContain('- the must-review parts p1 are not linked\n- "checkout_total" is not a name the change shows');
     expect(story).toMatchObject({ outcome: 'fell back', sentences: [], stamp: { agent: 'fake' } });
     expect(story.detail).toMatch(/^the agent gave no usable answer \(invalid-answer: /);
+    expect(answer).toBeUndefined();
+  });
+
+  it('rejects a story whose link spans a newline and falls back instead of throwing', async () => {
+    const input = await pull7Input();
+    const shown = (await reviewChange(input)).parts;
+    const agent = storyAgent((items) => ({ sentences: [`Start with [the change](${items[0]!.id}), then [see\nthis](p2 oops).`] }));
+
+    const { story, answer } = await writeStory(shown, { adapter: agent, root: input.copies.head.path, pullRequest: input.pullRequest });
+
+    expect(agent.requests).toHaveLength(2);
+    expect(story).toMatchObject({ outcome: 'fell back', sentences: [] });
     expect(answer).toBeUndefined();
   });
 

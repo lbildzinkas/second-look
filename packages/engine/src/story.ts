@@ -184,7 +184,9 @@ export function sentenceSegments(sentence: string, items: readonly StoryItem[]):
   let from = 0;
   for (const match of text.matchAll(LINK)) {
     segments.push(...codeSegments(text.slice(from, match.index)));
-    segments.push({ text: match[1]!.replace(/`/g, ''), part: byId.get(match[2]!)!.index });
+    const item = byId.get(match[2]!);
+    if (item) segments.push({ text: match[1]!.replace(/`/g, ''), part: item.index });
+    else segments.push({ text: match[0] });
     from = match.index + match[0].length;
   }
   segments.push(...codeSegments(text.slice(from)));
@@ -211,7 +213,7 @@ const BARE_NAMES = [
  * `.5`.
  */
 export function namesIn(sentence: string): string[] {
-  let text = sentence.replace(LINK, (_link, words: string) => ` ${words} `);
+  let text = oneLine(sentence).replace(LINK, (_link, words: string) => ` ${words} `);
   const names: string[] = [];
   text = text.replace(CODE, (_code, name: string) => {
     names.push(name);
@@ -283,7 +285,7 @@ export function storyChecks(items: readonly StoryItem[], answer: StoryAnswer, ch
   const order = new Map(items.map((item, position) => [item.id, position]));
   const mentionOrder: string[] = [];
   for (const sentence of answer.sentences) {
-    for (const [, , target] of sentence.matchAll(LINK)) {
+    for (const [, , target] of oneLine(sentence).matchAll(LINK)) {
       if (order.has(target!) && !mentionOrder.includes(target!)) mentionOrder.push(target!);
     }
   }
@@ -315,7 +317,7 @@ export function storyFormProblems(items: readonly StoryItem[], answer: StoryAnsw
     const text = oneLine(sentence);
     if (text === '') problems.push(`sentence ${index + 1} is empty`);
     if (text.length > MAX_SENTENCE_LENGTH) problems.push(`sentence ${index + 1} is over ${MAX_SENTENCE_LENGTH} characters`);
-    for (const [, words, target] of sentence.matchAll(LINK)) {
+    for (const [, words, target] of text.matchAll(LINK)) {
       if (!offered.has(target!)) problems.push(`sentence ${index + 1} links ${JSON.stringify(target)}, which is not a part id`);
       else if (words!.replace(/`/g, '').trim() === '') problems.push(`sentence ${index + 1} links ${target} with no words`);
     }
