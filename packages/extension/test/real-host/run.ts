@@ -408,8 +408,27 @@ export async function run(): Promise<void> {
       contextValue: 'comment',
     });
 
-    // Sending: the submit kind and the overall comment are given here, so
-    // no prompt opens in the test host. The engine receives one send with
+    // The Send review page opens in the editor: the submit command
+    // carries no completed review, so the page is how this review would
+    // be sent, and nothing is sent by opening it.
+    await withTimeout(
+      vscode.commands.executeCommand(SUBMIT_REVIEW_COMMAND),
+      'the submit-review command',
+    );
+    await withTimeout(
+      waitFor('the send-review page tab', () =>
+        vscode.window.tabGroups.all
+          .flatMap((group) => group.tabs)
+          .some((tab) => tab.label === 'Send review')
+          ? true
+          : undefined,
+      ),
+      'the send-review page tab',
+    );
+
+    // Sending: a test cannot press the page's own button, so the command
+    // is handed the completed review — the submit kind and the overall
+    // comment — and sends it at once. The engine receives one send with
     // the gathered comment, and the pending review empties again.
     await withTimeout(
       vscode.commands.executeCommand(SUBMIT_REVIEW_COMMAND, 'comment', 'Sent by the real-host test.'),

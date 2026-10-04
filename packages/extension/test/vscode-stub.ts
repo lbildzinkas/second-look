@@ -100,6 +100,37 @@ export interface StubCommentController extends StubDisposable {
   ): StubCommentThread;
 }
 
+/** A webview the extension created: the page it holds, and its messages. */
+export interface StubWebview {
+  /** The source a page's content security policy would allow. */
+  readonly cspSource: string;
+  /** The HTML the extension set for the page. */
+  html: string;
+  /** The options the extension created the panel with. */
+  options: { enableScripts?: boolean };
+  /** The messages the extension posted to the page, in order. */
+  posted: unknown[];
+  /** Delivers a message as the page's own script would send it. */
+  receive(message: unknown): void;
+  /** Posts a message to the page: the extension's own direction. */
+  postMessage(message: unknown): Thenable<boolean>;
+  /** Registers the extension's listener for the page's messages. */
+  onDidReceiveMessage(listener: (message: unknown) => void): StubDisposable;
+}
+
+/** A webview panel the extension created, as the slice the companion uses. */
+export interface StubWebviewPanel extends StubDisposable {
+  viewType: string;
+  title: string;
+  /** How many times the extension revealed the panel. */
+  reveals: number;
+  webview: StubWebview;
+  /** Registers a listener for the panel's closing, as the editor fires it. */
+  onDidDispose(listener: () => void): StubDisposable;
+  /** Brings the panel back to the front, as the extension asks. */
+  reveal(): void;
+}
+
 /** A theme colour the extension asked for, by its id. */
 export class ThemeColor {
   constructor(readonly id: string) {}
@@ -119,6 +150,8 @@ export interface StubState {
   decorationTypes: StubDecorationType[];
   statusBarItems: StubStatusBarItem[];
   commentControllers: StubCommentController[];
+  /** The webview panels the extension created, in order. */
+  webviewPanels: StubWebviewPanel[];
   /** The configuration values `getConfiguration` reads, keyed by `section.key`. */
   configuration: Record<string, unknown>;
   /** The editors currently visible; tests set these and fire the change. */
@@ -162,6 +195,7 @@ export const stub: StubState = {
   decorationTypes: [],
   statusBarItems: [],
   commentControllers: [],
+  webviewPanels: [],
   configuration: {},
   visibleTextEditors: [],
   files: new Map(),
@@ -185,6 +219,7 @@ export const stub: StubState = {
     stub.decorationTypes = [];
     stub.statusBarItems = [];
     stub.commentControllers = [];
+    stub.webviewPanels = [];
     stub.configuration = {};
     stub.visibleTextEditors = [];
     visibleEditorListeners.clear();
@@ -513,6 +548,57 @@ export const window = {
     stub.decorationTypes.push(type);
     return type;
   },
+  createWebviewPanel(
+    viewType: string,
+    title: string,
+    _showOptions: number | { viewColumn: number },
+    options?: { enableScripts?: boolean },
+  ): StubWebviewPanel {
+    const listeners = new Set<(message: unknown) => void>();
+    const closing = new Set<() => void>();
+    const webview: StubWebview = {
+      cspSource: 'https://second-look.test',
+      html: '',
+      options: options ?? {},
+      posted: [],
+      receive(message: unknown): void {
+        for (const listener of listeners) {
+          listener(message);
+        }
+      },
+      postMessage(message: unknown): Thenable<boolean> {
+        webview.posted.push(message);
+        return Promise.resolve(true);
+      },
+      onDidReceiveMessage(listener: (message: unknown) => void): StubDisposable {
+        listeners.add(listener);
+        return { dispose: () => listeners.delete(listener) };
+      },
+    };
+    const panel: StubWebviewPanel = {
+      viewType,
+      title,
+      reveals: 0,
+      webview,
+      reveal: (): void => {
+        panel.reveals += 1;
+      },
+      onDidDispose(listener: () => void): StubDisposable {
+        closing.add(listener);
+        return { dispose: () => closing.delete(listener) };
+      },
+      dispose: (): void => {
+        stub.webviewPanels = stub.webviewPanels.filter((entry) => entry !== panel);
+        listeners.clear();
+        for (const listener of closing) {
+          listener();
+        }
+        closing.clear();
+      },
+    };
+    stub.webviewPanels.push(panel);
+    return panel;
+  },
   createStatusBarItem(id: string, alignment = StatusBarAlignment.Left, priority?: number): StubStatusBarItem {
     const item: StubStatusBarItem = {
       id,
@@ -555,6 +641,15 @@ export const StatusBarAlignment = {
 export const CommentMode = {
   Editing: 0,
   Preview: 1,
+} as const;
+
+/** The columns a panel can open in. */
+export const ViewColumn = {
+  Active: -1,
+  Beside: -2,
+  One: 1,
+  Two: 2,
+  Three: 3,
 } as const;
 
 /** The states a comment thread can be shown in. */

@@ -27,10 +27,11 @@ import {
   type TreePart,
   type TreeSection,
 } from './tree.js';
-import { pickSubmitKind, readOverallComment, ReviewComments } from './comments.js';
+import { ReviewComments } from './comments.js';
+import { isSubmitKind, SendReviewPage } from './send-page.js';
 import { AgentStatusBar } from './agent-status.js';
 import { readAgentSettings, type AgentSettings } from './agent-settings.js';
-import type { Part, ReviewResult, SubmitKind } from '@second-look/engine';
+import type { Part, PendingReview, ReviewResult } from '@second-look/engine';
 
 export {
   ADD_COMMENT_COMMAND,
@@ -62,11 +63,6 @@ type TreeNode = TreeSection | TreePart | TreeComment;
 
 function isSection(node: TreeNode): node is TreeSection {
   return 'parts' in node;
-}
-
-/** Whether a value is one of the three ways a review is submitted. */
-function isSubmitKind(value: unknown): value is SubmitKind {
-  return value === 'comment' || value === 'approve' || value === 'request changes';
 }
 
 /** Whether a value is a part of the reviewed change. */
@@ -189,6 +185,8 @@ class ReviewSession {
   /** True while a review's engine request is still out. */
   private running = false;
   private url: string | undefined;
+  /** The Send review page of the review under way, once the reviewer opens it. */
+  private page: SendReviewPage | undefined;
 
   constructor(
     tree: ReviewTreeProvider,
@@ -290,10 +288,15 @@ class ReviewSession {
     this.result = result;
     this.url = result.pullRequest.url;
     this.copies.setCopies(result.copies);
-    // A review's first result starts its pending review afresh; a later
+    // A review's first result starts its pending review afresh — its Send
+    // review page closes with the review it belonged to — and a later
     // stage of the same review keeps every comment already written, whose
     // lines and files the regrouping does not change.
-    if (!update) this.comments.setReview(result);
+    if (!update) {
+      this.page?.dispose();
+      this.page = undefined;
+      this.comments.setReview(result);
+    }
     this.tree.setSections(this.sections());
     if (!update) {
       await this.revealFirstSection();
@@ -386,79 +389,97 @@ class ReviewSession {
   }
 
   /**
-   * Submits the pending review to GitHub as one review: how the reviewer
-   * chose, with their overall comment, every gathered comment in it. The
-   * GitHub sign-in is asked for here, at send time only — until this
-   * moment nothing of the review has left the companion (ADR 0002) — and
-   * a send that fails keeps every comment for the reviewer to send again.
+   * Submits the pending review through the Send review page: every
+   * gathered comment together for one last pass, the overall comment and
+   * the submit kind chosen on the page, and the one write only when its
+   * Submit button is pressed (ADR 0002).
    *
-   * The arguments skip the prompts only when they are what they claim:
-   * a genuine submit kind and a string body, the way a test drives the
-   * flow. The editor's menus forward other things — the tree title's
-   * button passes the view's context object — so anything else reads as
-   * absent and the prompts ask.
+   * The arguments are the one send without the page: a command carrying
+   * a completed review — a genuine submit kind and a body string, the way
+   * the real-host test drives the flow, which cannot press the page's own
+   * button. The editor's menus forward other things — the tree title's
+   * button passes the view's context object — so anything else opens the
+   * page.
    */
-  async submitReview(submitArg?: SubmitKind, bodyArg?: string): Promise<void> {
+  async submitReview(submitArg?: unknown, bodyArg?: unknown): Promise<void> {
     if (this.result === undefined || this.url === undefined) {
       vscode.window.showWarningMessage(
         'Review a pull request first, then write comments and submit them.',
       );
       return;
     }
-    const submit = isSubmitKind(submitArg) ? submitArg : await pickSubmitKind();
-    if (submit === undefined) {
-      return; // Dismissed: the deliberate step was not taken.
-    }
-    const body = typeof bodyArg === 'string' ? bodyArg : await readOverallComment();
-    if (body === undefined) {
+    if (isSubmitKind(submitArg) && typeof bodyArg === 'string') {
+      await this.sendPending({
+        submit: submitArg,
+        ...(bodyArg !== '' ? { body: bodyArg } : {}),
+        comments: [...this.comments.pending()],
+      });
       return;
     }
-    const comments = this.comments.pending();
-    if (comments.length === 0 && body === '' && submit !== 'approve') {
+    this.page ??= new SendReviewPage({
+      comments: this.comments,
+      send: (review) => this.sendPending(review),
+    });
+    this.page.open();
+  }
+
+  /**
+   * Performs the review's one write to GitHub, wherever it was asked for:
+   * the GitHub sign-in is asked for here, at send time only — until this
+   * moment nothing of the review has left the companion (ADR 0002) — and
+   * a send that fails keeps every comment for the reviewer to send again.
+   * True once the review went, false when it was refused or failed.
+   */
+  private async sendPending(review: PendingReview): Promise<boolean> {
+    if (review.comments.some((comment) => comment.body.trim() === '')) {
+      vscode.window.showWarningMessage(
+        'One comment is empty: write it or drop it before sending.',
+      );
+      return false;
+    }
+    if (review.comments.length === 0 && review.body === undefined && review.submit !== 'approve') {
       vscode.window.showWarningMessage(
         'Nothing to send yet: write a comment or an overall comment, or approve.',
       );
-      return;
+      return false;
     }
+    return this.comments.sendWhileSealed(async () => {
+      let session: vscode.AuthenticationSession | undefined;
+      try {
+        session = await vscode.authentication.getSession('github', ['repo'], {
+          createIfNone: true,
+        });
+      } catch {
+        session = undefined;
+      }
+      if (!session) {
+        vscode.window.showWarningMessage('Sign in to GitHub to send the review.');
+        return false; // The comments stay gathered.
+      }
 
-    let session: vscode.AuthenticationSession | undefined;
-    try {
-      session = await vscode.authentication.getSession('github', ['repo'], {
-        createIfNone: true,
-      });
-    } catch {
-      session = undefined;
-    }
-    if (!session) {
-      vscode.window.showWarningMessage('Sign in to GitHub to send the review.');
-      return; // The comments stay gathered.
-    }
-
-    try {
-      const sent = await vscode.window.withProgress(
-        { location: { viewId: REVIEW_TREE_VIEW }, title: 'Sending the review…' },
-        () =>
-          this.engineSend(this.url!, session!.accessToken, {
-            submit,
-            ...(body !== '' ? { body } : {}),
-            comments: [...comments],
-          }),
-      );
-      this.comments.clear();
-      vscode.window.showInformationMessage(`Review sent: ${sent.url}`, 'Open on GitHub').then(
-        (open) => {
-          if (open === 'Open on GitHub') {
-            void vscode.env.openExternal(vscode.Uri.parse(sent.url));
-          }
-        },
-        () => undefined,
-      );
-    } catch (error) {
-      // The send failed: every comment stays gathered for another try.
-      vscode.window.showErrorMessage(
-        error instanceof Error ? error.message : String(error),
-      );
-    }
+      try {
+        const sent = await vscode.window.withProgress(
+          { location: { viewId: REVIEW_TREE_VIEW }, title: 'Sending the review…' },
+          () => this.engineSend(this.url!, session!.accessToken, review),
+        );
+        this.comments.clear();
+        vscode.window.showInformationMessage(`Review sent: ${sent.url}`, 'Open on GitHub').then(
+          (open) => {
+            if (open === 'Open on GitHub') {
+              void vscode.env.openExternal(vscode.Uri.parse(sent.url));
+            }
+          },
+          () => undefined,
+        );
+        return true;
+      } catch (error) {
+        // The send failed: every comment stays gathered for another try.
+        vscode.window.showErrorMessage(
+          error instanceof Error ? error.message : String(error),
+        );
+        return false;
+      }
+    });
   }
 
   private async engineSend(
@@ -514,6 +535,7 @@ class ReviewSession {
 
   dispose(): void {
     this.engine?.dispose();
+    this.page?.dispose();
   }
 }
 
@@ -564,7 +586,7 @@ export function activate(
       part === undefined ? undefined : session.openPart(part),
     ),
     vscode.commands.registerCommand(OPEN_ALL_PARTS_COMMAND, () => session.openAllParts()),
-    vscode.commands.registerCommand(SUBMIT_REVIEW_COMMAND, (submit?: SubmitKind, body?: string) =>
+    vscode.commands.registerCommand(SUBMIT_REVIEW_COMMAND, (submit?: unknown, body?: unknown) =>
       session.submitReview(submit, body),
     ),
     vscode.commands.registerCommand(ADD_COMMENT_COMMAND, (reply?: vscode.CommentReply) =>

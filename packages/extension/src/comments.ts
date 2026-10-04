@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import type { Comment, Part, ReviewResult, SubmitKind } from '@second-look/engine';
+import type { Comment, Part, ReviewResult } from '@second-look/engine';
 import { partFiles, type ChangeSide } from './change-copies.js';
 import {
   COMMENT_CONTROLLER_ID,
@@ -94,55 +94,9 @@ export function commentableRanges(
   return ranges;
 }
 
-/** How each submit kind reads in the picker the reviewer chooses it in. */
-const SUBMIT_CHOICES: ReadonlyArray<{
-  submit: SubmitKind;
-  label: string;
-  detail: string;
-}> = [
-  {
-    submit: 'comment',
-    label: 'Comment',
-    detail: 'Submit the review as comments, without approving or blocking.',
-  },
-  {
-    submit: 'approve',
-    label: 'Approve',
-    detail: 'Submit the review approving the change.',
-  },
-  {
-    submit: 'request changes',
-    label: 'Request changes',
-    detail: 'Submit the review asking for changes before it can merge.',
-  },
-];
-
-/**
- * Asks how the reviewer submits the pending review. The choice is the
- * deliberate step: dismissing it sends nothing.
- */
-export async function pickSubmitKind(): Promise<SubmitKind | undefined> {
-  const picked = (await vscode.window.showQuickPick(
-    SUBMIT_CHOICES.map((choice) => ({
-      label: choice.label,
-      detail: choice.detail,
-      submit: choice.submit,
-    })),
-    { title: 'Submit the review as…', placeHolder: 'Every pending comment goes with it' },
-  )) as { submit: SubmitKind } | undefined;
-  return picked?.submit;
-}
-
-/**
- * Reads the review's overall comment on the whole pull request. Empty
- * means none; dismissing cancels the send.
- */
-export async function readOverallComment(): Promise<string | undefined> {
-  return vscode.window.showInputBox({
-    prompt: 'Overall comment on the pull request (optional)',
-    placeHolder: 'Sent as the review’s own comment',
-    ignoreFocusOut: true,
-  });
+/** Where a comment points: `path:line`, or `path (part)` for a whole part. */
+export function commentLocation(comment: Comment): string {
+  return comment.kind === 'line' ? `${comment.path}:${comment.line}` : `${comment.path} (part)`;
 }
 
 /** One pending comment shown in its thread, as the editor renders it. */
@@ -153,11 +107,6 @@ function shownComment(body: string): vscode.Comment {
     author: { name: 'You' },
     label: 'pending',
   };
-}
-
-/** The thread's label: where its comment points. */
-function threadLabel(comment: Comment): string {
-  return comment.kind === 'line' ? `${comment.path}:${comment.line}` : `${comment.path} (part)`;
 }
 
 /**
@@ -180,6 +129,9 @@ export class ReviewComments implements vscode.Disposable {
   private readonly changed = new vscode.EventEmitter<void>();
 
   private result: ReviewResult | undefined;
+
+  /** True while the pending review's one write is under way. */
+  private sending = false;
 
   /** Fires whenever a comment joins or leaves the pending review. */
   readonly onDidChange = this.changed.event;
@@ -214,6 +166,27 @@ export class ReviewComments implements vscode.Disposable {
   }
 
   /**
+   * Performs the pending review's one write with the gathering sealed:
+   * while the write is under way — the sign-in it may ask for, the
+   * round-trip to GitHub — no comment joins the review, leaves it, or
+   * is rewritten; a move tried anyway is refused with a warning, so
+   * what is written is exactly the review the reviewer pressed for.
+   */
+  async sendWhileSealed<T>(write: () => Promise<T>): Promise<T> {
+    this.sending = true;
+    try {
+      return await write();
+    } finally {
+      this.sending = false;
+    }
+  }
+
+  /** Refuses a move on the pending review while its one write runs. */
+  private refuseWhileSending(): void {
+    vscode.window.showWarningMessage('The review is being sent: try again once it finishes.');
+  }
+
+  /**
    * Turns to a new review: the pending review of the old one is gone, so
    * its comments and threads are too.
    */
@@ -229,6 +202,10 @@ export class ReviewComments implements vscode.Disposable {
    * the part.
    */
   add(reply: vscode.CommentReply): void {
+    if (this.sending) {
+      this.refuseWhileSending();
+      return;
+    }
     const result = this.result;
     const target = result === undefined ? undefined : commentTargetOf(result, reply.thread.uri);
     if (result === undefined || target === undefined) {
@@ -250,7 +227,7 @@ export class ReviewComments implements vscode.Disposable {
     reply.thread.canReply = false;
     reply.thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
     reply.thread.contextValue = PENDING_THREAD_CONTEXT;
-    reply.thread.label = threadLabel(comment);
+    reply.thread.label = commentLocation(comment);
     this.changed.fire();
   }
 
@@ -258,6 +235,10 @@ export class ReviewComments implements vscode.Disposable {
   commentOnPart(part: Part): void {
     const result = this.result;
     if (result === undefined) {
+      return;
+    }
+    if (this.sending) {
+      this.refuseWhileSending();
       return;
     }
     const [file] = partFiles(result.copies, part);
@@ -272,16 +253,61 @@ export class ReviewComments implements vscode.Disposable {
     thread.canReply = true;
     thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
     thread.contextValue = PENDING_THREAD_CONTEXT;
-    thread.label = threadLabel({ kind: 'part', path: part.path, body: '' });
+    thread.label = commentLocation({ kind: 'part', path: part.path, body: '' });
   }
 
   /** Discards one thread of the pending review, gathered comment and all. */
   discard(thread: vscode.CommentThread): void {
+    if (this.sending) {
+      this.refuseWhileSending();
+      return;
+    }
     const gathered = this.threads.delete(thread);
     thread.dispose();
     if (gathered) {
       this.changed.fire();
     }
+  }
+
+  /**
+   * Rewrites one gathered comment, the way the Send review page edits
+   * it: its thread shows the new text and the pending review carries it.
+   * The comment object itself is rewritten in place, so a hold on it —
+   * the page's, a test's — stays valid. False when the comment is not
+   * gathered anymore, dropped elsewhere meanwhile, or the review's one
+   * write is under way.
+   */
+  editBody(comment: Comment, body: string): boolean {
+    if (this.sending) {
+      this.refuseWhileSending();
+      return false;
+    }
+    for (const [thread, gathered] of this.threads) {
+      if (gathered !== comment) continue;
+      comment.body = body;
+      thread.comments = [shownComment(body)];
+      this.changed.fire();
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Drops one gathered comment from the pending review, the way the Send
+   * review page discards it, thread and all. False when the comment is
+   * not gathered anymore, or the review's one write is under way.
+   */
+  remove(comment: Comment): boolean {
+    if (this.sending) {
+      this.refuseWhileSending();
+      return false;
+    }
+    for (const [thread, gathered] of this.threads) {
+      if (gathered !== comment) continue;
+      this.discard(thread);
+      return true;
+    }
+    return false;
   }
 
   /** Empties the pending review, its comments and threads gone. */

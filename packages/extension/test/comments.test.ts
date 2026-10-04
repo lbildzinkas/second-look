@@ -274,6 +274,89 @@ describe('ReviewComments', () => {
     expect(stub.commentControllers[0]!.threads).not.toContain(outside);
   });
 
+  it('rewrites one gathered comment, as the Send review page edits it', () => {
+    const result = mixedResult();
+    const comments = new ReviewComments();
+    comments.setReview(result);
+    const thread = threadOn(docs(result, 'src/retry.py').head, 4);
+    comments.add(replyOf(thread, 'first take'));
+    const gathered = comments.pending()[0]!;
+
+    expect(comments.editBody(gathered, 'tightened on the page')).toBe(true);
+
+    // The comment object itself is rewritten, so a hold on it stays valid.
+    expect(comments.pending()).toEqual([
+      { kind: 'line', path: 'src/retry.py', side: 'head', line: 5, body: 'tightened on the page' },
+    ]);
+    expect(gathered.body).toBe('tightened on the page');
+    expect(thread.comments[0]).toMatchObject({ body: 'tightened on the page' });
+  });
+
+  it('drops one gathered comment by the comment, as the Send review page discards it', () => {
+    const result = mixedResult();
+    const comments = new ReviewComments();
+    comments.setReview(result);
+    const thread = threadOn(docs(result, 'src/retry.py').head, 4);
+    comments.add(replyOf(thread, 'gone from the page'));
+    const gathered = comments.pending()[0]!;
+
+    expect(comments.remove(gathered)).toBe(true);
+
+    expect(comments.pending()).toEqual([]);
+    expect(stub.commentControllers[0]!.threads).not.toContain(thread);
+  });
+
+  it('seals the gathering while its review is being written', async () => {
+    const result = mixedResult();
+    const comments = new ReviewComments();
+    comments.setReview(result);
+    const thread = threadOn(docs(result, 'src/retry.py').head, 4);
+    comments.add(replyOf(thread, 'sent as pressed'));
+    const gathered = comments.pending()[0]!;
+    const late = threadOn(docs(result, 'src/retry.py').head, 6);
+    const changes: number[] = [];
+    comments.onDidChange(() => changes.push(comments.pending().length));
+    let release: () => void = () => undefined;
+    const written = comments.sendWhileSealed(
+      () => new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+
+    comments.add(replyOf(late, 'written while the send ran'));
+    comments.discard(thread as unknown as vscode.CommentThread);
+    expect(comments.editBody(gathered, 'blanked while the send ran')).toBe(false);
+    expect(comments.remove(gathered)).toBe(false);
+    comments.commentOnPart(result.parts[0]!);
+    const refused = 'The review is being sent: try again once it finishes.';
+
+    expect(stub.warningMessages).toEqual([refused, refused, refused, refused, refused]);
+    expect(comments.pending()).toEqual([
+      { kind: 'line', path: 'src/retry.py', side: 'head', line: 5, body: 'sent as pressed' },
+    ]);
+    expect(stub.commentControllers[0]!.threads).toHaveLength(2);
+    expect(stub.commentControllers[0]!.threads).toContain(late);
+    expect(changes).toEqual([]);
+
+    release();
+    await written;
+
+    comments.add(replyOf(late, 'written once the send was done'));
+    expect(comments.pending()).toHaveLength(2);
+    expect(changes).toEqual([2]);
+    expect(stub.warningMessages).toHaveLength(5);
+  });
+
+  it('reports a comment no longer gathered as unknown to edit and drop', () => {
+    const result = mixedResult();
+    const comments = new ReviewComments();
+    comments.setReview(result);
+    const stray: Comment = { kind: 'part', path: 'elsewhere.ts', body: 'never gathered' };
+
+    expect(comments.editBody(stray, 'edited')).toBe(false);
+    expect(comments.remove(stray)).toBe(false);
+  });
+
   it('empties on a new review and on clear, disposing the threads', () => {
     const result = mixedResult();
     const comments = new ReviewComments();
