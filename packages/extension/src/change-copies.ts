@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { filesOfPart, pathInCopy, type ChangeCopies, type Part } from '@second-look/engine';
+import { filesOfPart, pathInCopy, type ChangeCopies, type FetchedLibrary, type Part, type ReviewResult } from '@second-look/engine';
 
 /**
  * The URI scheme the companion serves the change's copies under: the
@@ -13,6 +13,23 @@ export type ChangeSide = 'base' | 'head';
 
 /** The authority that serves an empty stand-in file where a side has none. */
 const EMPTY_SIDE = 'empty';
+
+/** The authority that serves a fetched library's source from the pull request's library cache. */
+const LIBRARY_SIDE = 'library';
+
+/** The folder a fetched library landed in, by its name in the library cache. */
+function libraryFolder(library: FetchedLibrary): string {
+  return library.path.split(/[\\/]/).filter(Boolean).pop() ?? '';
+}
+
+/**
+ * The URI of one file of a fetched library's source, by its path in that
+ * source, as a verdict judged against it cites it. The editor reads it
+ * from the same library cache the agent read, read-only.
+ */
+export function libraryUri(library: FetchedLibrary, path: string): vscode.Uri {
+  return vscode.Uri.from({ scheme: CHANGE_SCHEME, authority: LIBRARY_SIDE, path: `/${libraryFolder(library)}/${path}` });
+}
 
 /**
  * The URI of one side of a file of the change: the side's copy, the commit
@@ -70,9 +87,10 @@ export type ChangeFile =
 
 /**
  * Maps a change URI back to the file it serves in the engine's cache.
- * `roots` holds each side's copy path, keyed by `side/commit`. Returns
- * undefined when the URI names no copy this companion knows, or its path
- * would leave the copy.
+ * `roots` holds each side's copy path, keyed by `side/commit`, and each
+ * fetched library's, keyed by `library/<folder>`. Returns undefined when
+ * the URI names no copy this companion knows, or its path would leave the
+ * copy.
  */
 export function changeFileOf(
   roots: ReadonlyMap<string, string>,
@@ -81,7 +99,7 @@ export function changeFileOf(
   if (uri.scheme !== CHANGE_SCHEME) return undefined;
   if (uri.authority === EMPTY_SIDE) return { kind: 'empty' };
   const side = uri.authority;
-  if (side !== 'base' && side !== 'head') return undefined;
+  if (side !== 'base' && side !== 'head' && side !== LIBRARY_SIDE) return undefined;
   const [commit, ...rest] = uri.path.replace(/^\//, '').split('/');
   const root = roots.get(`${side}/${commit ?? ''}`);
   if (root === undefined || rest.length === 0) return undefined;
@@ -91,7 +109,8 @@ export function changeFileOf(
 
 /**
  * The read-only file system provider that serves the cached base and head
- * content to the editor. Reads go through VS Code's own file system to the
+ * content, and the source of each library the reviewer fetched, to the
+ * editor. Reads go through VS Code's own file system to the
  * copies the engine already downloaded — nothing is fetched again and
  * nothing is checked out — and every write, create, delete and rename is
  * refused, because the copies are the record the review reads against.
@@ -108,6 +127,14 @@ export class ChangeCopiesProvider implements vscode.FileSystemProvider {
   setCopies(copies: ChangeCopies): void {
     this.roots.set(`base/${copies.base.commit}`, copies.base.path);
     this.roots.set(`head/${copies.head.commit}`, copies.head.path);
+  }
+
+  /** Records where every library the result's verdicts were judged against sits in the library cache. */
+  setLibraries(result: ReviewResult): void {
+    for (const claim of result.claims?.claims ?? []) {
+      const library = claim.verdict.kind === 'not checked' ? undefined : claim.verdict.library;
+      if (library !== undefined) this.roots.set(`${LIBRARY_SIDE}/${libraryFolder(library)}`, library.path);
+    }
   }
 
   watch(): vscode.Disposable {
@@ -186,7 +213,7 @@ function emptyStat(): vscode.FileStat {
 
 function readOnly(): vscode.FileSystemError {
   return vscode.FileSystemError.NoPermissions(
-    'the base and head copies are read-only; nothing from the pull request is written',
+    'the base and head copies and the fetched libraries are read-only; nothing from the pull request is written',
   );
 }
 

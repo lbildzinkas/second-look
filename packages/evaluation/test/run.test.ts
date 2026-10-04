@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +8,7 @@ import { RANKING_INSTRUCTIONS, RANKING_PROMPT_VERSION } from '../../engine/src/r
 import { STORY_INSTRUCTIONS, STORY_PROMPT_VERSION } from '../../engine/src/story.js';
 import { CLAIMS_INSTRUCTIONS, CLAIMS_PROMPT_VERSION } from '../../engine/src/claims.js';
 import { VERDICTS_INSTRUCTIONS, VERDICTS_PROMPT_VERSION } from '../../engine/src/verdicts.js';
+import { LIBRARY_VERDICTS_INSTRUCTIONS, LIBRARY_VERDICTS_PROMPT_VERSION } from '../../engine/src/library-verdicts.js';
 import { answeringAgent, offeredParts, scriptedAgent } from '../../engine/test/helpers.js';
 import type { AgentAdapter } from '@second-look/engine';
 import { loadCases } from '../src/case.js';
@@ -320,8 +321,8 @@ describe('runEvaluation with the claims prompt', () => {
   });
 });
 
-/** Runs one case alone, the agent running only the verdicts prompt. */
-async function runVerdicts(id: string, adapter: AgentAdapter) {
+/** Runs one case alone, the agent running only the given prompts: the verdicts prompt unless named. */
+async function runVerdicts(id: string, adapter: AgentAdapter, prompts: readonly string[] = ['verdicts']) {
   const all = await loadCases([join(PACKAGE, 'cases')]);
   return runEvaluation({
     cases: all.filter((each) => each.id === id),
@@ -330,7 +331,7 @@ async function runVerdicts(id: string, adapter: AgentAdapter) {
     runsFolder: runs,
     now: new Date('2026-10-04T00:00:00.000Z'),
     agent: { adapter },
-    prompts: ['verdicts'],
+    prompts,
   });
 }
 
@@ -374,6 +375,60 @@ describe('runEvaluation with the verdicts prompt', () => {
     ]);
     expect(rowsOf(results.rows, 'fake', 'verdict-accuracy')['misstated-python']).toBe(0);
     expect(rowsOf(results.rows, 'fake', 'false-verified')['misstated-python']).toBe(0);
+  });
+});
+
+describe('runEvaluation with the library verdicts prompt', () => {
+  const REDIRECT = 'Any redirect on the way is followed, so the caller always receives the final page rather than a 3xx status.';
+
+  /** Leaves the canary's library claim unverifiable needing httpx, then refutes it from httpx's source as the given citation says. */
+  function libraryAgent(cited: { file: string; line: number; quote: string }): AgentAdapter {
+    return answeringAgent((request) => {
+      if (request.instructions === VERDICTS_INSTRUCTIONS) {
+        return {
+          verdicts: [
+            { id: 'c1', verdict: 'verified', source: 'the change itself', reason: 'r', evidence: [{ file: 'app/doc_links.py', line: 14, quote: 'return response.text' }], library: null },
+            { id: 'c2', verdict: 'unverifiable', source: 'the change itself', reason: 'It turns on httpx.', evidence: [], library: 'httpx' },
+          ],
+        };
+      }
+      if (request.instructions === LIBRARY_VERDICTS_INSTRUCTIONS) {
+        expect(request.prompt).toContain(REDIRECT);
+        return { verdict: 'refuted', source: 'library source at the pinned version', reason: 'A client follows no redirect by default.', evidence: [cited] };
+      }
+      return 'not an answer';
+    });
+  }
+
+  it("presses the fetch the verdict offers, from the case's recorded download, and passes the canary's claim checks", async () => {
+    const { folder, results } = await runVerdicts('canary-python', libraryAgent({ file: 'httpx/_client.py', line: 171, quote: 'follow_redirects: bool = False,' }), ['library-verdicts']);
+
+    const agentRows = results.rows.filter((row) => row.agent === 'fake' && row.case === 'canary-python');
+    expect(Object.fromEntries(agentRows.map((row) => [row.name, row.value]))).toEqual({
+      'claims-found': 1,
+      'claims-verdict:refuted': 1,
+      'claims-verdict:verified': 1,
+      'claims-evidence': 1,
+      'claims-fetch-offered': 1,
+    });
+    expect(agentRows[0]).toMatchObject({ promptVersions: { 'library-verdicts': LIBRARY_VERDICTS_PROMPT_VERSION } });
+    const trace = readFileSync(join(folder, TRACE_FILE), 'utf8').trim().split('\n').map((line) => JSON.parse(line) as AgentCall);
+    expect(trace.map((call) => call.prompt)).toEqual(['verdicts', 'library-verdicts']);
+    // The read-only library is removed once scored, so the run folder stays removable.
+    expect(existsSync(join(folder, 'libraries', 'canary-python'))).toBe(false);
+  });
+
+  it("accepts the case's other evidence line, the same default where the change's own type declares it", async () => {
+    const { results } = await runVerdicts('canary-python', libraryAgent({ file: 'httpx/_client.py', line: 643, quote: 'follow_redirects: bool = False,' }), ['library-verdicts']);
+
+    expect(rowsOf(results.rows, 'fake', 'claims-evidence')['canary-python']).toBe(1);
+  });
+
+  it('fails the evidence check when the citation is not in the library at the pinned version', async () => {
+    const { results } = await runVerdicts('canary-python', libraryAgent({ file: 'httpx/_client.py', line: 170, quote: 'follow_redirects: bool = False,' }), ['library-verdicts']);
+
+    expect(rowsOf(results.rows, 'fake', 'claims-verdict:refuted')['canary-python']).toBe(0);
+    expect(rowsOf(results.rows, 'fake', 'claims-fetch-offered')['canary-python']).toBe(1);
   });
 });
 

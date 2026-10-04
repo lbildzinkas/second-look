@@ -80,6 +80,16 @@
         "title": "Why this matters",
         "category": "Second Look",
         "icon": "$(info)"
+      },
+      {
+        "command": "second-look.fetchLibrary",
+        "title": "Fetch the library's source",
+        "category": "Second Look"
+      },
+      {
+        "command": "second-look.openLibraryEvidence",
+        "title": "Open the cited library file",
+        "category": "Second Look"
       }
     ],
     "menus": {
@@ -121,6 +131,14 @@
         },
         {
           "command": "second-look.whyThisMatters",
+          "when": "false"
+        },
+        {
+          "command": "second-look.fetchLibrary",
+          "when": "false"
+        },
+        {
+          "command": "second-look.openLibraryEvidence",
           "when": "false"
         }
       ],

@@ -4,6 +4,10 @@ import { PdbFormatError, inflateExactly } from './pdb.js';
 export interface ZipEntry {
   /** The entry's path inside the archive. */
   name: string;
+  /** The Unix file mode the archive records, such as a symbolic link's; 0 when it records none. */
+  unixMode: number;
+  /** The entry's size once inflated, as the archive declares it. */
+  size: number;
   /** Inflates the entry's bytes; throws a PdbFormatError when they are corrupt. */
   read(): Uint8Array;
 }
@@ -54,11 +58,13 @@ export function readZipEntries(bytes: Uint8Array): ZipEntry[] {
     if (u32(at) !== CENTRAL_DIRECTORY_HEADER) {
       fail(`central directory entry ${i} is malformed`);
     }
+    const madeOnUnix = u16(at + 4) >> 8 === 3;
     const flags = u16(at + 8);
     const method = u16(at + 10);
     const compressedSize = u32(at + 20);
     const size = u32(at + 24);
     const nameLength = u16(at + 28);
+    const unixMode = madeOnUnix ? u32(at + 38) >>> 16 : 0;
     const headerOffset = u32(at + 42);
     if (at + 46 + nameLength > bytes.length) {
       fail('truncated archive');
@@ -67,6 +73,8 @@ export function readZipEntries(bytes: Uint8Array): ZipEntry[] {
     at += 46 + nameLength + u16(at + 30) + u16(at + 32);
     entries.push({
       name,
+      unixMode,
+      size,
       read(): Uint8Array {
         if (flags & 0x1) {
           fail(`${name} is encrypted`);

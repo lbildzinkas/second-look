@@ -1,11 +1,17 @@
+import { join } from 'node:path';
 import { DEFAULT_AGENT_SETTINGS, type AgentAdapter, type AgentSettings } from './agent.js';
 import { AGENT_NAMES, isAgentName, type AgentName } from './agents.js';
+import { pullRequestCacheDir } from './cache.js';
+import { parsePullRequestUrl } from './github.js';
+import { pressLibraryFetch } from './library-verdicts.js';
+import type { ReviewResult } from './protocol.js';
 import { reviewPullRequest } from './review.js';
 import { sendReview } from './send.js';
 import type { TestedRanking } from './ranking.js';
 import {
   ENGINE_FAILED_CODE,
   ENGINE_PROTOCOL_VERSION,
+  FETCH_LIBRARY_METHOD,
   INITIALIZE_METHOD,
   JSON_RPC_INVALID_PARAMS,
   JSON_RPC_INVALID_REQUEST,
@@ -18,6 +24,7 @@ import {
   VERSION_MISMATCH_CODE,
   isRpcRequest,
   redactToken,
+  type FetchLibraryParams,
   type InitializeParams,
   type ReviewAgentChoice,
   type ReviewParams,
@@ -92,7 +99,10 @@ export interface RpcServerDeps {
  * write — submitted as one GitHub review when the reviewer presses send.
  * The token arrives with each request, is used only for that request's
  * GitHub calls, is redacted from every error message, and is never
- * stored.
+ * stored. `fetchLibrary` presses one claim's library fetch, only when the
+ * reviewer presses it: the engine keeps each pull request's latest review
+ * result, so the claim is named by its index there, and answers with that
+ * result, the claim judged again against the library's source.
  *
  * With an agent, a review arrives in stages: as soon as the plain result
  * is ready the engine sends it in a {@link REVIEW_STAGE_METHOD}
@@ -112,6 +122,8 @@ export async function runRpcServer(
 ): Promise<void> {
   let initialized = false;
   const running: Promise<void>[] = [];
+  /** Each pull request's latest review result, by its URL, for the fetches it offers. */
+  const reviews = new Map<string, ReviewResult>();
   for (;;) {
     const line = await source.readLine();
     if (line === null) {
@@ -139,7 +151,11 @@ export async function runRpcServer(
       continue;
     }
     if (value.method === REVIEW_METHOD) {
-      running.push(review(value.params, value.id, sink, initialized, deps));
+      running.push(review(value.params, value.id, sink, initialized, deps, reviews));
+      continue;
+    }
+    if (value.method === FETCH_LIBRARY_METHOD) {
+      running.push(fetchLibrary(value.params, value.id, sink, initialized, deps, reviews));
       continue;
     }
     if (value.method === SEND_REVIEW_METHOD) {
@@ -151,7 +167,7 @@ export async function runRpcServer(
       failure(
         value.id,
         JSON_RPC_METHOD_NOT_FOUND,
-        `unknown method: ${value.method}; this engine speaks ${INITIALIZE_METHOD}, ${REVIEW_METHOD} and ${SEND_REVIEW_METHOD}`,
+        `unknown method: ${value.method}; this engine speaks ${INITIALIZE_METHOD}, ${REVIEW_METHOD}, ${FETCH_LIBRARY_METHOD} and ${SEND_REVIEW_METHOD}`,
       ),
     );
   }
@@ -230,6 +246,7 @@ async function review(
   sink: RpcLineSink,
   initialized: boolean,
   deps: RpcServerDeps,
+  reviews: Map<string, ReviewResult>,
 ): Promise<void> {
   if (!initialized) {
     respond(
@@ -277,10 +294,76 @@ async function review(
           }
         : {}),
     });
+    reviews.set(result.pullRequest.url, result);
     respond(sink, { jsonrpc: '2.0', id, result });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     respond(sink, failure(id, ENGINE_FAILED_CODE, redactToken(message, token)));
+  }
+}
+
+/**
+ * Presses one claim's library fetch in the pull request's latest review:
+ * fetches the library into the pull request's library cache and has the
+ * agent judge the claim again there, then answers with the review result
+ * holding the new verdict, which later fetches build on. A fetch fails
+ * with a plain message when the review is unknown, the claim offers no
+ * fetch, the download does not match its pinned hash, or the agent gives
+ * no usable answer.
+ */
+async function fetchLibrary(
+  params: unknown,
+  id: number,
+  sink: RpcLineSink,
+  initialized: boolean,
+  deps: RpcServerDeps,
+  reviews: Map<string, ReviewResult>,
+): Promise<void> {
+  if (!initialized) {
+    respond(sink, failure(id, NOT_INITIALIZED_CODE, `the protocol starts with a version handshake: ${INITIALIZE_METHOD} before ${FETCH_LIBRARY_METHOD}`));
+    return;
+  }
+  const { url, claim: index, agent: choice } = (params ?? {}) as Partial<FetchLibraryParams>;
+  const ref = typeof url === 'string' ? parsePullRequestUrl(url) : null;
+  if (ref === null || typeof url !== 'string' || typeof index !== 'number' || !Number.isInteger(index) || index < 0) {
+    respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${FETCH_LIBRARY_METHOD} needs params: { "url": string, "claim": number, "agent"?: { "agent": "${AGENT_NAMES.join('" | "')}", "model"?: string, "account"?: string } }`));
+    return;
+  }
+  const problem = choice === undefined ? undefined : agentChoiceProblem(choice);
+  if (problem !== undefined) {
+    respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${FETCH_LIBRARY_METHOD}: ${problem}`));
+    return;
+  }
+  const result = reviews.get(url);
+  const claim = result?.claims?.claims[index];
+  if (result === undefined || claim === undefined || deps.agent === undefined) {
+    respond(sink, failure(id, ENGINE_FAILED_CODE, `this engine has no reviewed claim ${index} of ${url}; review the pull request again`));
+    return;
+  }
+  try {
+    const judging = await pressLibraryFetch(result.parts, claim, {
+      headRoot: result.copies.head.path,
+      librariesDir: join(pullRequestCacheDir(deps.cacheDir, ref), 'libraries'),
+      ...(deps.fetch ? { fetch: deps.fetch } : {}),
+      adapter: deps.agent.adapterFor(choice?.agent ?? deps.agent.defaultAgent),
+      settings: agentRunSettings(deps.agent, choice),
+    });
+    if (judging.outcome === 'fell back') throw new Error(`the library was fetched, but ${judging.detail}`);
+    // Another fetch or a new review may have landed meanwhile: the new
+    // verdict goes into the latest result, and only onto the same claim.
+    const latest = reviews.get(url);
+    const claims = latest?.claims;
+    if (latest === undefined || claims === undefined || claims.claims[index]?.quote !== claim.quote) {
+      throw new Error('the review changed while the library was fetched; press the fetch again');
+    }
+    const updated: ReviewResult = {
+      ...latest,
+      claims: { ...claims, claims: claims.claims.map((each, at) => (at === index ? judging.claim : each)) },
+    };
+    reviews.set(url, updated);
+    respond(sink, { jsonrpc: '2.0', id, result: updated });
+  } catch (error) {
+    respond(sink, failure(id, ENGINE_FAILED_CODE, error instanceof Error ? error.message : String(error)));
   }
 }
 

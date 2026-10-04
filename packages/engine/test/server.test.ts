@@ -1,4 +1,5 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { join } from 'node:path';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ENGINE_FAILED_CODE,
   ENGINE_PROTOCOL_VERSION,
@@ -10,6 +11,8 @@ import {
 import type { AgentName } from '../src/agents.js';
 import { CLAIMS_INSTRUCTIONS } from '../src/claims.js';
 import { GROUPING_INSTRUCTIONS } from '../src/grouping.js';
+import { LIBRARY_VERDICTS_INSTRUCTIONS } from '../src/library-verdicts.js';
+import { VERDICTS_INSTRUCTIONS } from '../src/verdicts.js';
 import { DEFAULT_EFFORT } from '../src/ranking.js';
 import { runRpcServer, type RpcAgentDeps } from '../src/server.js';
 import { removeCopy } from '../src/cache.js';
@@ -17,11 +20,15 @@ import {
   PR_7_URL,
   PR_URL,
   SENT_REVIEW_URL,
+  answeringAgent,
   fixtureFetch,
   offeredParts,
   pull7,
+  pypiFetch,
   scriptedAgent,
+  sha256Hex,
   temporaryCacheDir,
+  zipArchive,
 } from './helpers.js';
 
 const TOKEN = 'ghp_test-token-do-not-print';
@@ -131,7 +138,7 @@ describe('runRpcServer', () => {
 
     expect(responses[0]!.result).toEqual({ protocolVersion: ENGINE_PROTOCOL_VERSION });
     const first = responses[1]!.result as { version: number; parts: unknown[] };
-    expect(first.version).toBe(8);
+    expect(first.version).toBe(9);
     expect(first.parts).toHaveLength(11);
     const second = responses[2]!.result as { parts: unknown[] };
     expect(second.parts).toHaveLength(11);
@@ -183,7 +190,7 @@ describe('runRpcServer', () => {
     expect(responses[0]!.id).toBeNull();
     expect(responses[0]!.error!.message).toContain('not JSON');
     expect(responses[1]!.error!.message).toContain('unknown method: start');
-    expect(responses[1]!.error!.message).toContain('initialize, review and sendReview');
+    expect(responses[1]!.error!.message).toContain('initialize, review, fetchLibrary and sendReview');
     expect(responses[2]!.result).toEqual({ protocolVersion: ENGINE_PROTOCOL_VERSION });
   });
 
@@ -317,7 +324,7 @@ describe('runRpcServer with an agent', () => {
         id: 2,
         running: 'grouping related hunks with fake',
         timeoutMs: 660_000,
-        result: { version: 8, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
+        result: { version: 9, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
       },
     });
     // The fake agent has no tested ranking, so the story stage follows the grouping.
@@ -530,5 +537,154 @@ describe('runRpcServer with an agent', () => {
     expect(answers(3).error!.message).toContain('model must be a string');
     // A choice of only the agent is fine: model and account are optional.
     expect(answers(4).result).toMatchObject({ grouping: { by: 'agent' } });
+  });
+});
+
+describe('runRpcServer fetching a library', () => {
+  // A cache of its own: the head copy here pins httpx, unlike the copy of
+  // pull request 7 the other tests leave in theirs.
+  let libraryCacheDir: string;
+
+  beforeEach(() => {
+    libraryCacheDir = temporaryCacheDir();
+  });
+
+  afterEach(async () => {
+    await removeCopy(libraryCacheDir);
+  });
+
+  const WHEEL = zipArchive([{ name: 'httpx/_client.py', content: 'class Client:\n    def __init__(self, follow_redirects: bool = False):\n        pass\n' }]);
+  const CLAIM = 'taxes the cart total.';
+
+  /** Pull request 7 with httpx pinned by hash, served beside PyPI's recorded release. */
+  function transports() {
+    const pull = pull7();
+    const github = fixtureFetch({ ...pull, head: { ...pull.head, 'requirements.txt': `httpx==0.27.2 --hash=sha256:${sha256Hex(WHEEL)}\n` } });
+    const pypi = pypiFetch('httpx', '0.27.2', [{ filename: 'httpx-0.27.2-py3-none-any.whl', bytes: WHEEL }]);
+    const fetchImpl: typeof fetch = (input, init) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      return /^https:\/\/(pypi\.org|files\.pythonhosted\.org)\//.test(url) ? pypi.fetch(input, init) : github.fetch(input, init);
+    };
+    return { fetch: fetchImpl, pypi };
+  }
+
+  /** Lists the description's claim, leaves it unverifiable needing httpx, then refutes it from httpx's source. */
+  function libraryAgent() {
+    return answeringAgent((run) => {
+      if (run.instructions === CLAIMS_INSTRUCTIONS) return { claims: [{ source: 'description', quote: CLAIM, file: null, line: null, part: 'p1' }] };
+      if (run.instructions === VERDICTS_INSTRUCTIONS) {
+        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: 'It turns on httpx.', evidence: [], library: 'httpx' }] };
+      }
+      if (run.instructions === LIBRARY_VERDICTS_INSTRUCTIONS) {
+        return {
+          verdict: 'refuted',
+          source: 'library source at the pinned version',
+          reason: 'A client follows no redirect by default.',
+          evidence: [{ file: 'httpx/_client.py', line: 2, quote: 'def __init__(self, follow_redirects: bool = False):' }],
+        };
+      }
+      return {};
+    });
+  }
+
+  /** Serves the lines, holding each fetch request back until the review before it is answered. */
+  async function serveInTurn(lines: string[], fetchImpl: typeof fetch): Promise<{ answer: (id: number) => Response; pypiBeforeFetch: number }> {
+    const written: string[] = [];
+    let index = 0;
+    let reviewed: () => void = () => undefined;
+    const answeredReview = new Promise<void>((resolve) => (reviewed = resolve));
+    let pypiBeforeFetch = -1;
+    const { pypi } = state;
+    await runRpcServer(
+      {
+        readLine: async () => {
+          const line = lines[index++];
+          if (line === undefined) return null;
+          if (line.includes('"fetchLibrary"')) {
+            await answeredReview;
+            if (pypiBeforeFetch < 0) pypiBeforeFetch = pypi.requests.length;
+          }
+          return line;
+        },
+      },
+      {
+        writeLine: (line) => {
+          written.push(line);
+          if ((JSON.parse(line) as Response).id === 2) reviewed();
+        },
+      },
+      { cacheDir: libraryCacheDir, fetch: fetchImpl, agent: { adapterFor: () => libraryAgent(), defaultAgent: 'pi' } },
+    );
+    const responses = written.map((line) => JSON.parse(line) as Response);
+    return { answer: (id) => responses.find((response) => response.id === id)!, pypiBeforeFetch };
+  }
+
+  let state: ReturnType<typeof transports>;
+
+  it('offers the fetch with the review, downloads nothing until it is pressed, then answers with the claim judged in the library', async () => {
+    state = transports();
+    const { answer, pypiBeforeFetch } = await serveInTurn(
+      [
+        request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+        request('review', { url: PR_7_URL, token: TOKEN }, 2),
+        request('fetchLibrary', { url: PR_7_URL, claim: 0 }, 3),
+      ],
+      state.fetch,
+    );
+
+    // The review offered the fetch, and nothing reached PyPI before the press.
+    expect(answer(2).result).toMatchObject({
+      claims: {
+        claims: [
+          {
+            quote: CLAIM,
+            verdict: {
+              kind: 'unverifiable',
+              needsLibrary: 'httpx',
+              libraryFetch: { library: 'httpx', pinnedVersion: '0.27.2', pinnedBy: 'requirements.txt', reason: expect.stringContaining('httpx 0.27.2') },
+            },
+          },
+        ],
+      },
+    });
+    expect(pypiBeforeFetch).toBe(0);
+    expect(answer(3).result).toMatchObject({
+      version: 9,
+      claims: {
+        claims: [
+          {
+            quote: CLAIM,
+            verdict: {
+              kind: 'refuted',
+              source: 'library source at the pinned version',
+              evidence: [{ path: 'httpx/_client.py', line: 2 }],
+              library: { library: 'httpx', pinnedVersion: '0.27.2', archive: 'wheel', path: expect.stringContaining(join('pull-7', 'libraries', 'httpx-0.27.2-')) },
+            },
+          },
+        ],
+      },
+    });
+    expect(state.pypi.requests.map((each) => each.url)).toEqual([
+      'https://pypi.org/pypi/httpx/0.27.2/json',
+      'https://files.pythonhosted.org/packages/ab/cd/httpx-0.27.2-py3-none-any.whl',
+    ]);
+  });
+
+  it('refuses a fetch of a claim it never reviewed, and malformed fetch params', async () => {
+    state = transports();
+    const answers = await serve(
+      [
+        request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+        request('fetchLibrary', { url: PR_7_URL, claim: 0 }, 2),
+        request('fetchLibrary', { url: 'https://example.com/x', claim: 0 }, 3),
+        request('fetchLibrary', { url: PR_7_URL, claim: -1 }, 4),
+      ],
+      state.fetch,
+    );
+
+    expect(answers[1]).toMatchObject({ id: 2, error: { code: ENGINE_FAILED_CODE, message: `this engine has no reviewed claim 0 of ${PR_7_URL}; review the pull request again` } });
+    expect(answers[2]).toMatchObject({ id: 3, error: { code: JSON_RPC_INVALID_PARAMS } });
+    expect(answers[3]).toMatchObject({ id: 4, error: { code: JSON_RPC_INVALID_PARAMS } });
+    expect(state.pypi.requests).toEqual([]);
   });
 });

@@ -270,17 +270,18 @@ function matchesPin(wanted: ExpectedClaim, fetch: LibraryFetchOffer | undefined)
 
 /**
  * Whether a reported claim's verdict carries the expected evidence: the
- * same file, line and source, with library source counting only behind a
- * pressed fetch of the pinned library, since that is the only way the
- * check may read it (ADR 0003).
+ * same file and line, or one of the case's other lines, and the same
+ * source, with library source counting only behind a pressed fetch of the
+ * pinned library, since that is the only way the check may read it (ADR
+ * 0003).
  */
 function evidenceMatches(wanted: ExpectedClaim, got: PressedClaim): boolean {
   const evidence = got.verdict?.evidence;
   if (!evidence || !wanted.verdict) return false;
   const expected = wanted.verdict.evidence;
+  const places = [expected, ...(wanted.verdict.otherEvidence ?? [])];
   if (
-    evidence.file !== expected.file ||
-    evidence.line !== expected.line ||
+    !places.some((place) => evidence.file === place.file && evidence.line === place.line) ||
     evidence.source !== expected.source
   ) {
     return false;
@@ -550,6 +551,11 @@ export function scoresOf(tally: Tally): Score[] {
   if (judging.labelled > 0) scores.push({ name: 'verdict-accuracy', value: judging.right / judging.labelled, better: 'higher' });
   if (judging.notVerified > 0) scores.push({ name: 'false-verified', value: judging.falseVerified / judging.notVerified, better: 'lower' });
   return scores;
+}
+
+/** Whether a score is one of the claim checks: found, a verdict kind, evidence, or fetch offered. */
+export function isClaimCheck(name: string): boolean {
+  return ['claims-found', 'claims-evidence', 'claims-fetch-offered'].includes(name) || name.startsWith('claims-verdict:');
 }
 
 /** The claim checks: found, verdict per kind, evidence, and fetch offered. */

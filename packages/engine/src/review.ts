@@ -10,6 +10,7 @@ import { validateCoverage } from './coverage.js';
 import { parseDiff, type ParsedDiff } from './diff.js';
 import { GitHubClient, parsePullRequestUrl } from './github.js';
 import { groupingItems, groupWithAgent } from './grouping.js';
+import { offerLibraryFetches } from './library-fetch.js';
 import { confirmLockfileNoise } from './lockfile.js';
 import { applyNoiseRules } from './noise.js';
 import { groupParts } from './parts.js';
@@ -346,7 +347,10 @@ async function claimsStage(
 /**
  * The verdicts stage, last: the agent judges each claim it listed against
  * the change and the read-only head copy, and the engine re-checks every
- * citation it gives. No claims, or claims that fell back, need no judging.
+ * citation it gives; a verdict that needs a library the head copy's lock
+ * files pin with hashes then offers its library fetch, which downloads
+ * nothing until the reviewer presses it. No claims, or claims that fell
+ * back, need no judging.
  */
 async function verdictsStage(
   shown: ReviewResult,
@@ -366,5 +370,6 @@ async function verdictsStage(
     settings,
     root: input.copies.head.path,
   });
-  return { ...shown, claims: { ...claims, ...judged } };
+  const offered = await offerLibraryFetches(judged.claims, input.copies.head.path);
+  return { ...shown, claims: { ...claims, ...judged, claims: offered } };
 }

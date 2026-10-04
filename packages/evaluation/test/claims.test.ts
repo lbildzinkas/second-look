@@ -1,14 +1,15 @@
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { claimItems, locateClaims, reviewChange } from '@second-look/engine';
-import type { ReviewResult } from '@second-look/engine';
+import type { Claim, ReviewResult } from '@second-look/engine';
 import { caseInput, loadCases } from '../src/case.js';
-import { labelledClaims, pressFetches, reportedClaims } from '../src/claims.js';
-import type { LibraryFetchOffer, ReportedClaim } from '../src/claims.js';
+import { labelledClaims, reportClaims, reportedClaims } from '../src/claims.js';
+import type { LibraryFetchOffer } from '../src/claims.js';
 
-const OFFER: LibraryFetchOffer = {
+const OFFER: LibraryFetchOffer & { pinnedBy: string } = {
   library: 'httpx',
   pinnedVersion: '0.27.2',
+  pinnedBy: 'requirements.txt',
   reason: 'the claim needs the library source to be checked',
 };
 
@@ -47,20 +48,33 @@ describe('reportedClaims', () => {
   });
 });
 
-describe('pressFetches', () => {
-  it('presses every offered fetch, as the reviewer would', () => {
-    const offered: ReportedClaim = { text: 'a claim', fetchOffer: OFFER };
-    const withoutOffer: ReportedClaim = { text: 'another claim' };
-    expect(pressFetches([offered, withoutOffer])).toEqual([
-      { text: 'a claim', fetchOffer: OFFER, pressedFetch: OFFER },
-      { text: 'another claim', pressedFetch: undefined },
-    ]);
+describe('reportClaims', () => {
+  const refuted = { kind: 'unverifiable' as const, source: 'the change itself' as const, reason: 'r', evidence: [] };
+  const claim = (verdict: Claim['verdict']): Claim => ({ quote: 'a claim', source: 'docstring', location: { kind: 'file', path: 'a.py', line: 1, endLine: 1 }, part: 0, verdict });
+
+  it('hands back the fetch a verdict offers, unpressed until the claim was judged against the library', () => {
+    expect(reportClaims([claim({ ...refuted, libraryFetch: OFFER })])).toEqual([{ text: 'a claim', verdict: { kind: 'unverifiable' }, fetchOffer: OFFER }]);
   });
 
-  it('keeps the pressed claim independent of the offer it pressed', () => {
-    const [pressed] = pressFetches([{ text: 'a claim', fetchOffer: OFFER }]);
-    pressed!.pressedFetch!.library = 'mutated';
-    expect(OFFER.library).toBe('httpx');
+  it('hands back the pressed offer once the claim was judged against the library, with its library citation', () => {
+    const library = { library: 'httpx', pinnedVersion: '0.27.2', pinnedBy: 'requirements.txt', file: 'httpx-0.27.2-py3-none-any.whl', sha256: 'a'.repeat(64), archive: 'wheel' as const, path: '/cache/libraries/httpx', promptVersion: '1', stamp: { agent: 'fake', agentVersion: '1', model: 'fake/model', effort: null, runAt: '2026-10-04T00:00:00.000Z' } };
+    const judged = claim({
+      kind: 'refuted',
+      source: 'library source at the pinned version',
+      reason: 'r',
+      evidence: [{ path: 'httpx/_client.py', line: 171, quote: 'follow_redirects: bool = False,' }],
+      libraryFetch: OFFER,
+      library,
+    });
+
+    expect(reportClaims([judged])).toEqual([
+      {
+        text: 'a claim',
+        verdict: { kind: 'refuted', evidence: { file: 'httpx/_client.py', line: 171, source: 'library source at the pinned version' } },
+        fetchOffer: OFFER,
+        pressedFetch: OFFER,
+      },
+    ]);
   });
 });
 

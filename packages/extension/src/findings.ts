@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { findingAnchor, isFinding, type Claim, type ReviewResult } from '@second-look/engine';
 import { changeUri, partFiles } from './change-copies.js';
-import { FINDINGS_CONTROLLER_ID, FINDING_THREAD_CONTEXT } from './commands.js';
+import { FETCH_LIBRARY_COMMAND, FINDINGS_CONTROLLER_ID, FINDING_THREAD_CONTEXT, OPEN_LIBRARY_EVIDENCE_COMMAND } from './commands.js';
 import { claimWhere } from './overview.js';
 
 /** Markdown's punctuation, escaped, so text someone else wrote renders exactly as written. */
@@ -14,17 +14,28 @@ function kindLabel(kind: string): string {
   return kind.charAt(0).toUpperCase() + kind.slice(1);
 }
 
+/** A command link the finding's trusted Markdown runs, with its arguments. */
+function commandLink(text: string, command: string, args: readonly unknown[]): string {
+  return `[${escapeMarkdown(text)}](command:${command}?${encodeURIComponent(JSON.stringify(args))})`;
+}
+
 /**
  * A finding's thread body, as Markdown in which only the companion's own
  * words are markup: the verdict with its evidence source, the claim's
  * quote, the reason, each citation the engine re-checked, the library
- * the claim needs when it needs one, why the engine dropped the verdict
- * when it did, and where the claim is made. Every quote, reason and path
- * came from the pull request or the agent, so each is escaped.
+ * the claim needs when it needs one — with the library fetch the
+ * companion offers for it, a link the reviewer presses, or the library
+ * source the verdict was judged against, each cited file a link that
+ * opens it read-only — why the engine dropped the verdict when it did,
+ * and where the claim is made. Every quote, reason, name and path came
+ * from the pull request, the agent or the package index, so each is
+ * escaped; `index` is the claim's index in the result's claims, which the
+ * links carry.
  */
-export function findingBody(claim: Claim): string {
+export function findingBody(claim: Claim, index = 0): string {
   const { verdict } = claim;
   if (verdict.kind === 'not checked') return '';
+  const { libraryFetch: offer, library } = verdict;
   const lines = [
     `**${kindLabel(verdict.kind)}** · evidence source: ${escapeMarkdown(verdict.source)}`,
     '',
@@ -33,9 +44,21 @@ export function findingBody(claim: Claim): string {
     escapeMarkdown(verdict.reason),
   ];
   if (verdict.evidence.length > 0) {
-    lines.push('', 'Evidence:', ...verdict.evidence.map((cited) => `- ${escapeMarkdown(`${cited.path}:${cited.line}`)} — ${escapeMarkdown(cited.quote)}`));
+    const where = (cited: (typeof verdict.evidence)[number], at: number): string =>
+      library === undefined ? escapeMarkdown(`${cited.path}:${cited.line}`) : commandLink(`${cited.path}:${cited.line}`, OPEN_LIBRARY_EVIDENCE_COMMAND, [index, at]);
+    lines.push('', 'Evidence:', ...verdict.evidence.map((cited, at) => `- ${where(cited, at)} — ${escapeMarkdown(cited.quote)}`));
   }
-  if (verdict.needsLibrary !== undefined) {
+  if (library !== undefined) {
+    lines.push(
+      '',
+      `Judged against the source of ${escapeMarkdown(`${library.library} ${library.pinnedVersion}`)}, as ${escapeMarkdown(library.pinnedBy)} pins it: ` +
+        `${escapeMarkdown(library.file)}, its SHA-256 checked, unpacked read-only and never run.`,
+    );
+    if (library.note !== undefined) lines.push('', escapeMarkdown(library.note));
+  } else if (offer !== undefined) {
+    const name = `${offer.library} ${offer.pinnedVersion}`;
+    lines.push('', escapeMarkdown(offer.reason), '', `${commandLink(`Fetch ${name}`, FETCH_LIBRARY_COMMAND, [index])} — downloads only when pressed.`);
+  } else if (verdict.needsLibrary !== undefined) {
     lines.push('', `Needs the source of ${escapeMarkdown(verdict.needsLibrary)}, which the companion does not have.`);
   }
   if (verdict.recheck !== undefined) lines.push('', `Dropped to unverifiable: ${escapeMarkdown(verdict.recheck)}.`);
@@ -63,13 +86,16 @@ export class FindingThreads implements vscode.Disposable {
   /** Shows a result's findings, replacing those of any earlier result. */
   show(result: ReviewResult): void {
     this.clear();
-    for (const claim of result.claims?.claims ?? []) {
+    for (const [index, claim] of (result.claims?.claims ?? []).entries()) {
       if (!isFinding(claim)) continue;
       const thread = this.threadFor(result, claim);
       if (thread === undefined) continue;
+      const body = new vscode.MarkdownString(findingBody(claim, index));
+      // Only the companion's own links run, and only these two commands.
+      body.isTrusted = { enabledCommands: [FETCH_LIBRARY_COMMAND, OPEN_LIBRARY_EVIDENCE_COMMAND] };
       thread.comments = [
         {
-          body: new vscode.MarkdownString(findingBody(claim)),
+          body,
           mode: vscode.CommentMode.Preview,
           author: { name: 'Second Look' },
           label: claim.verdict.kind,

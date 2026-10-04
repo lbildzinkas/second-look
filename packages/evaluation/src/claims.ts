@@ -5,10 +5,10 @@ import type { EvidenceSource, ExpectedClaim, Verdict } from './case.js';
 /**
  * The claims a review reports and the fetches it offers, as the reviewer
  * sees them — the reviewer-facing half of the claim checks. The agent
- * lists claims and judges them, but the plain pass lists none and no
- * library fetch is offered yet, so the checks of a verdict fail exactly
- * as the baseline records; these types and readers are the seam the
- * checks flow through, unchanged.
+ * lists claims and judges them, and a verdict that needs a pinned
+ * library's source offers its library fetch; the plain pass lists none,
+ * so its checks of a verdict fail exactly as the baseline records. These
+ * types and readers are the seam the checks flow through.
  */
 
 /**
@@ -48,16 +48,32 @@ export interface PressedClaim extends ReportedClaim {
 /**
  * The claims a review result reports, each by its quote, with its verdict
  * and its first citation as the evidence. A result without the agent's
- * claims, such as the plain pass's, reports none; a claim not checked yet
+ * claims, such as the plain pass's, reports none; see {@link reportClaims}.
+ */
+export function reportedClaims(result: ReviewResult): PressedClaim[] {
+  return reportClaims(result.claims?.claims ?? []);
+}
+
+/**
+ * Claims as the reviewer sees them, each by its quote, with its verdict
+ * and its first citation as the evidence, the library fetch its verdict
+ * offers, and — once the fetch was pressed and the claim judged against
+ * the library's source — that pressed offer. A claim not checked yet
  * reports no verdict, since a verdict to compare is one a check gave.
  */
-export function reportedClaims(result: ReviewResult): ReportedClaim[] {
-  return (result.claims?.claims ?? []).map((claim) => {
+export function reportClaims(claims: readonly Claim[]): PressedClaim[] {
+  return claims.map((claim) => {
     const { verdict } = claim;
     if (verdict.kind === 'not checked') return { text: claim.quote };
     const [first] = verdict.evidence;
     const evidence = first === undefined ? {} : { evidence: { file: first.path, line: first.line, source: verdict.source } };
-    return { text: claim.quote, verdict: { kind: verdict.kind, ...evidence } };
+    const offer = verdict.libraryFetch;
+    return {
+      text: claim.quote,
+      verdict: { kind: verdict.kind, ...evidence },
+      ...(offer ? { fetchOffer: offer } : {}),
+      ...(offer && verdict.library ? { pressedFetch: offer } : {}),
+    };
   });
 }
 
@@ -88,19 +104,4 @@ export function labelledClaims(
     if (problems.length > 0) throw new Error(`a hand-labelled claim is not where its case says: ${problems.join('; ')}`);
     return [{ wanted, claim: claims[0]! }];
   });
-}
-
-/**
- * Simulates the reviewer pressing every library fetch the review offered.
- * A fetch is a download the reviewer starts, never the companion (ADR
- * 0003), so the evaluation, standing in for the reviewer, presses each
- * offer the review brought back; only what a press unlocked counts as
- * evidence in the tally. Nothing is offered yet, so there is nothing to
- * press and the checks of a fetch stay failing until there is.
- */
-export function pressFetches(claims: readonly ReportedClaim[]): PressedClaim[] {
-  return claims.map((claim) => ({
-    ...claim,
-    pressedFetch: claim.fetchOffer ? { ...claim.fetchOffer } : undefined,
-  }));
 }

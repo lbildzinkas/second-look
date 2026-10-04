@@ -9,7 +9,9 @@ import {
   ADD_COMMENT_COMMAND,
   COMMENT_ON_PART_COMMAND,
   DISCARD_COMMENT_COMMAND,
+  FETCH_LIBRARY_COMMAND,
   OPEN_ALL_PARTS_COMMAND,
+  OPEN_LIBRARY_EVIDENCE_COMMAND,
   OPEN_OVERVIEW_COMMAND,
   OPEN_PART_COMMAND,
   REVIEW_COMMAND,
@@ -17,7 +19,7 @@ import {
   SUBMIT_REVIEW_COMMAND,
   WHY_THIS_MATTERS_COMMAND,
 } from './commands.js';
-import { CHANGE_SCHEME, ChangeCopiesProvider } from './change-copies.js';
+import { CHANGE_SCHEME, ChangeCopiesProvider, libraryUri } from './change-copies.js';
 import { openPartInDiffEditor, openWholeChangeInDiffEditor, PartMarker } from './diff-view.js';
 import {
   anchorOf,
@@ -35,13 +37,15 @@ import { isSubmitKind, SendReviewPage } from './send-page.js';
 import { OverviewPanel } from './overview.js';
 import { AgentStatusBar } from './agent-status.js';
 import { readAgentSettings, reviewAgentChoice } from './agent-settings.js';
-import type { Part, PendingReview, ReviewResult } from '@second-look/engine';
+import type { LibraryFetchOffer, Part, PendingReview, ReviewResult } from '@second-look/engine';
 
 export {
   ADD_COMMENT_COMMAND,
   COMMENT_ON_PART_COMMAND,
   DISCARD_COMMENT_COMMAND,
+  FETCH_LIBRARY_COMMAND,
   OPEN_ALL_PARTS_COMMAND,
+  OPEN_LIBRARY_EVIDENCE_COMMAND,
   OPEN_OVERVIEW_COMMAND,
   OPEN_PART_COMMAND,
   REVIEW_COMMAND,
@@ -79,6 +83,12 @@ function isPart(value: unknown): value is Part {
     typeof (value as Part).path === 'string' &&
     Array.isArray((value as Part).hunks)
   );
+}
+
+/** The library fetch a claim of the result offers and the reviewer has not pressed yet, by the claim's index. */
+function libraryFetchOf(result: ReviewResult | undefined, index: number): LibraryFetchOffer | undefined {
+  const verdict = result?.claims?.claims[index]?.verdict;
+  return verdict === undefined || verdict.kind === 'not checked' || verdict.library !== undefined ? undefined : verdict.libraryFetch;
 }
 
 /**
@@ -300,6 +310,7 @@ class ReviewSession {
     this.result = result;
     this.url = result.pullRequest.url;
     this.copies.setCopies(result.copies);
+    this.copies.setLibraries(result);
     // A review's first result starts its pending review afresh — its Send
     // review page closes with the review it belonged to — and a later
     // stage of the same review keeps every comment already written, whose
@@ -374,6 +385,50 @@ class ReviewSession {
         error instanceof Error ? error.message : String(error),
       );
     }
+  }
+
+  /**
+   * Presses one finding's library fetch, the claim named by its index in
+   * the result's claims: the engine downloads the library at its pinned
+   * version, checks its hash, unpacks it read-only and has the agent the
+   * settings pick judge the claim again, and the result it answers with
+   * replaces the one shown, keeping the reviewer's place. Nothing is
+   * fetched without this press (ADR 0003).
+   */
+  async fetchLibrary(arg?: unknown): Promise<void> {
+    const offer = typeof arg === 'number' ? libraryFetchOf(this.result, arg) : undefined;
+    if (offer === undefined || this.url === undefined) {
+      vscode.window.showWarningMessage('This finding offers no library fetch; review the pull request again.');
+      return;
+    }
+    const review = this.reviews;
+    try {
+      const result = await vscode.window.withProgress(
+        { location: { viewId: REVIEW_TREE_VIEW }, title: `Fetching ${offer.library} ${offer.pinnedVersion} and checking the claim again…` },
+        async () => (await this.readyEngine()).fetchLibrary(this.url!, arg as number, reviewAgentChoice(readAgentSettings())),
+      );
+      // A review started meanwhile replaces this one, fetch and all.
+      if (review !== this.reviews) return;
+      await this.show(result, true);
+    } catch (error) {
+      vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  /** Opens one file a verdict cites in a fetched library's source, read-only, at the cited line. */
+  async openLibraryEvidence(claimArg?: unknown, citationArg?: unknown): Promise<void> {
+    const claim = typeof claimArg === 'number' ? this.result?.claims?.claims[claimArg] : undefined;
+    const verdict = claim?.verdict.kind === 'not checked' ? undefined : claim?.verdict;
+    const cited = typeof citationArg === 'number' ? verdict?.evidence[citationArg] : undefined;
+    if (verdict?.library === undefined || cited === undefined) {
+      vscode.window.showWarningMessage('This finding cites no fetched library file.');
+      return;
+    }
+    const line = cited.line - 1;
+    await vscode.commands.executeCommand('vscode.open', libraryUri(verdict.library, cited.path), {
+      selection: new vscode.Range(line, 0, line, 0),
+      preview: true,
+    });
   }
 
   /** Opens the review's overview at the story's start. */
@@ -634,6 +689,10 @@ export function activate(
     ),
     vscode.commands.registerCommand(OPEN_OVERVIEW_COMMAND, () => session.openOverview()),
     vscode.commands.registerCommand(WHY_THIS_MATTERS_COMMAND, (arg?: unknown) => session.whyThisMatters(arg)),
+    vscode.commands.registerCommand(FETCH_LIBRARY_COMMAND, (arg?: unknown) => session.fetchLibrary(arg)),
+    vscode.commands.registerCommand(OPEN_LIBRARY_EVIDENCE_COMMAND, (claim?: unknown, citation?: unknown) =>
+      session.openLibraryEvidence(claim, citation),
+    ),
   );
   return tree;
 }

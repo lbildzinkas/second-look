@@ -1,5 +1,6 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { pathInCopy } from '@second-look/engine';
 import type {
   NoiseLabel,
   NoiseState,
@@ -98,6 +99,12 @@ export interface ExpectedClaim {
       line: number;
       source: EvidenceSource;
     };
+    /**
+     * Other lines that prove the verdict just as well, from the same
+     * evidence source, such as the same default declared again where the
+     * change's own type declares it; a first citation at any of them counts.
+     */
+    otherEvidence?: { file: string; line: number }[];
   };
   /** That the companion offers a library fetch before checking this claim. */
   libraryFetch?: true;
@@ -199,5 +206,20 @@ export async function caseInput(evaluationCase: EvaluationCase): Promise<ReviewI
       base: { commit: record.baseCommit, path: join(folder, 'base'), reused: true },
       head: { commit: record.headCommit, path: join(folder, 'head'), reused: true },
     },
+  };
+}
+
+/**
+ * A fetch that serves a case's recorded library downloads, so a library
+ * fetch replays offline: each URL is answered from `fetched/<host>/<path>`
+ * in the case folder, and any URL the case did not record with a 404.
+ */
+export function recordedFetch(folder: string): typeof fetch {
+  const root = join(folder, 'fetched');
+  return async (input) => {
+    const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
+    const path = pathInCopy(root, `${url.host}${url.pathname}`);
+    const body = path === undefined ? undefined : await readFile(path).catch(() => undefined);
+    return body === undefined ? new Response('not recorded in the case', { status: 404 }) : new Response(body);
   };
 }

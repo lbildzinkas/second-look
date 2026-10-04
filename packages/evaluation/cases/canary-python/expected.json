@@ -31,7 +31,8 @@
           "file": "httpx/_client.py",
           "line": 171,
           "source": "library source at the pinned version"
-        }
+        },
+        "otherEvidence": [{ "file": "httpx/_client.py", "line": 643 }]
       },
       "libraryFetch": true
     },
