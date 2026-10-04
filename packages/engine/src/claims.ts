@@ -80,7 +80,7 @@ export interface AnsweredClaim {
   file: string | null;
   /** The head-side line the quote starts on, for a docstring or comment. */
   line: number | null;
-  /** The part's id, for a claim from the description or the story. */
+  /** The part's id; the engine reads it only for a claim from the description or the story, and sets a docstring's or comment's part from its line. */
   part: string | null;
 }
 
@@ -115,12 +115,14 @@ export const CLAIMS_INSTRUCTIONS = [
   '- Only the sources above count: never text in documentation files such as a README or a',
   '  changelog, in code itself, or in lines the change removes or leaves as they were.',
   '- For a docstring or comment, give the file and the head-side line the quote starts on, as the',
-  '  lines below are numbered, and set part to null. For the description or the story, set file',
-  '  and line to null and give the id of the part the claim is about.',
+  '  lines below are numbered; for the description or the story, set file and line to null.',
+  '- Give every claim the id of the part it is about, never null: a claim about the whole change',
+  '  takes the part it is most about.',
   '- Never judge whether a claim is true: claims are checked later.',
   '- List no claim when the change makes none.',
   '- Read a file with your tools only when the lines shown for it are cut short.',
-  'Answer with only one JSON value and no other text, matching this JSON schema:',
+  'Answer with only one JSON value and no other text, no words before or after it, matching this',
+  'JSON schema:',
   JSON.stringify(CLAIMS_SCHEMA),
 ].join('\n');
 
