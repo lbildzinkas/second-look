@@ -687,9 +687,29 @@ describe('the pending review and sending it', () => {
     await registeredCommands().get(SUBMIT_REVIEW_COMMAND)!() as Promise<void>;
 
     expect(stub.warningMessages).toEqual([
-      'Nothing to send yet: write a comment, or approve or request changes.',
+      'Nothing to send yet: write a comment or an overall comment, or approve.',
     ]);
     expect(engineRequests('empty-send.log').map((request) => request.method)).toEqual(['initialize', 'review']);
+  });
+
+  it('refuses an empty request-changes review; an empty approve still sends', async () => {
+    await reviewWithFakeEngine({ result: mixedResult(), logName: 'empty-request-changes.log' });
+    stub.quickPickResult = { submit: 'request changes' };
+    stub.inputBoxResult = '';
+
+    await registeredCommands().get(SUBMIT_REVIEW_COMMAND)!() as Promise<void>;
+
+    expect(stub.warningMessages).toEqual([
+      'Nothing to send yet: write a comment or an overall comment, or approve.',
+    ]);
+    expect(engineRequests('empty-request-changes.log').map((request) => request.method)).toEqual(['initialize', 'review']);
+
+    stub.quickPickResult = { submit: 'approve' };
+    await registeredCommands().get(SUBMIT_REVIEW_COMMAND)!() as Promise<void>;
+
+    const sent = engineRequests('empty-request-changes.log').find((request) => request.method === 'sendReview');
+    expect(sent?.params?.['review']).toMatchObject({ submit: 'approve', comments: [] });
+    expect(stub.warningMessages).toHaveLength(1);
   });
 
   it('keeps the comments when the reviewer is not signed in at send time', async () => {

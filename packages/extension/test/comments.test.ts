@@ -246,6 +246,22 @@ describe('ReviewComments', () => {
     expect(changes).toEqual([0, 1, 2, 1]);
   });
 
+  it('discards a part-comment thread before any comment is written in it', () => {
+    const result = mixedResult();
+    const comments = new ReviewComments();
+    const changes: number[] = [];
+    comments.onDidChange(() => changes.push(comments.pending().length));
+    comments.setReview(result);
+    comments.commentOnPart(result.parts[0]!);
+    const thread = stub.commentControllers[0]!.threads[0]!;
+
+    comments.discard(thread as unknown as vscode.CommentThread);
+
+    expect(comments.pending()).toEqual([]);
+    expect(stub.commentControllers[0]!.threads).not.toContain(thread);
+    expect(changes).toEqual([0]);
+  });
+
   it('drops a thread written where no comment can go', () => {
     const result = mixedResult();
     const comments = new ReviewComments();

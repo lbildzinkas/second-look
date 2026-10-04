@@ -321,9 +321,9 @@ class ReviewSession {
       return;
     }
     const comments = this.comments.pending();
-    if (comments.length === 0 && body === '' && submit === 'comment') {
+    if (comments.length === 0 && body === '' && submit !== 'approve') {
       vscode.window.showWarningMessage(
-        'Nothing to send yet: write a comment, or approve or request changes.',
+        'Nothing to send yet: write a comment or an overall comment, or approve.',
       );
       return;
     }

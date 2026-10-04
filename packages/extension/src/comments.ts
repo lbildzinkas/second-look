@@ -275,10 +275,11 @@ export class ReviewComments implements vscode.Disposable {
     thread.label = threadLabel({ kind: 'part', path: part.path, body: '' });
   }
 
-  /** Discards one pending comment, with its thread. */
+  /** Discards one thread of the pending review, gathered comment and all. */
   discard(thread: vscode.CommentThread): void {
-    if (this.threads.delete(thread)) {
-      thread.dispose();
+    const gathered = this.threads.delete(thread);
+    thread.dispose();
+    if (gathered) {
       this.changed.fire();
     }
   }
