@@ -3,10 +3,10 @@ import type { EvidenceSource, Verdict } from './case.js';
 
 /**
  * The claims a review reports and the fetches it offers, as the reviewer
- * sees them — the reviewer-facing half of the claim checks. The engine
- * does not find or check claims yet, so a review result today reports
- * none and every claim check fails, exactly as the baseline records;
- * when the result grows claims, these types and readers are the seam the
+ * sees them — the reviewer-facing half of the claim checks. The agent
+ * lists claims, but none is checked yet and the plain pass lists none,
+ * so the checks of a verdict fail exactly as the baseline records; when
+ * the claims grow verdicts, these types and readers are the seam the
  * checks flow through, unchanged.
  */
 
@@ -45,19 +45,13 @@ export interface PressedClaim extends ReportedClaim {
 }
 
 /**
- * The claims a review result reports. The engine's result carries no
- * claims yet — the claim steps have not landed — so the field is read
- * without being required and a result today reports none; the reader is
- * what starts handing real claims to the checks once the result grows
- * them.
+ * The claims a review result reports, each by its quote. A result without
+ * the agent's claims, such as the plain pass's, reports none; a claim not
+ * checked yet reports no verdict, since a verdict to compare is one a
+ * check gave.
  */
 export function reportedClaims(result: ReviewResult): ReportedClaim[] {
-  const reported = (result as { claims?: unknown }).claims;
-  if (!Array.isArray(reported)) return [];
-  return reported.filter((claim): claim is ReportedClaim => {
-    const candidate = claim as Partial<ReportedClaim>;
-    return typeof candidate.text === 'string' && candidate.text !== '';
-  });
+  return (result.claims?.claims ?? []).map((claim) => ({ text: claim.quote }));
 }
 
 /**
@@ -66,7 +60,7 @@ export function reportedClaims(result: ReviewResult): ReportedClaim[] {
  * 0003), so the evaluation, standing in for the reviewer, presses each
  * offer the review brought back; only what a press unlocked counts as
  * evidence in the tally. Nothing is offered yet, so there is nothing to
- * press and the claim checks stay failing until there is.
+ * press and the checks of a fetch stay failing until there is.
  */
 export function pressFetches(claims: readonly ReportedClaim[]): PressedClaim[] {
   return claims.map((claim) => ({

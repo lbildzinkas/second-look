@@ -35,5 +35,43 @@
     [
       "tests/test_termui.py#1"
     ]
+  ],
+  "claims": [
+    {
+      "text": "It accepts a path or any iterable of paths.",
+      "origin": {
+        "file": "src/click/termui.py",
+        "line": 884
+      }
+    },
+    {
+      "text": "If the editor supports editing multiple files at once, a sequence of files may be passed as well.",
+      "origin": {
+        "file": "src/click/termui.py",
+        "line": 885
+      },
+      "optional": true
+    },
+    {
+      "text": "``filename`` accepts ``os.PathLike`` values in addition to strings.",
+      "origin": {
+        "file": "src/click/termui.py",
+        "line": 896
+      }
+    },
+    {
+      "text": "``filename`` accepts ``os.PathLike`` values.",
+      "origin": {
+        "file": "tests/test_termui.py",
+        "line": 454
+      }
+    },
+    {
+      "text": "``filename`` accepts a path or an iterable of paths.",
+      "origin": {
+        "file": "tests/typing/typing_edit.py",
+        "line": 7
+      }
+    }
   ]
 }

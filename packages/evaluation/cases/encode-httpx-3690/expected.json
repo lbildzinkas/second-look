@@ -31,5 +31,119 @@
     [
       "src/httpx/_server.py#3"
     ]
+  ],
+  "claims": [
+    {
+      "text": "We need this in order to differentiate between clean disconnects at the start of a new request/response cycle, rather than a `ProtocolError` while calling `recv_method_line()`.",
+      "origin": {
+        "in": "description",
+        "line": 3
+      },
+      "optional": true
+    },
+    {
+      "text": "Wait until read data starts arriving, and return `True`. Return `False` if the stream closes.",
+      "origin": {
+        "file": "src/ahttpx/_parsers.py",
+        "line": 229
+      }
+    },
+    {
+      "text": "Attempt a read, and return True if read succeeds or False if the stream is closed.",
+      "origin": {
+        "file": "src/ahttpx/_parsers.py",
+        "line": 465
+      }
+    },
+    {
+      "text": "The data remains in the read buffer.",
+      "origin": {
+        "file": "src/ahttpx/_parsers.py",
+        "line": 466
+      }
+    },
+    {
+      "text": "Wait until we have read data, or return if the stream closes.",
+      "origin": {
+        "file": "src/ahttpx/_server.py",
+        "line": 36
+      }
+    },
+    {
+      "text": "Read the initial part of the request, and setup a stream for reading the body.",
+      "origin": {
+        "file": "src/ahttpx/_server.py",
+        "line": 39
+      },
+      "optional": true
+    },
+    {
+      "text": "If the client hasn't read the request body to completion, then do that here.",
+      "origin": {
+        "file": "src/ahttpx/_server.py",
+        "line": 58
+      },
+      "optional": true
+    },
+    {
+      "text": "Either revert to idle, or close the connection.",
+      "origin": {
+        "file": "src/ahttpx/_server.py",
+        "line": 61
+      },
+      "optional": true
+    },
+    {
+      "text": "Wait until read data starts arriving, and return `True`. Return `False` if the stream closes.",
+      "origin": {
+        "file": "src/httpx/_parsers.py",
+        "line": 229
+      }
+    },
+    {
+      "text": "Attempt a read, and return True if read succeeds or False if the stream is closed.",
+      "origin": {
+        "file": "src/httpx/_parsers.py",
+        "line": 465
+      }
+    },
+    {
+      "text": "The data remains in the read buffer.",
+      "origin": {
+        "file": "src/httpx/_parsers.py",
+        "line": 466
+      }
+    },
+    {
+      "text": "Wait until we have read data, or return if the stream closes.",
+      "origin": {
+        "file": "src/httpx/_server.py",
+        "line": 36
+      }
+    },
+    {
+      "text": "Read the initial part of the request, and setup a stream for reading the body.",
+      "origin": {
+        "file": "src/httpx/_server.py",
+        "line": 39
+      },
+      "optional": true
+    },
+    {
+      "text": "If the client hasn't read the request body to completion, then do that here.",
+      "origin": {
+        "file": "src/httpx/_server.py",
+        "line": 58
+      },
+      "optional": true
+    },
+    {
+      "text": "Either revert to idle, or close the connection.",
+      "origin": {
+        "file": "src/httpx/_server.py",
+        "line": 61
+      },
+      "optional": true
+    }
   ]
 }

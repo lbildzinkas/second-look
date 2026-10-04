@@ -5,6 +5,7 @@ import {
   type AgentSettings,
 } from './agent.js';
 import { ensureCopy } from './cache.js';
+import { findClaims } from './claims.js';
 import { validateCoverage } from './coverage.js';
 import { parseDiff, type ParsedDiff } from './diff.js';
 import { GitHubClient, parsePullRequestUrl } from './github.js';
@@ -39,7 +40,7 @@ export interface ReviewOptions {
   fetch?: typeof fetch;
   /** The engine's cache folder, which holds the read-only copies. */
   cacheDir: string;
-  /** Asks the agent to group and rank the parts and write the story too, after the plain pass; see {@link reviewChange}. */
+  /** Asks the agent to group and rank the parts, write the story and list the claims too, after the plain pass; see {@link reviewChange}. */
   agentStage?: AgentStageOptions;
 }
 
@@ -112,8 +113,9 @@ export async function fetchChange(url: string, options: ReviewOptions): Promise<
 }
 
 /**
- * The agent stages, grouping, ranking then the story, when a review asks
- * the agent to group and rank the parts and write the story too.
+ * The agent stages, grouping, ranking, the story then the claims, when a
+ * review asks the agent to group and rank the parts, write the story and
+ * list the claims too.
  */
 export interface AgentStageOptions {
   adapter: AgentAdapter;
@@ -124,6 +126,8 @@ export interface AgentStageOptions {
   testedRankings?: readonly TestedRanking[];
   /** Whether the agent writes the story after ranking; true when absent. */
   story?: boolean;
+  /** Whether the agent lists the claims last; true when absent. */
+  claims?: boolean;
 }
 
 /** A stage of the review starting, with the result so far. */
@@ -132,7 +136,7 @@ export interface ReviewStage {
   running: string;
   /** The stage ends within this many milliseconds. */
   timeoutMs: number;
-  /** The result so far: the plain pass's, then the grouping stage's, then the ranking stage's. */
+  /** The result so far: the plain pass's, then the grouping, ranking, story and claims stages' in turn. */
   result: ReviewResult;
 }
 
@@ -157,8 +161,9 @@ function coverageProblems(diff: ParsedDiff, parts: Part[]): string | undefined {
  * signalled and ranked the same way. When its answer is missing or
  * invalid, or its parts fail the coverage check, the plain grouping stays
  * and the result says why. The parts shown then go to `onStage` again
- * while the agent ranks them, see {@link rankStage}, and once more while
- * it writes their story, see {@link storyStage}.
+ * while the agent ranks them, see {@link rankStage}, once more while it
+ * writes their story, see {@link storyStage}, and last while it lists
+ * the claims the change makes, see {@link claimsStage}.
  */
 export async function reviewChange(
   input: ReviewInput,
@@ -187,7 +192,8 @@ export async function reviewChange(
   };
   if (!agentStage) return plain;
   const ranked = await groupAndRank(plain, agentStage, input, parsed, files);
-  return agentStage.story === false ? ranked : storyStage(ranked, agentStage, input);
+  const told = agentStage.story === false ? ranked : await storyStage(ranked, agentStage, input);
+  return agentStage.claims === false ? told : claimsStage(told, agentStage, input);
 }
 
 /**
@@ -300,4 +306,33 @@ async function storyStage(
     pullRequest: input.pullRequest,
   });
   return { ...shown, story };
+}
+
+/**
+ * The claims stage, last: the agent lists the claims the change makes
+ * about how code or a library behaves, from the description, the
+ * docstrings and comments the change adds, and the story when one was
+ * written, each attached to a part and not checked yet. A change with no
+ * parts makes no claim.
+ */
+async function claimsStage(
+  shown: ReviewResult,
+  agentStage: AgentStageOptions,
+  input: ReviewInput,
+): Promise<ReviewResult> {
+  if (shown.parts.length === 0) return shown;
+  const settings = agentStage.settings ?? DEFAULT_AGENT_SETTINGS;
+  agentStage.onStage?.({
+    running: `listing the claims with ${agentStage.adapter.agent}`,
+    timeoutMs: agentStageTimeoutMs(settings),
+    result: shown,
+  });
+  const claims = await findClaims(shown.parts, {
+    adapter: agentStage.adapter,
+    settings,
+    root: input.copies.head.path,
+    pullRequest: input.pullRequest,
+    ...(shown.story ? { story: shown.story } : {}),
+  });
+  return { ...shown, claims };
 }

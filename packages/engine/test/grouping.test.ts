@@ -160,7 +160,7 @@ describe('reviewChange with the agent grouping stage', () => {
     const agent = scriptedAgent([JSON.stringify(GOOD_ANSWER)]);
     const stages: ReviewStage[] = [];
 
-    const result = await reviewChange(input, { story: false, adapter: agent, onStage: (stage) => stages.push(stage) });
+    const result = await reviewChange(input, { story: false, claims: false, adapter: agent, onStage: (stage) => stages.push(stage) });
 
     // The plain pass's result arrives first, naming the stage that runs next.
     expect(stages).toHaveLength(1);
@@ -195,7 +195,7 @@ describe('reviewChange with the agent grouping stage', () => {
     const input = await pull7Input();
     const answer: GroupingAnswer = { parts: GOOD_ANSWER.parts.slice(0, 3) };
 
-    const result = await reviewChange(input, { story: false, adapter: scriptedAgent([JSON.stringify(answer)]) });
+    const result = await reviewChange(input, { story: false, claims: false, adapter: scriptedAgent([JSON.stringify(answer)]) });
 
     expect(result.grouping.by).toBe('agent');
     expect(result.grouping.agent).toMatchObject({
@@ -220,7 +220,7 @@ describe('reviewChange with the agent grouping stage', () => {
     const agent = scriptedAgent([invalid, invalid]);
     const plain = await reviewChange(input);
 
-    const result = await reviewChange(input, { story: false, adapter: agent });
+    const result = await reviewChange(input, { story: false, claims: false, adapter: agent });
 
     expect(agent.requests).toHaveLength(2);
     expect(agent.requests[1]!.prompt).toContain('- hunk h1 is in more than one part');
@@ -237,7 +237,7 @@ describe('reviewChange with the agent grouping stage', () => {
     const input = await pull7Input();
     const agent = scriptedAgent(['Here are the parts!', JSON.stringify(GOOD_ANSWER)]);
 
-    const result = await reviewChange(input, { story: false, adapter: agent });
+    const result = await reviewChange(input, { story: false, claims: false, adapter: agent });
 
     expect(agent.requests).toHaveLength(2);
     expect(result.grouping.by).toBe('agent');
@@ -247,7 +247,7 @@ describe('reviewChange with the agent grouping stage', () => {
     const input = await pull7Input();
     const agent = scriptedAgent([], { usable: false, reason: 'fake lacks the lockdown' });
 
-    const result = await reviewChange(input, { story: false, adapter: agent });
+    const result = await reviewChange(input, { story: false, claims: false, adapter: agent });
 
     expect(agent.requests).toHaveLength(0);
     expect(result.grouping.by).toBe('plain');
@@ -262,7 +262,7 @@ describe('reviewChange with the agent grouping stage', () => {
     const agent = scriptedAgent([JSON.stringify(GOOD_ANSWER)]);
     const stages: ReviewStage[] = [];
 
-    const result = await reviewChange({ ...input, diff: single }, { story: false, adapter: agent, onStage: (stage) => stages.push(stage) });
+    const result = await reviewChange({ ...input, diff: single }, { story: false, claims: false, adapter: agent, onStage: (stage) => stages.push(stage) });
 
     expect(agent.requests).toHaveLength(0);
     expect(stages).toHaveLength(0);

@@ -193,7 +193,8 @@ describe('runCli review with --agent', () => {
     expect(code).toBe(0);
     expect(err.text).toBe(
       'second-look-engine: plain parts ready; grouping related hunks with pi\n' +
-        "second-look-engine: agent's parts ready; writing the story with pi\n",
+        "second-look-engine: agent's parts ready; writing the story with pi\n" +
+        "second-look-engine: agent's parts ready; listing the claims with pi\n",
     );
     const result = JSON.parse(out.text) as { grouping: { by: string; agent: { leftOut: number } } };
     expect(result.grouping).toMatchObject({ by: 'agent', agent: { leftOut: 5 } });

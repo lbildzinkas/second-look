@@ -26,5 +26,22 @@
     [
       "source/utils/merge.ts#2"
     ]
+  ],
+  "claims": [
+    {
+      "text": "When extending an instance, signals are combined. Use `replaceOption(signal)` to replace inherited signals, or `signal: undefined` to remove them.",
+      "origin": {
+        "file": "source/types/ky.ts",
+        "line": 100
+      }
+    },
+    {
+      "text": "Special handling for AbortSignal instances at the root options level",
+      "origin": {
+        "file": "source/utils/merge.ts",
+        "line": 232
+      },
+      "optional": true
+    }
   ]
 }

@@ -242,7 +242,7 @@ describe('reviewChange with the agent ranking stage', () => {
     const agent = rankingAgent();
     const stages: ReviewStage[] = [];
 
-    const result = await reviewChange(input, { story: false, adapter: agent, testedRankings: TESTED, onStage: (stage) => stages.push(stage) });
+    const result = await reviewChange(input, { story: false, claims: false, adapter: agent, testedRankings: TESTED, onStage: (stage) => stages.push(stage) });
 
     expect(stages.map((stage) => stage.running)).toEqual(['grouping related hunks with fake', 'ranking the parts with fake']);
     expect(stages[1]!.timeoutMs).toBe(660_000);
@@ -273,7 +273,7 @@ describe('reviewChange with the agent ranking stage', () => {
     const agent = rankingAgent({ ranking: (ids) => ({ parts: ids.map((id) => entry(id, 'must review')) }) });
     const stages: ReviewStage[] = [];
 
-    const result = await reviewChange(input, { story: false, adapter: agent, testedRankings: TESTED, onStage: (stage) => stages.push(stage) });
+    const result = await reviewChange(input, { story: false, claims: false, adapter: agent, testedRankings: TESTED, onStage: (stage) => stages.push(stage) });
 
     expect(agent.requests).toHaveLength(3);
     expect(agent.requests[2]!.prompt).toContain('- 5 parts are must review; at most 2 of the 5 parts may be');
@@ -287,7 +287,7 @@ describe('reviewChange with the agent ranking stage', () => {
     const agent = rankingAgent();
     const stages: ReviewStage[] = [];
 
-    const result = await reviewChange(input, { story: false, adapter: agent, onStage: (stage) => stages.push(stage) });
+    const result = await reviewChange(input, { story: false, claims: false, adapter: agent, onStage: (stage) => stages.push(stage) });
 
     expect(agent.requests).toHaveLength(1);
     expect(stages).toHaveLength(1);
@@ -305,7 +305,7 @@ describe('reviewChange with the agent ranking stage', () => {
     const input = await pull7Input();
     const agent = rankingAgent();
 
-    const result = await reviewChange(input, { story: false, adapter: agent, testedRankings: TESTED, settings: { timeoutMs: 1000, concurrency: 1, model: 'fake/other' } });
+    const result = await reviewChange(input, { story: false, claims: false, adapter: agent, testedRankings: TESTED, settings: { timeoutMs: 1000, concurrency: 1, model: 'fake/other' } });
 
     expect(agent.requests).toHaveLength(1);
     expect(result.ranking.agent).toMatchObject({ outcome: 'not tested', detail: expect.stringContaining('fake with fake/other at its default effort has none') });
@@ -317,6 +317,7 @@ describe('reviewChange with the agent ranking stage', () => {
 
     const result = await reviewChange(input, {
       story: false,
+      claims: false,
       adapter: agent,
       testedRankings: [{ agent: 'fake', model: 'fake/model', effort: 'low' }],
       settings: { timeoutMs: 1000, concurrency: 1, effort: 'low' },
@@ -331,6 +332,7 @@ describe('reviewChange with the agent ranking stage', () => {
 
     const result = await reviewChange(input, {
       story: false,
+      claims: false,
       adapter: agent,
       testedRankings: TESTED,
       settings: { timeoutMs: 1000, concurrency: 1, model: 'fake/model', effort: 'high' },
@@ -347,7 +349,7 @@ describe('reviewChange with the agent ranking stage', () => {
     const input = await pull7Input();
     const agent = rankingAgent();
 
-    const result = await reviewChange(input, { story: false, adapter: agent, testedRankings: TESTED, settings: { timeoutMs: 1000, concurrency: 1 } });
+    const result = await reviewChange(input, { story: false, claims: false, adapter: agent, testedRankings: TESTED, settings: { timeoutMs: 1000, concurrency: 1 } });
 
     expect(result.ranking).toMatchObject({ by: 'agent', agent: { stamp: { effort: null } } });
   });
@@ -357,7 +359,7 @@ describe('reviewChange with the agent ranking stage', () => {
     const agent = rankingAgent({ model: 'fake/untested' });
     const stages: ReviewStage[] = [];
 
-    const result = await reviewChange(input, { story: false, adapter: agent, testedRankings: TESTED, onStage: (stage) => stages.push(stage) });
+    const result = await reviewChange(input, { story: false, claims: false, adapter: agent, testedRankings: TESTED, onStage: (stage) => stages.push(stage) });
 
     expect(agent.requests).toHaveLength(2);
     expect(result.parts).toEqual(stages[1]!.result.parts);

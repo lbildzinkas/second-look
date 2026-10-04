@@ -5,6 +5,15 @@
   "importantParts": ["doc_page in app/doc_links.py"],
   "claims": [
     {
+      "text": "Fetch documentation pages over HTTP.",
+      "origin": { "file": "app/doc_links.py", "line": 1 },
+      "optional": true
+    },
+    {
+      "text": "Return the documentation page at url as text.",
+      "origin": { "file": "app/doc_links.py", "line": 7 }
+    },
+    {
       "text": "Any redirect on the way is followed, so the caller always receives the final page rather than a 3xx status.",
       "origin": { "file": "app/doc_links.py", "line": 9 },
       "library": {
@@ -21,6 +30,11 @@
         }
       },
       "libraryFetch": true
+    },
+    {
+      "text": "Adds app/doc_links.py with a small helper that reads a documentation page over HTTP, the first piece of the link checker.",
+      "origin": { "in": "description", "line": 1 },
+      "optional": true
     }
   ],
   "groups": [["app/doc_links.py#1"]]

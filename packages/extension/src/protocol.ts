@@ -1,4 +1,5 @@
 import {
+  CLAIM_SOURCE_ORDER,
   IMPORTANCE_ORDER,
   REVIEW_RESULT_VERSION,
   type ChangeKind,
@@ -339,6 +340,60 @@ function isStory(value: unknown, partCount: number): boolean {
   );
 }
 
+/** Whether a number is a 1-based line. */
+function isLine(value: unknown): value is number {
+  return isNumber(value) && value >= 1;
+}
+
+/** Where a claim's quote sits: a description line, added file lines, or a story sentence the result has. */
+function isClaimLocation(value: unknown, sentenceCount: number): boolean {
+  if (!isRecord(value)) return false;
+  switch (value['kind']) {
+    case 'description':
+      return isLine(value['line']);
+    case 'file':
+      return isNonEmptyString(value['path']) && isLine(value['line']) && isLine(value['endLine']) && value['endLine'] >= value['line'];
+    case 'story':
+      return isNumber(value['sentence']) && value['sentence'] < sentenceCount;
+    default:
+      return false;
+  }
+}
+
+/** One claim: its quote, source and location, the part it is attached to, and its verdict. */
+function isClaim(value: unknown, partCount: number, sentenceCount: number): boolean {
+  if (!isRecord(value)) return false;
+  const verdict = value['verdict'];
+  return (
+    isNonEmptyString(value['quote']) &&
+    isOneOf(value['source'], CLAIM_SOURCE_ORDER) &&
+    // A claim from the story sits in a story sentence, and every other claim outside it.
+    (value['source'] === 'agent') === (isRecord(value['location']) && value['location']['kind'] === 'story') &&
+    isClaimLocation(value['location'], sentenceCount) &&
+    isNumber(value['part']) &&
+    value['part'] < partCount &&
+    isRecord(verdict) &&
+    verdict['kind'] === 'not checked'
+  );
+}
+
+/** The claims of the result's parts: listed, or fallen back with none, always stamped. */
+function isClaims(value: unknown, partCount: number, sentenceCount: number): boolean {
+  if (!isRecord(value)) return false;
+  const claims = value['claims'];
+  if (
+    !isString(value['promptVersion']) ||
+    !isOneOf(value['outcome'], ['listed', 'fell back'] as const) ||
+    !isString(value['detail']) ||
+    !isAgentStamp(value['stamp']) ||
+    !Array.isArray(claims)
+  ) {
+    return false;
+  }
+  if (value['outcome'] === 'fell back') return claims.length === 0;
+  return claims.every((claim) => isClaim(claim, partCount, sentenceCount));
+}
+
 function isPullRequestSummary(value: unknown): boolean {
   if (!isRecord(value)) return false;
   return (
@@ -384,7 +439,10 @@ export function isReviewResult(value: unknown): value is ReviewResult {
   if (!isGrouping(value['grouping']) || !isRanking(value['ranking'])) return false;
   const parts = value['parts'];
   if (!Array.isArray(parts) || !parts.every(isPart)) return false;
-  return value['story'] === undefined || isStory(value['story'], parts.length);
+  const story = value['story'];
+  if (story !== undefined && !isStory(story, parts.length)) return false;
+  const sentences = isRecord(story) && Array.isArray(story['sentences']) ? story['sentences'].length : 0;
+  return value['claims'] === undefined || isClaims(value['claims'], parts.length, sentences);
 }
 
 /** Error thrown by {@link parseReviewResult} when the JSON is not a review result. */

@@ -176,10 +176,10 @@ describe('the run command', () => {
     await recordCase(PR_7_URL, { token: 't', cacheDir, casesFolder: folder, id: 'tied', fetch: fixtureFetch(pull7()).fetch });
     const record = join(folder, 'tied', 'case.json');
     const json = JSON.parse(readFileSync(record, 'utf8')) as { prompts: string[] };
-    writeFileSync(record, JSON.stringify({ ...json, prompts: ['claims'] }));
+    writeFileSync(record, JSON.stringify({ ...json, prompts: ['criteria'] }));
 
     const { code, err } = await cli(['run', '--cases', folder, '--runs', join(scratch, 'runs')]);
-    expect(err).toContain('case tied names the unregistered prompt claims');
+    expect(err).toContain('case tied names the unregistered prompt criteria');
     expect(code).toBe(1);
   });
 });

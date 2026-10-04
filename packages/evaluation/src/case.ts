@@ -58,18 +58,29 @@ export type EvidenceSource =
 
 /**
  * One claim the change makes, as a reviewer expects the companion to find
- * it and check it: the statement's text, where the change makes it, the
- * library it is about as the project pins it, the verdict it deserves with
- * the evidence that proves it, and that a library fetch should be offered
- * before the check reads the library's source.
+ * it and, when the case labels it, check it: the statement's text, where
+ * the change makes it, the library it is about as the project pins it,
+ * the verdict it deserves with the evidence that proves it, and that a
+ * library fetch should be offered before the check reads the library's
+ * source.
  */
 export interface ExpectedClaim {
-  /** The claim's text, exactly as the change states it. */
+  /** The claim's text, exactly as the change states it, on one line. */
   text: string;
-  /** Where the change makes the claim: the file and 1-based line the statement starts at. */
-  origin: { file: string; line: number };
-  /** The library the claim is about, as the project pins it. */
-  library: {
+  /**
+   * Where the change makes the claim: the file and 1-based head-side line
+   * the statement starts at, or the 1-based line of the pull request's
+   * description.
+   */
+  origin: { file: string; line: number } | { in: 'description'; line: number };
+  /**
+   * Set on a statement a reviewer may or may not count as a claim, such
+   * as a comment naming what the next lines do: listing it is no false
+   * claim, and leaving it out no miss.
+   */
+  optional?: true;
+  /** The library the claim is about, as the project pins it; absent for a claim about the change's own code. */
+  library?: {
     /** The package name the pin uses. */
     name: string;
     /** The version the project pins. */
@@ -77,8 +88,8 @@ export interface ExpectedClaim {
     /** The file that pins it, by its path in the head copy. */
     pinnedBy: string;
   };
-  /** The verdict the reviewer expects, with the evidence that proves it. */
-  verdict: {
+  /** The verdict the reviewer expects, with the evidence that proves it; absent until the case labels it. */
+  verdict?: {
     kind: Verdict;
     evidence: {
       /** The evidence file, named as its source names it. */
@@ -89,7 +100,7 @@ export interface ExpectedClaim {
     };
   };
   /** That the companion offers a library fetch before checking this claim. */
-  libraryFetch: true;
+  libraryFetch?: true;
 }
 
 /** A case's `expected.json`, written by hand. */
@@ -104,7 +115,7 @@ export interface ExpectedResults {
    * prints it, or else by its path (the first part holding that file).
    */
   importantParts: string[];
-  /** The claims the change makes, each expected to be found and checked. */
+  /** The claims the change makes, each expected to be found, and checked when it has a verdict. */
   claims: ExpectedClaim[];
   /**
    * The hand-labelled grouping: the parts a reviewer would read, each as

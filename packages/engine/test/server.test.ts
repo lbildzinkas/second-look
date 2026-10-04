@@ -8,6 +8,7 @@ import {
   VERSION_MISMATCH_CODE,
 } from '../src/rpc.js';
 import type { AgentName } from '../src/agents.js';
+import { CLAIMS_INSTRUCTIONS } from '../src/claims.js';
 import { GROUPING_INSTRUCTIONS } from '../src/grouping.js';
 import { DEFAULT_EFFORT } from '../src/ranking.js';
 import { runRpcServer, type RpcAgentDeps } from '../src/server.js';
@@ -130,7 +131,7 @@ describe('runRpcServer', () => {
 
     expect(responses[0]!.result).toEqual({ protocolVersion: ENGINE_PROTOCOL_VERSION });
     const first = responses[1]!.result as { version: number; parts: unknown[] };
-    expect(first.version).toBe(6);
+    expect(first.version).toBe(7);
     expect(first.parts).toHaveLength(11);
     const second = responses[2]!.result as { parts: unknown[] };
     expect(second.parts).toHaveLength(11);
@@ -281,7 +282,7 @@ describe('runRpcServer', () => {
 });
 
 describe('runRpcServer with an agent', () => {
-  it('sends the plain result as a stage notification before the answer with the agent parts and story', async () => {
+  it('sends the plain result as a stage notification before the answer with the agent parts, story and claims', async () => {
     const lines = [
       request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
       request('review', { url: PR_7_URL, token: TOKEN }, 2),
@@ -304,8 +305,8 @@ describe('runRpcServer with an agent', () => {
       },
     );
 
-    const [handshake, stage, storyStage, final] = written.map((line) => JSON.parse(line) as Record<string, unknown>);
-    expect(written).toHaveLength(4);
+    const [handshake, stage, storyStage, claimsStage, final] = written.map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(written).toHaveLength(5);
     expect(handshake).toMatchObject({ id: 1 });
     // A notification has no id of its own; its params name the review request.
     expect(stage).not.toHaveProperty('id');
@@ -316,7 +317,7 @@ describe('runRpcServer with an agent', () => {
         id: 2,
         running: 'grouping related hunks with fake',
         timeoutMs: 660_000,
-        result: { version: 6, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
+        result: { version: 7, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
       },
     });
     // The fake agent has no tested ranking, so the story stage follows the grouping.
@@ -324,7 +325,14 @@ describe('runRpcServer with an agent', () => {
       method: REVIEW_STAGE_METHOD,
       params: { id: 2, running: 'writing the story with fake', result: { grouping: { by: 'agent' } } },
     });
-    expect(final).toMatchObject({ id: 2, result: { grouping: { by: 'agent' }, story: { outcome: 'fell back' } } });
+    expect(claimsStage).toMatchObject({
+      method: REVIEW_STAGE_METHOD,
+      params: { id: 2, running: 'listing the claims with fake', result: { story: { outcome: 'fell back' } } },
+    });
+    expect(final).toMatchObject({
+      id: 2,
+      result: { grouping: { by: 'agent' }, story: { outcome: 'fell back' }, claims: { outcome: 'fell back', claims: [] } },
+    });
     expect((final!['result'] as { parts: unknown[] }).parts).toHaveLength(2);
     expect(written.join('\n')).not.toContain(TOKEN);
   });
@@ -405,7 +413,9 @@ describe('runRpcServer with an agent', () => {
         const answer =
           request.instructions === GROUPING_INSTRUCTIONS
             ? GROUPING
-            : {
+            : request.instructions === CLAIMS_INSTRUCTIONS
+              ? { claims: [] }
+              : {
                 parts: [...offeredParts(request.prompt)].reverse().map(({ id }, index) => ({
                   part: id,
                   importance: index === 0 ? 'must review' : 'worth reviewing',
@@ -458,11 +468,12 @@ describe('runRpcServer with an agent', () => {
       },
     );
 
-    // Both reviews grouped, ranked and wrote their story through the same
-    // engine, each pass asking for the model the request named; the fake's
-    // story answer is refused and retried once, so the story costs two runs.
-    expect(pi.requests.map((run) => run.model)).toEqual(['pi/model', 'pi/model', 'pi/model', 'pi/model']);
-    expect(claude.requests.map((run) => run.model)).toEqual(['claude/model', 'claude/model', 'claude/model', 'claude/model']);
+    // Both reviews grouped, ranked, wrote their story and listed the claims
+    // through the same engine, each pass asking for the model the request
+    // named; the fake's story answer is refused and retried once, so the
+    // story costs two runs.
+    expect(pi.requests.map((run) => run.model)).toEqual(['pi/model', 'pi/model', 'pi/model', 'pi/model', 'pi/model']);
+    expect(claude.requests.map((run) => run.model)).toEqual(['claude/model', 'claude/model', 'claude/model', 'claude/model', 'claude/model']);
     const first = answers(2).result as {
       grouping: { by: string; agent?: { stamp?: { agent: string; model: string; account?: string } } };
       ranking: { by: string; agent?: { stamp?: { agent: string; model: string; account?: string } } };
@@ -489,12 +500,12 @@ describe('runRpcServer with an agent', () => {
       },
     );
 
-    // The grouping and story passes ran: the serve default agent has no
-    // tested ranking here, so the plain ranking stayed and said so; the
-    // fake's story answer is refused and retried once, so the story costs
-    // two runs.
+    // The grouping, story and claims passes ran: the serve default agent
+    // has no tested ranking here, so the plain ranking stayed and said so;
+    // the fake's story answer is refused and retried once, so the story
+    // costs two runs.
     expect(pi.requests).toHaveLength(0);
-    expect(claude.requests).toHaveLength(3);
+    expect(claude.requests).toHaveLength(4);
     expect(claude.requests[0]!.model).toBe('claude/model');
     expect(answers(2).result).toMatchObject({
       grouping: { by: 'agent', agent: { stamp: { agent: 'claude-code', model: 'claude/model' } } },

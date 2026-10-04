@@ -32,4 +32,5 @@ export * from './probe.js';
 export * from './grouping.js';
 export * from './ranking.js';
 export * from './story.js';
+export * from './claims.js';
 export { runCli } from './cli.js';

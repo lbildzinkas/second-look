@@ -3,13 +3,14 @@ import type { AgentGrouping, AgentRanking, FileSlice, Hunk } from '@second-look/
 import {
   anchorOf,
   buildTree,
+  claimCountText,
   findAnchor,
   NOISE,
   NOT_RANKED_YET,
   partsInReadingOrder,
   reviewStatus,
 } from '../src/tree.js';
-import { mixedResult, part, result } from './results.js';
+import { claimsResult, mixedResult, part, result } from './results.js';
 
 /** A hunk adding one line at the given place, on both sides. */
 function hunkAt(oldStart: number, newStart: number): Hunk {
@@ -185,6 +186,34 @@ describe('buildTree', () => {
 
   it('returns no sections for a result with no parts', () => {
     expect(buildTree(result([]))).toEqual([]);
+  });
+});
+
+describe('claim counts in the tree', () => {
+  it('shows each part its claim count beside the label, and in the tooltip that none is checked yet', () => {
+    const [mustReview, worthReviewing, context] = buildTree(claimsResult());
+
+    expect(mustReview!.parts[0]).toMatchObject({
+      claims: 3,
+      description: '3 claims · New code the send path now runs on every delivery.',
+      tooltip: 'new code\n2 callers\nno tests before this pull request\nPlain ranking\n3 claims, not checked yet; the overview lists them',
+    });
+    expect(worthReviewing!.parts[0]).toMatchObject({ claims: 1, description: '1 claim · Changed code that the retry policy reads.' });
+    expect(context!.parts[0]).not.toHaveProperty('claims');
+    expect(context!.parts[0]!.description).toBe('Release note only.');
+  });
+
+  it('counts nothing before the claims arrive, or when they fell back', () => {
+    const shown = claimsResult();
+    const fellBack = { ...shown, claims: { ...shown.claims!, outcome: 'fell back' as const, claims: [] } };
+    for (const each of [mixedResult(), fellBack]) {
+      const nodes = buildTree(each).flatMap((section) => section.parts);
+      expect(nodes.every((node) => !('claims' in node))).toBe(true);
+    }
+  });
+
+  it('says the count in words', () => {
+    expect([claimCountText(1), claimCountText(2)]).toEqual(['1 claim', '2 claims']);
   });
 });
 
