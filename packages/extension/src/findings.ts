@@ -112,7 +112,7 @@ export class FindingThreads implements vscode.Disposable {
 
   /** A thread at the finding's line, or on its part's first file at no line. */
   private threadFor(result: ReviewResult, claim: Claim): vscode.CommentThread | undefined {
-    const anchor = findingAnchor(claim);
+    const anchor = findingAnchor(claim, result.parts);
     if (anchor !== undefined) {
       const line = anchor.line - 1;
       return this.controller.createCommentThread(changeUri('head', result.copies.head.commit, anchor.path), new vscode.Range(line, 0, line, 0), []);

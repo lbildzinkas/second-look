@@ -1,4 +1,4 @@
-import { filesOfPart } from './parts.js';
+import { filesOfPart, lineInChange } from './parts.js';
 import type { Claim, Part, PipelineFinding, PipelineReport, PipelineStep } from './protocol.js';
 
 /**
@@ -131,11 +131,7 @@ export function readPipelineReport(description: string, headSha: string): Pipeli
  */
 function partOf(parts: readonly Part[], finding: PipelineFinding): number {
   const holds = (part: Part): boolean => filesOfPart(part).some((file) => file.path === finding.path);
-  const holdsLine = (part: Part): boolean =>
-    filesOfPart(part).some(
-      (file) => file.path === finding.path && file.hunks.some((hunk) => finding.line! >= hunk.newStart && finding.line! < hunk.newStart + Math.max(hunk.newLines, 1)),
-    );
-  const atLine = finding.line === undefined ? -1 : parts.findIndex(holdsLine);
+  const atLine = finding.line === undefined ? -1 : parts.findIndex((part) => lineInChange([part], finding.path!, finding.line!));
   if (atLine >= 0) return atLine;
   return Math.max(parts.findIndex(holds), 0);
 }

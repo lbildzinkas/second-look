@@ -156,7 +156,7 @@ describe('pressLibraryFetch', () => {
     const judging = await pressLibraryFetch([part()], claim({ kind: 'description', line: 1 }), options(answeringAgent(() => REFUTED)).options);
 
     expect(judging.claim.verdict).toMatchObject({ kind: 'refuted' });
-    expect(findingAnchor(judging.claim)).toBeUndefined();
+    expect(findingAnchor(judging.claim, [part()])).toBeUndefined();
   });
 });
 

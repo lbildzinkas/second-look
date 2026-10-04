@@ -294,7 +294,7 @@ describe('the verdicts prompt with CI logs', () => {
       evidence: [{ path: 'check / test', line: 2, quote: 'FAILED tests/test_misc.py::test_fraction - assert 5 == 500000', ciLog: true }],
     });
     // A CI log's finding has no line on the diff: its thread sits on its part.
-    expect(findingAnchor({ ...claims()[1]!, verdict })).toBeUndefined();
+    expect(findingAnchor({ ...claims()[1]!, verdict }, [retryPart()])).toBeUndefined();
     expect(await judgeVerdict(read, answered({ source: 'a CI log', evidence: [{ ...cited, quote: 'assert 500000 == 500000' }] }), logs)).toMatchObject({
       kind: 'unverifiable',
       recheck: 'the quote of the citation log1:2 is not on that line',
@@ -344,9 +344,33 @@ describe('findings', () => {
 
   it("sit on the claim's own line, else on the first line the verdict cites, else nowhere on the diff", () => {
     const [docstring, description] = claims();
-    expect(findingAnchor({ ...docstring!, verdict: refuted })).toEqual({ path: 'app/retry.py', line: 2 });
-    expect(findingAnchor({ ...description!, verdict: refuted })).toEqual({ path: 'app/settings.py', line: 2 });
-    expect(findingAnchor({ ...description!, verdict: unverifiable })).toBeUndefined();
+    expect(findingAnchor({ ...docstring!, verdict: refuted }, [retryPart()])).toEqual({ path: 'app/retry.py', line: 2 });
+    expect(findingAnchor({ ...description!, verdict: refuted }, [retryPart()])).toEqual({ path: 'app/settings.py', line: 2 });
+    expect(findingAnchor({ ...description!, verdict: unverifiable }, [retryPart()])).toBeUndefined();
+  });
+
+  it("sit on the line a pipeline finding names only when the diff shows it, else on their part's first added line", () => {
+    const settings = (): Part => ({
+      ...changedPart({ path: 'src/settings.ts', head: Array.from({ length: 14 }, (_, at) => `line ${at + 1}`).join('\n'), added: [10, 11, 12] }),
+      name: 'load in src/settings.ts',
+    });
+    const parts = [changedPart({ path: 'src/fresh.ts', head: 'a\nb\nc', added: [1, 2, 3] }), settings()];
+    parts[1]!.hunks[0]!.newStart = 10;
+    parts[1]!.hunks[0]!.newLines = 3;
+    const finding = (path: string, line: number, part: number): Claim => ({
+      quote: 'q',
+      source: 'pipeline',
+      location: { kind: 'pipeline', finding: 0, step: 'Review', path, line },
+      part,
+      verdict: NOT_CHECKED,
+    });
+    // A line inside a hunk of a changed file carries the thread.
+    expect(findingAnchor(finding('src/settings.ts', 12, 1), parts)).toEqual({ path: 'src/settings.ts', line: 12 });
+    // A changed file outside its hunks: the part the finding is about, at its first added line.
+    expect(findingAnchor(finding('src/settings.ts', 5, 1), parts)).toEqual({ path: 'src/settings.ts', line: 10 });
+    // An unchanged file and a path the change does not have: the first part, never the named path.
+    expect(findingAnchor(finding('README.md', 5, 0), parts)).toEqual({ path: 'src/fresh.ts', line: 1 });
+    expect(findingAnchor(finding('no/such/file.py', 3, 0), parts)).toEqual({ path: 'src/fresh.ts', line: 1 });
   });
 });
 
@@ -441,7 +465,7 @@ describe('reviewChange with the verdicts stage', () => {
         },
       },
     ]);
-    expect(findingAnchor(result.claims!.claims[0]!)).toEqual({ path: 'src/tomli/_re.py', line: 83 });
+    expect(findingAnchor(result.claims!.claims[0]!, result.parts)).toEqual({ path: 'src/tomli/_re.py', line: 83 });
   });
 
   it('drops the refutation to unverifiable when its quote misquotes the cited line', async () => {

@@ -53,6 +53,13 @@ export function filesOfPart(part: Part): FileSlice[] {
   return [first, ...(otherFiles ?? [])];
 }
 
+/** Whether a head-side line of a file falls inside a hunk of the change, so the diff shows it. */
+export function lineInChange(parts: readonly Part[], path: string, line: number): boolean {
+  return parts.some((part) =>
+    filesOfPart(part).some((file) => file.path === path && file.hunks.some((hunk) => line >= hunk.newStart && line < hunk.newStart + Math.max(hunk.newLines, 1))),
+  );
+}
+
 /**
  * Splits one file into parts: hunks that touch a shared entity join one
  * part, directly or through other hunks, and the hunks outside every

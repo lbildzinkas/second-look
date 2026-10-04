@@ -9,7 +9,7 @@ import {
 import { pathInCopy } from './archive.js';
 import { ciLogItems, type CiLogItem } from './ci.js';
 import type { JsonSchema } from './json-schema.js';
-import { filesOfPart } from './parts.js';
+import { filesOfPart, lineInChange } from './parts.js';
 import type {
   CheckedVerdictKind,
   CiResults,
@@ -414,17 +414,37 @@ export function findingCounts(claims: Claims | undefined, partCount: number): nu
 
 /**
  * Where a finding's thread sits on the diff: the head-side line a claim
- * from a docstring or comment starts on, or a pipeline finding names,
- * else the first line of the head copy its verdict cites; none for a
- * claim that cites nothing there, such as one judged against a library's
- * source or a CI log, whose thread sits on its part.
+ * from a docstring or comment starts on, or a pipeline finding names
+ * when the diff shows that line — the report is untrusted text, so a
+ * name the change does not hold falls to the claim's part, at that
+ * part's first added line — else the first line of the head copy its
+ * verdict cites; none for a claim that cites nothing there, such as one
+ * judged against a library's source or a CI log, whose thread sits on
+ * its part, and none for a part that adds no line, such as a deletion.
  */
-export function findingAnchor(claim: Claim): { path: string; line: number } | undefined {
+export function findingAnchor(claim: Claim, parts: readonly Part[]): { path: string; line: number } | undefined {
   const { location, verdict } = claim;
   if (location.kind === 'file') return { path: location.path, line: location.line };
-  if (location.kind === 'pipeline' && location.path !== undefined && location.line !== undefined) return { path: location.path, line: location.line };
+  if (location.kind === 'pipeline') {
+    if (location.path !== undefined && location.line !== undefined && lineInChange(parts, location.path, location.line)) {
+      return { path: location.path, line: location.line };
+    }
+    return firstAddedLine(parts[claim.part]);
+  }
   const [first] = verdict.kind === 'not checked' || verdict.library !== undefined || verdict.source === 'a CI log' ? [] : verdict.evidence;
   return first === undefined ? undefined : { path: first.path, line: first.line };
+}
+
+/** The first line a part adds, where the thread of a finding about a line the diff does not show sits; none when the part adds none. */
+function firstAddedLine(part: Part | undefined): { path: string; line: number } | undefined {
+  for (const file of part === undefined ? [] : filesOfPart(part)) {
+    for (const hunk of file.hunks) {
+      for (const line of hunk.lines) {
+        if (line.kind === 'addition' && line.newLineNumber !== undefined) return { path: file.path, line: line.newLineNumber };
+      }
+    }
+  }
+  return undefined;
 }
 
 export interface VerdictsOptions {
