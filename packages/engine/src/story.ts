@@ -74,7 +74,8 @@ export const STORY_INSTRUCTIONS = [
   '  mention of every listed part before it that you mention.',
   '- Write every file or code name in backticks, such as `send_webhook`, and only names the',
   '  change shows: never name a file, function, class or other code the change does not show.',
-  '- Say what the change does, not whether it is right: the reviewer judges that.',
+  '- Say what the change does, not whether it is right: the reviewer judges that. Never repeat',
+  '  what a comment, a docstring or the description claims as if it were so; say what the lines do.',
   '- Read a file with your tools only when the lines shown do not tell you what a part does.',
   'Answer with only one JSON value and no other text, matching this JSON schema:',
   JSON.stringify(STORY_SCHEMA),
@@ -206,7 +207,8 @@ const BARE_NAMES = [
 /**
  * The file and code names a sentence uses: every name in backticks, and
  * the code-like names outside them ({@link BARE_NAMES}). A link's target
- * is not a name.
+ * is not a name, and neither is a literal with no letter in it, such as
+ * `.5`.
  */
 export function namesIn(sentence: string): string[] {
   let text = sentence.replace(LINK, (_link, words: string) => ` ${words} `);
@@ -220,7 +222,7 @@ export function namesIn(sentence: string): string[] {
   }
   return names
     .map((name) => name.trim().replace(/\(\)$/, '').replace(/^\.\//, '').replace(/[.,;:!?]+$/, ''))
-    .filter((name) => name !== '');
+    .filter((name) => /[A-Za-z_]/.test(name));
 }
 
 /**
@@ -243,6 +245,20 @@ export function changeText(parts: readonly Part[]): string {
       ]),
     ])
     .join('\n');
+}
+
+/** An identifier, as a name splits into them: `BlobReader.Read(Stream input)` holds four. */
+const IDENTIFIER = /[A-Za-z_]\w*/g;
+
+/**
+ * Whether the change shows a name: the name as written, or else every
+ * identifier in it, so a signature such as `Read(Stream input)` passes
+ * when the change shows each of its words, while an invented one fails.
+ */
+function showsName(change: string, identifiers: ReadonlySet<string>, name: string): boolean {
+  if (change.includes(name)) return true;
+  const words = name.match(IDENTIFIER) ?? [];
+  return words.length > 0 && words.every((word) => identifiers.has(word));
 }
 
 /**
@@ -274,11 +290,12 @@ export function storyChecks(items: readonly StoryItem[], answer: StoryAnswer, ch
   const positions = mentionOrder.map((id) => order.get(id)!);
   const ids = items.filter((item) => levelOf(item.part) === 'must review').map((item) => item.id);
   const used = answer.sentences.flatMap(namesIn);
+  const identifiers = new Set(change.match(IDENTIFIER) ?? []);
   return {
     mustReview: { ids, mentioned: ids.filter((id) => mentionOrder.includes(id)) },
     mentionOrder,
     inOrder: positions.every((position, index) => index === 0 || position > positions[index - 1]!),
-    names: { used, outside: [...new Set(used.filter((name) => !change.includes(name)))] },
+    names: { used, outside: [...new Set(used.filter((name) => !showsName(change, identifiers, name)))] },
   };
 }
 
