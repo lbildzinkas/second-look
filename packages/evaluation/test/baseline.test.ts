@@ -159,6 +159,20 @@ describe('mergeBaseline', () => {
     ]);
   });
 
+  it('keeps a stored ranking comparison over a grouping-only run with the same agent', () => {
+    const comparison: RankingComparison = {
+      ...pi,
+      cases: ['example-7'],
+      plain: { 'rank-median': 2 },
+      ranked: { 'rank-median': 1 },
+      verdict: 'matches or beats the plain ranking',
+    };
+    const stored = { rows: [row()], failures: [], rankings: [comparison] };
+    const groupingOnly = { rows: [row({ ...pi, name: 'grouping-agreement', value: 0.9 })], failures: [], fallbacks: [] };
+
+    expect(mergeBaseline(stored, groupingOnly).rankings).toEqual([comparison]);
+  });
+
   it('keeps a stored fallback unless the run scored that case with the same agent', () => {
     const stored = {
       rows: [row()],

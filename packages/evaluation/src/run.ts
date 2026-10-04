@@ -1,6 +1,6 @@
 import { appendFile, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { GROUPING_PROMPT_ID, RANKING_PROMPT_ID, rankWithAgent, rankingItems, reviewChange } from '@second-look/engine';
+import { DEFAULT_EFFORT, GROUPING_PROMPT_ID, RANKING_PROMPT_ID, rankWithAgent, rankingItems, reviewChange } from '@second-look/engine';
 import type { AgentAdapter, AgentSettings, AgentStamp, Part } from '@second-look/engine';
 import { caseInput } from './case.js';
 import type { EvaluationCase } from './case.js';
@@ -189,7 +189,7 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
     // A run that ended before naming its model leaves the stamp incomplete,
     // so its rows are never compared.
     model: agent ? (agent.model ?? '') : NO_AGENT,
-    effort: agent ? (agent.effort ?? 'default') : NO_AGENT,
+    effort: agent ? (agent.effort ?? DEFAULT_EFFORT) : NO_AGENT,
     runDate,
   });
   const rowsOf = (name: string, tally: Tally, stamp: Stamp, only?: readonly string[]): ResultRow[] =>

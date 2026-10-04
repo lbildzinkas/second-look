@@ -128,18 +128,13 @@ export function mergeBaseline(stored: RunResults, run: RunResults): RunResults {
       ...(run.fallbacks ?? []),
     ],
     rankings: [
-      ...(stored.rankings ?? []).filter((ranking) => !scored.has(rankingKey(ranking, run))),
+      ...(stored.rankings ?? []).filter(
+        (ranking) =>
+          !(run.rankings ?? []).some(
+            (each) => each.agent === ranking.agent && each.model === ranking.model && each.effort === ranking.effort,
+          ),
+      ),
       ...(run.rankings ?? []),
     ],
   };
-}
-
-/**
- * A stored ranking comparison is replaced when the run ranked any case
- * with the same agent, model and effort: the run's key for one of its
- * rows, or a key no row has when it ranked none.
- */
-function rankingKey(ranking: { agent: string; model: string; effort: string }, run: RunResults): string {
-  const row = run.rows.find((each) => each.agent === ranking.agent && each.model === ranking.model && each.effort === ranking.effort);
-  return row ? runKey(row) : '';
 }
