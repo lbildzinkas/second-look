@@ -3,7 +3,7 @@
   "id": "seeded-csharp",
   "source": "https://github.com/example-org/example-repo/pull/8480",
   "recordedAt": "2026-10-02T20:08:11.985Z",
-  "prompts": ["ranking"],
+  "prompts": ["ranking", "story"],
   "pullRequest": {
     "url": "https://github.com/example-org/example-repo/pull/8480",
     "number": 8480,

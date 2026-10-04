@@ -4,7 +4,7 @@ import type { NoiseAssessment, Part } from '@second-look/engine';
 import type { ExpectedClaim, ExpectedResults } from '../src/case.js';
 import { pressFetches } from '../src/claims.js';
 import type { PressedClaim } from '../src/claims.js';
-import { addTallies, scoresOf, tallyCase } from '../src/score.js';
+import { addTallies, scoresOf, tallyCase, tallyStory } from '../src/score.js';
 
 const DIFF = [
   'diff --git a/package-lock.json b/package-lock.json',
@@ -296,3 +296,33 @@ describe('the grouping agreement', () => {
     expect(byName(scoresOf(tallyCase(DIFF, EXPECTED, parts({}))))['grouping-agreement']).toBeUndefined();
   });
 });
+
+describe('the story checks', () => {
+  const checks = {
+    mustReview: { ids: ['p1', 'p2'], mentioned: ['p1'] },
+    mentionOrder: ['p1', 'p3'],
+    inOrder: true,
+    names: { used: ['fresh', 'web/cart.ts', 'app/totals.py', 'fresh'], outside: ['app/totals.py'] },
+  };
+  const story = (written: boolean) => ({ ...tallyCase(DIFF, { noise: {}, importantParts: [], claims: [] }, undefined), story: tallyStory(checks, written) });
+  const storyScores = (tally: ReturnType<typeof story>) =>
+    Object.fromEntries(scoresOf(tally).filter((score) => score.name.startsWith('story-')).map((score) => [score.name, score.value]));
+
+  it('scores the must-review parts linked, the reading order, and the names the change shows', () => {
+    expect(storyScores(story(true))).toEqual({ 'story-must-review': 0.5, 'story-order': 1, 'story-names': 0.75 });
+  });
+
+  it('fails a story that was not written on the must-review parts and the order', () => {
+    const notWritten = { ...story(false), story: tallyStory({ ...checks, mustReview: { ids: ['p1', 'p2'], mentioned: [] }, mentionOrder: [], names: { used: [], outside: [] } }, false) };
+    expect(storyScores(notWritten)).toEqual({ 'story-must-review': 0, 'story-order': 0 });
+  });
+
+  it('adds the story counts across cases', () => {
+    expect(storyScores(addTallies([story(true), story(false)]))).toEqual({ 'story-must-review': 0.25, 'story-order': 0.5, 'story-names': 0.75 });
+  });
+
+  it('gives a case without a story no story score', () => {
+    expect(storyScores({ ...story(true), story: tallyCase(DIFF, { noise: {}, importantParts: [], claims: [] }, undefined).story })).toEqual({});
+  });
+});
+

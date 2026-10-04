@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { removeCopy } from '../../engine/src/cache.js';
 import { GROUPING_PROMPT_VERSION } from '../../engine/src/grouping.js';
 import { RANKING_PROMPT_VERSION } from '../../engine/src/ranking.js';
+import { STORY_PROMPT_VERSION } from '../../engine/src/story.js';
 import {
   CaptureStream,
   PR_7_URL,
@@ -79,6 +80,7 @@ describe('the run command', () => {
     expect(results.rows.find((row) => row.case === 'example-7')!.promptVersions).toEqual({
       grouping: GROUPING_PROMPT_VERSION,
       ranking: RANKING_PROMPT_VERSION,
+      story: STORY_PROMPT_VERSION,
     });
     expect(results.rows.some((row) => row.case === ALL_CASES)).toBe(true);
     // A model-free run calls no agent, so its trace is empty.
@@ -174,10 +176,10 @@ describe('the run command', () => {
     await recordCase(PR_7_URL, { token: 't', cacheDir, casesFolder: folder, id: 'tied', fetch: fixtureFetch(pull7()).fetch });
     const record = join(folder, 'tied', 'case.json');
     const json = JSON.parse(readFileSync(record, 'utf8')) as { prompts: string[] };
-    writeFileSync(record, JSON.stringify({ ...json, prompts: ['story'] }));
+    writeFileSync(record, JSON.stringify({ ...json, prompts: ['claims'] }));
 
     const { code, err } = await cli(['run', '--cases', folder, '--runs', join(scratch, 'runs')]);
-    expect(err).toContain('case tied names the unregistered prompt story');
+    expect(err).toContain('case tied names the unregistered prompt claims');
     expect(code).toBe(1);
   });
 });

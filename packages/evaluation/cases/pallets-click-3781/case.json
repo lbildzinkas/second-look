@@ -5,7 +5,8 @@
   "recordedAt": "2026-10-02T18:43:48.363Z",
   "prompts": [
     "grouping",
-    "ranking"
+    "ranking",
+    "story"
   ],
   "pullRequest": {
     "url": "https://github.com/pallets/click/pull/3781",
