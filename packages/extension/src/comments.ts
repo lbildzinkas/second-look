@@ -169,8 +169,8 @@ export class ReviewComments implements vscode.Disposable {
    * Performs the pending review's one write with the gathering sealed:
    * while the write is under way — the sign-in it may ask for, the
    * round-trip to GitHub — no comment joins the review, leaves it, or
-   * is rewritten, so what is written is exactly the review the reviewer
-   * pressed for.
+   * is rewritten; a move tried anyway is refused with a warning, so
+   * what is written is exactly the review the reviewer pressed for.
    */
   async sendWhileSealed<T>(write: () => Promise<T>): Promise<T> {
     this.sending = true;
@@ -179,6 +179,11 @@ export class ReviewComments implements vscode.Disposable {
     } finally {
       this.sending = false;
     }
+  }
+
+  /** Refuses a move on the pending review while its one write runs. */
+  private refuseWhileSending(): void {
+    vscode.window.showWarningMessage('The review is being sent: try again once it finishes.');
   }
 
   /**
@@ -198,6 +203,7 @@ export class ReviewComments implements vscode.Disposable {
    */
   add(reply: vscode.CommentReply): void {
     if (this.sending) {
+      this.refuseWhileSending();
       return;
     }
     const result = this.result;
@@ -231,6 +237,10 @@ export class ReviewComments implements vscode.Disposable {
     if (result === undefined) {
       return;
     }
+    if (this.sending) {
+      this.refuseWhileSending();
+      return;
+    }
     const [file] = partFiles(result.copies, part);
     if (file === undefined) {
       return;
@@ -249,6 +259,7 @@ export class ReviewComments implements vscode.Disposable {
   /** Discards one thread of the pending review, gathered comment and all. */
   discard(thread: vscode.CommentThread): void {
     if (this.sending) {
+      this.refuseWhileSending();
       return;
     }
     const gathered = this.threads.delete(thread);
@@ -268,6 +279,7 @@ export class ReviewComments implements vscode.Disposable {
    */
   editBody(comment: Comment, body: string): boolean {
     if (this.sending) {
+      this.refuseWhileSending();
       return false;
     }
     for (const [thread, gathered] of this.threads) {
@@ -287,6 +299,7 @@ export class ReviewComments implements vscode.Disposable {
    */
   remove(comment: Comment): boolean {
     if (this.sending) {
+      this.refuseWhileSending();
       return false;
     }
     for (const [thread, gathered] of this.threads) {

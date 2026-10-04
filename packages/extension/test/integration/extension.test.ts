@@ -762,6 +762,10 @@ describe('the pending review and sending it', () => {
       { label: 'src/retry.py:5', description: 'sent as pressed', tooltip: 'sent as pressed', contextValue: 'comment' },
     ]);
     expect(stub.commentControllers[0]!.threads).toContain(late);
+    expect(stub.warningMessages).toEqual([
+      'The review is being sent: try again once it finishes.',
+      'The review is being sent: try again once it finishes.',
+    ]);
 
     await eventually('the review to be sent', () =>
       stub.informationMessages[0] !== undefined ? true : undefined,

@@ -327,10 +327,14 @@ describe('ReviewComments', () => {
     comments.discard(thread as unknown as vscode.CommentThread);
     expect(comments.editBody(gathered, 'blanked while the send ran')).toBe(false);
     expect(comments.remove(gathered)).toBe(false);
+    comments.commentOnPart(result.parts[0]!);
+    const refused = 'The review is being sent: try again once it finishes.';
 
+    expect(stub.warningMessages).toEqual([refused, refused, refused, refused, refused]);
     expect(comments.pending()).toEqual([
       { kind: 'line', path: 'src/retry.py', side: 'head', line: 5, body: 'sent as pressed' },
     ]);
+    expect(stub.commentControllers[0]!.threads).toHaveLength(2);
     expect(stub.commentControllers[0]!.threads).toContain(late);
     expect(changes).toEqual([]);
 
@@ -340,6 +344,7 @@ describe('ReviewComments', () => {
     comments.add(replyOf(late, 'written once the send was done'));
     expect(comments.pending()).toHaveLength(2);
     expect(changes).toEqual([2]);
+    expect(stub.warningMessages).toHaveLength(5);
   });
 
   it('reports a comment no longer gathered as unknown to edit and drop', () => {
