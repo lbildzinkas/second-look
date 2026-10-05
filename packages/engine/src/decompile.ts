@@ -137,13 +137,15 @@ function chooseAssemblies(bytes: Uint8Array): { framework: string; assemblies: {
 }
 
 /** The C# files the decompiler wrote under `dir`, regular files only, by their path under it. */
-async function decompiledFiles(dir: string, prefix: string, into: { path: string; content: Uint8Array }[]): Promise<void> {
+async function decompiledFiles(dir: string, prefix: string, into: { path: string; content: Uint8Array }[], kept: { bytes: number }): Promise<void> {
   for (const entry of await readdir(dir)) {
     const path = join(dir, entry);
     const info = await lstat(path);
-    if (info.isDirectory()) await decompiledFiles(path, `${prefix}${entry}/`, into);
+    if (info.isDirectory()) await decompiledFiles(path, `${prefix}${entry}/`, into, kept);
     else if (info.isFile() && entry.toLowerCase().endsWith('.cs')) {
       if (into.length >= MAX_DECOMPILED_FILES) throw new Error(`the decompiler wrote more than the ${MAX_DECOMPILED_FILES} files a decompile keeps`);
+      kept.bytes += info.size;
+      if (kept.bytes > MAX_DECOMPILED_BYTES) throw new Error(`the decompiler wrote more than the ${MAX_DECOMPILED_BYTES / 1024 / 1024} MiB of C# a decompile keeps`);
       into.push({ path: `${prefix}${entry}`, content: await readFile(path) });
     }
   }
@@ -169,6 +171,7 @@ export async function decompileNuGetLibrary(pin: NuGetPin, options: DecompileOpt
     const platform = options.platform ?? process.platform;
     const { bytes, licence } = await downloadNuGetPackage(pin, nuget, fetchFn);
     if (licence.kind !== 'permissive') throw new Error(`${name} is not decompiled: ${licence.why}`);
+    if (isolatedCommand([], platform) === undefined) throw new Error(`the companion cannot cut the decompiler's network on ${platform}, so nothing was decompiled`);
     const decompiler = await findDecompiler(options.decompilerDirs, platform);
     if (decompiler === undefined) {
       throw new Error(
@@ -176,12 +179,12 @@ export async function decompileNuGetLibrary(pin: NuGetPin, options: DecompileOpt
           `install it with \`${INSTALL_HINT}\` and press the decompile again. Nothing was decompiled`,
       );
     }
-    if (isolatedCommand([], platform) === undefined) throw new Error(`the companion cannot cut the decompiler's network on ${platform}, so nothing was decompiled`);
     const chosen = chooseAssemblies(bytes);
     if (chosen === undefined) throw new Error(`${file} holds no assembly under lib/ to decompile; nothing was decompiled`);
 
     const scratch = join(options.librariesDir, `.decompile-${randomBytes(6).toString('hex')}`);
     const files: { path: string; content: Uint8Array }[] = [];
+    const kept = { bytes: 0 };
     try {
       for (const [index, assembly] of chosen.assemblies.entries()) {
         const input = join(scratch, 'in', `${index}.dll`);
@@ -192,7 +195,7 @@ export async function decompileNuGetLibrary(pin: NuGetPin, options: DecompileOpt
         const argv = isolatedCommand([decompiler, input, '--project', '--outputdir', output, '--disable-updatecheck'], platform)!;
         const run = await (options.runIsolated ?? runIsolated)(argv, scratch);
         if (run.code !== 0) throw new Error(`${DECOMPILER} failed on ${assembly.name} of ${name} (exit code ${run.code}): ${run.output.trim() || 'it printed nothing'}; nothing was decompiled`);
-        await decompiledFiles(output, `${folderName(assembly.name.replace(/\.dll$/i, ''))}/`, files);
+        await decompiledFiles(output, `${folderName(assembly.name.replace(/\.dll$/i, ''))}/`, files, kept);
       }
     } finally {
       await removeCopy(scratch);

@@ -100,14 +100,14 @@ export function decompileLicence(nuspec: string, version: string): DecompileLice
   const license = element(nuspec, 'license');
   const licenseUrl = element(nuspec, 'licenseUrl')?.text;
   const type = license === undefined ? undefined : /\btype\s*=\s*["']([^"']*)["']/i.exec(license.attributes)?.[1]?.toLowerCase();
-  const expression = type === 'expression' ? license!.text : licenseUrl === undefined ? undefined : linkedExpression(licenseUrl);
+  const expression = type === 'expression' ? license!.text : license === undefined && licenseUrl !== undefined ? linkedExpression(licenseUrl) : undefined;
   if (expression !== undefined) {
     const permitted = expressionPermits(expression);
     if (permitted === true) return { kind: 'permissive', licence: expression, why: `${at}, ${expression}, allows decompiling it` };
     if (permitted === false) return { kind: 'restrictive', licence: expression, why: `${at}, ${expression}, is not an open-source licence known to allow decompiling it` };
     return { kind: 'unknown', licence: expression, why: `${at} is unknown: its licence expression, ${expression}, is not one the companion can read` };
   }
-  if (type === 'file') return { kind: 'unknown', why: `${at} is unknown: its nuspec gives it only as the file ${license!.text} in the package, which the companion does not judge` };
+  if (license !== undefined) return { kind: 'unknown', why: `${at} is unknown: its nuspec gives it only as the file ${license.text} in the package, which the companion does not judge` };
   if (licenseUrl !== undefined && licenseUrl !== '') return { kind: 'unknown', why: `${at} is unknown: its nuspec gives it only as a link, ${licenseUrl}, which the companion does not judge` };
   return { kind: 'unknown', why: `${at} is unknown: its nuspec names none` };
 }

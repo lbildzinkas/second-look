@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -175,14 +175,36 @@ describe('decompileNuGetLibrary', () => {
     expect(existsSync(librariesDir) ? readdirSync(librariesDir) : []).toEqual([]);
   });
 
-  it('decompiles nothing on a system whose network it cannot cut', async () => {
+  it("decompiles nothing on a system whose network it cannot cut, saying so even when no decompiler is installed", async () => {
     const PACKAGE = relicensed('<license type="expression">MIT</license>');
     const decompiler = stubDecompiler(DECOMPILED);
 
     await expect(
-      decompileNuGetLibrary(pinOf(PACKAGE), { librariesDir, fetch: recordedFetch({ [NUPKG]: PACKAGE }).fetch, decompilerDirs: [installedDecompiler()], runIsolated: decompiler.run, platform: 'freebsd' }),
+      decompileNuGetLibrary(pinOf(PACKAGE), {
+        librariesDir,
+        fetch: recordedFetch({ [NUPKG]: PACKAGE }).fetch,
+        decompilerDirs: [mkdtempSync(join(tmpdir(), 'second-look-tools-'))],
+        runIsolated: decompiler.run,
+        platform: 'freebsd',
+      }),
     ).rejects.toThrow("the companion cannot cut the decompiler's network on freebsd, so nothing was decompiled");
     expect(decompiler.runs).toEqual([]);
+  });
+
+  it('refuses the C# the decompiler wrote past the byte cap, before reading it all', async () => {
+    const PACKAGE = relicensed('<license type="expression">MIT</license>');
+    const run: RunIsolated = async (argv) => {
+      const output = argv[argv.indexOf('--outputdir') + 1]!;
+      const huge = join(output, 'Huge.cs');
+      mkdirSync(output, { recursive: true });
+      writeFileSync(huge, '');
+      truncateSync(huge, 1024 * 1024 * 1024 + 1);
+      return { code: 0, output: '' };
+    };
+
+    await expect(
+      decompileNuGetLibrary(pinOf(PACKAGE), { librariesDir, fetch: recordedFetch({ [NUPKG]: PACKAGE }).fetch, decompilerDirs: [installedDecompiler()], runIsolated: run, platform: 'linux' }),
+    ).rejects.toThrow('the decompiler wrote more than the 1024 MiB of C# a decompile keeps');
   });
 
   it('reports a failed decompiler run with what it printed, and keeps nothing', async () => {

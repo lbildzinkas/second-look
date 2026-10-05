@@ -61,6 +61,8 @@ describe('decompileLicence', () => {
       kind: 'unknown',
       why: 'its licence at version 2.0.0 is unknown: its nuspec gives it only as the file EULA.txt in the package, which the companion does not judge',
     });
+    expect(decompileLicence(nuspec('<license type="file">EULA.txt</license><licenseUrl>https://licenses.nuget.org/MIT</licenseUrl>'), '2.0.0')).toMatchObject({ kind: 'unknown' });
+    expect(decompileLicence(nuspec('<license type="embedded">LICENCE</license><licenseUrl>https://licenses.nuget.org/MIT</licenseUrl>'), '2.0.0')).toMatchObject({ kind: 'unknown' });
     expect(decompileLicence(nuspec('<licenseUrl>https://example.com/license</licenseUrl>'), '2.0.0')).toEqual({
       kind: 'unknown',
       why: 'its licence at version 2.0.0 is unknown: its nuspec gives it only as a link, https://example.com/license, which the companion does not judge',
