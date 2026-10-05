@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -25,6 +26,8 @@ import {
   offeredParts,
   pull7,
   pypiFetch,
+  recordedFetch,
+  relicensed,
   scriptedAgent,
   sha256Hex,
   temporaryCacheDir,
@@ -138,7 +141,7 @@ describe('runRpcServer', () => {
 
     expect(responses[0]!.result).toEqual({ protocolVersion: ENGINE_PROTOCOL_VERSION });
     const first = responses[1]!.result as { version: number; parts: unknown[] };
-    expect(first.version).toBe(11);
+    expect(first.version).toBe(12);
     expect(first.parts).toHaveLength(11);
     const second = responses[2]!.result as { parts: unknown[] };
     expect(second.parts).toHaveLength(11);
@@ -325,7 +328,7 @@ describe('runRpcServer with an agent', () => {
         id: 2,
         running: 'grouping related hunks with fake',
         timeoutMs: 660_000,
-        result: { version: 11, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
+        result: { version: 12, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
       },
     });
     // The fake agent has no tested ranking, so the story stage follows the grouping.
@@ -569,12 +572,12 @@ describe('runRpcServer fetching a library', () => {
     return { fetch: fetchImpl, pypi };
   }
 
-  /** Lists the description's claim, leaves it unverifiable needing httpx, then refutes it from httpx's source. */
-  function libraryAgent() {
+  /** Lists the description's claim, leaves it unverifiable needing `library`, then refutes it from that library's source. */
+  function libraryAgent(library = 'httpx') {
     return answeringAgent((run) => {
       if (run.instructions === CLAIMS_INSTRUCTIONS) return { claims: [{ source: 'description', quote: CLAIM, file: null, line: null, part: 'p1' }] };
       if (run.instructions === VERDICTS_INSTRUCTIONS) {
-        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: 'It turns on httpx.', evidence: [], library: 'httpx' }] };
+        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: `It turns on ${library}.`, evidence: [], library }] };
       }
       if (run.instructions === LIBRARY_VERDICTS_INSTRUCTIONS) {
         return {
@@ -589,7 +592,7 @@ describe('runRpcServer fetching a library', () => {
   }
 
   /** Serves the lines, holding each fetch request back until the review before it is answered. */
-  async function serveInTurn(lines: string[], fetchImpl: typeof fetch): Promise<{ answer: (id: number) => Response; pypiBeforeFetch: number }> {
+  async function serveInTurn(lines: string[], fetchImpl: typeof fetch, library?: string): Promise<{ answer: (id: number) => Response; pypiBeforeFetch: number }> {
     const written: string[] = [];
     let index = 0;
     let reviewed: () => void = () => undefined;
@@ -614,7 +617,7 @@ describe('runRpcServer fetching a library', () => {
           if ((JSON.parse(line) as Response).id === 2) reviewed();
         },
       },
-      { cacheDir: libraryCacheDir, fetch: fetchImpl, agent: { adapterFor: () => libraryAgent(), defaultAgent: 'pi' } },
+      { cacheDir: libraryCacheDir, fetch: fetchImpl, agent: { adapterFor: () => libraryAgent(library), defaultAgent: 'pi' } },
     );
     const responses = written.map((line) => JSON.parse(line) as Response);
     return { answer: (id) => responses.find((response) => response.id === id)!, pypiBeforeFetch };
@@ -650,7 +653,7 @@ describe('runRpcServer fetching a library', () => {
     });
     expect(pypiBeforeFetch).toBe(0);
     expect(answer(3).result).toMatchObject({
-      version: 11,
+      version: 12,
       claims: {
         claims: [
           {
@@ -669,6 +672,54 @@ describe('runRpcServer fetching a library', () => {
       'https://pypi.org/pypi/httpx/0.27.2/json',
       'https://files.pythonhosted.org/packages/ab/cd/httpx-0.27.2-py3-none-any.whl',
     ]);
+  });
+
+  it('answers a .NET fetch that finds no exact source with the claim offering its decompile, and keeps it for the next press', async () => {
+    state = transports();
+    const PACKAGE = relicensed('<license type="expression">MIT</license>');
+    const id = 'microsoft.io.recyclablememorystream';
+    const pull = pull7();
+    const github = fixtureFetch({
+      ...pull,
+      head: { ...pull.head, 'App.csproj': '<Project><ItemGroup><PackageReference Include="Microsoft.IO.RecyclableMemoryStream" Version="1.2.2" /></ItemGroup></Project>\n' },
+    });
+    const nuget = recordedFetch({
+      [`https://api.nuget.org/v3/registration5-gz-semver2/${id}/1.2.2.json`]: JSON.stringify({ catalogEntry: 'https://api.nuget.org/v3/catalog0/data/old.json' }),
+      'https://api.nuget.org/v3/catalog0/data/old.json': JSON.stringify({ packageHash: createHash('sha512').update(PACKAGE).digest('base64'), packageHashAlgorithm: 'SHA512' }),
+      [`https://api.nuget.org/v3-flatcontainer/${id}/1.2.2/${id}.1.2.2.nupkg`]: PACKAGE,
+      [`https://www.nuget.org/api/v2/symbolpackage/${id}/1.2.2`]: 404,
+    });
+    const fetchImpl: typeof fetch = (input, init) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      return /^https:\/\/(api|www)\.nuget\.org\//.test(url) ? nuget.fetch(input, init) : github.fetch(input, init);
+    };
+
+    const { answer } = await serveInTurn(
+      [
+        request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+        request('review', { url: PR_7_URL, token: TOKEN }, 2),
+        request('fetchLibrary', { url: PR_7_URL, claim: 0 }, 3),
+      ],
+      fetchImpl,
+      'Microsoft.IO.RecyclableMemoryStream',
+    );
+
+    expect(answer(3).error).toBeUndefined();
+    expect(answer(3).result).toMatchObject({
+      version: 12,
+      claims: {
+        claims: [
+          {
+            quote: CLAIM,
+            verdict: {
+              kind: 'unverifiable',
+              libraryFetch: { library: 'Microsoft.IO.RecyclableMemoryStream', pinnedVersion: '1.2.2', pinnedBy: 'App.csproj', decompile: { licence: 'MIT' } },
+            },
+          },
+        ],
+      },
+    });
+    expect((answer(3).result as { claims: { claims: { verdict: object }[] } }).claims.claims[0]!.verdict).not.toHaveProperty('library');
   });
 
   it('refuses a fetch of a claim it never reviewed, and malformed fetch params', async () => {

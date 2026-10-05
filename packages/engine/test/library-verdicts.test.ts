@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { removeCopy } from '../src/cache.js';
 import { CLAIMS_INSTRUCTIONS } from '../src/claims.js';
+import type { RunIsolated } from '../src/decompile.js';
 import {
   LIBRARY_VERDICTS_INSTRUCTIONS,
   LIBRARY_VERDICTS_PROMPT_VERSION,
@@ -18,7 +19,7 @@ import {
 import type { Claim, ClaimVerdict, Part } from '../src/protocol.js';
 import { reviewChange, type ReviewInput } from '../src/review.js';
 import { VERDICTS_INSTRUCTIONS, findingAnchor } from '../src/verdicts.js';
-import { answeringAgent, changedPart, pypiFetch, recordedFetch, scriptedAgent, sha256Hex, tarball, temporaryCacheDir, zipArchive } from './helpers.js';
+import { OLD_NUGET_PACKAGE, answeringAgent, changedPart, pypiFetch, recordedFetch, relicensed, scriptedAgent, sha256Hex, tarball, temporaryCacheDir, zipArchive } from './helpers.js';
 
 const DOC_PAGE = [
   'def doc_page(client, url):',
@@ -448,28 +449,158 @@ describe('the C# canary', () => {
     });
   });
 
-  it('says plainly why a version with no Source Link and no commit cannot be fetched, keeping the claim unverifiable', async () => {
+  /** A head copy pinning version 1.2.2, which has no Source Link and no commit, and nuget.org serving `served` as that version. */
+  async function oldVersion(served: Buffer) {
     const head = mkdtempSync(join(tmpdir(), 'second-look-head-'));
     mkdirSync(join(head, 'src'));
     for (const name of ['BlobReader.cs', 'BlobTool.csproj']) {
       writeFileSync(join(head, 'src', name), (await readFile(join(folder, 'head/src', name), 'utf8')).replace('Version="3.0.1"', 'Version="1.2.2"'));
     }
-    const agent = canaryAgent(answer('verified'));
-    const { result, offered } = await review(agent, head);
-    const old = await readFile(fileURLToPath(new URL('./fixtures/pdb/Microsoft.IO.RecyclableMemoryStream.1.2.2.nupkg', import.meta.url)));
-    const hash = createHash('sha512').update(old).digest('base64');
+    const hash = createHash('sha512').update(served).digest('base64');
     const fetchOld: typeof fetch = async (input) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
       if (url.endsWith('/1.2.2.json')) return Response.json({ catalogEntry: 'https://api.nuget.org/v3/catalog0/data/old.json' });
       if (url.endsWith('/old.json')) return Response.json({ packageHash: hash, packageHashAlgorithm: 'SHA512' });
-      if (url.endsWith('.1.2.2.nupkg')) return new Response(old);
+      if (url.endsWith('.1.2.2.nupkg')) return new Response(served);
       return new Response('not found', { status: 404 });
     };
+    return { head, fetchOld };
+  }
 
-    await expect(pressLibraryFetch(result.parts, offered, { adapter: agent, headRoot: head, librariesDir: join(cacheDir, 'libraries'), fetch: fetchOld })).rejects.toThrow(
-      /^the exact source of Microsoft\.IO\.RecyclableMemoryStream 1\.2\.2 cannot be found: .*no source was fetched, and nothing is guessed$/,
-    );
+  const NO_EXACT_SOURCE =
+    'the exact source of Microsoft.IO.RecyclableMemoryStream 1.2.2 cannot be found: no PDB of it carries Source Link, which names where each source file is, ' +
+    'and neither its nuspec nor its PDB names the repository commit it was built from; no source was fetched, and nothing is guessed';
+
+  it("withdraws the fetch of a version with no exact source whose licence is unknown, saying plainly why nothing is decompiled", async () => {
+    const { head, fetchOld } = await oldVersion(OLD_NUGET_PACKAGE);
+    const agent = canaryAgent(answer('verified'));
+    const { result, offered } = await review(agent, head);
+
+    const judging = await pressLibraryFetch(result.parts, offered, { adapter: agent, headRoot: head, librariesDir: join(cacheDir, 'libraries'), fetch: fetchOld });
+
     expect(offered.verdict).toMatchObject({ kind: 'unverifiable', libraryFetch: { pinnedVersion: '1.2.2' } });
+    expect(judging.outcome).toBe('no exact source');
+    expect(judging.claim.verdict).toMatchObject({
+      kind: 'unverifiable',
+      needsLibrary: 'Microsoft.IO.RecyclableMemoryStream',
+      noLibraryFetch:
+        `T${NO_EXACT_SOURCE.slice(1)}. Not decompiled: its licence at version 1.2.2 is unknown: its nuspec gives it only as a link, ` +
+        'https://github.com/Microsoft/Microsoft.IO.RecyclableMemoryStream/blob/master/LICENSE, which the companion does not judge.',
+    });
+    expect(judging.claim.verdict).not.toHaveProperty('libraryFetch');
     expect(agent.requests.filter((run) => run.instructions === LIBRARY_VERDICTS_INSTRUCTIONS)).toEqual([]);
+  });
+
+  it("withdraws the fetch of a version with no exact source whose licence does not allow decompiling it", async () => {
+    const { head, fetchOld } = await oldVersion(relicensed('<license type="expression">BUSL-1.1</license>'));
+    const agent = canaryAgent(answer('verified'));
+    const { result, offered } = await review(agent, head);
+
+    const judging = await pressLibraryFetch(result.parts, offered, { adapter: agent, headRoot: head, librariesDir: join(cacheDir, 'libraries'), fetch: fetchOld });
+
+    expect(judging.claim.verdict).toMatchObject({
+      noLibraryFetch: `T${NO_EXACT_SOURCE.slice(1)}. Not decompiled: its licence at version 1.2.2, BUSL-1.1, is not an open-source licence known to allow decompiling it.`,
+    });
+    expect(judging.claim.verdict).not.toHaveProperty('libraryFetch');
+  });
+
+  describe('a version with no exact source whose licence allows decompiling it', () => {
+    const DECOMPILED = 'namespace Microsoft.IO\n{\n\tpublic override byte[] GetBuffer()\n\t{\n\t\treturn largeBuffer ?? blocks[0];\n\t}\n}\n';
+    const decompiled = (verdict: 'verified' | 'refuted') => ({
+      verdict,
+      source: 'library source at the pinned version',
+      reason: 'GetBuffer returns the pooled block, which may be longer than the stream.',
+      evidence: [{ file: 'Microsoft.IO.RecyclableMemoryStream/Microsoft/IO/RecyclableMemoryStream.cs', line: 3, quote: 'public override byte[] GetBuffer()' }],
+    });
+
+    /** A decompiler install and a run that writes the decompiled class wherever its --outputdir names. */
+    function decompilerOptions() {
+      const tools = mkdtempSync(join(tmpdir(), 'second-look-tools-'));
+      writeFileSync(join(tools, 'ilspycmd'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+      const runs: string[][] = [];
+      const runIsolated: RunIsolated = async (argv) => {
+        runs.push([...argv]);
+        const output = join(argv[argv.indexOf('--outputdir') + 1]!, 'Microsoft', 'IO');
+        mkdirSync(output, { recursive: true });
+        writeFileSync(join(output, 'RecyclableMemoryStream.cs'), DECOMPILED);
+        return { code: 0, output: '' };
+      };
+      return { runs, options: { decompilerDirs: [tools], runIsolated, platform: 'linux' as const } };
+    }
+
+    it('turns the fetch into an offer to decompile it, naming the licence that allows it', async () => {
+      const { head, fetchOld } = await oldVersion(relicensed('<license type="expression">MIT</license>'));
+      const agent = canaryAgent(decompiled('refuted'));
+      const { result, offered } = await review(agent, head);
+      const { runs, options: decompiler } = decompilerOptions();
+
+      const judging = await pressLibraryFetch(result.parts, offered, { adapter: agent, headRoot: head, librariesDir: join(cacheDir, 'libraries'), fetch: fetchOld, ...decompiler });
+
+      expect(judging.outcome).toBe('no exact source');
+      expect(judging.claim.verdict).toMatchObject({
+        kind: 'unverifiable',
+        libraryFetch: {
+          library: 'Microsoft.IO.RecyclableMemoryStream',
+          pinnedVersion: '1.2.2',
+          pinnedBy: 'src/BlobTool.csproj',
+          decompile: { licence: 'MIT' },
+          reason:
+            `T${NO_EXACT_SOURCE.slice(1)}. Since its licence at version 1.2.2, MIT, allows decompiling it, the companion offers to decompile the assemblies of ` +
+            "Microsoft.IO.RecyclableMemoryStream 1.2.2, as src/BlobTool.csproj pins it, with the decompiler you installed; everything from it is labelled decompiled, never the library's source.",
+        },
+      });
+      expect(judging.claim.verdict).not.toHaveProperty('noLibraryFetch');
+      // Nothing is decompiled and no agent runs until the reviewer presses the decompile.
+      expect(runs).toEqual([]);
+      expect(agent.requests.filter((run) => run.instructions === LIBRARY_VERDICTS_INSTRUCTIONS)).toEqual([]);
+    });
+
+    it('decompiles once the reviewer presses the offer, and labels every verdict from it decompiled', async () => {
+      const { head, fetchOld } = await oldVersion(relicensed('<license type="expression">MIT</license>'));
+      const agent = canaryAgent(decompiled('refuted'));
+      const { result, offered } = await review(agent, head);
+      const { runs, options: decompiler } = decompilerOptions();
+      const options = { adapter: agent, headRoot: head, librariesDir: join(cacheDir, 'libraries'), fetch: fetchOld, ...decompiler };
+      const offering = (await pressLibraryFetch(result.parts, offered, options)).claim;
+
+      const judging = await pressLibraryFetch(result.parts, offering, options);
+
+      expect(runs).toHaveLength(1);
+      const run = agent.requests.find((each) => each.instructions === LIBRARY_VERDICTS_INSTRUCTIONS)!;
+      expect(run.root).toMatch(/microsoft\.io\.recyclablememorystream-1\.2\.2-[0-9a-f]{12}-decompiled$/);
+      expect(judging).toMatchObject({ outcome: 'judged' });
+      expect(judging.claim.verdict).toMatchObject({
+        kind: 'refuted',
+        source: 'decompiled library code',
+        evidence: [{ path: 'Microsoft.IO.RecyclableMemoryStream/Microsoft/IO/RecyclableMemoryStream.cs', line: 3, quote: 'public override byte[] GetBuffer()' }],
+        libraryFetch: { decompile: { licence: 'MIT' } },
+        library: {
+          library: 'Microsoft.IO.RecyclableMemoryStream',
+          pinnedVersion: '1.2.2',
+          pinnedBy: 'src/BlobTool.csproj',
+          archive: 'decompiled NuGet package',
+          path: run.root,
+          note: expect.stringMatching(/^Decompiled, not the library's source: /),
+        },
+      });
+    });
+
+    it('says plainly that no decompiler is installed when the reviewer presses the offer, keeping the claim as it was', async () => {
+      const { head, fetchOld } = await oldVersion(relicensed('<license type="expression">MIT</license>'));
+      const agent = canaryAgent(decompiled('verified'));
+      const { result, offered } = await review(agent, head);
+      const options = {
+        adapter: agent,
+        headRoot: head,
+        librariesDir: join(cacheDir, 'libraries'),
+        fetch: fetchOld,
+        decompilerDirs: [mkdtempSync(join(tmpdir(), 'second-look-tools-'))],
+        platform: 'linux' as const,
+      };
+      const offering = (await pressLibraryFetch(result.parts, offered, options)).claim;
+
+      await expect(pressLibraryFetch(result.parts, offering, options)).rejects.toThrow(/^no decompiler is installed: .*Nothing was decompiled$/);
+      expect(agent.requests.filter((run) => run.instructions === LIBRARY_VERDICTS_INSTRUCTIONS)).toEqual([]);
+    });
   });
 });

@@ -471,6 +471,15 @@ describe('isReviewResult for the verdicts', () => {
     expect(isReviewResult(withVerdict({ ...refuted, noLibraryFetch: 7 }))).toBe(false);
   });
 
+  it('accepts a decompile offered, decompiled code judged against, and decompiled library code as an evidence source', () => {
+    const library = (fetchedResult().claims!.claims[2]!.verdict as unknown as { library: Record<string, unknown> }).library;
+    const decompile = { ...REQUESTS_FETCH, decompile: { licence: 'MIT' } };
+    expect(isReviewResult(withVerdict({ ...refuted, libraryFetch: decompile }))).toBe(true);
+    expect(isReviewResult(withVerdict({ ...refuted, source: 'decompiled library code', libraryFetch: decompile, library: { ...library, archive: 'decompiled NuGet package' } }))).toBe(true);
+    expect(isReviewResult(withVerdict({ ...refuted, libraryFetch: { ...REQUESTS_FETCH, decompile: { licence: '' } } }))).toBe(false);
+    expect(isReviewResult(withVerdict({ ...refuted, libraryFetch: { ...REQUESTS_FETCH, decompile: true } }))).toBe(false);
+  });
+
   it('rejects a malformed library fetch offer or fetched library', () => {
     const library = (fetchedResult().claims!.claims[2]!.verdict as unknown as { library: Record<string, unknown> }).library;
     const cases: unknown[] = [
@@ -547,6 +556,6 @@ describe('parseReviewResult', () => {
 
 describe('the versioned protocol is shared with the engine', () => {
   it('uses the same version constant', () => {
-    expect(REVIEW_RESULT_VERSION).toBe(11);
+    expect(REVIEW_RESULT_VERSION).toBe(12);
   });
 });

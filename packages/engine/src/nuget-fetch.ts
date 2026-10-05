@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { writeReadOnlyFiles } from './archive.js';
 import { removeCopy } from './cache.js';
 import type { LibraryDownload, LibraryFetchOptions } from './library-fetch.js';
+import { decompileLicence, type DecompileLicence } from './nuget-licence.js';
 import type { SourceDocument } from './pdb.js';
 import { pinFilesIn } from './pin-files.js';
 import { readPackagePdbs, type PackagePdb } from './symbols.js';
@@ -186,8 +187,15 @@ async function symbolPackagePdbs(id: string, version: string, fetchFn: typeof fe
   return bytes === undefined ? [] : readPackagePdbs(`${id}.${version}.snupkg`, bytes);
 }
 
-/** What a package's nuspec says of it: its id, its version and the repository commit it was built from. */
-function readNuspec(bytes: Uint8Array): { id?: string; version?: string; commit?: string } {
+/** What a package's nuspec says of it: its id, its version, the repository commit it was built from, and its text. */
+export interface Nuspec {
+  id?: string;
+  version?: string;
+  commit?: string;
+  text: string;
+}
+
+function readNuspec(bytes: Uint8Array): Nuspec {
   const nuspec = readZipEntries(bytes).find((entry) => !entry.name.includes('/') && entry.name.toLowerCase().endsWith('.nuspec'));
   const text = nuspec === undefined ? '' : Buffer.from(nuspec.read()).toString('utf8');
   const repository = /<repository\b([^>]*)>/i.exec(text)?.[1] ?? '';
@@ -195,6 +203,7 @@ function readNuspec(bytes: Uint8Array): { id?: string; version?: string; commit?
     id: /<id>\s*([^<]*?)\s*<\/id>/i.exec(text)?.[1],
     version: /<version>\s*([^<]*?)\s*<\/version>/i.exec(text)?.[1],
     commit: /^[0-9a-f]{40}$/i.exec(attribute(repository, 'commit') ?? '')?.[0]?.toLowerCase(),
+    text,
   };
 }
 
@@ -310,28 +319,40 @@ async function exists(path: string): Promise<boolean> {
 /** What a fetch records beside the library's folder, so a later fetch of the same package reuses it as it landed. */
 type Landed = Omit<LibraryDownload, 'path' | 'reused'>;
 
+/** One pinned package as nuget.org serves it: its id and version lowercase, its name as pinned, its file and the SHA-512 it must match, hex. */
+export interface NuGetPackage {
+  id: string;
+  version: string;
+  name: string;
+  file: string;
+  expected: string;
+}
+
 /**
- * Fetches one pinned .NET library: downloads the exact package from
- * nuget.org, checks its SHA-512, reads its nuspec and PDBs, fetches each
- * source file the PDBs name at the repository commit, and keeps them
- * read-only in their own folder of the library cache, each labelled exact
- * source or unproven by the PDB's hash. Throws, saying why, when no source
- * can be fetched: no PDB, no Source Link, no commit, or a source host no
- * download may come from.
+ * The package a pin names, with the SHA-512 a download of it must match:
+ * the lock file's, or nuget.org's own record when only a project file
+ * pins it.
  */
-export async function fetchNuGetLibrary(pin: NuGetPin, options: LibraryFetchOptions): Promise<LibraryDownload> {
+export async function nugetPackage(pin: NuGetPin, fetchFn: typeof fetch): Promise<NuGetPackage> {
   const id = pin.name.toLowerCase();
   const version = pin.version.toLowerCase();
   if (!SAFE_ID.test(id) || !SAFE_VERSION.test(version)) throw new Error(`not a package a library fetch can download: ${pin.name} ${pin.version}`);
-  const fetchFn = options.fetch ?? fetch;
   const name = `${pin.name} ${pin.version}`;
   const expected = Buffer.from(pin.contentHash ?? (await catalogHash(id, version, fetchFn)), 'base64').toString('hex');
   if (expected.length !== 128) throw new Error(`the SHA-512 ${pin.pinnedBy} records for ${name} is malformed`);
-  const path = join(options.librariesDir, `${id}-${version}-${expected.slice(0, 12)}`);
-  const manifest = `${path}.json`;
-  if ((await exists(path)) && (await exists(manifest))) return { ...(JSON.parse(await readFile(manifest, 'utf8')) as Landed), path, reused: true };
+  return { id, version, name, file: `${id}.${version}.nupkg`, expected };
+}
 
-  const file = `${id}.${version}.nupkg`;
+/**
+ * Downloads a pinned package from nuget.org, checks its SHA-512 and that
+ * its nuspec names that package and version, and gives its bytes, its
+ * nuspec and what its own licence says of decompiling it.
+ */
+export async function downloadNuGetPackage(
+  pin: NuGetPin,
+  { id, version, name, file, expected }: NuGetPackage,
+  fetchFn: typeof fetch,
+): Promise<{ bytes: Buffer; nuspec: Nuspec; licence: DecompileLicence }> {
   const bytes = await download(`${NUGET_API}-flatcontainer/${id}/${version}/${file}`, file, fetchFn);
   if (bytes === undefined) throw new Error(`nuget.org has no package ${name}`);
   const actual = createHash('sha512').update(bytes).digest('hex');
@@ -339,6 +360,44 @@ export async function fetchNuGetLibrary(pin: NuGetPin, options: LibraryFetchOpti
   if (actual !== expected) throw new Error(`the download of ${file} does not match the SHA-512 ${hashedBy} gives (expected ${expected}, got ${actual}); no source was fetched`);
   const nuspec = readNuspec(bytes);
   if (nuspec.id?.toLowerCase() !== id || nuspec.version?.toLowerCase() !== version) throw new Error(`${file} names another package in its nuspec; no source was fetched`);
+  return { bytes, nuspec, licence: decompileLicence(nuspec.text, pin.version) };
+}
+
+/**
+ * A fetch that found no exact source of a package, though it downloaded
+ * and checked the package: no PDB, no Source Link or no commit. It
+ * carries what the package version's own licence says of decompiling it.
+ */
+export class NoExactSourceError extends Error {
+  constructor(
+    message: string,
+    readonly licence: DecompileLicence,
+  ) {
+    super(message);
+    this.name = 'NoExactSourceError';
+  }
+}
+
+/**
+ * Fetches one pinned .NET library: downloads the exact package from
+ * nuget.org, checks its SHA-512, reads its nuspec and PDBs, fetches each
+ * source file the PDBs name at the repository commit, and keeps them
+ * read-only in their own folder of the library cache, each labelled exact
+ * source or unproven by the PDB's hash. Throws, saying why, when no source
+ * can be fetched: a {@link NoExactSourceError} when the package has no PDB,
+ * no Source Link or no commit, so that its licence can decide whether it
+ * may be decompiled instead, and a plain error for a source host no
+ * download may come from.
+ */
+export async function fetchNuGetLibrary(pin: NuGetPin, options: LibraryFetchOptions): Promise<LibraryDownload> {
+  const fetchFn = options.fetch ?? fetch;
+  const nuget = await nugetPackage(pin, fetchFn);
+  const { id, version, name, file, expected } = nuget;
+  const path = join(options.librariesDir, `${id}-${version}-${expected.slice(0, 12)}`);
+  const manifest = `${path}.json`;
+  if ((await exists(path)) && (await exists(manifest))) return { ...(JSON.parse(await readFile(manifest, 'utf8')) as Landed), path, reused: true };
+
+  const { bytes, nuspec, licence } = await downloadNuGetPackage(pin, nuget, fetchFn);
 
   let pdbs = readPackagePdbs(file, bytes);
   if (!pdbs.some((pdb) => pdb.sourceLink !== null)) pdbs = [...pdbs, ...(await symbolPackagePdbs(id, version, fetchFn))];
@@ -348,7 +407,9 @@ export async function fetchNuGetLibrary(pin: NuGetPin, options: LibraryFetchOpti
     ...(pdbs.length > 0 && !pdbs.some((pdb) => pdb.sourceLink !== null) ? ['no PDB of it carries Source Link, which names where each source file is'] : []),
     ...(commit === undefined ? ['neither its nuspec nor its PDB names the repository commit it was built from'] : []),
   ];
-  if (missing.length > 0 || commit === undefined) throw new Error(`the exact source of ${name} cannot be found: ${missing.join(', and ')}; no source was fetched, and nothing is guessed`);
+  if (missing.length > 0 || commit === undefined) {
+    throw new NoExactSourceError(`the exact source of ${name} cannot be found: ${missing.join(', and ')}; no source was fetched, and nothing is guessed`, licence);
+  }
   const { files: wanted, refused } = sourceFiles(pdbs, commit);
   if (refused.length > 0) {
     throw new Error(

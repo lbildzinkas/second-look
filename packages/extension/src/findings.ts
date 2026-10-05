@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { findingAnchor, isFinding, isUnprovenSource, type Claim, type LibraryArchive, type ReviewResult } from '@second-look/engine';
+import { findingAnchor, isFinding, isUnprovenSource, type Claim, type FetchedLibrary, type LibraryArchive, type ReviewResult } from '@second-look/engine';
 import { changeUri, partFiles } from './change-copies.js';
 import { FETCH_LIBRARY_COMMAND, FINDINGS_CONTROLLER_ID, FINDING_THREAD_CONTEXT, OPEN_LIBRARY_EVIDENCE_COMMAND } from './commands.js';
 import { citedWhere, claimWhere } from './overview.js';
@@ -20,7 +20,7 @@ function commandLink(text: string, command: string, args: readonly unknown[]): s
 }
 
 /** How each pinned archive was checked and kept, in the companion's own words. */
-const HOW_FETCHED: Record<Exclude<LibraryArchive, 'named repository'>, string> = {
+const HOW_FETCHED: Record<Exclude<LibraryArchive, 'named repository' | 'decompiled NuGet package'>, string> = {
   wheel: ', its SHA-256 checked, unpacked read-only and never run.',
   'source archive': ', its SHA-256 checked, unpacked read-only and never run.',
   'NuGet package': ', its SHA-512 checked and never built or run, its source files fetched read-only at the commit it was built from.',
@@ -30,6 +30,12 @@ const HOW_FETCHED: Record<Exclude<LibraryArchive, 'named repository'>, string> =
   'sources jar': ", its SHA-1 checked against Maven Central's record, unpacked read-only and never built or run.",
 };
 
+/** How a cited file of a fetched library is labelled: decompiled, unproven, or not at all for exact source. */
+function citationLabel(path: string, library: FetchedLibrary): string {
+  if (library.archive === 'decompiled NuGet package') return ' (decompiled)';
+  return isUnprovenSource(path, library.unproven) ? ' (unproven)' : '';
+}
+
 /**
  * A finding's thread body, as Markdown in which only the companion's own
  * words are markup: the verdict with its evidence source, the claim's
@@ -38,7 +44,7 @@ const HOW_FETCHED: Record<Exclude<LibraryArchive, 'named repository'>, string> =
  * the claim needs when it needs one — with the library fetch the
  * companion offers for it, a link the reviewer presses, or the library
  * source the verdict was judged against, each cited file a link that
- * opens it read-only and labelled when it is unproven — why the engine dropped the verdict when it did,
+ * opens it read-only and labelled when it is unproven or decompiled — why the engine dropped the verdict when it did,
  * and where the claim is made. Every quote, reason, name and path came
  * from the pull request, the agent or the package index, so each is
  * escaped; `index` is the claim's index in the result's claims, which the
@@ -59,7 +65,7 @@ export function findingBody(claim: Claim, index = 0): string {
     const where = (cited: (typeof verdict.evidence)[number], at: number): string =>
       library === undefined
         ? escapeMarkdown(citedWhere(cited))
-        : commandLink(`${cited.path}:${cited.line}`, OPEN_LIBRARY_EVIDENCE_COMMAND, [index, at]) + (isUnprovenSource(cited.path, library.unproven) ? ' (unproven)' : '');
+        : commandLink(`${cited.path}:${cited.line}`, OPEN_LIBRARY_EVIDENCE_COMMAND, [index, at]) + citationLabel(cited.path, library);
     lines.push('', 'Evidence:', ...verdict.evidence.map((cited, at) => `- ${where(cited, at)} — ${escapeMarkdown(cited.quote)}`));
   }
   if (library !== undefined) {
@@ -68,7 +74,10 @@ export function findingBody(claim: Claim, index = 0): string {
       library.archive === 'named repository'
         ? `Judged against ${escapeMarkdown(library.library)} in ${escapeMarkdown(library.pinnedBy)} at tag ${escapeMarkdown(library.pinnedVersion)}, which the agent named: ` +
             `a named repository, weaker evidence than pinned source, since nothing pins it. ${escapeMarkdown(library.file)} was unpacked read-only and never run.`
-        : `Judged against the source of ${escapeMarkdown(`${library.library} ${library.pinnedVersion}`)}, as ${escapeMarkdown(library.pinnedBy)} pins it: ` +
+        : library.archive === 'decompiled NuGet package'
+          ? `Judged against code decompiled from ${escapeMarkdown(`${library.library} ${library.pinnedVersion}`)}, as ${escapeMarkdown(library.pinnedBy)} pins it: ` +
+              `decompiled, not its source. ${escapeMarkdown(library.file)} had its SHA-512 checked and was decompiled read-only with no network, never built or run.`
+          : `Judged against the source of ${escapeMarkdown(`${library.library} ${library.pinnedVersion}`)}, as ${escapeMarkdown(library.pinnedBy)} pins it: ` +
             escapeMarkdown(library.file) +
             HOW_FETCHED[library.archive],
     );
@@ -76,7 +85,11 @@ export function findingBody(claim: Claim, index = 0): string {
     if (library.unproven !== undefined) lines.push('', `Unproven, so never verified: ${library.unproven.map(escapeMarkdown).join(', ')}.`);
   } else if (offer !== undefined) {
     const name = offer.namedRepository === undefined ? `${offer.library} ${offer.pinnedVersion}` : `${offer.namedRepository.url} at tag ${offer.namedRepository.tag}`;
-    lines.push('', escapeMarkdown(offer.reason), '', `${commandLink(`Fetch ${name}`, FETCH_LIBRARY_COMMAND, [index])} — downloads only when pressed.`);
+    const press =
+      offer.decompile === undefined
+        ? `${commandLink(`Fetch ${name}`, FETCH_LIBRARY_COMMAND, [index])} — downloads only when pressed.`
+        : `${commandLink(`Decompile ${name}`, FETCH_LIBRARY_COMMAND, [index])} — decompiles only when pressed, with the decompiler you installed.`;
+    lines.push('', escapeMarkdown(offer.reason), '', press);
   } else if (verdict.needsLibrary !== undefined) {
     lines.push('', `Needs the source of ${escapeMarkdown(verdict.needsLibrary)}, which the companion does not have.`);
     if (verdict.noLibraryFetch !== undefined) lines.push('', escapeMarkdown(verdict.noLibraryFetch));

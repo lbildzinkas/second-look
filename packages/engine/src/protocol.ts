@@ -10,7 +10,7 @@
 import type { AgentStamp } from './agent.js';
 
 /** Version of the review result schema. */
-export const REVIEW_RESULT_VERSION = 11 as const;
+export const REVIEW_RESULT_VERSION = 12 as const;
 
 /**
  * Version 2 added the head commit's SHA and each part's noise assessment;
@@ -28,7 +28,11 @@ export const REVIEW_RESULT_VERSION = 11 as const;
  * as claims, and CI log lines as a verdict's evidence; version 11 added
  * the npm, Cargo, Go and Maven library fetches, the named repository the
  * agent may name for a library nothing pins, as an offer and as an
- * evidence source, and the plain reason a verdict offers no fetch.
+ * evidence source, and the plain reason a verdict offers no fetch;
+ * version 12 added the decompile offer a .NET library fetch turns into
+ * when no exact source exists and the package version's licence allows
+ * it, the decompiled package it lands, and decompiled library code as an
+ * evidence source.
  */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
@@ -355,13 +359,17 @@ export type ClaimLocation =
  * Where a verdict's evidence came from (the glossary's evidence source):
  * the change itself — its diff and the read-only copy of its head —
  * library source at the pinned version, a named repository — a library's
- * repository at a tag the agent named, weaker than pinned source — a CI
- * log, the issue text, or the model's memory, which never yields verified.
+ * repository at a tag the agent named, weaker than pinned source —
+ * decompiled library code — a .NET library's pinned assemblies,
+ * decompiled where no exact source exists and its licence allows it, not
+ * its source — a CI log, the issue text, or the model's memory, which
+ * never yields verified.
  */
 export type EvidenceSource =
   | 'the change itself'
   | 'library source at the pinned version'
   | 'a named repository'
+  | 'decompiled library code'
   | 'a CI log'
   | 'the issue text'
   | "the model's memory";
@@ -371,6 +379,7 @@ export const EVIDENCE_SOURCES: readonly EvidenceSource[] = [
   'the change itself',
   'library source at the pinned version',
   'a named repository',
+  'decompiled library code',
   'a CI log',
   'the issue text',
   "the model's memory",
@@ -466,6 +475,20 @@ export interface LibraryFetchOffer {
    * named repository's, weaker than pinned source.
    */
   namedRepository?: NamedRepository;
+  /**
+   * Set once a pressed .NET library fetch found no exact source and the
+   * package version's own licence allows decompiling it: pressing the
+   * offer again decompiles the pinned package's assemblies with the
+   * decompiler the reviewer installed, and everything from it is
+   * labelled decompiled.
+   */
+  decompile?: DecompileOffer;
+}
+
+/** A decompile a library fetch offers in place of exact source that does not exist. */
+export interface DecompileOffer {
+  /** The licence of the pinned version, as its nuspec gives it, which allows decompiling it. */
+  licence: string;
 }
 
 /** A library's public repository and a tag in it, as the agent names them. */
@@ -484,7 +507,8 @@ export type LibraryArchive =
   | 'crate'
   | 'Go module'
   | 'sources jar'
-  | 'named repository';
+  | 'named repository'
+  | 'decompiled NuGet package';
 
 /** The archives a library fetch downloads. */
 export const LIBRARY_ARCHIVES: readonly LibraryArchive[] = [
@@ -496,6 +520,7 @@ export const LIBRARY_ARCHIVES: readonly LibraryArchive[] = [
   'Go module',
   'sources jar',
   'named repository',
+  'decompiled NuGet package',
 ];
 
 /**
@@ -506,7 +531,9 @@ export const LIBRARY_ARCHIVES: readonly LibraryArchive[] = [
  * fetched at the commit it was built from, each exact source or unproven.
  * For a named repository, nothing pins what was downloaded: the folder
  * holds the tag the agent named, and `pinnedVersion` and `pinnedBy` are
- * that tag and the repository. The agent judged the claim in that
+ * that tag and the repository. For a decompiled NuGet package, the
+ * folder holds the C# a decompiler wrote from the package's assemblies,
+ * never the library's own source. The agent judged the claim in that
  * folder, and the reviewer opens the cited files from it.
  */
 export interface FetchedLibrary {
@@ -524,7 +551,8 @@ export interface FetchedLibrary {
   /**
    * A built wheel, a source archive when the lock file pins no wheel, a
    * NuGet package, an npm package, a crate, a Go module's zip, a Maven
-   * sources jar, or a named repository's tag, which nothing pins.
+   * sources jar, a named repository's tag, which nothing pins, or a
+   * NuGet package decompiled because it has no exact source.
    */
   archive: LibraryArchive;
   /** Absolute path of the unpacked, read-only source in the engine's cache. */

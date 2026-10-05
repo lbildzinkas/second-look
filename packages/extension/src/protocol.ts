@@ -381,7 +381,7 @@ function isNamedRepository(value: unknown): boolean {
   return isRecord(value) && isNonEmptyString(value['url']) && isNonEmptyString(value['tag']);
 }
 
-/** A library fetch a verdict offers: the library, its pinned version, the lock file and why, or the repository and tag the agent named. */
+/** A library fetch a verdict offers: the library, its pinned version, the lock file and why, or the repository and tag the agent named, and the decompile it turned into when it found no exact source. */
 function isLibraryFetchOffer(value: unknown): boolean {
   return (
     isRecord(value) &&
@@ -389,7 +389,8 @@ function isLibraryFetchOffer(value: unknown): boolean {
     isNonEmptyString(value['pinnedVersion']) &&
     isNonEmptyString(value['pinnedBy']) &&
     isString(value['reason']) &&
-    (value['namedRepository'] === undefined || isNamedRepository(value['namedRepository']))
+    (value['namedRepository'] === undefined || isNamedRepository(value['namedRepository'])) &&
+    (value['decompile'] === undefined || (isRecord(value['decompile']) && isNonEmptyString(value['decompile']['licence'])))
   );
 }
 

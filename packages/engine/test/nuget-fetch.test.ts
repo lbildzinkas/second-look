@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { removeCopy } from '../src/cache.js';
 import { fetchLibrary, findLibraryPin } from '../src/library-fetch.js';
-import { fetchNuGetLibrary, findNuGetPin, provesSource, type NuGetPin } from '../src/nuget-fetch.js';
+import { NoExactSourceError, fetchNuGetLibrary, findNuGetPin, provesSource, type NuGetPin } from '../src/nuget-fetch.js';
 import { readPackagePdbs } from '../src/symbols.js';
 import { temporaryCacheDir, zipArchive, type RecordedRequest } from './helpers.js';
 
@@ -244,8 +244,12 @@ describe('fetchNuGetLibrary', () => {
       'the exact source of Microsoft.IO.RecyclableMemoryStream 1.2.2 cannot be found: no PDB of it carries Source Link, which names where each source file is, ' +
         'and neither its nuspec nor its PDB names the repository commit it was built from; no source was fetched, and nothing is guessed',
     );
+    // It carries what that version's own licence says of decompiling it.
+    await expect(fetchNuGetLibrary(pin, { librariesDir, fetch: transport.fetch })).rejects.toSatisfy(
+      (error) => error instanceof NoExactSourceError && error.licence.kind === 'unknown',
+    );
     // The package and its symbol package are read; no source host, tag or branch is tried.
-    expect(transport.requests.map((request) => new URL(request.url).host)).toEqual(['api.nuget.org', 'www.nuget.org']);
+    expect(transport.requests.map((request) => new URL(request.url).host)).toEqual(['api.nuget.org', 'www.nuget.org', 'api.nuget.org', 'www.nuget.org']);
     expect(existsSync(librariesDir) ? readdirSync(librariesDir) : []).toEqual([]);
   });
 

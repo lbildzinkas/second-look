@@ -36,6 +36,8 @@ export * from './claims.js';
 export * from './verdicts.js';
 export * from './library-fetch.js';
 export * from './nuget-fetch.js';
+export * from './nuget-licence.js';
+export * from './decompile.js';
 export * from './ecosystem-fetch.js';
 export * from './repository-fetch.js';
 export * from './library-verdicts.js';

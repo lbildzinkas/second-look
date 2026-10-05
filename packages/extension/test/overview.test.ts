@@ -284,6 +284,25 @@ describe('the verdicts on the overview', () => {
     expect(overviewHtml({ result: unfetched }, 'N')).toContain('<div class="why">No library fetch: nothing pins requests.</div>');
   });
 
+  it('labels a verdict judged in decompiled code decompiled, and names a decompile offer as one', () => {
+    const shown = fetchedResult();
+    const claims = shown.claims!;
+    const comment = claims.claims[2]!;
+    const verdict = comment.verdict as Exclude<typeof comment.verdict, { kind: 'not checked' }>;
+    const library = { ...verdict.library!, file: 'requests.2.32.3.nupkg', archive: 'decompiled NuGet package' as const };
+    const withVerdict = (changed: typeof verdict): ReviewResult => ({ ...shown, claims: { ...claims, claims: claims.claims.map((claim, index) => (index === 2 ? { ...comment, verdict: changed } : claim)) } });
+
+    const html = overviewHtml({ result: withVerdict({ ...verdict, source: 'decompiled library code', library }) }, 'N');
+    expect(html).toContain('<div class="why">judged against code decompiled from requests 2.32.3, as requirements.txt pins it: decompiled, not its source (requests.2.32.3.nupkg)</div>');
+    expect(html).toMatch(/<div class="why">[^<]* \(decompiled\) — /);
+
+    const { library: _library, ...unfetched } = verdict;
+    const offer = { ...verdict.libraryFetch!, reason: 'No exact source of requests 2.32.3 exists.', decompile: { licence: 'MIT' } };
+    expect(overviewHtml({ result: withVerdict({ ...unfetched, libraryFetch: offer }) }, 'N')).toContain(
+      '<div class="why">decompile offered: No exact source of requests 2.32.3 exists. Press it on the finding&#39;s thread.</div>',
+    );
+  });
+
   it('says why no claim was checked when the judging fell back', () => {
     const shown = judgedResult();
     const fellBack: ReviewResult = {

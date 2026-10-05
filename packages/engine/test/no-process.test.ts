@@ -7,10 +7,11 @@ import { join } from 'node:path';
 import { removeCopy } from '../src/cache.js';
 import { goModuleHash } from '../src/ecosystem-fetch.js';
 import { fetchLibrary } from '../src/library-fetch.js';
+import { NoExactSourceError } from '../src/nuget-fetch.js';
 import { fetchNamedRepository } from '../src/repository-fetch.js';
 import { reviewPullRequest } from '../src/review.js';
 import { readZipEntries } from '../src/zip.js';
-import { PR_7_URL, PR_8_URL, fixtureFetch, pull7, pull8, pypiFetch, recordedFetch, sha256Hex, tarball, temporaryCacheDir, zipArchive } from './helpers.js';
+import { OLD_NUGET_PACKAGE, PR_7_URL, PR_8_URL, fixtureFetch, pull7, pull8, pypiFetch, recordedFetch, sha256Hex, tarball, temporaryCacheDir, zipArchive } from './helpers.js';
 
 // A file of its own, so the reviews below are the first in this module
 // graph: the WASM runtime and grammars load while every way to start a
@@ -138,6 +139,24 @@ describe('a review', () => {
       await fetchLibrary({ ecosystem: 'Go', name: 'example.com/evil', version: 'v1.0.0', pinnedBy: 'go.sum', hash: goModuleHash(readZipEntries(goZip)) }, options);
       await fetchLibrary({ ecosystem: 'Maven', name: 'org.evil:evil', version: '1.0.0', pinnedBy: 'pom.xml' }, options);
       await fetchNamedRepository('evil', { url: 'https://github.com/evil/evil', tag: 'v1.0.0' }, options);
+    } finally {
+      guard.restore();
+    }
+    for (const spy of guard.spies) expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('finds that a .NET package has no exact source, and reads its licence, without running anything: no decompiler until the reviewer presses one', async () => {
+    const id = 'microsoft.io.recyclablememorystream';
+    const { fetch } = recordedFetch({
+      [`https://api.nuget.org/v3-flatcontainer/${id}/1.2.2/${id}.1.2.2.nupkg`]: OLD_NUGET_PACKAGE,
+      [`https://www.nuget.org/api/v2/symbolpackage/${id}/1.2.2`]: 404,
+    });
+    const contentHash = createHash('sha512').update(OLD_NUGET_PACKAGE).digest('base64');
+    const guard = forbidProcesses();
+    try {
+      await expect(
+        fetchLibrary({ ecosystem: 'NuGet', name: 'Microsoft.IO.RecyclableMemoryStream', version: '1.2.2', pinnedBy: 'packages.lock.json', contentHash }, { librariesDir: join(cacheDir, 'libraries'), fetch }),
+      ).rejects.toBeInstanceOf(NoExactSourceError);
     } finally {
       guard.restore();
     }

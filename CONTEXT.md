@@ -47,11 +47,11 @@ The outcome of checking a claim: **verified**, **refuted**, **unverifiable**, or
 _Avoid_: Result, status, score
 
 **Evidence source**:
-Where a verdict's evidence came from: the change itself, library source at the pinned version, a named repository (a library's repository at a tag the agent named, weaker than pinned source), a CI log, the issue text, or the model's memory; model memory never yields **verified**.
+Where a verdict's evidence came from: the change itself, library source at the pinned version, a named repository (a library's repository at a tag the agent named, weaker than pinned source), decompiled library code (a pinned .NET package's assemblies decompiled where it has no exact source and that version's licence allows it, never its source), a CI log, the issue text, or the model's memory; model memory never yields **verified**.
 _Avoid_: Citation, reference
 
 **Library fetch**:
-A reviewer-started download of one library's source at the version the project pins — or, when nothing pins it, at a repository and tag the agent named — offered by the companion with its reason only when a claim cannot be checked without it.
+A reviewer-started download of one library's source at the version the project pins — or, when nothing pins it, at a repository and tag the agent named — offered by the companion with its reason only when a claim cannot be checked without it. A .NET package with no exact source turns it into an offer to decompile, made only when that version's licence allows it.
 _Avoid_: Dependency sync, auto-fetch, install
 
 ### Acting on the review
