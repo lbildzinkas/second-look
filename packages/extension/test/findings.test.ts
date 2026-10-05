@@ -147,8 +147,11 @@ describe('findingBody', () => {
       ...claim,
       verdict: {
         ...verdict,
-        evidence: [{ path: 'src/RecyclableMemoryStream.cs', line: 490, quote: 'The buffer may be longer than the stream length.' }],
-        library: { ...verdict.library!, file: 'microsoft.io.recyclablememorystream.3.0.1.nupkg', archive: 'NuGet package' as const, unproven: ['src/RecyclableMemoryStream.cs'] },
+        evidence: [
+          { path: 'src/RecyclableMemoryStream.cs', line: 490, quote: 'The buffer may be longer than the stream length.' },
+          { path: 'src/./Events.cs', line: 2, quote: 'Copyright (c) 2015 Microsoft' },
+        ],
+        library: { ...verdict.library!, file: 'microsoft.io.recyclablememorystream.3.0.1.nupkg', archive: 'NuGet package' as const, unproven: ['src/RecyclableMemoryStream.cs', 'src/Events.cs'] },
       },
     };
 
@@ -157,8 +160,11 @@ describe('findingBody', () => {
     expect(body).toContain(
       `- [src/RecyclableMemoryStream\\.cs:490](command:second-look.openLibraryEvidence?${encodeURIComponent('[2,0]')}) (unproven) — The buffer may be longer than the stream length\\.`,
     );
+    expect(body).toContain(
+      `- [src/\\./Events\\.cs:2](command:second-look.openLibraryEvidence?${encodeURIComponent('[2,1]')}) (unproven) — Copyright \\(c\\) 2015 Microsoft`,
+    );
     expect(body).toContain('microsoft\\.io\\.recyclablememorystream\\.3\\.0\\.1\\.nupkg, its SHA-512 checked and never built or run, its source files fetched read-only at the commit it was built from.');
-    expect(body).toContain('Unproven, so never verified: src/RecyclableMemoryStream\\.cs.');
+    expect(body).toContain('Unproven, so never verified: src/RecyclableMemoryStream\\.cs, src/Events\\.cs.');
   });
 
   it('trusts only the fetch and the open-evidence commands in a finding', () => {

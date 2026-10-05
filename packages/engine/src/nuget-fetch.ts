@@ -141,8 +141,19 @@ const MAX_SOURCE_FILES = 5000;
 /** How many source files download at once. */
 const PARALLEL_DOWNLOADS = 8;
 
-/** Downloads one URL into memory, refusing one larger than `limit`; undefined for a 404. */
-async function download(url: string, what: string, fetchFn: typeof fetch, limit = MAX_DOWNLOAD_BYTES): Promise<Buffer | undefined> {
+/** What one fetch's source-file downloads may buffer together, and what they have buffered so far. */
+interface DownloadBudget {
+  cap: number;
+  buffered: number;
+}
+
+/**
+ * Downloads one URL into memory, refusing one larger than `limit`; undefined
+ * for a 404. What it buffers counts against `budget`, the bytes all of one
+ * fetch's source files may take together, and it refuses once they exceed
+ * it, before more is buffered.
+ */
+async function download(url: string, what: string, fetchFn: typeof fetch, limit = MAX_DOWNLOAD_BYTES, budget?: DownloadBudget): Promise<Buffer | undefined> {
   const response = await fetchFn(url, { redirect: 'error' });
   if (response.status === 404) return undefined;
   if (!response.ok || response.body === null) throw new Error(`the download of ${what} failed (HTTP ${response.status})`);
@@ -151,6 +162,9 @@ async function download(url: string, what: string, fetchFn: typeof fetch, limit 
   for await (const chunk of response.body as AsyncIterable<Uint8Array>) {
     size += chunk.length;
     if (size > limit) throw new Error(`${what} is larger than the ${limit / 1024 / 1024} MiB a library fetch downloads`);
+    if (budget !== undefined && (budget.buffered += chunk.length) > budget.cap) {
+      throw new Error(`the package's source files exceed the ${budget.cap / 1024 / 1024} MiB a library fetch downloads together`);
+    }
     chunks.push(Buffer.from(chunk));
   }
   return Buffer.concat(chunks, size);
@@ -344,9 +358,10 @@ export async function fetchNuGetLibrary(pin: NuGetPin, options: LibraryFetchOpti
   if (wanted.length === 0) throw new Error(`the Source Link of ${name}'s PDB names no source file at commit ${commit}; no source was fetched`);
   if (wanted.length > MAX_SOURCE_FILES) throw new Error(`${name}'s PDBs name ${wanted.length} source files, more than the ${MAX_SOURCE_FILES} a library fetch downloads`);
 
+  const budget: DownloadBudget = { cap: options.maxSourceBytes ?? MAX_UNPACKED_BYTES, buffered: 0 };
   const fetched = await inParallel(wanted, PARALLEL_DOWNLOADS, async (source) => ({
     ...source,
-    content: await download(source.url, source.path, fetchFn, MAX_SOURCE_FILE_BYTES),
+    content: await download(source.url, source.path, fetchFn, MAX_SOURCE_FILE_BYTES, budget),
   }));
   const landedFiles = fetched.flatMap((each) => (each.content === undefined ? [] : [{ ...each, content: each.content }]));
   if (landedFiles.length === 0) throw new Error(`none of the source files ${name}'s PDB names could be fetched at commit ${commit}`);

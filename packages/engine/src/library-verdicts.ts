@@ -109,13 +109,41 @@ export function libraryVerdictPrompt(claim: Claim, part: Part, library: { librar
 }
 
 /**
+ * A cited path as the copy's reader resolves it: empty and `.` segments
+ * dropped, `..` resolved, and case folded, as the copy's filesystem
+ * compares names.
+ */
+function resolvedPathKey(path: string): string {
+  const segments: string[] = [];
+  for (const segment of path.split('/')) {
+    if (segment === '' || segment === '.') continue;
+    if (segment === '..') segments.pop();
+    else segments.push(segment.toLowerCase());
+  }
+  return segments.join('/');
+}
+
+/**
+ * Whether a cited path names one of a fetched library's unproven files,
+ * however the citation spells the path: the reader resolves empty, `.`
+ * and `..` segments and case when it reads the file, so `src/./Events.cs`
+ * names `src/Events.cs`.
+ */
+export function isUnprovenSource(path: string, unproven: readonly string[] | undefined): boolean {
+  if (unproven === undefined) return false;
+  const resolved = resolvedPathKey(path);
+  return unproven.some((each) => resolvedPathKey(each) === resolved);
+}
+
+/**
  * Holds a verdict judged in a fetched library's source to its unproven
  * files: a verified verdict that cites any file not proven to be what the
- * library was built from drops to unverifiable, naming those files.
+ * library was built from, however it spells its path, drops to
+ * unverifiable, naming those files.
  */
 export function holdToExactSource(verdict: ClaimVerdict, unproven: readonly string[]): ClaimVerdict {
   if (verdict.kind !== 'verified') return verdict;
-  const cited = [...new Set(verdict.evidence.map((each) => each.path).filter((path) => unproven.includes(path)))];
+  const cited = [...new Set(verdict.evidence.map((each) => each.path).filter((path) => isUnprovenSource(path, unproven)))];
   if (cited.length === 0) return verdict;
   const files = cited.length === 1 ? `${cited[0]}, which is unproven` : `${cited.join(', ')}, which are unproven`;
   return { ...verdict, kind: 'unverifiable', recheck: `the verdict cites ${files}: no hash its PDB records matches, so it may not be the source the library was built from` };

@@ -4,6 +4,7 @@ import {
   checkFailed,
   hiddenContent,
   isFinding,
+  isUnprovenSource,
   parsePullRequestUrl,
   type AgentStamp,
   type CheckRun,
@@ -337,7 +338,7 @@ function verdictDetail(claim: Claim): string {
   if (verdict.kind === 'not checked') return '';
   const lines = [`${verdict.source}: ${verdict.reason}`];
   const { library, libraryFetch: offer } = verdict;
-  for (const cited of verdict.evidence) lines.push(`${citedWhere(cited)}${library?.unproven?.includes(cited.path) ? ' (unproven)' : ''} — ${cited.quote}`);
+  for (const cited of verdict.evidence) lines.push(`${citedWhere(cited)}${isUnprovenSource(cited.path, library?.unproven) ? ' (unproven)' : ''} — ${cited.quote}`);
   if (library !== undefined) {
     lines.push(`judged against the source of ${library.library} ${library.pinnedVersion}, as ${library.pinnedBy} pins it (${library.file})`);
     if (library.note !== undefined) lines.push(library.note);

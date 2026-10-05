@@ -241,6 +241,8 @@ export interface LibraryFetchOptions {
   librariesDir: string;
   /** Fetch implementation; tests inject recorded responses so no test touches the network. */
   fetch?: typeof fetch;
+  /** The most bytes the source files of one .NET package may buffer together; tests lower it. */
+  maxSourceBytes?: number;
 }
 
 /**

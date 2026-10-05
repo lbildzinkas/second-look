@@ -205,6 +205,22 @@ describe('fetchNuGetLibrary', () => {
     expect(transport.requests.some((request) => request.url.includes('/registration5-'))).toBe(false);
   });
 
+  it("aborts once the package's source files together exceed what a fetch downloads, and lands none of them", async () => {
+    const big = Buffer.alloc(512 * 1024, 97);
+    const transport = recordedNuGet({
+      [`${SOURCE}/EventArgs.cs`]: big,
+      [`${SOURCE}/Events.cs`]: big,
+      [`${SOURCE}/Properties/AssemblyInfo.cs`]: big,
+      [`${SOURCE}/RecyclableMemoryStream.cs`]: big,
+      [`${SOURCE}/RecyclableMemoryStreamManager.cs`]: big,
+    });
+
+    await expect(fetchNuGetLibrary(canaryPin(CANARY_HASH), { librariesDir, fetch: transport.fetch, maxSourceBytes: 2 * 1024 * 1024 })).rejects.toThrow(
+      "the package's source files exceed the 2 MiB a library fetch downloads together",
+    );
+    expect(existsSync(librariesDir) ? readdirSync(librariesDir) : []).toEqual([]);
+  });
+
   it('aborts on a SHA-512 mismatch with a clear message, and fetches no source', async () => {
     const transport = recordedNuGet();
     const wrong = sha512Base64(Buffer.from('another package'));

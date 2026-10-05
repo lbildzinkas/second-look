@@ -251,6 +251,16 @@ describe('holdToExactSource', () => {
     });
   });
 
+  it('drops a verified verdict that cites an unproven file by an alias of its path, as the reader resolves it', () => {
+    const aliased = (path: string): ClaimVerdict => ({ ...verified, evidence: [{ path, line: 1, quote: 'using System;' }] });
+    for (const path of ['src/./Events.cs', 'src/../src/Events.cs', 'src//Events.cs', 'SRC/Events.cs']) {
+      expect(holdToExactSource(aliased(path), ['src/Events.cs'])).toMatchObject({
+        kind: 'unverifiable',
+        recheck: `the verdict cites ${path}, which is unproven: no hash its PDB records matches, so it may not be the source the library was built from`,
+      });
+    }
+  });
+
   it('keeps a verified verdict citing only exact source, and a refuted or unverifiable one whatever it cites', () => {
     expect(holdToExactSource(verified, [])).toBe(verified);
     expect(holdToExactSource(verified, ['src/Other.cs'])).toBe(verified);
@@ -347,6 +357,33 @@ describe('the C# canary', () => {
       kind: 'unverifiable',
       recheck: expect.stringContaining('the verdict cites src/RecyclableMemoryStream.cs, which is unproven'),
       library: { unproven: ['src/RecyclableMemoryStream.cs'] },
+    });
+  });
+
+  it('never verifies a claim from an unproven file cited by an alias of its path', async () => {
+    const altered = (await readFile(join(folder, 'fetched/raw.githubusercontent.com/microsoft/Microsoft.IO.RecyclableMemoryStream/e29a28387da9018fa9605a1dcb3f7a0435aa9974/src/Events.cs'), 'utf8')).replace(
+      'using System;',
+      'using System; // altered',
+    );
+    const agent = canaryAgent({
+      verdict: 'verified',
+      source: 'library source at the pinned version',
+      reason: 'Events.cs settles it.',
+      evidence: [{ file: 'src/./Events.cs', line: 2, quote: 'Copyright (c) 2015 Microsoft' }],
+    });
+    const { result, offered } = await review(agent);
+
+    const judging = await pressLibraryFetch(result.parts, offered, {
+      adapter: agent,
+      headRoot: join(folder, 'head'),
+      librariesDir: join(cacheDir, 'libraries'),
+      fetch: recorded({ [`${SOURCE}/Events.cs`]: altered }),
+    });
+
+    expect(judging.claim.verdict).toMatchObject({
+      kind: 'unverifiable',
+      recheck: expect.stringContaining('the verdict cites src/./Events.cs, which is unproven'),
+      library: { unproven: ['src/Events.cs'] },
     });
   });
 

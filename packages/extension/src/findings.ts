@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { findingAnchor, isFinding, type Claim, type ReviewResult } from '@second-look/engine';
+import { findingAnchor, isFinding, isUnprovenSource, type Claim, type ReviewResult } from '@second-look/engine';
 import { changeUri, partFiles } from './change-copies.js';
 import { FETCH_LIBRARY_COMMAND, FINDINGS_CONTROLLER_ID, FINDING_THREAD_CONTEXT, OPEN_LIBRARY_EVIDENCE_COMMAND } from './commands.js';
 import { citedWhere, claimWhere } from './overview.js';
@@ -48,7 +48,7 @@ export function findingBody(claim: Claim, index = 0): string {
     const where = (cited: (typeof verdict.evidence)[number], at: number): string =>
       library === undefined
         ? escapeMarkdown(citedWhere(cited))
-        : commandLink(`${cited.path}:${cited.line}`, OPEN_LIBRARY_EVIDENCE_COMMAND, [index, at]) + (library.unproven?.includes(cited.path) ? ' (unproven)' : '');
+        : commandLink(`${cited.path}:${cited.line}`, OPEN_LIBRARY_EVIDENCE_COMMAND, [index, at]) + (isUnprovenSource(cited.path, library.unproven) ? ' (unproven)' : '');
     lines.push('', 'Evidence:', ...verdict.evidence.map((cited, at) => `- ${where(cited, at)} — ${escapeMarkdown(cited.quote)}`));
   }
   if (library !== undefined) {
