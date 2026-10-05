@@ -2,12 +2,13 @@
  * Whether a NuGet package's own licence, at one version, allows the
  * companion to decompile it. Licences change between versions, so the
  * licence is read from the nuspec of the exact package the fetch
- * downloaded and checked: a licence expression, or nuget.org's
- * `licenses.nuget.org` link that stands for one. An expression allows it
- * only when every licence it requires is an open-source licence known to
- * let anyone read the code; a licence given only as a file or another
- * link, a missing one, or an expression the companion cannot read is
- * unknown, and unknown counts as not allowed.
+ * downloaded and checked: its `<license>` element, when that is a
+ * licence expression, or — only when the nuspec has no `<license>`
+ * element — nuget.org's `licenses.nuget.org` link that stands for one.
+ * An expression allows it only when every licence it requires is an
+ * open-source licence known to let anyone read the code; a licence
+ * given as a file or another link, a missing one, or an expression the
+ * companion cannot read is unknown, and unknown counts as not allowed.
  */
 
 /** What a package version's licence says of decompiling it: allowed, refused, or unknown, which also refuses. */
