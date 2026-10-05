@@ -39,7 +39,7 @@ describe('runCli review', () => {
     expect(code).toBe(0);
     expect(err.text).toBe('');
     const result = JSON.parse(out.text) as { version: number; parts: unknown[] };
-    expect(result.version).toBe(12);
+    expect(result.version).toBe(13);
     expect(result.parts).toHaveLength(11);
   });
 
@@ -56,7 +56,7 @@ describe('runCli review', () => {
       version: number;
       copies: { head: { path: string } };
     };
-    expect(result.version).toBe(12);
+    expect(result.version).toBe(13);
     expect(result.copies.head.path.startsWith(cacheDir)).toBe(true);
   });
 
@@ -118,6 +118,36 @@ describe('runCli review', () => {
     );
     expect(code).toBe(1);
     expect(err.text).toContain('--cache-dir needs a value');
+  });
+
+  it('reads the acceptance criteria under the --criteria-heading flag’s heading', async () => {
+    const { out, err } = streams();
+    const code = await runCli(
+      ['review', PR_URL, '--criteria-heading', 'Definition of done'],
+      { GITHUB_TOKEN: TOKEN, SECOND_LOOK_CACHE_DIR: cacheDir },
+      { out, err },
+      { fetch: fixtureFetch().fetch },
+    );
+
+    expect(code).toBe(0);
+    const result = JSON.parse(out.text) as { criteria: { heading: string; criteria: { quote: string }[] } };
+    expect(result.criteria.heading).toBe('Definition of done');
+    expect(result.criteria.criteria.map((criterion) => criterion.quote)).toEqual([
+      'The retries ship behind a flag',
+      'The flag is documented in the runbook',
+    ]);
+  });
+
+  it('asks for a heading after --criteria-heading', async () => {
+    const { out, err } = streams();
+    const code = await runCli(
+      ['review', PR_URL, '--criteria-heading', '  '],
+      { GITHUB_TOKEN: TOKEN },
+      { out, err },
+      {},
+    );
+    expect(code).toBe(1);
+    expect(err.text).toContain('--criteria-heading needs a heading');
   });
 
   it('refuses agent tuning flags when no agent was asked for', async () => {

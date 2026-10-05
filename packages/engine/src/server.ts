@@ -259,16 +259,20 @@ async function review(
     );
     return;
   }
-  const { url, token, agent: choice } = (params ?? {}) as Partial<ReviewParams>;
+  const { url, token, agent: choice, criteriaHeading } = (params ?? {}) as Partial<ReviewParams>;
   if (typeof url !== 'string' || url.length === 0 || typeof token !== 'string' || token.length === 0) {
     respond(
       sink,
       failure(
         id,
         JSON_RPC_INVALID_PARAMS,
-        `${REVIEW_METHOD} needs params: { "url": string, "token": string, "agent"?: { "agent": "${AGENT_NAMES.join('" | "')}", "model"?: string, "account"?: string } }`,
+        `${REVIEW_METHOD} needs params: { "url": string, "token": string, "agent"?: { "agent": "${AGENT_NAMES.join('" | "')}", "model"?: string, "account"?: string }, "criteriaHeading"?: string }`,
       ),
     );
+    return;
+  }
+  if (criteriaHeading !== undefined && (typeof criteriaHeading !== 'string' || criteriaHeading.trim() === '')) {
+    respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${REVIEW_METHOD}: criteriaHeading must be a non-empty string`));
     return;
   }
   if (choice !== undefined) {
@@ -282,6 +286,7 @@ async function review(
     const result = await reviewPullRequest(url, {
       token,
       cacheDir: deps.cacheDir,
+      ...(criteriaHeading !== undefined ? { criteriaHeading } : {}),
       ...(deps.fetch ? { fetch: deps.fetch } : {}),
       ...(deps.agent
         ? {

@@ -7,6 +7,7 @@ import {
 import { ensureCopy } from './cache.js';
 import { readCi } from './ci.js';
 import { findClaims } from './claims.js';
+import { DEFAULT_CRITERIA_HEADING, readCriteria } from './criteria.js';
 import { validateCoverage } from './coverage.js';
 import { parseDiff, type ParsedDiff } from './diff.js';
 import { GitHubClient, parsePullRequestUrl } from './github.js';
@@ -17,7 +18,7 @@ import { applyNoiseRules } from './noise.js';
 import { groupParts } from './parts.js';
 import { pipelineClaims, readPipelineReport } from './pipeline.js';
 import { REVIEW_RESULT_VERSION } from './protocol.js';
-import type { ChangeCopies, CiResults, Part, PullRequestSummary, ReviewResult } from './protocol.js';
+import type { ChangeCopies, CiResults, Criteria, Part, PullRequestSummary, ReviewResult } from './protocol.js';
 import { rankParts } from './rank.js';
 import {
   RANKING_PROMPT_VERSION,
@@ -44,6 +45,8 @@ export interface ReviewOptions {
   fetch?: typeof fetch;
   /** The engine's cache folder, which holds the read-only copies. */
   cacheDir: string;
+  /** The heading the acceptance criteria checklist sits under in a linked issue; "Acceptance criteria" when absent. */
+  criteriaHeading?: string;
   /** Asks the agent to group and rank the parts, write the story, list the claims and judge them too, after the plain pass; see {@link reviewChange}. */
   agentStage?: AgentStageOptions;
 }
@@ -51,9 +54,9 @@ export interface ReviewOptions {
 /**
  * Everything a review reads about one pull request, fetched once: the
  * metadata, the full diff, the root `.gitattributes` at the head commit,
- * the read-only copies of both versions, and the CI at the head commit. A
- * review of it touches no network, so an evaluation case can replay a
- * recorded one offline.
+ * the read-only copies of both versions, the CI at the head commit and
+ * the acceptance criteria of the linked issues. A review of it touches
+ * no network, so an evaluation case can replay a recorded one offline.
  */
 export interface ReviewInput {
   pullRequest: PullRequestSummary;
@@ -64,6 +67,8 @@ export interface ReviewInput {
   copies: ChangeCopies;
   /** The check runs, annotations and failed jobs' trimmed logs at the head commit; absent when none were read. */
   ci?: CiResults;
+  /** The acceptance criteria of the linked issues; absent when none were read, such as an offline replay. */
+  criteria?: Criteria;
 }
 
 /**
@@ -86,8 +91,10 @@ export async function reviewPullRequest(
 /**
  * Fetches what a review reads: the pull request's metadata and full diff,
  * the repository's linguist attributes at the head commit (with no
- * checkout), read-only copies of the base and head versions, and the CI
- * at the head commit, each failed job's log trimmed to its failing step.
+ * checkout), read-only copies of the base and head versions, the CI at
+ * the head commit — each failed job's log trimmed to its failing step —
+ * and the acceptance criteria of the issues the pull request links,
+ * quoted from the checklist under the configured heading.
  */
 export async function fetchChange(url: string, options: ReviewOptions): Promise<ReviewInput> {
   const ref = parsePullRequestUrl(url);
@@ -116,12 +123,14 @@ export async function fetchChange(url: string, options: ReviewOptions): Promise<
       commit,
       download: (wanted) => client.downloadTarball(ref, wanted),
     });
-  const [base, head, ci] = await Promise.all([
+  const heading = options.criteriaHeading?.trim();
+  const [base, head, ci, criteria] = await Promise.all([
     copy(mergeBase),
     copy(pullRequest.headSha),
     readCi(client, ref, pullRequest.headSha, mergeCommit),
+    readCriteria(client, ref, pullRequest.base, heading === undefined || heading === '' ? DEFAULT_CRITERIA_HEADING : heading),
   ]);
-  return { pullRequest, diff, gitAttributes, copies: { base, head }, ci };
+  return { pullRequest, diff, gitAttributes, copies: { base, head }, ci, criteria };
 }
 
 /**
@@ -205,6 +214,7 @@ export async function reviewChange(
     parts: rankParts(await signalParts(parts, head.path)),
     grouping: { by: 'plain' },
     ranking: { by: 'plain' },
+    ...(input.criteria ? { criteria: input.criteria } : {}),
     pipeline: readPipelineReport(input.pullRequest.description, input.pullRequest.headSha),
     ...(input.ci ? { ci: input.ci } : {}),
   };

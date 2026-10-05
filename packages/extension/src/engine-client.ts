@@ -187,10 +187,11 @@ export class EngineClient {
 
   /**
    * Sends one review request with the token VS Code's GitHub sign-in gave
-   * for it and the agent choice the settings picked: the agent, model and
-   * account that run the review's agent passes. Both travel with this
-   * request only; the client keeps no copy of the token. Rejects with the
-   * engine's plain message when the engine fails.
+   * for it, the agent choice the settings picked and the heading the
+   * acceptance criteria checklist sits under: the agent, model, account
+   * and heading travel with this request only; the client keeps no copy
+   * of the token. Rejects with the engine's plain message when the engine
+   * fails.
    *
    * A review can arrive in stages: each stage notification hands its
    * result so far to `onStage` and gives the request the stage's own
@@ -201,13 +202,22 @@ export class EngineClient {
     token: string,
     agent?: ReviewAgentChoice,
     onStage?: (stage: ReviewStageUpdate) => void,
+    criteriaHeading?: string,
   ): Promise<ReviewResult> {
     if (!this.handshaken) {
       throw new Error('the engine has not completed its handshake yet');
     }
+    // The heading names a checklist only once trimmed to something; an
+    // empty one stays off the request, and the engine reads its default.
+    const heading = criteriaHeading?.trim();
     const result = await this.request(
       REVIEW_METHOD,
-      { url, token, ...(agent !== undefined ? { agent } : {}) },
+      {
+        url,
+        token,
+        ...(agent !== undefined ? { agent } : {}),
+        ...(heading !== undefined && heading !== '' ? { criteriaHeading: heading } : {}),
+      },
       REVIEW_TIMEOUT_MS,
       onStage,
     );

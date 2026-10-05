@@ -22,7 +22,7 @@ import {
 } from '../../src/extension.js';
 import { changeUri, libraryUri } from '../../src/change-copies.js';
 import { SEND_REVIEW_VIEW_TYPE } from '../../src/send-page.js';
-import { claimsResult, fetchedResult, judgedResult, mixedResult, offeredResult, storyResult } from '../results.js';
+import { claimsResult, criteriaResult, fetchedResult, judgedResult, mixedResult, offeredResult, storyResult } from '../results.js';
 import { OVERVIEW_VIEW_TYPE } from '../../src/overview.js';
 import {
   Range,
@@ -725,7 +725,7 @@ describe('the overview', () => {
     expect(overview().webview.html).toContain('The story does not mention CHANGELOG.md.');
   });
 
-  it('opens a part the story links in the diff editor', async () => {
+  it("opens a part the story links in the diff editor", async () => {
     await reviewWithFakeEngine({ result: storyResult(), logName: 'story-link.log' });
 
     overview().webview.receive({ type: 'openPart', part: 0 });
@@ -734,6 +734,24 @@ describe('the overview', () => {
     expect(stub.executedCommands).toEqual([
       { id: 'vscode.changes', args: ['src/retry.py', [[head('src/retry.py'), base('src/retry.py'), head('src/retry.py')]]] },
     ]);
+  });
+
+  it('lists the acceptance criteria with their issue links, and opens an issue on GitHub from the page', async () => {
+    await reviewWithFakeEngine({ result: criteriaResult(), logName: 'criteria.log' });
+
+    const page = overview();
+    expect(page.webview.html).toContain('<h2>Acceptance criteria</h2>');
+    expect(page.webview.html).toContain(
+      '<q class="quote">A send that fails is retried three times' +
+        '<span class="hidden" data-kind="html comment"><span class="flag">hidden HTML comment</span>',
+    );
+    expect(page.webview.html).toContain('<button type="button" class="pt issue" data-issue="0">#30 in example-org/example-repo</button>');
+    expect(page.webview.html).toContain('<span class="verdict">not checked</span>');
+
+    page.webview.receive({ type: 'openIssue', issue: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(stub.openedExternals).toEqual(['https://github.com/example-org/planning/issues/7']);
   });
 
   it("shows each part's claim count in the tree, lists the claims, and opens the part a claim is attached to", async () => {

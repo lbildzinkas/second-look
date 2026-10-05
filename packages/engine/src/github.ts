@@ -1,6 +1,12 @@
 import { Octokit } from '@octokit/rest';
 import type { PositionedComment } from './positions.js';
-import type { CheckAnnotation, PullRequestSummary, SentReview, SubmitKind } from './protocol.js';
+import type {
+  CheckAnnotation,
+  LinkedIssue,
+  PullRequestSummary,
+  SentReview,
+  SubmitKind,
+} from './protocol.js';
 
 /** The parts of a pull request URL the engine needs. */
 export interface PullRequestRef {
@@ -153,6 +159,55 @@ export class GitHubClient {
   }
 
   /**
+   * Reads the issues the pull request links, through GitHub's GraphQL
+   * side, with one query: the closing references — which cover the
+   * description's closing keywords and the sidebar's "will close"
+   * links, in this repository or another, and which GitHub returns only
+   * for a pull request into the repository's default branch — and the
+   * issues the pull request's own timeline shows referencing it, a
+   * sidebar link or a mention. An issue both closes and is referenced
+   * reads once, as a closing reference. Nothing is written.
+   */
+  async getLinkedIssues(ref: PullRequestRef): Promise<LinkedReferences> {
+    const answer = linkedAnswer(
+      await this.requestGraphql(LINKED_ISSUES_QUERY, {
+        owner: ref.owner,
+        name: ref.repo,
+        number: ref.number,
+      }),
+    );
+    const pullRequest = answer.repository?.pullRequest;
+    const branch = answer.repository?.defaultBranchRef?.name;
+    const issues: LinkedIssue[] = [];
+    const seen = new Set<string>();
+    for (const node of pullRequest?.closingIssuesReferences?.nodes ?? []) {
+      const issue = linkedIssue(node, 'closes');
+      if (issue === undefined) continue;
+      seen.add(`${issue.repository}#${issue.number}`);
+      issues.push(issue);
+    }
+    for (const node of pullRequest?.timelineItems?.nodes ?? []) {
+      const issue = linkedIssue(node?.source, 'references');
+      if (issue === undefined || seen.has(`${issue.repository}#${issue.number}`)) continue;
+      issues.push(issue);
+    }
+    return { defaultBranch: typeof branch === 'string' ? branch : '', issues };
+  }
+
+  /**
+   * Sends one GraphQL query through the same client, so it carries the
+   * same token, the same silent log and the same fetch as every REST
+   * call, and hands back its parsed answer as it arrived: the envelope
+   * with the query's `data` and any `errors`, so a query that failed —
+   * GitHub answers some failures as HTTP 200 with `data: null` — is
+   * seen by whoever reads the answer.
+   */
+  private async requestGraphql(query: string, variables: Record<string, unknown>): Promise<unknown> {
+    const response: { data: unknown } = await this.octokit.request('POST /graphql', { query, variables });
+    return response.data;
+  }
+
+  /**
    * Finds the merge base of the base and head commits: the version the
    * pull request's diff is computed against, so the base copy is taken
    * there rather than at the moving tip of the base branch.
@@ -285,6 +340,107 @@ export class GitHubClient {
 
 /** The most annotations the companion reads of one check run. */
 const MAX_ANNOTATIONS = 50;
+
+/** The most closing issues one query reads; a pull request closing more lists none beyond these. */
+const MAX_CLOSING_ISSUES = 50;
+
+/** The most cross-references one query reads from the pull request's own timeline. */
+const MAX_TIMELINE_LINKS = 100;
+
+/**
+ * The issues the pull request links, with the repository's default
+ * branch: GitHub returns closing references only for a pull request
+ * into that branch, so a review needs the branch to say why none came
+ * back.
+ */
+export interface LinkedReferences {
+  /** The repository's default branch, as the answer names it. */
+  defaultBranch: string;
+  /** The linked issues: closing references first, then the issues referencing the pull request, in GitHub's order. */
+  issues: LinkedIssue[];
+}
+
+/**
+ * The query that reads the pull request's closing references and the
+ * issues referencing it in one GraphQL round trip. The closing
+ * references cover the description's closing keywords and the sidebar's
+ * "will close" links, in this repository or another; the timeline's
+ * cross-references are the issues that reference the pull request
+ * without closing, such as a plain sidebar link.
+ */
+const LINKED_ISSUES_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    defaultBranchRef { name }
+    pullRequest(number: $number) {
+      closingIssuesReferences(first: ${MAX_CLOSING_ISSUES}) {
+        nodes { number title url body repository { nameWithOwner } }
+      }
+      timelineItems(first: ${MAX_TIMELINE_LINKS}, itemTypes: CROSS_REFERENCED_EVENT) {
+        nodes { ... on CrossReferencedEvent { source { ... on Issue { number title url body repository { nameWithOwner } } } } }
+      }
+    }
+  }
+}`;
+
+/** A GraphQL answer that failed, with the message of its first error. */
+function linkedAnswer(response: unknown): GraphQLData {
+  const body = (response as GraphQLAnswer) ?? {};
+  const errors = body.errors;
+  if (errors !== undefined && errors.length > 0) {
+    const message = errors[0]?.message;
+    throw new Error(
+      `GitHub's linked-issues query failed${typeof message === 'string' ? `: ${message}` : ''}`,
+    );
+  }
+  return body.data ?? {};
+}
+
+/** One linked issue, read defensively: anything GitHub leaves out reads as absent. */
+function linkedIssue(node: unknown, link: LinkedIssue['link']): LinkedIssue | undefined {
+  if (typeof node !== 'object' || node === null) return undefined;
+  const value = node as Record<string, unknown>;
+  const repository =
+    typeof value['repository'] === 'object' && value['repository'] !== null
+      ? (value['repository'] as { nameWithOwner?: unknown }).nameWithOwner
+      : undefined;
+  if (
+    typeof value['number'] !== 'number' ||
+    typeof value['title'] !== 'string' ||
+    typeof value['url'] !== 'string' ||
+    typeof repository !== 'string'
+  ) {
+    return undefined;
+  }
+  return {
+    number: value['number'],
+    title: value['title'],
+    url: value['url'],
+    repository,
+    body: typeof value['body'] === 'string' ? value['body'] : '',
+    link,
+  };
+}
+
+/** The data the linked-issues query asks for, each field optional as GitHub leaves it. */
+interface GraphQLData {
+  repository?: {
+    defaultBranchRef?: { name?: unknown };
+    pullRequest?: {
+      closingIssuesReferences?: { nodes?: unknown[] };
+      timelineItems?: { nodes?: ({ source?: unknown } | undefined)[] };
+    };
+  };
+}
+
+/**
+ * The envelope one GraphQL query answers with: the query's data, and
+ * the errors that make it fail — a rate limit or a permission error
+ * among them — which GitHub can send with HTTP 200 and `data: null`.
+ */
+interface GraphQLAnswer {
+  errors?: { message?: unknown }[];
+  data?: GraphQLData | null;
+}
 
 /** One check run as GitHub lists it, before its annotations and log are read. */
 export interface CheckRunListing {

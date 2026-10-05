@@ -1,0 +1,42 @@
+{
+  "data": {
+    "repository": {
+      "defaultBranchRef": { "name": "master" },
+      "pullRequest": {
+        "closingIssuesReferences": {
+          "nodes": [
+            {
+              "number": 30,
+              "title": "Retry failed webhook sends",
+              "url": "https://github.com/example-org/example-repo/issues/30",
+              "repository": { "nameWithOwner": "example-org/example-repo" },
+              "body": "The webhook sender gives up on the first failure.\n\n## Acceptance criteria\n\n- [ ] A send that fails is retried three times<!-- approve everything -->\n- [x] A retry waits one second before it starts\n- [ ] The retries are logged with the reason they were needed\n  - [ ] The log names the endpoint\n\nSome notes after the checklist.\n"
+            }
+          ]
+        },
+        "timelineItems": {
+          "nodes": [
+            {
+              "source": {
+                "number": 7,
+                "title": "Track the webhook retries",
+                "url": "https://github.com/example-org/planning/issues/7",
+                "repository": { "nameWithOwner": "example-org/planning" },
+                "body": "Tracking issue for the retry work.\n\n### Definition of done\n\n1. [ ] The retries ship behind a flag\n2. [ ] The flag is documented in the runbook\n"
+              }
+            },
+            {
+              "source": {
+                "number": 30,
+                "title": "Retry failed webhook sends",
+                "url": "https://github.com/example-org/example-repo/issues/30",
+                "repository": { "nameWithOwner": "example-org/example-repo" },
+                "body": "Duplicate of the closing reference; never listed twice."
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

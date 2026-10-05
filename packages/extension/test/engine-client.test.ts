@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { ProtocolError } from '../src/protocol.js';
 import { EngineClient, spawnEngineProcess, type ReviewStageUpdate } from '../src/engine-client.js';
-import { fetchedResult, mixedResult } from './results.js';
+import { criteriaResult, fetchedResult, mixedResult } from './results.js';
 
 const FAKE_ENGINE = fileURLToPath(new URL('./fixtures/fake-engine.mjs', import.meta.url));
 const PR_URL = 'https://github.com/example-org/example-repo/pull/42';
@@ -100,7 +100,7 @@ describe('EngineClient against a fake engine', () => {
     await client.initialize();
     const result = await client.review(PR_URL, TOKEN);
 
-    expect(result.version).toBe(12);
+    expect(result.version).toBe(13);
     expect(result.parts).toHaveLength(7);
 
     const requests = loggedRequests('round-trip.log') as {
@@ -112,6 +112,23 @@ describe('EngineClient against a fake engine', () => {
       method: 'review',
       params: { url: PR_URL, token: TOKEN },
     });
+    client.dispose();
+  });
+
+  it('carries the criteria heading with a review, the engine\u2019s default when empty', async () => {
+    const client = new EngineClient(() => fakeEngine({ result: criteriaResult(), logName: 'criteria-heading.log' }));
+
+    await client.initialize();
+    const result = await client.review(PR_URL, TOKEN, undefined, undefined, 'Definition of done');
+    await client.review(PR_URL, TOKEN, undefined, undefined, '  ');
+
+    expect(result.criteria!.heading).toBe('Acceptance criteria');
+    const reviews = loggedRequests('criteria-heading.log').filter(
+      (request) => (request as { method: string }).method === 'review',
+    ) as { params: Record<string, unknown> }[];
+    // The heading travels with the request only when it names one.
+    expect(reviews[0]!.params['criteriaHeading']).toBe('Definition of done');
+    expect(reviews[1]!.params).not.toHaveProperty('criteriaHeading');
     client.dispose();
   });
 
@@ -316,7 +333,7 @@ describe('EngineClient against a fake engine', () => {
       await timedOut;
 
       await client.initialize();
-      expect(await client.review(PR_URL, TOKEN)).toMatchObject({ version: 12 });
+      expect(await client.review(PR_URL, TOKEN)).toMatchObject({ version: 13 });
       expect(spawns).toBe(2);
       client.dispose();
     } finally {
@@ -347,7 +364,7 @@ describe('EngineClient against a fake engine', () => {
     const stages: ReviewStageUpdate[] = [];
 
     await client.initialize();
-    expect(await client.review(PR_URL, TOKEN, undefined, (stage) => stages.push(stage))).toMatchObject({ version: 12 });
+    expect(await client.review(PR_URL, TOKEN, undefined, (stage) => stages.push(stage))).toMatchObject({ version: 13 });
     expect(stages).toEqual([]);
     client.dispose();
   });

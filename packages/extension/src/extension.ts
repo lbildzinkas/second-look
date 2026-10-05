@@ -205,7 +205,7 @@ class ReviewSession {
   private url: string | undefined;
   /** The Send review page of the review under way, once the reviewer opens it. */
   private page: SendReviewPage | undefined;
-  /** The review's overview: the story, the claims, the description and who made each result. */
+  /** The review's overview: the story, the acceptance criteria, the claims, the description and who made each result. */
   private readonly overview = new OverviewPanel((part) => void this.openPart(part));
   /** The review's findings, its refuted and unverifiable claims, as threads on the diff. */
   private readonly findings = new FindingThreads();
@@ -598,7 +598,15 @@ class ReviewSession {
     onStage: (stage: ReviewStageUpdate) => void,
   ): Promise<ReviewResult> {
     const engine = await this.readyEngine();
-    return engine.review(url, token, reviewAgentChoice(readAgentSettings()), onStage);
+    // The heading the acceptance criteria checklist sits under travels
+    // with the request like the agent choice, so a settings change
+    // reaches the next review without restarting the engine; empty leaves
+    // the engine's default heading, "Acceptance criteria".
+    const heading = vscode.workspace
+      .getConfiguration('second-look')
+      .get<string>('criteriaHeading', '')
+      .trim();
+    return engine.review(url, token, reviewAgentChoice(readAgentSettings()), onStage, heading);
   }
 
   /**

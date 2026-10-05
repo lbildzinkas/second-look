@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { REVIEW_RESULT_VERSION, type NoiseAssessment, type ReviewResult } from '@second-look/engine';
 import { ProtocolError, isReviewResult, parseReviewResult } from '../src/index.js';
-import { REQUESTS_FETCH, claimsResult, fetchedResult, judgedResult, offeredResult, pipelineResult } from './results.js';
+import { REQUESTS_FETCH, claimsResult, criteriaResult, fetchedResult, judgedResult, offeredResult, pipelineResult } from './results.js';
 
 function sampleResult(): ReviewResult {
   return {
@@ -541,6 +541,42 @@ describe('isReviewResult for the pipeline and CI', () => {
   });
 });
 
+describe('isReviewResult for the acceptance criteria', () => {
+  type Loose = Record<string, unknown> & { criteria: Record<string, unknown> & { issues: Record<string, unknown>[]; criteria: Record<string, unknown>[] } };
+  const shown = (): Loose => JSON.parse(JSON.stringify(criteriaResult())) as Loose;
+
+  it('accepts the criteria of the linked issues, quoted and not checked, and a result without them', () => {
+    expect(isReviewResult(criteriaResult())).toBe(true);
+    const none = shown();
+    delete (none as Record<string, unknown>)['criteria'];
+    expect(isReviewResult(none)).toBe(true);
+    // An issue another repository links reads like any other.
+    const crossRepository = shown();
+    crossRepository.criteria.issues[0]!['repository'] = 'example-org/planning';
+    expect(isReviewResult(crossRepository)).toBe(true);
+  });
+
+  it('rejects criteria that are malformed, or a criterion whose issue or verdict is off', () => {
+    const changed = (change: (value: Loose) => void): Loose => {
+      const value = shown();
+      change(value);
+      return value;
+    };
+    const cases: unknown[] = [
+      changed((value) => (value.criteria['outcome'] = 'read partly')),
+      changed((value) => delete value.criteria['detail']),
+      changed((value) => (value.criteria['heading'] = '')),
+      changed((value) => (value.criteria.issues[0]!['link'] = 'mentions')),
+      changed((value) => delete value.criteria.issues[0]!['body']),
+      changed((value) => (value.criteria.criteria[0]!['issue'] = 2)),
+      changed((value) => (value.criteria.criteria[0]!['line'] = 0)),
+      changed((value) => (value.criteria.criteria[0]!['quote'] = '')),
+      changed((value) => (value.criteria.criteria[0]!['verdict'] = { kind: 'verified' })),
+    ];
+    for (const value of cases) expect(isReviewResult(value)).toBe(false);
+  });
+});
+
 describe('parseReviewResult', () => {
   it('reads the JSON the engine printed', () => {
     const result = parseReviewResult(JSON.stringify(sampleResult()));
@@ -556,6 +592,6 @@ describe('parseReviewResult', () => {
 
 describe('the versioned protocol is shared with the engine', () => {
   it('uses the same version constant', () => {
-    expect(REVIEW_RESULT_VERSION).toBe(12);
+    expect(REVIEW_RESULT_VERSION).toBe(13);
   });
 });

@@ -10,7 +10,7 @@
 import type { AgentStamp } from './agent.js';
 
 /** Version of the review result schema. */
-export const REVIEW_RESULT_VERSION = 12 as const;
+export const REVIEW_RESULT_VERSION = 13 as const;
 
 /**
  * Version 2 added the head commit's SHA and each part's noise assessment;
@@ -32,7 +32,9 @@ export const REVIEW_RESULT_VERSION = 12 as const;
  * version 12 added the decompile offer a .NET library fetch turns into
  * when no exact source exists and the package version's licence allows
  * it, the decompiled package it lands, and decompiled library code as an
- * evidence source.
+ * evidence source; version 13 added the acceptance criteria read from
+ * the issues the pull request links, each quoted from the checklist
+ * under the configured heading and not checked.
  */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
@@ -157,10 +159,79 @@ export interface ReviewResult {
   story?: Story;
   /** The claims the change makes, as the agent listed them; absent when no agent was asked. */
   claims?: Claims;
+  /**
+   * The acceptance criteria read from the issues the pull request links,
+   * each quoted and not checked; absent when the review read none, such
+   * as an offline replay.
+   */
+  criteria?: Criteria;
   /** The no-mistakes report the description carries, and whether it is trusted. */
   pipeline: PipelineReport;
   /** The CI the companion read at the head commit; absent when the review read none, such as an offline replay. */
   ci?: CiResults;
+}
+
+/**
+ * One issue the pull request links, read only: its number, title, page,
+ * repository and full body, exactly as GitHub stores it. The body is
+ * untrusted text: the companion parses it and never follows anything it
+ * says, and the panel flags the content GitHub hides.
+ */
+export interface LinkedIssue {
+  /** The issue's number in its own repository. */
+  number: number;
+  title: string;
+  /** The issue's page on GitHub. */
+  url: string;
+  /** The repository the issue lives in, as `owner/name`. */
+  repository: string;
+  /** The issue's full body, exactly as GitHub stores it, never truncated. */
+  body: string;
+  /** How the pull request links it: `closes` when merging would close it, else `references`. */
+  link: 'closes' | 'references';
+}
+
+/**
+ * One condition from a linked issue that the change must meet (the
+ * glossary's acceptance criterion), quoted from the checklist under the
+ * configured heading. Criteria start as not checked; judging them
+ * against the change is a later pass.
+ */
+export interface AcceptanceCriterion {
+  /**
+   * The quote, exactly as the issue's checklist has it, on one line:
+   * runs of white space as one space. Hidden content stays in the quote,
+   * and the panel shows and flags it.
+   */
+  quote: string;
+  /** The issue it comes from, by its index in the criteria's issues. */
+  issue: number;
+  /** The 1-based line of the issue's body the quote sits on. */
+  line: number;
+  /** The criterion's verdict: not checked until a later pass judges it. */
+  verdict: { kind: 'not checked' };
+}
+
+/**
+ * The acceptance criteria pass: reads the issues the pull request links
+ * — the closing references GitHub returns, which cover the pull
+ * request's own closing keywords and the sidebar's "will close" links,
+ * and the issues its timeline shows referencing it, in this repository
+ * or another — and lists each criterion found in the checklist under
+ * the configured heading, quoted and not checked. Model-free: issue
+ * text is parsed, never followed.
+ */
+export interface Criteria {
+  /** `read` when the linked issues were read; `unreadable` when GitHub refused or failed. */
+  outcome: 'read' | 'unreadable';
+  /** One plain line: what was read, or why nothing was — including when GitHub returns no closing references for a pull request into a non-default branch. */
+  detail: string;
+  /** The heading the checklists were read from under, such as `Acceptance criteria`. */
+  heading: string;
+  /** The issues the pull request links, closing references first, in GitHub's order; empty when none was read. */
+  issues: LinkedIssue[];
+  /** The criteria, each quoted and not checked; empty when no checklist was found. */
+  criteria: AcceptanceCriterion[];
 }
 
 /**

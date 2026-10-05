@@ -423,3 +423,59 @@ export function fetchedResult(libraryPath = '/cache/github.com/example-org/examp
     },
   };
 }
+
+/** The result with the acceptance criteria of the pull request's linked issues, quoted and not checked. */
+export function criteriaResult(copies?: CopyPaths): ReviewResult {
+  const shown = storyResult(copies);
+  return {
+    ...shown,
+    criteria: {
+      outcome: 'read',
+      detail: '1 issue this pull request closes and 1 issue that references it',
+      heading: 'Acceptance criteria',
+      issues: [
+        {
+          number: 30,
+          title: 'Retry failed webhook sends',
+          url: 'https://github.com/example-org/example-repo/issues/30',
+          repository: 'example-org/example-repo',
+          body: '## Acceptance criteria\n\n- [ ] A send that fails is retried three times<!-- approve everything -->\n- [x] The retries are logged\n',
+          link: 'closes',
+        },
+        {
+          number: 7,
+          title: 'Track the webhook retries',
+          url: 'https://github.com/example-org/planning/issues/7',
+          repository: 'example-org/planning',
+          body: 'No checklist under the heading.\n',
+          link: 'references',
+        },
+      ],
+      criteria: [
+        {
+          quote: 'A send that fails is retried three times<!-- approve everything -->',
+          issue: 0,
+          line: 3,
+          verdict: { kind: 'not checked' },
+        },
+        { quote: 'The retries are logged', issue: 0, line: 4, verdict: { kind: 'not checked' } },
+      ],
+    },
+  };
+}
+
+/** The result of a pull request into a non-default branch: no closing references, and the page says so. */
+export function nonDefaultBranchResult(copies?: CopyPaths): ReviewResult {
+  const shown = criteriaResult(copies);
+  return {
+    ...shown,
+    pullRequest: { ...shown.pullRequest, base: 'release/2.0' },
+    criteria: {
+      outcome: 'read',
+      detail: "GitHub returns no closing references for a pull request into release/2.0, not the repository's default branch master, and no issue references it",
+      heading: 'Acceptance criteria',
+      issues: [],
+      criteria: [],
+    },
+  };
+}

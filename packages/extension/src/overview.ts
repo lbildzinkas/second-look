@@ -6,11 +6,13 @@ import {
   isFinding,
   isUnprovenSource,
   parsePullRequestUrl,
+  type AcceptanceCriterion,
   type AgentStamp,
   type CheckRun,
   type Claim,
   type ClaimSource,
   type HiddenKind,
+  type LinkedIssue,
   type Part,
   type ReviewResult,
   type Story,
@@ -30,16 +32,18 @@ export interface OverviewState {
 
 /** A move the reviewer makes on the page, as its script reports it. */
 export interface OverviewMessage {
-  type: 'openPart';
-  /** The part, by its index in the result's parts. */
-  part: number;
+  type: 'openPart' | 'openIssue';
+  /** The part or the linked issue, by its index in the result's parts or the criteria's issues. */
+  target: number;
 }
 
 /** Reads a page message out of what the webview delivered, if it is one. */
 function overviewMessage(value: unknown): OverviewMessage | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
-  const { type, part } = value as Record<string, unknown>;
-  return type === 'openPart' && Number.isInteger(part) ? { type, part: part as number } : undefined;
+  const { type, part, issue } = value as Record<string, unknown>;
+  if (type === 'openPart' && Number.isInteger(part)) return { type, target: part as number };
+  if (type === 'openIssue' && Number.isInteger(issue)) return { type, target: issue as number };
+  return undefined;
 }
 
 /**
@@ -47,16 +51,19 @@ function overviewMessage(value: unknown): OverviewMessage | undefined {
  * the recorded design (docs/ux): the pull request's title and where it
  * comes from, a chip for each stage done and the one still running, the
  * story with its stamp, each part it mentions a button that opens the part
- * in the diff editor, the claims the change makes with where each is made
- * and the part it is attached to, the pipeline report and whether it is
- * trusted, the checks run on the merge commit with their annotations and
- * failed jobs' trimmed logs, the pull request's description in full with
- * its hidden content shown and flagged, and who made each result.
+ * in the diff editor, the acceptance criteria of the linked issues, each
+ * quoted and its issue a button that opens it on GitHub, the claims the
+ * change makes with where each is made and the part it is attached to, the
+ * pipeline report and whether it is trusted, the checks run on the merge
+ * commit with their annotations and failed jobs' trimmed logs, the pull
+ * request's description in full with its hidden content shown and flagged,
+ * and who made each result.
  *
  * Everything on the page but the companion's own words was written by
- * someone else, the agent's story, the claims' quotes, the pipeline's
- * findings and the CI's logs included, so every byte of it reaches the
- * page as escaped text: no remote image, no link and no markup of theirs
+ * someone else, the agent's story, the claims' quotes, the criteria's
+ * quotes from untrusted issue text, the pipeline's findings and the CI's
+ * logs included, so every byte of it reaches the page as escaped text:
+ * no remote image, no link and no markup of theirs
  * renders, under a content security policy that loads nothing but the
  * page's own nonce-marked style and script.
  */
@@ -116,11 +123,19 @@ export class OverviewPanel implements vscode.Disposable {
     return true;
   }
 
-  /** The part a story or claim button names, opened in the diff editor. */
+  /** The part a story or claim button names, opened in the diff editor; a criterion's issue, opened on GitHub. */
   private handle(value: unknown): void {
     const message = overviewMessage(value);
-    const part = message === undefined ? undefined : this.state?.result.parts[message.part];
-    if (part !== undefined) this.openPart(part);
+    if (message === undefined) return;
+    if (message.type === 'openPart') {
+      const part = this.state?.result.parts[message.target];
+      if (part !== undefined) this.openPart(part);
+      return;
+    }
+    const issue = this.state?.result.criteria?.issues[message.target];
+    if (issue !== undefined) {
+      void vscode.env.openExternal(vscode.Uri.parse(issue.url));
+    }
   }
 
   private render(): void {
@@ -291,6 +306,68 @@ function storySection(state: OverviewState): string {
     return `<h2>Story ${stamp}</h2><p class="note">No story: ${escapeHtml(story.detail)}.</p>`;
   }
   return `<h2>Story ${stamp}</h2>${missing}<div class="story">${storySentences(story, focus)}</div>`;
+}
+
+/** How the page names each way a pull request links an issue. */
+const ISSUE_LINKS: Record<LinkedIssue['link'], string> = {
+  closes: 'closes',
+  references: 'references',
+};
+
+/** A linked issue as the page names it: its number in its repository. */
+function issueName(issue: LinkedIssue): string {
+  return `#${issue.number} in ${issue.repository}`;
+}
+
+/** One acceptance criterion: its quote, the issue it comes from as a button that opens it, and its verdict. */
+function criterionItem(criterion: AcceptanceCriterion, criteria: NonNullable<ReviewResult['criteria']>): string {
+  const issue = criteria.issues[criterion.issue];
+  const from =
+    issue === undefined
+      ? ''
+      : `<button type="button" class="pt issue" data-issue="${criterion.issue}">${escapeHtml(issueName(issue))}</button> · ${escapeHtml(ISSUE_LINKS[issue.link])} · `;
+  return (
+    `<li><q class="quote">${sanitiseUntrusted(criterion.quote).html}</q>` +
+    `<div class="where">${from}<span class="verdict">${escapeHtml(criterion.verdict.kind)}</span></div></li>`
+  );
+}
+
+/** The issues read but listing no checklist under the heading, each named plainly. */
+function issuesWithoutChecklist(criteria: NonNullable<ReviewResult['criteria']>): string {
+  const quoted = new Set(criteria.criteria.map((criterion) => criterion.issue));
+  const without = criteria.issues.filter((_, index) => !quoted.has(index));
+  if (without.length === 0) return '';
+  return `<p class="note">No checklist under ${escapeHtml(JSON.stringify(criteria.heading))} in ${without
+    .map((issue) => `${escapeHtml(issueName(issue))} (${ISSUE_LINKS[issue.link]})`)
+    .join(', ')}.</p>`;
+}
+
+/**
+ * The acceptance criteria section: each condition from the issues the
+ * pull request links, quoted from the checklist under the heading, its
+ * issue a button that opens it, and its verdict — not checked, since
+ * judging them is a later pass. What was read, and why nothing was — a
+ * pull request into a non-default branch among the reasons — is said
+ * plainly. Issue text is untrusted: every quote reaches the page escaped,
+ * and the content GitHub hides is shown and flagged.
+ */
+function criteriaSection(state: OverviewState): string {
+  const criteria = state.result.criteria;
+  if (criteria === undefined) {
+    const why = state.running !== undefined ? 'The criteria come once the linked issues are read.' : 'No criteria were read for this review.';
+    return `<h2>Acceptance criteria</h2><p class="note">${why}</p>`;
+  }
+  const detail = `<p class="note">${escapeHtml(criteria.detail)}.</p>`;
+  if (criteria.outcome === 'unreadable') {
+    return `<h2>Acceptance criteria</h2>${detail}<p class="note">No criteria were read, so none is checked.</p>`;
+  }
+  const heading = `, quoted from the checklist under ${escapeHtml(JSON.stringify(criteria.heading))}`;
+  const note = `<p class="note">Each condition listed in the issues this pull request links${heading}. Issue text is untrusted: its hidden content is shown and flagged. None is checked yet.</p>`;
+  const list =
+    criteria.criteria.length === 0
+      ? ''
+      : `<ol class="claims criteria">${criteria.criteria.map((criterion) => criterionItem(criterion, criteria)).join('')}</ol>`;
+  return `<h2>Acceptance criteria</h2>${detail}${note}${list}${issuesWithoutChecklist(criteria)}`;
 }
 
 /** How the page names each claim source. */
@@ -584,6 +661,7 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
     cursor: pointer;
   }
   .pt.focus { font-weight: 600; }
+  .issue { font-style: italic; }
   code, .shown { font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; }
   .description {
     white-space: pre-wrap;
@@ -642,6 +720,7 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
   <div class="meta">${metaLine(result)}</div>
   <div class="stages">${stageChips(state)}</div>
   <section id="story">${storySection(state)}</section>
+  <section id="criteria">${criteriaSection(state)}</section>
   <section id="claims">${claimsSection(state)}</section>
   <section id="pipeline">${pipelineSection(result)}</section>
   <section id="description">${descriptionSection(result)}</section>
@@ -651,9 +730,14 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
 (function () {
   'use strict';
   var vscode = acquireVsCodeApi();
-  Array.prototype.forEach.call(document.querySelectorAll('button.pt'), function (button) {
+  Array.prototype.forEach.call(document.querySelectorAll('button.pt[data-part]'), function (button) {
     button.addEventListener('click', function () {
       vscode.postMessage({ type: 'openPart', part: Number(button.getAttribute('data-part')) });
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('button.issue'), function (button) {
+    button.addEventListener('click', function () {
+      vscode.postMessage({ type: 'openIssue', issue: Number(button.getAttribute('data-issue')) });
     });
   });
   var focused = document.querySelector('.sentence.focus');
