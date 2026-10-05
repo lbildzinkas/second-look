@@ -730,7 +730,7 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
 (function () {
   'use strict';
   var vscode = acquireVsCodeApi();
-  Array.prototype.forEach.call(document.querySelectorAll('button.pt'), function (button) {
+  Array.prototype.forEach.call(document.querySelectorAll('button.pt[data-part]'), function (button) {
     button.addEventListener('click', function () {
       vscode.postMessage({ type: 'openPart', part: Number(button.getAttribute('data-part')) });
     });
