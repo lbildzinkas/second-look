@@ -226,6 +226,9 @@ function sourceLinkCommit(pdbs: readonly PackagePdb[]): string | undefined {
   return undefined;
 }
 
+/** A host a source file may come from: a public DNS name, never `localhost`, a bare name or an IP address, so no PDB can point the fetch into the reviewer's network. */
+const PUBLIC_HOST = /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$/i;
+
 /** One source file to fetch: its path in the repository, its Source Link URL and every hash a PDB records for it. */
 interface SourceFile {
   path: string;
@@ -235,15 +238,15 @@ interface SourceFile {
 
 /**
  * The source files the PDBs name at one commit, by their path in the
- * repository: what follows the commit in an https Source Link URL. A
- * document whose URL is not at that commit is left out.
+ * repository: what follows the commit in an https Source Link URL on a
+ * public host. A document whose URL is not at that commit is left out.
  */
 function sourceFiles(pdbs: readonly PackagePdb[], commit: string): SourceFile[] {
   const files = new Map<string, SourceFile>();
   for (const document of pdbs.flatMap((pdb) => pdb.documents)) {
     const url = linkOf(document);
     const at = url?.pathname.toLowerCase().indexOf(`/${commit}/`) ?? -1;
-    if (url === undefined || url.protocol !== 'https:' || at < 0) continue;
+    if (url === undefined || url.protocol !== 'https:' || !PUBLIC_HOST.test(url.hostname) || at < 0) continue;
     let path: string;
     try {
       path = url.pathname.slice(at + commit.length + 2).split('/').map(decodeURIComponent).join('/');

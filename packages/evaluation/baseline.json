@@ -3071,6 +3071,86 @@
       "runDate": "2026-10-04T15:31:44.365Z"
     },
     {
+      "case": "canary-csharp",
+      "name": "claims-found",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "3",
+        "library-verdicts": "2"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-05T07:37:09.258Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "claims-verdict:refuted",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "3",
+        "library-verdicts": "2"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-05T07:37:09.258Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "claims-evidence",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "3",
+        "library-verdicts": "2"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-05T07:37:09.258Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "claims-fetch-offered",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "3",
+        "library-verdicts": "2"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-05T07:37:09.258Z"
+    },
+    {
       "case": "encode-httpx-3690",
       "name": "verdict-accuracy",
       "value": 1,

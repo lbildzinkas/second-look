@@ -270,6 +270,20 @@ describe('fetchNuGetLibrary', () => {
     });
   });
 
+  it("never fetches a Source Link URL on localhost, a bare name or an IP address, so no PDB reaches into the reviewer's network", async () => {
+    const pdb = Buffer.from(GUARD_PDB);
+    const at = pdb.indexOf('https://raw.githubusercontent.com/');
+    // Rewrite the host in place, keeping the blob's length: `raw.githubusercontent.com` becomes `127.0.0.1` padded with a path.
+    pdb.write('https://127.0.0.1/abcdefghijklmnop', at, 'latin1');
+    const nuspec = `<package><metadata><id>Ardalis.GuardClauses</id><version>4.5.0</version><repository commit="${GUARD_COMMIT}" /></metadata></package>`;
+    const bytes = zipArchive([{ name: 'Ardalis.GuardClauses.nuspec', content: nuspec }, { name: 'lib/netstandard2.1/Ardalis.GuardClauses.pdb', content: pdb }]);
+    const transport = recordedNuGet({ 'https://api.nuget.org/v3-flatcontainer/ardalis.guardclauses/4.5.0/ardalis.guardclauses.4.5.0.nupkg': bytes });
+    const pin: NuGetPin = { ecosystem: 'NuGet', name: 'Ardalis.GuardClauses', version: '4.5.0', pinnedBy: 'packages.lock.json', contentHash: sha512Base64(bytes) };
+
+    await expect(fetchNuGetLibrary(pin, { librariesDir, fetch: transport.fetch })).rejects.toThrow(`names no source file at commit ${GUARD_COMMIT}`);
+    expect(transport.requests.map((request) => new URL(request.url).host)).toEqual(['api.nuget.org']);
+  });
+
   it('refuses a package id or version that could steer a URL or the cache path', async () => {
     const transport = recordedNuGet();
     await expect(fetchNuGetLibrary({ ...canaryPin(CANARY_HASH), version: '../3.0.1' }, { librariesDir, fetch: transport.fetch })).rejects.toThrow(
