@@ -12,12 +12,13 @@ import {
   LIBRARY_VERDICTS_PROMPT_VERSION,
   holdToExactSource,
   libraryVerdictPrompt,
+  libraryVerdictsInstructions,
   pressLibraryFetch,
 } from '../src/library-verdicts.js';
 import type { Claim, ClaimVerdict, Part } from '../src/protocol.js';
 import { reviewChange, type ReviewInput } from '../src/review.js';
 import { VERDICTS_INSTRUCTIONS, findingAnchor } from '../src/verdicts.js';
-import { answeringAgent, changedPart, pypiFetch, scriptedAgent, sha256Hex, temporaryCacheDir, zipArchive } from './helpers.js';
+import { answeringAgent, changedPart, pypiFetch, recordedFetch, scriptedAgent, sha256Hex, tarball, temporaryCacheDir, zipArchive } from './helpers.js';
 
 const DOC_PAGE = [
   'def doc_page(client, url):',
@@ -178,6 +179,60 @@ describe('pressLibraryFetch', () => {
 
     expect(judging.claim.verdict).toMatchObject({ kind: 'refuted' });
     expect(findingAnchor(judging.claim, [part()])).toBeUndefined();
+  });
+});
+
+describe('pressLibraryFetch on a named repository', () => {
+  const NAMED = { url: 'https://github.com/encode/httpx', tag: '0.27.2' };
+  const NAMED_OFFER = { library: 'httpx', pinnedVersion: '0.27.2', pinnedBy: NAMED.url, reason: 'Nothing pins httpx.', namedRepository: NAMED };
+  const ARCHIVE = 'https://codeload.github.com/encode/httpx/tar.gz/refs/tags/0.27.2';
+
+  function namedClaim(): Claim {
+    const base = claim();
+    return { ...base, verdict: { ...(base.verdict as Exclude<ClaimVerdict, { kind: 'not checked' }>), namedRepository: NAMED, libraryFetch: NAMED_OFFER } };
+  }
+
+  function namedOptions(adapter: ReturnType<typeof answeringAgent>, root = mkdtempSync(join(tmpdir(), 'second-look-head-'))) {
+    const transport = recordedFetch({ [ARCHIVE]: tarball([{ path: 'httpx-0.27.2/httpx/_client.py', content: CLIENT }]) });
+    return { transport, options: { adapter, headRoot: root, librariesDir: join(cacheDir, 'libraries'), fetch: transport.fetch } };
+  }
+
+  it('judges the claim in the tag the agent named, its evidence labelled a named repository, weaker than pinned source', async () => {
+    const agent = answeringAgent(() => REFUTED);
+
+    const judging = await pressLibraryFetch([part()], namedClaim(), namedOptions(agent).options);
+
+    expect(agent.requests[0]!.instructions).toBe(libraryVerdictsInstructions(true));
+    expect(agent.requests[0]!.instructions).toContain("a read-only copy of one library's repository, at a tag named for the version the project uses");
+    expect(agent.requests[0]!.prompt).toContain(
+      'Judge this claim against the source of httpx in https://github.com/encode/httpx at tag 0.27.2; nothing pins it, and the tag may not hold the version the project uses.',
+    );
+    expect(judging.claim.verdict).toMatchObject({
+      kind: 'refuted',
+      source: 'a named repository',
+      evidence: [{ path: 'httpx/_client.py', line: 2 }],
+      libraryFetch: NAMED_OFFER,
+      library: {
+        library: 'httpx',
+        pinnedVersion: '0.27.2',
+        pinnedBy: 'https://github.com/encode/httpx',
+        archive: 'named repository',
+        note: expect.stringContaining('so this is a named repository, weaker evidence than pinned source'),
+      },
+    });
+  });
+
+  it("keeps the model's memory as the source when the agent answers from it", async () => {
+    const judging = await pressLibraryFetch([part()], namedClaim(), namedOptions(answeringAgent(() => ({ ...REFUTED, source: "the model's memory", evidence: [] }))).options);
+
+    expect(judging.claim.verdict).toMatchObject({ kind: 'refuted', source: "the model's memory", library: { archive: 'named repository' } });
+  });
+
+  it('refuses the named repository once the head copy pins the library, downloading nothing', async () => {
+    const { transport, options: pressed } = namedOptions(answeringAgent(() => REFUTED), headRoot);
+
+    await expect(pressLibraryFetch([part()], namedClaim(), pressed)).rejects.toThrow('the head copy now pins httpx; review the pull request again');
+    expect(transport.requests).toEqual([]);
   });
 });
 

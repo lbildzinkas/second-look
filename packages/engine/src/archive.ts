@@ -206,12 +206,14 @@ export async function extractTarball(
 
 /**
  * Extracts a ZIP archive, such as a Python wheel, into `dir` as a
- * read-only copy, keeping every path as the archive has it. The same
+ * read-only copy, keeping every path as the archive has it, or with its
+ * first `dropped` folders left out, as a Go module's zip wraps every file
+ * in its module path. The same
  * rules as {@link extractTarball} hold: regular files only, each
  * read-only; symbolic links and special files skipped, never followed;
  * paths that would leave `dir` refused; the folders read-only at the end.
  */
-export async function extractZip(bytes: Uint8Array, dir: string, limits: ExtractLimits = {}): Promise<ExtractedArchive> {
+export async function extractZip(bytes: Uint8Array, dir: string, limits: ExtractLimits = {}, dropped = 0): Promise<ExtractedArchive> {
   const into = destination(dir, limits);
   const entries = readZipEntries(bytes);
   const declared = entries.reduce((sum, entry) => sum + entry.size, 0);
@@ -224,7 +226,7 @@ export async function extractZip(bytes: Uint8Array, dir: string, limits: Extract
       into.result.skipped.push(`${entry.name}: not a regular file`);
       continue;
     }
-    await writeEntry(into, entry.name, archivePath(entry.name, 0), entry.read());
+    await writeEntry(into, entry.name, archivePath(entry.name, dropped), entry.read());
   }
   return sealFolders(into);
 }

@@ -3,6 +3,7 @@ import {
   CLAIM_SOURCE_ORDER,
   EVIDENCE_SOURCES,
   IMPORTANCE_ORDER,
+  LIBRARY_ARCHIVES,
   REVIEW_RESULT_VERSION,
   type ChangeKind,
   type DiffLineKind,
@@ -375,14 +376,20 @@ function isCitation(value: unknown): boolean {
   );
 }
 
-/** A library fetch a verdict offers: the library, its pinned version, the lock file and why. */
+/** A repository and tag the agent named for a library. */
+function isNamedRepository(value: unknown): boolean {
+  return isRecord(value) && isNonEmptyString(value['url']) && isNonEmptyString(value['tag']);
+}
+
+/** A library fetch a verdict offers: the library, its pinned version, the lock file and why, or the repository and tag the agent named. */
 function isLibraryFetchOffer(value: unknown): boolean {
   return (
     isRecord(value) &&
     isNonEmptyString(value['library']) &&
     isNonEmptyString(value['pinnedVersion']) &&
     isNonEmptyString(value['pinnedBy']) &&
-    isString(value['reason'])
+    isString(value['reason']) &&
+    (value['namedRepository'] === undefined || isNamedRepository(value['namedRepository']))
   );
 }
 
@@ -395,7 +402,7 @@ function isFetchedLibrary(value: unknown): boolean {
     isNonEmptyString(value['pinnedBy']) &&
     isNonEmptyString(value['file']) &&
     isNonEmptyString(value['sha256']) &&
-    isOneOf(value['archive'], ['wheel', 'source archive', 'NuGet package'] as const) &&
+    isOneOf(value['archive'], LIBRARY_ARCHIVES) &&
     isNonEmptyString(value['path']) &&
     isOptionalString(value['note']) &&
     (value['unproven'] === undefined || isStringList(value['unproven'])) &&
@@ -421,7 +428,9 @@ function isClaimVerdict(value: unknown): boolean {
     !Array.isArray(evidence) ||
     !evidence.every(isCitation) ||
     !isOptionalString(value['needsLibrary']) ||
+    (value['namedRepository'] !== undefined && !isNamedRepository(value['namedRepository'])) ||
     (value['libraryFetch'] !== undefined && !isLibraryFetchOffer(value['libraryFetch'])) ||
+    !isOptionalString(value['noLibraryFetch']) ||
     (value['library'] !== undefined && !isFetchedLibrary(value['library'])) ||
     !isOptionalString(value['recheck'])
   ) {

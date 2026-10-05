@@ -3,8 +3,10 @@ import { mkdir, readFile, readdir, rename, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { extractTarball, extractZip } from './archive.js';
 import { removeCopy } from './cache.js';
+import { fetchEcosystemLibrary, findEcosystemPin, type EcosystemPin } from './ecosystem-fetch.js';
 import { fetchNuGetLibrary, findNuGetPin, type NuGetPin } from './nuget-fetch.js';
-import type { Claim, LibraryFetchOffer } from './protocol.js';
+import type { Claim, LibraryArchive, LibraryFetchOffer, NamedRepository } from './protocol.js';
+import { namedRepositoryProblem } from './repository-fetch.js';
 import { isTomlTable, parseToml, type TomlValue } from './toml.js';
 
 /**
@@ -17,7 +19,8 @@ import { isTomlTable, parseToml, type TomlValue } from './toml.js';
  * library cache. Nothing downloaded is built, installed or run: a wheel
  * is unzipped, a source archive untarred, and the agent and the reviewer
  * only read what landed. A .NET library is fetched the same way, from
- * nuget.org, by {@link fetchNuGetLibrary}.
+ * nuget.org, by {@link fetchNuGetLibrary}, and an npm, Cargo, Go or Maven
+ * one from its ecosystem's own host by {@link fetchEcosystemLibrary}.
  */
 
 /** One library as a lock file pins it, with the hashes it records for the version's files. */
@@ -98,15 +101,19 @@ async function lockFiles(root: string): Promise<string[]> {
   return ['uv.lock', 'poetry.lock', ...requirements].filter((name) => names.includes(name));
 }
 
+/** A library as any ecosystem a fetch knows pins it. */
+export type AnyLibraryPin = LibraryPin | NuGetPin | EcosystemPin;
+
 /**
  * The pin of one library in the head copy's lock files at its root: uv.lock,
  * then poetry.lock, then `requirements.txt` before every other requirements
  * file. Only a pin that records at
  * least one SHA-256 hash counts, since a fetch must check what it
  * downloads. When none pins it, a .NET project's pin of it is looked for
- * (see {@link findNuGetPin}); undefined when nothing pins the library so.
+ * (see {@link findNuGetPin}), then an npm, Cargo, Go or Maven project's
+ * (see {@link findEcosystemPin}); undefined when nothing pins the library so.
  */
-export async function findLibraryPin(headRoot: string, library: string): Promise<LibraryPin | NuGetPin | undefined> {
+export async function findLibraryPin(headRoot: string, library: string): Promise<AnyLibraryPin | undefined> {
   const wanted = normalizePackageName(library);
   for (const name of await lockFiles(headRoot)) {
     const text = await readFile(join(headRoot, name), 'utf8').catch(() => '');
@@ -114,11 +121,11 @@ export async function findLibraryPin(headRoot: string, library: string): Promise
     const pin = pins.find((each) => normalizePackageName(each.name) === wanted && each.hashes.length > 0);
     if (pin) return pin;
   }
-  return findNuGetPin(headRoot, library);
+  return (await findNuGetPin(headRoot, library)) ?? findEcosystemPin(headRoot, library);
 }
 
 /** The offer for a pin: the library, its pinned version, the lock file and why. */
-export function fetchOffer(pin: LibraryPin | NuGetPin): LibraryFetchOffer {
+export function fetchOffer(pin: AnyLibraryPin): LibraryFetchOffer {
   return {
     library: pin.name,
     pinnedVersion: pin.version,
@@ -127,19 +134,49 @@ export function fetchOffer(pin: LibraryPin | NuGetPin): LibraryFetchOffer {
   };
 }
 
+/** The offer of a named repository: its tag, for a library nothing pins, with why its evidence is weaker. */
+export function namedRepositoryOffer(library: string, named: NamedRepository): LibraryFetchOffer {
+  return {
+    library,
+    pinnedVersion: named.tag,
+    pinnedBy: named.url,
+    reason:
+      `The change alone cannot settle this claim: it turns on how ${library} behaves, and nothing in the head copy pins ${library} so a fetch can check it, ` +
+      `so its source can only come from ${named.url} at tag ${named.tag}, which the agent named: a named repository, weaker evidence than pinned source.`,
+    namedRepository: named,
+  };
+}
+
+/** The files a pin is looked for in, as the plain reason for no fetch names them. */
+const PIN_FILES_READ =
+  'uv.lock, poetry.lock and hashed requirements files, .NET lock and project files, package-lock.json, Cargo.lock, go.sum with its go.mod, pom.xml and gradle.lockfile';
+
 /**
  * Adds a library fetch offer to every verdict that needs a library the
- * head copy's lock files pin with hashes, or a .NET project pins at one
- * exact version. Only local files are read:
- * nothing is downloaded until the reviewer presses an offer.
+ * head copy pins — in a lock file that records its hashes, or at one exact
+ * version in a .NET project or a Maven build — or else, when the agent
+ * named the library's repository and tag, an offer of that named
+ * repository; a verdict with neither says plainly why it offers no fetch.
+ * Only local files are read: nothing is downloaded until the reviewer
+ * presses an offer.
  */
 export async function offerLibraryFetches(claims: readonly Claim[], headRoot: string): Promise<Claim[]> {
   return Promise.all(
     claims.map(async (claim) => {
       const { verdict } = claim;
-      if (verdict.kind === 'not checked' || verdict.needsLibrary === undefined || verdict.library !== undefined) return claim;
-      const pin = await findLibraryPin(headRoot, verdict.needsLibrary);
-      return pin === undefined ? claim : { ...claim, verdict: { ...verdict, libraryFetch: fetchOffer(pin) } };
+      const library = verdict.kind === 'not checked' ? undefined : verdict.needsLibrary;
+      if (verdict.kind === 'not checked' || library === undefined || verdict.library !== undefined) return claim;
+      const pin = await findLibraryPin(headRoot, library);
+      if (pin !== undefined) return { ...claim, verdict: { ...verdict, libraryFetch: fetchOffer(pin) } };
+      const named = verdict.namedRepository;
+      const problem = named === undefined ? undefined : namedRepositoryProblem(named);
+      if (named !== undefined && problem === undefined) return { ...claim, verdict: { ...verdict, libraryFetch: namedRepositoryOffer(library, named) } };
+      const unpinned = `nothing in the head copy pins ${library} so a fetch can check it (the companion reads ${PIN_FILES_READ})`;
+      const noLibraryFetch =
+        named === undefined
+          ? `No library fetch: ${unpinned}, and the agent named no repository and tag for it.`
+          : `No library fetch: ${unpinned}, and the repository the agent named cannot be fetched: ${problem}.`;
+      return { ...claim, verdict: { ...verdict, noLibraryFetch } };
     }),
   );
 }
@@ -226,7 +263,7 @@ async function exists(path: string): Promise<boolean> {
 export interface LibraryDownload {
   file: string;
   sha256: string;
-  archive: 'wheel' | 'source archive' | 'NuGet package';
+  archive: LibraryArchive;
   /** Absolute path of the unpacked, read-only source. */
   path: string;
   note?: string;
@@ -252,10 +289,11 @@ export interface LibraryFetchOptions {
  * into its own folder of the library cache — a wheel unzipped, a source
  * archive untarred, never built, installed or run. The folder is renamed
  * into place only once complete, and reused by a later fetch of the same
- * file. A .NET pin is fetched by {@link fetchNuGetLibrary}.
+ * file. A .NET pin is fetched by {@link fetchNuGetLibrary}, and an npm,
+ * Cargo, Go or Maven pin by {@link fetchEcosystemLibrary}.
  */
-export async function fetchLibrary(pin: LibraryPin | NuGetPin, options: LibraryFetchOptions): Promise<LibraryDownload> {
-  if ('ecosystem' in pin) return fetchNuGetLibrary(pin, options);
+export async function fetchLibrary(pin: AnyLibraryPin, options: LibraryFetchOptions): Promise<LibraryDownload> {
+  if ('ecosystem' in pin) return pin.ecosystem === 'NuGet' ? fetchNuGetLibrary(pin, options) : fetchEcosystemLibrary(pin, options);
   if (!SAFE_VERSION.test(pin.version)) throw new Error(`not a version a library fetch can download: ${pin.version}`);
   const fetchFn = options.fetch ?? fetch;
   const file = chooseFile(pin, await indexFiles(pin, fetchFn));

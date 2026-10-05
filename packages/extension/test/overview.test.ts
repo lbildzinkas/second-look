@@ -9,7 +9,7 @@ import {
   sanitiseUntrusted,
   stampText,
 } from '../src/overview.js';
-import { claimsResult, judgedResult, mixedResult, pipelineResult, storyResult } from './results.js';
+import { claimsResult, fetchedResult, judgedResult, mixedResult, pipelineResult, storyResult } from './results.js';
 import { stub } from './vscode-stub.js';
 
 /** Text spelled in Unicode tag characters, which display as nothing. */
@@ -265,6 +265,23 @@ describe('the verdicts on the overview', () => {
     expect(html).toContain('Each is judged against the change, its read-only copy and any failed check&#39;s CI log by pi · zai/glm-4.6 · verdicts prompt v1;');
     expect(html).toContain('<span class="stg done">claims</span><span class="stg done">verdicts</span>');
     expect(html).toContain('<li><b>Verdicts</b> judged by pi · zai/glm-4.6 · verdicts prompt v1: every citation was re-read in the head copy</li>');
+  });
+
+  it('labels a verdict judged in a named repository weaker than pinned source, and says plainly why no fetch is offered', () => {
+    const shown = fetchedResult();
+    const claims = shown.claims!;
+    const comment = claims.claims[2]!;
+    const verdict = comment.verdict as Exclude<typeof comment.verdict, { kind: 'not checked' }>;
+    const library = { ...verdict.library!, pinnedVersion: 'v2.32.3', pinnedBy: 'https://github.com/psf/requests', file: 'requests-v2.32.3.tar.gz', archive: 'named repository' as const };
+    const named = { ...shown, claims: { ...claims, claims: claims.claims.map((claim, index) => (index === 2 ? { ...comment, verdict: { ...verdict, source: 'a named repository' as const, library } } : claim)) } };
+
+    expect(overviewHtml({ result: named }, 'N')).toContain(
+      '<div class="why">judged against requests in https://github.com/psf/requests at tag v2.32.3, which the agent named: a named repository, weaker evidence than pinned source (requests-v2.32.3.tar.gz)</div>',
+    );
+
+    const judged = judgedResult();
+    const unfetched = { ...judged, claims: { ...judged.claims!, claims: judged.claims!.claims.map((claim, index) => (index === 2 && claim.verdict.kind !== 'not checked' ? { ...claim, verdict: { ...claim.verdict, noLibraryFetch: 'No library fetch: nothing pins requests.' } } : claim)) } };
+    expect(overviewHtml({ result: unfetched }, 'N')).toContain('<div class="why">No library fetch: nothing pins requests.</div>');
   });
 
   it('says why no claim was checked when the judging fell back', () => {

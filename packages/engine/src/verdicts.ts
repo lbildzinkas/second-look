@@ -43,7 +43,7 @@ import { UNTRUSTED_INPUT_RULE, untrustedBlock } from './untrusted.js';
 export const VERDICTS_PROMPT_ID = 'verdicts';
 
 /** The verdicts prompt's version. */
-export const VERDICTS_PROMPT_VERSION = '3';
+export const VERDICTS_PROMPT_VERSION = '4';
 
 /** The evidence sources the agent can cite: the change, or its own memory, and a CI log when one is shown. */
 function answerSources(withLogs: boolean): readonly EvidenceSource[] {
@@ -97,6 +97,12 @@ export function verdictsSchema(withLogs: boolean): JsonSchema {
               },
             },
             library: { type: ['string', 'null'] },
+            repository: {
+              type: ['object', 'null'],
+              additionalProperties: false,
+              required: ['url', 'tag'],
+              properties: { url: { type: 'string' }, tag: { type: 'string' } },
+            },
           },
         },
       },
@@ -117,6 +123,8 @@ export interface AnsweredVerdict {
   evidence: { file: string; line: number; quote: string }[];
   /** The library whose source the claim needs, or null when the change settles it. */
   library: string | null;
+  /** The library's public repository and the tag of the version the project uses, when the agent names them. */
+  repository?: { url: string; tag: string } | null;
 }
 
 /** An answer that met {@link VERDICTS_SCHEMA}. */
@@ -165,6 +173,9 @@ export function verdictsInstructions(withLogs: boolean): string {
     '  do not have: answer unverifiable and set library to the package name the project uses, even',
     '  when you remember how the library behaves; say what you remember in the reason. Otherwise set',
     '  library to null.',
+    "- When you set library and know the library's public repository and the tag of the version the project",
+    '  uses, from the head copy or from memory, set repository to its https URL and that tag; the companion',
+    '  can fetch that tag when nothing pins the library. Otherwise set repository to null.',
     ...(withLogs ? CI_LOG_RULE : []),
     '- Tests the change adds show what its author expects, not that the code does it: judge the code.',
     '- The reason is one plain sentence a reviewer reads beside the verdict.',
@@ -369,10 +380,12 @@ export async function recheckCitation(
  */
 export function settleVerdict(answered: AnsweredVerdict, rechecked: readonly (Citation | string)[], evidenceIn = 'the change'): ClaimVerdict {
   const library = answered.library === null ? undefined : oneLine(answered.library);
+  const named = library && answered.repository ? { url: oneLine(answered.repository.url), tag: oneLine(answered.repository.tag) } : undefined;
   const base = {
     source: answered.source,
     reason: oneLine(answered.reason),
     ...(library ? { needsLibrary: library } : {}),
+    ...(named?.url && named.tag ? { namedRepository: named } : {}),
   };
   const drop = (recheck: string, evidence: Citation[]): ClaimVerdict => ({ kind: 'unverifiable', ...base, evidence, recheck });
   if (answered.source === "the model's memory") {
