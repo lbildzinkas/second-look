@@ -51,16 +51,19 @@ function overviewMessage(value: unknown): OverviewMessage | undefined {
  * the recorded design (docs/ux): the pull request's title and where it
  * comes from, a chip for each stage done and the one still running, the
  * story with its stamp, each part it mentions a button that opens the part
- * in the diff editor, the claims the change makes with where each is made
- * and the part it is attached to, the pipeline report and whether it is
- * trusted, the checks run on the merge commit with their annotations and
- * failed jobs' trimmed logs, the pull request's description in full with
- * its hidden content shown and flagged, and who made each result.
+ * in the diff editor, the acceptance criteria of the linked issues, each
+ * quoted and its issue a button that opens it on GitHub, the claims the
+ * change makes with where each is made and the part it is attached to, the
+ * pipeline report and whether it is trusted, the checks run on the merge
+ * commit with their annotations and failed jobs' trimmed logs, the pull
+ * request's description in full with its hidden content shown and flagged,
+ * and who made each result.
  *
  * Everything on the page but the companion's own words was written by
- * someone else, the agent's story, the claims' quotes, the pipeline's
- * findings and the CI's logs included, so every byte of it reaches the
- * page as escaped text: no remote image, no link and no markup of theirs
+ * someone else, the agent's story, the claims' quotes, the criteria's
+ * quotes from untrusted issue text, the pipeline's findings and the CI's
+ * logs included, so every byte of it reaches the page as escaped text:
+ * no remote image, no link and no markup of theirs
  * renders, under a content security policy that loads nothing but the
  * page's own nonce-marked style and script.
  */

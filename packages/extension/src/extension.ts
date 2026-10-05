@@ -205,7 +205,7 @@ class ReviewSession {
   private url: string | undefined;
   /** The Send review page of the review under way, once the reviewer opens it. */
   private page: SendReviewPage | undefined;
-  /** The review's overview: the story, the claims, the description and who made each result. */
+  /** The review's overview: the story, the acceptance criteria, the claims, the description and who made each result. */
   private readonly overview = new OverviewPanel((part) => void this.openPart(part));
   /** The review's findings, its refuted and unverifiable claims, as threads on the diff. */
   private readonly findings = new FindingThreads();
