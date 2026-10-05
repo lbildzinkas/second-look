@@ -53,6 +53,7 @@ export type Verdict = 'verified' | 'refuted' | 'unverifiable' | 'not checked';
 export type EvidenceSource =
   | 'the change itself'
   | 'library source at the pinned version'
+  | 'a named repository'
   | 'a CI log'
   | 'the issue text'
   | "the model's memory";

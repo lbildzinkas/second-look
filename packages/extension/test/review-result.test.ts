@@ -457,6 +457,18 @@ describe('isReviewResult for the verdicts', () => {
     expect(isReviewResult(fetchedResult())).toBe(true);
     const library = (fetchedResult().claims!.claims[2]!.verdict as unknown as { library: Record<string, unknown> }).library;
     expect(isReviewResult(withVerdict({ ...refuted, library: { ...library, archive: 'NuGet package', unproven: ['src/Events.cs'] } }))).toBe(true);
+    for (const archive of ['npm package', 'crate', 'Go module', 'sources jar', 'named repository']) {
+      expect(isReviewResult(withVerdict({ ...refuted, library: { ...library, archive } }))).toBe(true);
+    }
+  });
+
+  it('accepts a named repository offered or named, and the plain reason a verdict offers no fetch', () => {
+    const named = { url: 'https://github.com/psf/requests', tag: 'v2.32.3' };
+    expect(isReviewResult(withVerdict({ ...refuted, source: 'a named repository', libraryFetch: { ...REQUESTS_FETCH, namedRepository: named } }))).toBe(true);
+    expect(isReviewResult(withVerdict({ ...refuted, needsLibrary: 'requests', namedRepository: named, noLibraryFetch: 'No library fetch: nothing pins requests.' }))).toBe(true);
+    expect(isReviewResult(withVerdict({ ...refuted, namedRepository: { url: named.url } }))).toBe(false);
+    expect(isReviewResult(withVerdict({ ...refuted, libraryFetch: { ...REQUESTS_FETCH, namedRepository: { tag: '' } } }))).toBe(false);
+    expect(isReviewResult(withVerdict({ ...refuted, noLibraryFetch: 7 }))).toBe(false);
   });
 
   it('rejects a malformed library fetch offer or fetched library', () => {
@@ -535,6 +547,6 @@ describe('parseReviewResult', () => {
 
 describe('the versioned protocol is shared with the engine', () => {
   it('uses the same version constant', () => {
-    expect(REVIEW_RESULT_VERSION).toBe(10);
+    expect(REVIEW_RESULT_VERSION).toBe(11);
   });
 });

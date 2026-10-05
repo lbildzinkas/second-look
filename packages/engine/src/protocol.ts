@@ -10,7 +10,7 @@
 import type { AgentStamp } from './agent.js';
 
 /** Version of the review result schema. */
-export const REVIEW_RESULT_VERSION = 10 as const;
+export const REVIEW_RESULT_VERSION = 11 as const;
 
 /**
  * Version 2 added the head commit's SHA and each part's noise assessment;
@@ -25,7 +25,10 @@ export const REVIEW_RESULT_VERSION = 10 as const;
  * the library fetch a verdict offers and the library source a verdict was
  * judged against once the reviewer pressed it; version 10 added the
  * pipeline report and the CI the companion read, the pipeline's findings
- * as claims, and CI log lines as a verdict's evidence.
+ * as claims, and CI log lines as a verdict's evidence; version 11 added
+ * the npm, Cargo, Go and Maven library fetches, the named repository the
+ * agent may name for a library nothing pins, as an offer and as an
+ * evidence source, and the plain reason a verdict offers no fetch.
  */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
@@ -351,12 +354,14 @@ export type ClaimLocation =
 /**
  * Where a verdict's evidence came from (the glossary's evidence source):
  * the change itself — its diff and the read-only copy of its head —
- * library source at the pinned version, a CI log, the issue text, or the
- * model's memory, which never yields verified.
+ * library source at the pinned version, a named repository — a library's
+ * repository at a tag the agent named, weaker than pinned source — a CI
+ * log, the issue text, or the model's memory, which never yields verified.
  */
 export type EvidenceSource =
   | 'the change itself'
   | 'library source at the pinned version'
+  | 'a named repository'
   | 'a CI log'
   | 'the issue text'
   | "the model's memory";
@@ -365,6 +370,7 @@ export type EvidenceSource =
 export const EVIDENCE_SOURCES: readonly EvidenceSource[] = [
   'the change itself',
   'library source at the pinned version',
+  'a named repository',
   'a CI log',
   'the issue text',
   "the model's memory",
@@ -414,14 +420,19 @@ export type ClaimVerdict =
        * (ADR 0003).
        */
       needsLibrary?: string;
+      /** The repository and tag the agent named for the library the claim needs, when it named one. */
+      namedRepository?: NamedRepository;
       /**
        * The library fetch the companion offers for that library, when the
-       * project pins it in a lock file that records its hashes, or in a
-       * .NET project at one exact version; nothing is
+       * project pins it in a lock file that records its hashes, or at one
+       * exact version in a .NET project or a Maven build, or else when the
+       * agent named its repository and tag; nothing is
        * downloaded until the reviewer presses it. A verdict judged against
        * the library's source keeps the offer that was pressed.
        */
       libraryFetch?: LibraryFetchOffer;
+      /** Why no library fetch is offered for the library the claim needs, said plainly. */
+      noLibraryFetch?: string;
       /**
        * The library source the verdict was judged against, once the
        * reviewer pressed its library fetch; its citations are paths in
@@ -435,19 +446,57 @@ export type ClaimVerdict =
 /**
  * A library fetch the companion offers with a verdict (the glossary's
  * library fetch): the download of one library's source at the version
- * the project pins, offered with its reason only when a claim cannot be
+ * the project pins — or, when nothing pins it, at a repository and tag
+ * the agent named — offered with its reason only when a claim cannot be
  * checked without it, and started only by the reviewer (ADR 0003).
  */
 export interface LibraryFetchOffer {
-  /** The library, by the name the lock file gives it. */
+  /** The library, by the name the project uses for it. */
   library: string;
-  /** The version the project pins, which the fetch downloads. */
+  /** The version the project pins, which the fetch downloads; for a named repository, the tag. */
   pinnedVersion: string;
-  /** The lock file that pins it, by its path in the head copy. */
+  /** The file that pins it, by its path in the head copy; for a named repository, its URL. */
   pinnedBy: string;
   /** The companion's one-line reason for needing the library's source. */
   reason: string;
+  /**
+   * The repository and tag the agent named, when nothing pins the library
+   * a fetch could check: the fetch downloads that tag, and `pinnedVersion`
+   * and `pinnedBy` are the tag and the repository. Its evidence is a
+   * named repository's, weaker than pinned source.
+   */
+  namedRepository?: NamedRepository;
 }
+
+/** A library's public repository and a tag in it, as the agent names them. */
+export interface NamedRepository {
+  /** The repository's https URL, such as `https://github.com/owner/name`. */
+  url: string;
+  tag: string;
+}
+
+/** What one library fetch downloaded. */
+export type LibraryArchive =
+  | 'wheel'
+  | 'source archive'
+  | 'NuGet package'
+  | 'npm package'
+  | 'crate'
+  | 'Go module'
+  | 'sources jar'
+  | 'named repository';
+
+/** The archives a library fetch downloads. */
+export const LIBRARY_ARCHIVES: readonly LibraryArchive[] = [
+  'wheel',
+  'source archive',
+  'NuGet package',
+  'npm package',
+  'crate',
+  'Go module',
+  'sources jar',
+  'named repository',
+];
 
 /**
  * One pressed library fetch as it landed: the exact file the lock file
@@ -455,8 +504,10 @@ export interface LibraryFetchOffer {
  * into the pull request's library cache, never built, installed or run.
  * For a NuGet package, the folder holds the source files its PDB names,
  * fetched at the commit it was built from, each exact source or unproven.
- * The agent judged the claim in that folder, and the reviewer opens the
- * cited files from it.
+ * For a named repository, nothing pins what was downloaded: the folder
+ * holds the tag the agent named, and `pinnedVersion` and `pinnedBy` are
+ * that tag and the repository. The agent judged the claim in that
+ * folder, and the reviewer opens the cited files from it.
  */
 export interface FetchedLibrary {
   library: string;
@@ -466,11 +517,16 @@ export interface FetchedLibrary {
   file: string;
   /**
    * The file's SHA-256, as the lock file pins it and the download matched;
-   * for a NuGet package, as downloaded once its SHA-512 matched.
+   * for a file pinned by another hash, as downloaded once that hash
+   * matched; for a named repository, as downloaded, unchecked.
    */
   sha256: string;
-  /** A built wheel, a source archive when the lock file pins no wheel, or a NuGet package. */
-  archive: 'wheel' | 'source archive' | 'NuGet package';
+  /**
+   * A built wheel, a source archive when the lock file pins no wheel, a
+   * NuGet package, an npm package, a crate, a Go module's zip, a Maven
+   * sources jar, or a named repository's tag, which nothing pins.
+   */
+  archive: LibraryArchive;
   /** Absolute path of the unpacked, read-only source in the engine's cache. */
   path: string;
   /** What the reviewer should know about the source, such as that only a source archive exists. */

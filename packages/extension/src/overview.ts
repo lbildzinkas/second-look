@@ -340,13 +340,18 @@ function verdictDetail(claim: Claim): string {
   const { library, libraryFetch: offer } = verdict;
   for (const cited of verdict.evidence) lines.push(`${citedWhere(cited)}${isUnprovenSource(cited.path, library?.unproven) ? ' (unproven)' : ''} — ${cited.quote}`);
   if (library !== undefined) {
-    lines.push(`judged against the source of ${library.library} ${library.pinnedVersion}, as ${library.pinnedBy} pins it (${library.file})`);
+    lines.push(
+      library.archive === 'named repository'
+        ? `judged against ${library.library} in ${library.pinnedBy} at tag ${library.pinnedVersion}, which the agent named: a named repository, weaker evidence than pinned source (${library.file})`
+        : `judged against the source of ${library.library} ${library.pinnedVersion}, as ${library.pinnedBy} pins it (${library.file})`,
+    );
     if (library.note !== undefined) lines.push(library.note);
     if (library.unproven !== undefined) lines.push(`unproven, so never verified: ${library.unproven.join(', ')}`);
   } else if (offer !== undefined) {
     lines.push(`library fetch offered: ${offer.reason} Press it on the finding's thread.`);
   } else if (verdict.needsLibrary !== undefined) {
     lines.push(`needs the source of ${verdict.needsLibrary}, which the companion does not have`);
+    if (verdict.noLibraryFetch !== undefined) lines.push(verdict.noLibraryFetch);
   }
   if (verdict.recheck !== undefined) lines.push(`dropped to unverifiable: ${verdict.recheck}`);
   return lines.map((line) => `<div class="why">${escapeHtml(line)}</div>`).join('');

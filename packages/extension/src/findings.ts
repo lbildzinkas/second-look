@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { findingAnchor, isFinding, isUnprovenSource, type Claim, type ReviewResult } from '@second-look/engine';
+import { findingAnchor, isFinding, isUnprovenSource, type Claim, type LibraryArchive, type ReviewResult } from '@second-look/engine';
 import { changeUri, partFiles } from './change-copies.js';
 import { FETCH_LIBRARY_COMMAND, FINDINGS_CONTROLLER_ID, FINDING_THREAD_CONTEXT, OPEN_LIBRARY_EVIDENCE_COMMAND } from './commands.js';
 import { citedWhere, claimWhere } from './overview.js';
@@ -18,6 +18,17 @@ function kindLabel(kind: string): string {
 function commandLink(text: string, command: string, args: readonly unknown[]): string {
   return `[${escapeMarkdown(text)}](command:${command}?${encodeURIComponent(JSON.stringify(args))})`;
 }
+
+/** How each pinned archive was checked and kept, in the companion's own words. */
+const HOW_FETCHED: Record<Exclude<LibraryArchive, 'named repository'>, string> = {
+  wheel: ', its SHA-256 checked, unpacked read-only and never run.',
+  'source archive': ', its SHA-256 checked, unpacked read-only and never run.',
+  'NuGet package': ', its SHA-512 checked and never built or run, its source files fetched read-only at the commit it was built from.',
+  'npm package': ', its SHA-512 checked, unpacked read-only and never run.',
+  crate: ', its SHA-256 checked, unpacked read-only and never built or run.',
+  'Go module': ', its go.sum hash checked, unpacked read-only and never built or run.',
+  'sources jar': ", its SHA-1 checked against Maven Central's record, unpacked read-only and never built or run.",
+};
 
 /**
  * A finding's thread body, as Markdown in which only the companion's own
@@ -54,19 +65,21 @@ export function findingBody(claim: Claim, index = 0): string {
   if (library !== undefined) {
     lines.push(
       '',
-      `Judged against the source of ${escapeMarkdown(`${library.library} ${library.pinnedVersion}`)}, as ${escapeMarkdown(library.pinnedBy)} pins it: ` +
-        escapeMarkdown(library.file) +
-        (library.archive === 'NuGet package'
-          ? ', its SHA-512 checked and never built or run, its source files fetched read-only at the commit it was built from.'
-          : ', its SHA-256 checked, unpacked read-only and never run.'),
+      library.archive === 'named repository'
+        ? `Judged against ${escapeMarkdown(library.library)} in ${escapeMarkdown(library.pinnedBy)} at tag ${escapeMarkdown(library.pinnedVersion)}, which the agent named: ` +
+            `a named repository, weaker evidence than pinned source, since nothing pins it. ${escapeMarkdown(library.file)} was unpacked read-only and never run.`
+        : `Judged against the source of ${escapeMarkdown(`${library.library} ${library.pinnedVersion}`)}, as ${escapeMarkdown(library.pinnedBy)} pins it: ` +
+            escapeMarkdown(library.file) +
+            HOW_FETCHED[library.archive],
     );
     if (library.note !== undefined) lines.push('', escapeMarkdown(library.note));
     if (library.unproven !== undefined) lines.push('', `Unproven, so never verified: ${library.unproven.map(escapeMarkdown).join(', ')}.`);
   } else if (offer !== undefined) {
-    const name = `${offer.library} ${offer.pinnedVersion}`;
+    const name = offer.namedRepository === undefined ? `${offer.library} ${offer.pinnedVersion}` : `${offer.namedRepository.url} at tag ${offer.namedRepository.tag}`;
     lines.push('', escapeMarkdown(offer.reason), '', `${commandLink(`Fetch ${name}`, FETCH_LIBRARY_COMMAND, [index])} — downloads only when pressed.`);
   } else if (verdict.needsLibrary !== undefined) {
     lines.push('', `Needs the source of ${escapeMarkdown(verdict.needsLibrary)}, which the companion does not have.`);
+    if (verdict.noLibraryFetch !== undefined) lines.push('', escapeMarkdown(verdict.noLibraryFetch));
   }
   if (verdict.recheck !== undefined) lines.push('', `Dropped to unverifiable: ${escapeMarkdown(verdict.recheck)}.`);
   lines.push('', `Claim made in ${escapeMarkdown(claimWhere(claim))}.`);

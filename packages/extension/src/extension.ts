@@ -389,11 +389,12 @@ class ReviewSession {
 
   /**
    * Presses one finding's library fetch, the claim named by its index in
-   * the result's claims: the engine downloads the library at its pinned
-   * version, checks its hash, unpacks it read-only and has the agent the
-   * settings pick judge the claim again, and the result it answers with
-   * replaces the one shown, keeping the reviewer's place. Nothing is
-   * fetched without this press (ADR 0003).
+   * the result's claims: the engine downloads the library the offer names
+   * — the exact file the project pins, or the tag the agent named —
+   * checks its hash where one is recorded, unpacks it read-only and has
+   * the agent the settings pick judge the claim again, and the result it
+   * answers with replaces the one shown, keeping the reviewer's place.
+   * Nothing is fetched without this press (ADR 0003).
    */
   async fetchLibrary(arg?: unknown): Promise<void> {
     const offer = typeof arg === 'number' ? libraryFetchOf(this.result, arg) : undefined;

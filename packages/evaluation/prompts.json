@@ -22,12 +22,12 @@
     },
     {
       "id": "verdicts",
-      "version": "3",
+      "version": "4",
       "files": ["packages/engine/src/verdicts.ts"]
     },
     {
       "id": "library-verdicts",
-      "version": "2",
+      "version": "3",
       "files": ["packages/engine/src/library-verdicts.ts"]
     }
   ]

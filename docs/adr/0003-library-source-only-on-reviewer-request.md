@@ -6,3 +6,7 @@ Reading a library's real source is the companion's strongest check, but it is fe
 
 - Fetch every relevant library automatically on each review: rejected, it is rarely needed and makes the common path slower and noisier.
 - Let the agent fetch with network access: rejected, it reads text written by others, picks whatever version is handy, and tends to run install scripts.
+
+## Amendment (issue 40)
+
+Where no ecosystem route exists, the agent may name the library's repository and the tag of the version the project uses; the companion, never the agent, fetches that tag itself and runs nothing. Nothing pins what it downloads and no hash is checked, so every verdict that uses it labels its evidence as a named repository, weaker than pinned source.

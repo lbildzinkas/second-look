@@ -540,3 +540,21 @@ export function pypiFetch(name: string, version: string, files: readonly PyPIFix
   };
   return { fetch: fetchImpl, requests };
 }
+
+/**
+ * A fetch that serves recorded downloads, by URL: each answers with its
+ * bytes, and any other URL throws, so a test can never touch the live
+ * network by accident. A URL recorded as `404` answers not found.
+ */
+export function recordedFetch(downloads: Readonly<Record<string, Buffer | string | 404>>): FixtureTransport {
+  const requests: RecordedRequest[] = [];
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    requests.push({ url, method: init?.method ?? 'GET', body: null, accept: new Headers(init?.headers).get('accept') ?? '', authorization: null });
+    const body = downloads[url];
+    if (body === 404) return new Response('Not Found', { status: 404 });
+    if (body !== undefined) return new Response(body, { status: 200 });
+    throw new Error(`unexpected request to ${url}: tests run against recorded responses only`);
+  };
+  return { fetch: fetchImpl, requests };
+}

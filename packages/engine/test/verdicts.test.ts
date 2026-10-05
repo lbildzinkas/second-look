@@ -29,6 +29,7 @@ import {
   type AnsweredVerdict,
 } from '../src/verdicts.js';
 import { ciLogItems } from '../src/ci.js';
+import { validateJson } from '../src/json-schema.js';
 import { pipelineClaims, readPipelineReport } from '../src/pipeline.js';
 import { answeringAgent, changedPart } from './helpers.js';
 
@@ -154,6 +155,16 @@ describe('verdictsPrompt', () => {
     expect(VERDICTS_INSTRUCTIONS).toContain('A verdict from memory is never');
     expect(VERDICTS_INSTRUCTIONS).toContain("needs that library's source");
     expect(VERDICTS_INSTRUCTIONS).toContain('"required":["id","verdict","source","reason","evidence","library"]');
+    expect(VERDICTS_INSTRUCTIONS).toContain('set repository to its https URL and that tag');
+  });
+
+  it('accepts a named repository or null in the answer, and nothing else there', () => {
+    const verdict = { id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: 'r', evidence: [], library: 'httpx' };
+    const items = VERDICTS_SCHEMA.properties!['verdicts']!.items!;
+    expect(validateJson({ ...verdict, repository: { url: 'https://github.com/encode/httpx', tag: '0.27.2' } }, items)).toEqual([]);
+    expect(validateJson({ ...verdict, repository: null }, items)).toEqual([]);
+    expect(validateJson(verdict, items)).toEqual([]);
+    expect(validateJson({ ...verdict, repository: { url: 'https://github.com/encode/httpx' } }, items)).toEqual(['/repository is missing "tag"']);
   });
 });
 
@@ -275,6 +286,17 @@ describe('settleVerdict', () => {
       needsLibrary: 'httpx',
       recheck: 'the claim needs the source of httpx, which the companion does not have',
     });
+  });
+
+  it('keeps the repository and tag the agent named only for a claim that needs a library', () => {
+    const repository = { url: ' https://github.com/encode/httpx ', tag: '0.27.2' };
+    expect(settleVerdict(answered({ verdict: 'unverifiable', library: 'httpx', repository }), [])).toMatchObject({
+      needsLibrary: 'httpx',
+      namedRepository: { url: 'https://github.com/encode/httpx', tag: '0.27.2' },
+    });
+    expect(settleVerdict(answered({ verdict: 'unverifiable', repository }), [])).not.toHaveProperty('namedRepository');
+    expect(settleVerdict(answered({ verdict: 'unverifiable', library: 'httpx', repository: null }), [])).not.toHaveProperty('namedRepository');
+    expect(settleVerdict(answered({ verdict: 'unverifiable', library: 'httpx', repository: { url: '', tag: '0.27.2' } }), [])).not.toHaveProperty('namedRepository');
   });
 
   it('names its evidence source on every verdict it settles', () => {

@@ -167,6 +167,60 @@ describe('findingBody', () => {
     expect(body).toContain('Unproven, so never verified: src/RecyclableMemoryStream\\.cs, src/Events\\.cs.');
   });
 
+  it("names how each ecosystem's archive was checked", () => {
+    const claim = fetchedResult().claims!.claims[2]!;
+    const verdict = claim.verdict as Exclude<typeof claim.verdict, { kind: 'not checked' }>;
+    const judged = (archive: 'npm package' | 'crate' | 'Go module' | 'sources jar', file: string) =>
+      findingBody({ ...claim, verdict: { ...verdict, library: { ...verdict.library!, file, archive } } }, 2);
+
+    expect(judged('npm package', 'ms-2.1.3.tgz')).toContain('ms\\-2\\.1\\.3\\.tgz, its SHA-512 checked, unpacked read-only and never run.');
+    expect(judged('crate', 'cfg-if-1.0.0.crate')).toContain(', its SHA-256 checked, unpacked read-only and never built or run.');
+    expect(judged('Go module', 'v0.9.1.zip')).toContain(', its go.sum hash checked, unpacked read-only and never built or run.');
+    expect(judged('sources jar', 'slf4j-api-2.0.13-sources.jar')).toContain(", its SHA-1 checked against Maven Central's record, unpacked read-only and never built or run.");
+  });
+
+  it('offers a named repository by its URL and tag, and labels a verdict judged in one weaker than pinned source', () => {
+    const named = { url: 'https://github.com/psf/requests', tag: 'v2.32.3' };
+    const offeredClaim = offeredResult().claims!.claims[2]!;
+    const offeredVerdict = offeredClaim.verdict as Exclude<typeof offeredClaim.verdict, { kind: 'not checked' }>;
+    const offer = { ...offeredVerdict.libraryFetch!, pinnedVersion: named.tag, pinnedBy: named.url, namedRepository: named };
+
+    expect(findingBody({ ...offeredClaim, verdict: { ...offeredVerdict, libraryFetch: offer } }, 2)).toContain(
+      `[Fetch https://github\\.com/psf/requests at tag v2\\.32\\.3](command:second-look.fetchLibrary?${encodeURIComponent('[2]')}) — downloads only when pressed.`,
+    );
+
+    const claim = fetchedResult().claims!.claims[2]!;
+    const verdict = claim.verdict as Exclude<typeof claim.verdict, { kind: 'not checked' }>;
+    const body = findingBody(
+      {
+        ...claim,
+        verdict: {
+          ...verdict,
+          source: 'a named repository',
+          libraryFetch: offer,
+          library: { ...verdict.library!, pinnedVersion: named.tag, pinnedBy: named.url, file: 'requests-v2.32.3.tar.gz', archive: 'named repository' },
+        },
+      },
+      2,
+    );
+
+    expect(body).toContain('**Refuted** · evidence source: a named repository');
+    expect(body).toContain(
+      'Judged against requests in https://github\\.com/psf/requests at tag v2\\.32\\.3, which the agent named: a named repository, weaker evidence than pinned source, since nothing pins it.',
+    );
+  });
+
+  it('says plainly why no library fetch is offered', () => {
+    const comment = judgedResult().claims!.claims[2]!;
+    const verdict = comment.verdict as Exclude<typeof comment.verdict, { kind: 'not checked' }>;
+    const noLibraryFetch = 'No library fetch: nothing in the head copy pins requests so a fetch can check it, and the agent named no repository and tag for it.';
+
+    const body = findingBody({ ...comment, verdict: { ...verdict, noLibraryFetch } });
+
+    expect(body).toContain('Needs the source of requests, which the companion does not have.');
+    expect(body).toContain(escapeMarkdown(noLibraryFetch));
+  });
+
   it('trusts only the fetch and the open-evidence commands in a finding', () => {
     stub.reset();
     new FindingThreads().show(offeredResult());

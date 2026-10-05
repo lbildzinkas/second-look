@@ -220,7 +220,8 @@ export class EngineClient {
   /**
    * Presses one claim's library fetch, sent only when the reviewer presses
    * it: the engine downloads the library its latest review of the pull
-   * request offers, checks its pinned hash, unpacks it read-only and has
+   * request offers, at its pinned version or the tag the agent named,
+   * checks its hash where one is recorded, unpacks it read-only and has
    * the agent the settings picked judge the claim again. Resolves with the
    * review result holding the new verdict; rejects with the engine's plain
    * message, such as a hash mismatch.

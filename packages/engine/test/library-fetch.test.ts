@@ -152,6 +152,52 @@ describe('offerLibraryFetches', () => {
     expect(plain!.verdict).not.toHaveProperty('libraryFetch');
     expect(unpinned!.verdict).not.toHaveProperty('libraryFetch');
   });
+
+  it('offers the fetch an npm lock file pins, with its SHA-512', async () => {
+    const integrity = `sha512-${Buffer.alloc(64, 1).toString('base64')}`;
+    const root = headWith({ 'package-lock.json': JSON.stringify({ packages: { 'node_modules/ms': { version: '2.1.3', integrity } } }) });
+
+    const [offered] = await offerLibraryFetches([unverifiable('ms')], root);
+
+    expect(offered!.verdict).toMatchObject({
+      libraryFetch: { library: 'ms', pinnedVersion: '2.1.3', pinnedBy: 'package-lock.json', reason: expect.stringContaining('as package-lock.json pins it') },
+    });
+  });
+
+  it('offers the repository and tag the agent named when nothing pins the library, labelled weaker than pinned source', async () => {
+    const named = { ...unverifiable('ms'), verdict: { ...unverifiable('ms').verdict, namedRepository: { url: 'https://github.com/vercel/ms', tag: '3.0.0' } } } as Claim;
+
+    const [offered] = await offerLibraryFetches([named], headWith({}));
+
+    expect(offered!.verdict).toMatchObject({
+      libraryFetch: {
+        library: 'ms',
+        pinnedVersion: '3.0.0',
+        pinnedBy: 'https://github.com/vercel/ms',
+        namedRepository: { url: 'https://github.com/vercel/ms', tag: '3.0.0' },
+        reason: expect.stringContaining('which the agent named: a named repository, weaker evidence than pinned source'),
+      },
+    });
+    expect(offered!.verdict).not.toHaveProperty('noLibraryFetch');
+  });
+
+  it('says plainly why it offers no fetch when nothing pins the library and no repository it can fetch is named', async () => {
+    const root = headWith({ 'Gemfile.lock': 'GEM\n  specs:\n    rack (3.0.0)\n' });
+    const elsewhere = { ...unverifiable('rack'), verdict: { ...unverifiable('rack').verdict, namedRepository: { url: 'https://git.example.com/rack/rack', tag: 'v3.0.0' } } } as Claim;
+
+    const [unnamed, refused, settled] = await offerLibraryFetches([unverifiable('rack'), elsewhere, unverifiable()], root);
+
+    expect(unnamed!.verdict).not.toHaveProperty('libraryFetch');
+    expect(unnamed!.verdict).toMatchObject({
+      noLibraryFetch: expect.stringMatching(/^No library fetch: nothing in the head copy pins rack so a fetch can check it \(the companion reads .*package-lock\.json, Cargo\.lock, go\.sum with its go\.mod, pom\.xml and gradle\.lockfile\), and the agent named no repository and tag for it\.$/),
+    });
+    expect(refused!.verdict).toMatchObject({
+      noLibraryFetch: expect.stringContaining(
+        'and the repository the agent named cannot be fetched: https://git.example.com is not one of the hosts a named repository is fetched from (github.com, gitlab.com), over https.',
+      ),
+    });
+    expect(settled!.verdict).not.toHaveProperty('noLibraryFetch');
+  });
 });
 
 describe('fetchLibrary', () => {

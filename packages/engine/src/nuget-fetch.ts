@@ -1,10 +1,11 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { writeReadOnlyFiles } from './archive.js';
 import { removeCopy } from './cache.js';
 import type { LibraryDownload, LibraryFetchOptions } from './library-fetch.js';
 import type { SourceDocument } from './pdb.js';
+import { pinFilesIn } from './pin-files.js';
 import { readPackagePdbs, type PackagePdb } from './symbols.js';
 import { readZipEntries } from './zip.js';
 
@@ -42,37 +43,12 @@ const SAFE_VERSION = /^[0-9][0-9A-Za-z.+-]*$/;
 /** A version a project pins exactly: `1.2.3` (the lowest the range allows, which NuGet picks) or `[1.2.3]`. */
 const EXACT_VERSION = /^\s*\[?\s*([0-9][0-9A-Za-z.+-]*)\s*\]?\s*$/;
 
-/** The folders never searched for a pin: dependencies, build output and hidden folders. */
-const SKIPPED_FOLDERS = new Set(['node_modules', 'bin', 'obj', 'packages']);
-
-/** How deep and how wide the search for a .NET pin goes in the head copy. */
-const MAX_SEARCH_DEPTH = 6;
-const MAX_SEARCHED_FILES = 5000;
-
 /** The files of the head copy that may pin a package: lock files first, then project files, each by path. */
 async function pinFiles(root: string): Promise<string[]> {
-  const locks: string[] = [];
-  const projects: string[] = [];
-  let seen = 0;
-  let level = [''];
-  for (let depth = 0; depth <= MAX_SEARCH_DEPTH && level.length > 0 && seen < MAX_SEARCHED_FILES; depth++) {
-    const next: string[] = [];
-    for (const folder of level) {
-      const entries = await readdir(join(root, folder), { withFileTypes: true }).catch(() => []);
-      for (const entry of entries) {
-        seen++;
-        const path = folder === '' ? entry.name : `${folder}/${entry.name}`;
-        // A symbolic link is neither a folder nor a file here, so none is followed.
-        if (entry.isDirectory() && !entry.name.startsWith('.') && !SKIPPED_FOLDERS.has(entry.name.toLowerCase())) next.push(path);
-        if (!entry.isFile()) continue;
-        if (entry.name.toLowerCase() === 'packages.lock.json') locks.push(path);
-        else if (/^directory\.packages\.props$|\.(?:cs|fs|vb)proj$/i.test(entry.name)) projects.push(path);
-      }
-    }
-    level = next;
-  }
+  const found = await pinFilesIn(root, (name) => /^packages\.lock\.json$|^directory\.packages\.props$|\.(?:cs|fs|vb)proj$/i.test(name));
+  const isLock = (path: string): boolean => path.toLowerCase().endsWith('packages.lock.json');
   const byPath = (a: string, b: string): number => a.localeCompare(b);
-  return [...locks.sort(byPath), ...projects.sort(byPath)];
+  return [...found.filter(isLock).sort(byPath), ...found.filter((path) => !isLock(path)).sort(byPath)];
 }
 
 /** The pin of one package in a packages.lock.json: the version it resolved and the SHA-512 it records. */
@@ -153,7 +129,7 @@ interface DownloadBudget {
  * fetch's source files may take together, and it refuses once they exceed
  * it, before more is buffered.
  */
-async function download(url: string, what: string, fetchFn: typeof fetch, limit = MAX_DOWNLOAD_BYTES, budget?: DownloadBudget): Promise<Buffer | undefined> {
+export async function download(url: string, what: string, fetchFn: typeof fetch, limit = MAX_DOWNLOAD_BYTES, budget?: DownloadBudget): Promise<Buffer | undefined> {
   const response = await fetchFn(url, { redirect: 'error' });
   if (response.status === 404) return undefined;
   if (!response.ok || response.body === null) throw new Error(`the download of ${what} failed (HTTP ${response.status})`);
