@@ -287,7 +287,7 @@ export interface DescribedChange {
    * dropped.
    */
   quote: string;
-  /** Where it is made: a line of the description, or a line of a linked issue's body. */
+  /** Where it is made: a line of the description, or a line of a linked issue's body, the issue by its index in the criteria's issues. */
   location: { kind: 'description'; line: number } | { kind: 'issue'; issue: number; line: number };
   /** One line saying what the diff lacks. */
   reason: string;
