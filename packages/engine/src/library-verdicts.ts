@@ -172,13 +172,13 @@ export type LibraryJudging =
 export interface PressLibraryFetchOptions extends LibraryFetchOptions {
   adapter: AgentAdapter;
   settings?: AgentSettings;
-  /** The read-only head copy, whose lock files pin the library. */
+  /** The read-only head copy, read again for the library's pin. */
   headRoot: string;
 }
 
 /**
  * Presses one claim's library fetch, as the reviewer does: reads the pin
- * again from the head copy's lock files, fetches the library (see
+ * again from the head copy, fetches the library (see
  * {@link fetchLibrary}), and asks the agent to judge the claim again in
  * the library's source, re-reading every citation there. The new verdict
  * keeps the offer that was pressed and carries the library it was judged

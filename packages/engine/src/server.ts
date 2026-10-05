@@ -308,8 +308,8 @@ async function review(
  * agent judge the claim again there, then answers with the review result
  * holding the new verdict, which later fetches build on. A fetch fails
  * with a plain message when the review is unknown, the claim offers no
- * fetch, the download does not match its pinned hash, or the agent gives
- * no usable answer.
+ * fetch, the download does not match the hash it is checked against, or
+ * the agent gives no usable answer.
  */
 async function fetchLibrary(
   params: unknown,

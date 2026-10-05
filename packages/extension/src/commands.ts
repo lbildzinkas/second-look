@@ -49,8 +49,9 @@ export const FINDING_THREAD_CONTEXT = 'second-look-finding' as const;
 
 /**
  * Presses one finding's library fetch: the engine downloads the library
- * at its pinned version and judges the claim again. Runs only from the
- * link in the finding's thread, which the reviewer presses.
+ * at its pinned version — or the tag the agent named — and judges the
+ * claim again. Runs only from the link in the finding's thread, which
+ * the reviewer presses.
  */
 export const FETCH_LIBRARY_COMMAND = 'second-look.fetchLibrary' as const;
 

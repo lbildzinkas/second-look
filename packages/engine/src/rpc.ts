@@ -127,10 +127,12 @@ export type ReviewRpcResult = ReviewResult;
 
 /**
  * The request that presses one claim's library fetch, sent only when the
- * reviewer presses it (ADR 0003): the engine downloads the library at the
- * version the lock file pins, checks its hash, unpacks it read-only and
- * has the agent judge the claim again in its source. The claim is one of
- * the engine's own latest review of the pull request, by its index.
+ * reviewer presses it (ADR 0003): the engine downloads the library the
+ * offer names — the exact file the project pins, or the tag the agent
+ * named — checks its hash where one is recorded, unpacks it read-only
+ * and has the agent judge the claim again in its source. The claim is
+ * one of the engine's own latest review of the pull request, by its
+ * index.
  */
 export const FETCH_LIBRARY_METHOD = 'fetchLibrary' as const;
 

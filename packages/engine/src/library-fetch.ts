@@ -124,7 +124,7 @@ export async function findLibraryPin(headRoot: string, library: string): Promise
   return (await findNuGetPin(headRoot, library)) ?? findEcosystemPin(headRoot, library);
 }
 
-/** The offer for a pin: the library, its pinned version, the lock file and why. */
+/** The offer for a pin: the library, its pinned version, the file that pins it and why. */
 export function fetchOffer(pin: AnyLibraryPin): LibraryFetchOffer {
   return {
     library: pin.name,

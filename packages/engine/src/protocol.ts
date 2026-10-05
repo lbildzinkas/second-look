@@ -446,15 +446,16 @@ export type ClaimVerdict =
 /**
  * A library fetch the companion offers with a verdict (the glossary's
  * library fetch): the download of one library's source at the version
- * the project pins, offered with its reason only when a claim cannot be
+ * the project pins — or, when nothing pins it, at a repository and tag
+ * the agent named — offered with its reason only when a claim cannot be
  * checked without it, and started only by the reviewer (ADR 0003).
  */
 export interface LibraryFetchOffer {
-  /** The library, by the name the lock file gives it. */
+  /** The library, by the name the project uses for it. */
   library: string;
-  /** The version the project pins, which the fetch downloads. */
+  /** The version the project pins, which the fetch downloads; for a named repository, the tag. */
   pinnedVersion: string;
-  /** The lock file that pins it, by its path in the head copy. */
+  /** The file that pins it, by its path in the head copy; for a named repository, its URL. */
   pinnedBy: string;
   /** The companion's one-line reason for needing the library's source. */
   reason: string;
@@ -505,8 +506,8 @@ export const LIBRARY_ARCHIVES: readonly LibraryArchive[] = [
  * fetched at the commit it was built from, each exact source or unproven.
  * For a named repository, nothing pins what was downloaded: the folder
  * holds the tag the agent named, and `pinnedVersion` and `pinnedBy` are
- * that tag and the repository. The agent judged the claim in that folder, and the reviewer opens the
- * cited files from it.
+ * that tag and the repository. The agent judged the claim in that
+ * folder, and the reviewer opens the cited files from it.
  */
 export interface FetchedLibrary {
   library: string;
