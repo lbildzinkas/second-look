@@ -598,7 +598,15 @@ class ReviewSession {
     onStage: (stage: ReviewStageUpdate) => void,
   ): Promise<ReviewResult> {
     const engine = await this.readyEngine();
-    return engine.review(url, token, reviewAgentChoice(readAgentSettings()), onStage);
+    // The heading the acceptance criteria checklist sits under travels
+    // with the request like the agent choice, so a settings change
+    // reaches the next review without restarting the engine; empty leaves
+    // the engine's default heading, "Acceptance criteria".
+    const heading = vscode.workspace
+      .getConfiguration('second-look')
+      .get<string>('criteriaHeading', '')
+      .trim();
+    return engine.review(url, token, reviewAgentChoice(readAgentSettings()), onStage, heading);
   }
 
   /**

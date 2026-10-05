@@ -18,7 +18,7 @@ const USAGE = `second-look-engine — the engine of the Second Look reviewer's c
 Usage:
   second-look-engine review <pull-request-url> [--agent <pi|claude-code>]
       [--model <model>] [--effort <level>] [--agent-timeout <seconds>]
-      [--token <token>] [--cache-dir <dir>]
+      [--criteria-heading <heading>] [--token <token>] [--cache-dir <dir>]
   second-look-engine probe <pull-request-url> [--agent <pi|claude-code>] [--target <path-or-url>]...
       [--model <model>] [--effort <level>] [--agent-timeout <seconds>]
       [--agent-concurrency <n>] [--token <token>] [--cache-dir <dir>]
@@ -78,6 +78,16 @@ It keeps read-only copies of the base and head versions, downloaded as
 archives, in a per-pull-request cache: --cache-dir, else the
 SECOND_LOOK_CACHE_DIR environment variable, else the platform's per-user
 cache folder. Nothing is checked out and nothing from the pull request runs.
+
+The review also reads the issues the pull request links — the closing
+references GitHub returns, which cover the description's closing keywords
+and the sidebar's "will close" links in this repository or another, and
+the issues referencing the pull request — and lists each acceptance
+criterion from the checklist under a heading, quoted and not checked.
+Issue text is untrusted: it is parsed and never followed. The heading is
+"Acceptance criteria" unless --criteria-heading names another; GitHub
+returns no closing references for a pull request into a non-default
+branch, and the result says so.
 
 The GitHub token is passed in by the caller, either with --token or through
 the GITHUB_TOKEN environment variable. It is used only for the GitHub
@@ -140,6 +150,9 @@ export interface CliDeps {
 /** Flags that take a value, beyond --token and --cache-dir. */
 const AGENT_FLAGS = ['--agent', '--target', '--model', '--effort', '--agent-timeout', '--agent-concurrency'];
 
+/** The heading the acceptance criteria checklist sits under, as the review command names it. */
+const CRITERIA_HEADING_FLAG = '--criteria-heading';
+
 /**
  * Runs the command line. Returns the process exit code: 0 on success,
  * 1 on any error. Never throws, never prints the token.
@@ -153,6 +166,7 @@ export async function runCli(
   const positional: string[] = [];
   let tokenFlag: string | undefined;
   let cacheDirFlag: string | undefined;
+  let criteriaHeading: string | undefined;
   const agentFlags: Record<string, string[]> = {};
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
@@ -176,6 +190,15 @@ export async function runCli(
         return 1;
       }
       cacheDirFlag = value;
+      continue;
+    }
+    if (arg === CRITERIA_HEADING_FLAG) {
+      const value = argv[++i];
+      if (value === undefined || value.trim() === '') {
+        streams.err.write(`second-look-engine: ${CRITERIA_HEADING_FLAG} needs a heading\n`);
+        return 1;
+      }
+      criteriaHeading = value;
       continue;
     }
     if (AGENT_FLAGS.includes(arg)) {
@@ -270,6 +293,7 @@ export async function runCli(
       token,
       fetch: deps.fetch,
       cacheDir: cacheDirFlag ?? defaultCacheDir(env),
+      ...(criteriaHeading !== undefined ? { criteriaHeading } : {}),
       ...(agentFlags['--agent'] !== undefined
         ? {
             agentStage: {

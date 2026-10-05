@@ -133,6 +133,42 @@ describe('GitHubClient against recorded responses', () => {
     ).rejects.toThrow();
   });
 
+  it('reads the issues the pull request links, the same issue listed once', async () => {
+    const transport = fixtureFetch();
+    const client = new GitHubClient({ token: 'test-token', fetch: transport.fetch });
+    const linked = await client.getLinkedIssues(ref);
+
+    // The recorded answer closes one issue in this repository and shows
+    // another referencing the pull request from a second repository; the
+    // closing issue also appears among the references and is listed once.
+    expect(linked.defaultBranch).toBe('master');
+    expect(linked.issues).toEqual([
+      {
+        number: 30,
+        title: 'Retry failed webhook sends',
+        url: 'https://github.com/example-org/example-repo/issues/30',
+        repository: 'example-org/example-repo',
+        body: expect.stringContaining('## Acceptance criteria'),
+        link: 'closes',
+      },
+      {
+        number: 7,
+        title: 'Track the webhook retries',
+        url: 'https://github.com/example-org/planning/issues/7',
+        repository: 'example-org/planning',
+        body: expect.stringContaining('### Definition of done'),
+        link: 'references',
+      },
+    ]);
+    // One read-only GraphQL query, through the same client and its token.
+    expect(transport.requests).toHaveLength(1);
+    expect(transport.requests[0]).toMatchObject({
+      url: 'https://api.github.com/graphql',
+      method: 'POST',
+      authorization: 'token test-token',
+    });
+  });
+
   it('submits one review: every comment in one POST, answered with its link', async () => {
     const transport = fixtureFetch();
     const client = new GitHubClient({ token: 'test-token', fetch: transport.fetch });

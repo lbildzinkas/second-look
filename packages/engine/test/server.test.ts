@@ -141,22 +141,21 @@ describe('runRpcServer', () => {
 
     expect(responses[0]!.result).toEqual({ protocolVersion: ENGINE_PROTOCOL_VERSION });
     const first = responses[1]!.result as { version: number; parts: unknown[] };
-    expect(first.version).toBe(12);
+    expect(first.version).toBe(13);
     expect(first.parts).toHaveLength(11);
     const second = responses[2]!.result as { parts: unknown[] };
     expect(second.parts).toHaveLength(11);
     // Each review asks GitHub for what it needs — the pull request twice
-    // (metadata, diff), the attributes, the merge base, the check runs, and
-    // on the first run the two commit archives — always with the token its
-    // own request carried; the second review at the same commits reuses
-    // the archives.
+    // (metadata, diff), the attributes, the merge base, the linked issues,
+    // the check runs, and on the first run the two commit archives —
+    // always with the token its own request carried; the second review at
+    // the same commits reuses the archives.
     const authorizations = transport.requests.map((request) => request.authorization);
-    expect(authorizations.slice(0, 7)).toEqual(Array<string>(7).fill(`token ${TOKEN}`));
-    expect(authorizations.slice(7)).toEqual(Array<string>(5).fill('token ghp_another-token'));
+    expect(authorizations.slice(0, 8)).toEqual(Array<string>(8).fill(`token ${TOKEN}`));
+    expect(authorizations.slice(8)).toEqual(Array<string>(6).fill('token ghp_another-token'));
   });
 
-  it('answers a failed review with the plain message, with the token redacted', async () => {
-    const leakingFetch: typeof fetch = async (input, init) => {
+  it('answers a failed review with the plain message, with the token redacted', async () => {    const leakingFetch: typeof fetch = async (input, init) => {
       const authorization = new Headers(init?.headers).get('authorization') ?? '';
       throw new Error(`the GitHub request failed with ${authorization}`);
     };
@@ -182,6 +181,30 @@ describe('runRpcServer', () => {
 
     expect(responses[1]!.error!.message).toContain('review needs params');
     expect(responses[2]!.error!.message).toContain('review needs params');
+  });
+
+  it('reads the acceptance criteria under the heading the review request names', async () => {
+    const responses = await serve(
+      [
+        request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+        request('review', { url: PR_URL, token: TOKEN, criteriaHeading: 'Definition of done' }, 2),
+        request('review', { url: PR_URL, token: TOKEN, criteriaHeading: '  ' }, 3),
+      ],
+      fixtureFetch().fetch,
+    );
+
+    // The heading travels with the request, so the settings reach the
+    // next review without restarting the engine; an empty one is refused.
+    // Requests are answered as they arrive, so the answers are read by
+    // their ids, not in order.
+    const byId = new Map(responses.map((response) => [response.id, response]));
+    const read = byId.get(2)!.result as { criteria: { heading: string; criteria: { quote: string }[] } };
+    expect(read.criteria.heading).toBe('Definition of done');
+    expect(read.criteria.criteria.map((criterion) => criterion.quote)).toEqual([
+      'The retries ship behind a flag',
+      'The flag is documented in the runbook',
+    ]);
+    expect(byId.get(3)!.error!.message).toContain('criteriaHeading must be a non-empty string');
   });
 
   it('answers an unknown method and a malformed line without stopping', async () => {
@@ -328,7 +351,7 @@ describe('runRpcServer with an agent', () => {
         id: 2,
         running: 'grouping related hunks with fake',
         timeoutMs: 660_000,
-        result: { version: 12, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
+        result: { version: 13, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
       },
     });
     // The fake agent has no tested ranking, so the story stage follows the grouping.
@@ -653,7 +676,7 @@ describe('runRpcServer fetching a library', () => {
     });
     expect(pypiBeforeFetch).toBe(0);
     expect(answer(3).result).toMatchObject({
-      version: 12,
+      version: 13,
       claims: {
         claims: [
           {
@@ -706,7 +729,7 @@ describe('runRpcServer fetching a library', () => {
 
     expect(answer(3).error).toBeUndefined();
     expect(answer(3).result).toMatchObject({
-      version: 12,
+      version: 13,
       claims: {
         claims: [
           {

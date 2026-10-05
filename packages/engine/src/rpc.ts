@@ -120,6 +120,12 @@ export interface ReviewParams {
   token: string;
   /** The agent, model and account the review's agent passes run with; see {@link ReviewAgentChoice}. */
   agent?: ReviewAgentChoice;
+  /**
+   * The heading the acceptance criteria checklist sits under in a linked
+   * issue, mirroring the editor's setting; absent or empty reads the
+   * default, "Acceptance criteria".
+   */
+  criteriaHeading?: string;
 }
 
 /** The review request's result: the engine's typed, versioned review result. */

@@ -47,6 +47,12 @@ export interface PullFixture {
   head: Record<string, string>;
   /** Whether the recorded CI in `fixtures/ci` is served at the head commit; no check runs otherwise. */
   ci?: boolean;
+  /**
+   * Fixture file of the recorded GraphQL answer for the pull request's
+   * linked issues, under `fixtures/issues`; when absent, an answer that
+   * names the default branch master and links no issue is served.
+   */
+  issues?: string;
 }
 
 function fixtureText(name: string): string {
@@ -110,6 +116,7 @@ export function pull42(): PullFixture {
     diff,
     headSha: 'f00dcafe1234567890abcdef1234567890abcdef',
     mergeBase: '4242424242424242424242424242424242424242',
+    issues: 'issues/pull-42-issues.json',
     ...versionsFromDiff(fixtureText(diff)),
   };
 }
@@ -201,6 +208,26 @@ export function githubTarball(files: Record<string, string>, commit: string): Bu
 
 const API = 'https://api.github.com/repos/example-org/example-repo';
 
+/** The one GraphQL endpoint GitHub serves every query at. */
+const GRAPHQL_URL = 'https://api.github.com/graphql';
+
+/**
+ * The answer every fixture serves for the linked-issues query when the
+ * pull request records none: the default branch master and no linked
+ * issue.
+ */
+const NO_LINKED_ISSUES = {
+  data: {
+    repository: {
+      defaultBranchRef: { name: 'master' },
+      pullRequest: {
+        closingIssuesReferences: { nodes: [] },
+        timelineItems: { nodes: [] },
+      },
+    },
+  },
+};
+
 /** The review the recorded responses hand back for a send. */
 export const SENT_REVIEW_URL = `${PR_URL}#pullrequestreview-4242`;
 
@@ -222,7 +249,8 @@ function recordedBody(init: RequestInit | undefined): unknown {
  * the JSON metadata for plain requests, the full diff for requests that ask
  * for the diff media type, the repository's root `.gitattributes` as
  * stored at the head commit, the merge base from the compare endpoint,
- * archives of both versions, the check runs at the head commit with their
+ * the linked issues from the one GraphQL query the review makes, archives
+ * of both versions, the check runs at the head commit with their
  * annotations and the failed job's log when the fixture records CI, and
  * one submitted review for a send. Any
  * other URL throws, so a test can never touch the live network by
@@ -266,6 +294,12 @@ export function fixtureFetch(pull: PullFixture = pull42()): FixtureTransport {
           headers: { 'content-type': 'application/json; charset=utf-8' },
         },
       );
+    }
+    if (url === GRAPHQL_URL) {
+      // The linked-issues query is the only GraphQL the review makes; the
+      // recorded answer serves it whatever its variables are.
+      const body = pull.issues === undefined ? NO_LINKED_ISSUES : JSON.parse(fixtureText(pull.issues));
+      return Response.json(body);
     }
     if (url === `${API}/pulls/${pull.number}/reviews`) {
       if ((init?.method ?? 'GET') !== 'POST') {

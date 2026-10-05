@@ -90,8 +90,9 @@ describe('sendReview against recorded responses', () => {
 
   it('writes nothing before send: reviewing and mapping only read', async () => {
     const transport = fixtureFetch();
-    // The whole read path a review takes; the comments gathered over it
-    // are held in the companion, not on GitHub.
+    // The whole read path a review takes — the linked-issues query is the
+    // one POST among the reads, a read-only GraphQL query — the comments
+    // gathered over it are held in the companion, not on GitHub.
     await reviewPullRequest(PR_URL, {
       token: 'test-token',
       fetch: transport.fetch,
@@ -101,7 +102,10 @@ describe('sendReview against recorded responses', () => {
       { kind: 'line', path: 'README.md', side: 'head', line: 14, body: 'ready to send' },
     ]);
     const before = transport.requests.length;
-    expect(transport.requests.every((request) => request.method === 'GET')).toBe(true);
+    const reads = transport.requests.filter(
+      (request) => request.url !== 'https://api.github.com/graphql',
+    );
+    expect(reads.every((request) => request.method === 'GET')).toBe(true);
 
     await sendReview(PR_URL, pending, { token: 'test-token', fetch: transport.fetch });
 

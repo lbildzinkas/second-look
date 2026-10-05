@@ -23,6 +23,9 @@ import {
   type SyntaxCheck,
 } from '@second-look/engine';
 
+/** How the pull request links an issue, as the result names it. */
+const ISSUE_LINKS = ['closes', 'references'] as const;
+
 const CHANGE_KINDS: readonly ChangeKind[] = [
   'addition',
   'deletion',
@@ -556,6 +559,48 @@ function isCiResults(value: unknown): boolean {
   );
 }
 
+/** One issue the pull request links: its number, title, page, repository and full body, and how it is linked. */
+function isLinkedIssue(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isNumber(value['number']) &&
+    isString(value['title']) &&
+    isString(value['url']) &&
+    isString(value['repository']) &&
+    isString(value['body']) &&
+    isOneOf(value['link'], ISSUE_LINKS)
+  );
+}
+
+/** One acceptance criterion: quoted from a linked issue's checklist, not checked. */
+function isCriterion(value: unknown, issueCount: number): boolean {
+  if (!isRecord(value)) return false;
+  const verdict = value['verdict'];
+  return (
+    isNonEmptyString(value['quote']) &&
+    isNumber(value['issue']) &&
+    value['issue'] < issueCount &&
+    isLine(value['line']) &&
+    isRecord(verdict) &&
+    verdict['kind'] === 'not checked'
+  );
+}
+
+/**
+ * The acceptance criteria read from the issues the pull request links:
+ * read or unreadable, the issues with the heading their checklists were
+ * read from under, and the criteria quoted and not checked.
+ */
+function isCriteria(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (!isOneOf(value['outcome'], ['read', 'unreadable'] as const) || !isString(value['detail']) || !isNonEmptyString(value['heading'])) {
+    return false;
+  }
+  if (!Array.isArray(value['issues']) || !value['issues'].every(isLinkedIssue)) return false;
+  const issues = value['issues'];
+  return Array.isArray(value['criteria']) && value['criteria'].every((criterion) => isCriterion(criterion, issues.length));
+}
+
 function isPullRequestSummary(value: unknown): boolean {
   if (!isRecord(value)) return false;
   return (
@@ -601,6 +646,7 @@ export function isReviewResult(value: unknown): value is ReviewResult {
   if (!isGrouping(value['grouping']) || !isRanking(value['ranking'])) return false;
   if (!isPipelineReport(value['pipeline'])) return false;
   if (value['ci'] !== undefined && !isCiResults(value['ci'])) return false;
+  if (value['criteria'] !== undefined && !isCriteria(value['criteria'])) return false;
   const parts = value['parts'];
   if (!Array.isArray(parts) || !parts.every(isPart)) return false;
   const story = value['story'];
