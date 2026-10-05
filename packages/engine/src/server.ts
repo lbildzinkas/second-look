@@ -74,7 +74,7 @@ export interface RpcServerDeps {
   /** The engine's cache folder, which holds the read-only copies. */
   cacheDir: string;
   /**
-   * The agents that group and rank the parts, write the story, and list and judge the claims after the plain pass;
+   * The agents that group and rank the parts, write the story, compare the change with its description and issues, and list and judge the claims after the plain pass;
    * without one, the plain result is the review's only answer.
    */
   agent?: RpcAgentDeps;
@@ -109,11 +109,12 @@ export interface RpcServerDeps {
  * notification naming the stage that runs next, then the grouped result
  * in another while the agent ranks, then the ranked result in another
  * while the agent writes the story, then the result with the story in
- * another while the agent lists the claims, then the result with the
- * claims in another while the agent judges them, and the review's
- * response carries the result with the agent's parts, ranking, story and
- * judged claims, or the plain parts and ranking with the reason they
- * stayed.
+ * another while the agent compares the change with its description and
+ * issues, then the result with the comparison in another while the agent
+ * lists the claims, then the result with the claims in another while the
+ * agent judges them, and the review's response carries the result with
+ * the agent's parts, ranking, story, unexplained changes and judged
+ * claims, or the plain parts and ranking with the reason they stayed.
  */
 export async function runRpcServer(
   source: RpcLineSource,

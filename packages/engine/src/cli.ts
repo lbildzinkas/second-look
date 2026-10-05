@@ -61,7 +61,14 @@ parts' reading order, each part it mentions linked. The checks reject a
 story that leaves out a must-review part, mentions the parts out of
 order, or names a file or code the change does not show; a rejected
 story is retried once, and then the result says why there is none. Then
-the agent lists the claims the change makes about how code or a library
+the agent compares the description and the linked issues with the
+change, in both directions: each part neither explains is marked
+unexplained with a one-line reason, and each statement describing a
+change the diff does not contain is listed, quoted from where it is
+made; an unknown or noise part, or a quote not found in its source,
+rejects the answer, which is retried once before the result says why
+there is no comparison, and with neither a description nor a linked
+issue no agent is asked. Then the agent lists the claims the change makes about how code or a library
 behaves — from the description, the docstrings and comments the change
 adds, and the story — each quoted from its source and attached to a part;
 a quote not found in its source rejects the answer, which is retried once
@@ -122,8 +129,10 @@ request. Each review arrives in stages: the plain result first, in a
 review/stage notification, then the result with the agent's grouping in
 another while the agent ranks, then the ranked result in another while
 the agent writes the story, then the result with the story in another
-while the agent lists the claims, then the result with the claims in
-another while the agent judges them, then the judged result. Each review
+while the agent compares the change with its description and issues,
+then the result with the comparison in another while the agent lists
+the claims, then the result with the claims in another while the agent
+judges them, then the judged result. Each review
 request may also carry the reviewer's agent choice — the agent, model and
 account from the editor's settings — which runs that review's agent passes
 and stamps the account label on their results, replacing this command's

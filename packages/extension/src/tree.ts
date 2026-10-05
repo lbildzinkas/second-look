@@ -104,19 +104,19 @@ export function buildTree(result: ReviewResult): TreeSection[] {
   const findings = findingCounts(result.claims, result.parts.length);
   const judged = result.claims?.judging?.outcome === 'judged';
   const unexplained = unexplainedReasons(result.unexplained, result.parts.length);
-  const withCounts = (node: TreePart, index: number): TreePart =>
+  const withBadges = (node: TreePart, index: number): TreePart =>
     withUnexplained(withClaims(node, counts[index]!, findings[index]!, judged), unexplained[index]);
   result.parts.forEach((part, index) => {
     const assessment = part.noise;
     if (assessment && isLabelledNoise(assessment) && noiseSinks(assessment)) {
-      noise.push(withCounts(noisePart(part, assessment), index));
+      noise.push(withBadges(noisePart(part, assessment), index));
       return;
     }
     if (part.rank) {
-      grouped.get(part.rank.importance)!.push(withCounts(rankedPart(part, result.ranking), index));
+      grouped.get(part.rank.importance)!.push(withBadges(rankedPart(part, result.ranking), index));
       return;
     }
-    notRanked.push(withCounts(unrankedPart(part), index));
+    notRanked.push(withBadges(unrankedPart(part), index));
   });
 
   const sections: TreeSection[] = [];

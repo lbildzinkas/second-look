@@ -54,6 +54,10 @@
   ],
   "unexplained": {
     "parts": [],
+    "optionalParts": [
+      "deepMergeInternal in source/utils/merge.ts",
+      "top-level code in test/main.ts"
+    ],
     "described": [
       {
         "text": "Similarly, passing `{signal: undefined}` or `{signal: null}` in `.extend()` does not remove parent signals from being combined via `AbortSignal.any()`.",
