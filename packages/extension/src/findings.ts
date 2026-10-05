@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { findingAnchor, isFinding, type Claim, type ReviewResult } from '@second-look/engine';
 import { changeUri, partFiles } from './change-copies.js';
 import { FETCH_LIBRARY_COMMAND, FINDINGS_CONTROLLER_ID, FINDING_THREAD_CONTEXT, OPEN_LIBRARY_EVIDENCE_COMMAND } from './commands.js';
-import { claimWhere } from './overview.js';
+import { citedWhere, claimWhere } from './overview.js';
 
 /** Markdown's punctuation, escaped, so text someone else wrote renders exactly as written. */
 export function escapeMarkdown(text: string): string {
@@ -22,7 +22,8 @@ function commandLink(text: string, command: string, args: readonly unknown[]): s
 /**
  * A finding's thread body, as Markdown in which only the companion's own
  * words are markup: the verdict with its evidence source, the claim's
- * quote, the reason, each citation the engine re-checked, the library
+ * quote, the reason, each citation the engine re-checked — a CI log's
+ * line labelled as one — the library
  * the claim needs when it needs one — with the library fetch the
  * companion offers for it, a link the reviewer presses, or the library
  * source the verdict was judged against, each cited file a link that
@@ -45,7 +46,7 @@ export function findingBody(claim: Claim, index = 0): string {
   ];
   if (verdict.evidence.length > 0) {
     const where = (cited: (typeof verdict.evidence)[number], at: number): string =>
-      library === undefined ? escapeMarkdown(`${cited.path}:${cited.line}`) : commandLink(`${cited.path}:${cited.line}`, OPEN_LIBRARY_EVIDENCE_COMMAND, [index, at]);
+      library === undefined ? escapeMarkdown(citedWhere(cited)) : commandLink(`${cited.path}:${cited.line}`, OPEN_LIBRARY_EVIDENCE_COMMAND, [index, at]);
     lines.push('', 'Evidence:', ...verdict.evidence.map((cited, at) => `- ${where(cited, at)} — ${escapeMarkdown(cited.quote)}`));
   }
   if (library !== undefined) {
@@ -111,7 +112,7 @@ export class FindingThreads implements vscode.Disposable {
 
   /** A thread at the finding's line, or on its part's first file at no line. */
   private threadFor(result: ReviewResult, claim: Claim): vscode.CommentThread | undefined {
-    const anchor = findingAnchor(claim);
+    const anchor = findingAnchor(claim, result.parts);
     if (anchor !== undefined) {
       const line = anchor.line - 1;
       return this.controller.createCommentThread(changeUri('head', result.copies.head.commit, anchor.path), new vscode.Range(line, 0, line, 0), []);

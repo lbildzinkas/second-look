@@ -138,17 +138,18 @@ describe('runRpcServer', () => {
 
     expect(responses[0]!.result).toEqual({ protocolVersion: ENGINE_PROTOCOL_VERSION });
     const first = responses[1]!.result as { version: number; parts: unknown[] };
-    expect(first.version).toBe(9);
+    expect(first.version).toBe(10);
     expect(first.parts).toHaveLength(11);
     const second = responses[2]!.result as { parts: unknown[] };
     expect(second.parts).toHaveLength(11);
     // Each review asks GitHub for what it needs — the pull request twice
-    // (metadata, diff), the attributes, the merge base, and on the first
-    // run the two commit archives — always with the token its own request
-    // carried; the second review at the same commits reuses the archives.
+    // (metadata, diff), the attributes, the merge base, the check runs, and
+    // on the first run the two commit archives — always with the token its
+    // own request carried; the second review at the same commits reuses
+    // the archives.
     const authorizations = transport.requests.map((request) => request.authorization);
-    expect(authorizations.slice(0, 6)).toEqual(Array<string>(6).fill(`token ${TOKEN}`));
-    expect(authorizations.slice(6)).toEqual(Array<string>(4).fill('token ghp_another-token'));
+    expect(authorizations.slice(0, 7)).toEqual(Array<string>(7).fill(`token ${TOKEN}`));
+    expect(authorizations.slice(7)).toEqual(Array<string>(5).fill('token ghp_another-token'));
   });
 
   it('answers a failed review with the plain message, with the token redacted', async () => {
@@ -324,7 +325,7 @@ describe('runRpcServer with an agent', () => {
         id: 2,
         running: 'grouping related hunks with fake',
         timeoutMs: 660_000,
-        result: { version: 9, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
+        result: { version: 10, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
       },
     });
     // The fake agent has no tested ranking, so the story stage follows the grouping.
@@ -649,7 +650,7 @@ describe('runRpcServer fetching a library', () => {
     });
     expect(pypiBeforeFetch).toBe(0);
     expect(answer(3).result).toMatchObject({
-      version: 9,
+      version: 10,
       claims: {
         claims: [
           {

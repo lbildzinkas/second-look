@@ -1,0 +1,26 @@
+[
+  {
+    "path": "src/settings.ts",
+    "blob_href": "https://github.com/example-org/example-repo/blob/f00dcafe1234567890abcdef1234567890abcdef/src/settings.ts",
+    "start_line": 12,
+    "start_column": null,
+    "end_line": 12,
+    "end_column": null,
+    "annotation_level": "failure",
+    "title": "settings › loads the defaults",
+    "message": "Expected 30 but received 3000",
+    "raw_details": null
+  },
+  {
+    "path": ".github",
+    "blob_href": "https://github.com/example-org/example-repo/blob/f00dcafe1234567890abcdef1234567890abcdef/.github",
+    "start_line": 1,
+    "start_column": null,
+    "end_line": 1,
+    "end_column": null,
+    "annotation_level": "failure",
+    "title": "",
+    "message": "Process completed with exit code 1.",
+    "raw_details": null
+  }
+]

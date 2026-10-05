@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { REVIEW_RESULT_VERSION, type NoiseAssessment, type ReviewResult } from '@second-look/engine';
 import { ProtocolError, isReviewResult, parseReviewResult } from '../src/index.js';
-import { REQUESTS_FETCH, claimsResult, fetchedResult, judgedResult, offeredResult } from './results.js';
+import { REQUESTS_FETCH, claimsResult, fetchedResult, judgedResult, offeredResult, pipelineResult } from './results.js';
 
 function sampleResult(): ReviewResult {
   return {
@@ -91,6 +91,7 @@ function sampleResult(): ReviewResult {
     ],
     grouping: { by: 'plain' },
     ranking: { by: 'plain' },
+    pipeline: { attestation: 'missing', detail: 'the description carries no no-mistakes attestation', steps: [], findings: [] },
   };
 }
 
@@ -469,6 +470,53 @@ describe('isReviewResult for the verdicts', () => {
   });
 });
 
+describe('isReviewResult for the pipeline and CI', () => {
+  type Loose = Record<string, unknown> & { pipeline: Record<string, unknown>; ci: { checks: Record<string, unknown>[] }; claims: { outcome: string; claims: Record<string, unknown>[] } };
+  const shown = (): Loose => JSON.parse(JSON.stringify(pipelineResult())) as Loose;
+
+  it("accepts the pipeline report, the CI with a failed job's trimmed log, a pipeline claim and CI log evidence", () => {
+    expect(isReviewResult(pipelineResult())).toBe(true);
+    const unread = shown();
+    delete (unread as Record<string, unknown>)['ci'];
+    expect(isReviewResult(unread)).toBe(true);
+    // A listing that fell back keeps only the pipeline's claims.
+    const fellBack = shown();
+    fellBack.claims.outcome = 'fell back';
+    fellBack.claims.claims = fellBack.claims.claims.slice(0, 1);
+    expect(isReviewResult(fellBack)).toBe(true);
+    // A file-level annotation, whose lines GitHub leaves null, is listed like any other.
+    const fileLevel = shown();
+    fileLevel.ci.checks[1]!['annotations'] = [{ path: '.github/workflows/lint.yml', level: 'notice', message: 'The workflow sets no timeout-minutes.' }];
+    expect(isReviewResult(fileLevel)).toBe(true);
+  });
+
+  it('rejects a missing or malformed pipeline report, malformed CI, a pipeline claim out of place, or CI log evidence mislabelled', () => {
+    const changed = (change: (value: Loose) => void): Loose => {
+      const value = shown();
+      change(value);
+      return value;
+    };
+    const verdict = (value: Loose): Record<string, unknown> => value.claims.claims[0]!['verdict'] as Record<string, unknown>;
+    const cases: unknown[] = [
+      changed((value) => delete (value as Record<string, unknown>)['pipeline']),
+      changed((value) => (value.pipeline['attestation'] = 'trusted')),
+      changed((value) => (value.pipeline['findings'] = [{ step: 'Review', severity: 'fatal', text: 'x' }])),
+      changed((value) => (value.pipeline['steps'] = [{ step: 'review' }])),
+      changed((value) => (value.ci.checks[0]!['conclusion'] = 7)),
+      changed((value) => (value.ci.checks[0]!['log'] = { lines: 'one line', detail: '' })),
+      changed((value) => (value.ci.checks[0]!['annotations'] = [{ path: 'a', startLine: 1, endLine: 1, level: 'fatal', message: '' }])),
+      changed((value) => (value.claims.claims[0]!['location'] = { kind: 'description', line: 1 })),
+      changed((value) => (value.claims.claims[1]!['location'] = { kind: 'pipeline', finding: 0, step: 'Review' })),
+      changed((value) => (verdict(value)['evidence'] = [{ path: 'check / test', line: 2, quote: 'FAILED' }])),
+      changed((value) => (verdict(value)['source'] = 'the change itself')),
+      changed((value) => {
+        value.claims.outcome = 'fell back';
+      }),
+    ];
+    for (const value of cases) expect(isReviewResult(value)).toBe(false);
+  });
+});
+
 describe('parseReviewResult', () => {
   it('reads the JSON the engine printed', () => {
     const result = parseReviewResult(JSON.stringify(sampleResult()));
@@ -484,6 +532,6 @@ describe('parseReviewResult', () => {
 
 describe('the versioned protocol is shared with the engine', () => {
   it('uses the same version constant', () => {
-    expect(REVIEW_RESULT_VERSION).toBe(9);
+    expect(REVIEW_RESULT_VERSION).toBe(10);
   });
 });

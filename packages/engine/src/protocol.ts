@@ -10,7 +10,7 @@
 import type { AgentStamp } from './agent.js';
 
 /** Version of the review result schema. */
-export const REVIEW_RESULT_VERSION = 9 as const;
+export const REVIEW_RESULT_VERSION = 10 as const;
 
 /**
  * Version 2 added the head commit's SHA and each part's noise assessment;
@@ -23,7 +23,9 @@ export const REVIEW_RESULT_VERSION = 9 as const;
  * result's claims; version 8 added each claim's checked verdict, with its
  * evidence and evidence source, and the claims' judging; version 9 added
  * the library fetch a verdict offers and the library source a verdict was
- * judged against once the reviewer pressed it.
+ * judged against once the reviewer pressed it; version 10 added the
+ * pipeline report and the CI the companion read, the pipeline's findings
+ * as claims, and CI log lines as a verdict's evidence.
  */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
@@ -148,6 +150,112 @@ export interface ReviewResult {
   story?: Story;
   /** The claims the change makes, as the agent listed them; absent when no agent was asked. */
   claims?: Claims;
+  /** The no-mistakes report the description carries, and whether it is trusted. */
+  pipeline: PipelineReport;
+  /** The CI the companion read at the head commit; absent when the review read none, such as an offline replay. */
+  ci?: CiResults;
+}
+
+/**
+ * What the companion read of the no-mistakes pipeline report in the
+ * description: its attestation, whose head commit must be the pull
+ * request's current head for the report to be trusted, the steps it ran,
+ * and the findings it left open. Only a fresh report's findings become
+ * claims; a stale or malformed one is shown, never trusted.
+ */
+export interface PipelineReport {
+  /**
+   * `fresh` when the attestation names the pull request's current head;
+   * `stale` when it names another commit; `missing` when the description
+   * has none; `malformed` when it cannot be read.
+   */
+  attestation: 'fresh' | 'stale' | 'missing' | 'malformed';
+  /** One plain line saying why the report has this state. */
+  detail: string;
+  /** The head commit the attestation names, when it names one. */
+  headSha?: string;
+  /** The steps the attestation lists, in its order, each with its status as written. */
+  steps: PipelineStep[];
+  /** The findings the report leaves open, in its order. */
+  findings: PipelineFinding[];
+}
+
+/** One step of the pipeline, as the attestation lists it. */
+export interface PipelineStep {
+  step: string;
+  /** Its status as written, such as `completed` or `running`. */
+  status: string;
+}
+
+/** One finding the pipeline report leaves open. */
+export interface PipelineFinding {
+  /** The step that reported it, as the report names it, such as `Review`. */
+  step: string;
+  severity: 'error' | 'warning' | 'info';
+  /** The finding's text, on one line. */
+  text: string;
+  /** The file it names, by its path on the new side, when it names one. */
+  path?: string;
+  /** The 1-based head-side line it names, when it names one. */
+  line?: number;
+}
+
+/**
+ * The checks GitHub reports at the pull request's head commit. A pull
+ * request's checks run on its merge commit — the head merged into the
+ * base — though GitHub lists them at the head, so the companion labels
+ * them as run on the merge commit.
+ */
+export interface CiResults {
+  /** `read` when the check runs were read; `unreadable` when GitHub refused or failed. */
+  outcome: 'read' | 'unreadable';
+  /** One plain line: what was read, or why nothing was. */
+  detail: string;
+  /** The head commit the checks were listed at. */
+  headSha: string;
+  /** The merge commit GitHub made for the pull request, when it reports one. */
+  mergeCommit?: string;
+  /** The check runs, in GitHub's order. */
+  checks: CheckRun[];
+}
+
+/** One check run at the head commit, with its annotations and, when it failed, its trimmed log. */
+export interface CheckRun {
+  name: string;
+  /** Its status as GitHub reports it, such as `completed` or `in_progress`. */
+  status: string;
+  /** Its conclusion as GitHub reports it, such as `success` or `failure`; null while it runs. */
+  conclusion: string | null;
+  /** The check run's page on GitHub. */
+  url: string;
+  annotations: CheckAnnotation[];
+  /** The log of a failed job, trimmed to its failing step; absent for a check that did not fail. */
+  log?: CheckLog;
+}
+
+/** One annotation a check run left on a file. */
+export interface CheckAnnotation {
+  path: string;
+  /** The 1-based line it starts on; absent on a file-level annotation. */
+  startLine?: number;
+  /** The 1-based line it ends on; absent on a file-level annotation. */
+  endLine?: number;
+  level: 'notice' | 'warning' | 'failure';
+  message: string;
+  title?: string;
+}
+
+/**
+ * A failed job's log, fetched only because it failed and trimmed to the
+ * step that failed. Its lines are what the job printed, and untrusted.
+ */
+export interface CheckLog {
+  /** The failing step, when the log marks one. */
+  step?: string;
+  /** The trimmed lines, timestamps removed; empty when the log could not be read. */
+  lines: string[];
+  /** One plain line: how the log was trimmed, or why there is none. */
+  detail: string;
 }
 
 /**
@@ -194,14 +302,14 @@ export interface ClaimJudging {
 }
 
 /**
- * Where a claim is made, in priority order: the pull request's
- * description, a docstring or a comment the change adds, or the
- * companion's own agent, in the story it wrote.
+ * Where a claim is made, in priority order: a finding of a fresh pipeline
+ * report, the pull request's description, a docstring or a comment the
+ * change adds, or the companion's own agent, in the story it wrote.
  */
-export type ClaimSource = 'description' | 'docstring' | 'comment' | 'agent';
+export type ClaimSource = 'pipeline' | 'description' | 'docstring' | 'comment' | 'agent';
 
 /** The claim sources in priority order, the order the claims are listed in. */
-export const CLAIM_SOURCE_ORDER: readonly ClaimSource[] = ['description', 'docstring', 'comment', 'agent'];
+export const CLAIM_SOURCE_ORDER: readonly ClaimSource[] = ['pipeline', 'description', 'docstring', 'comment', 'agent'];
 
 /** Where in its source a claim's quote sits. */
 export type ClaimLocation =
@@ -226,6 +334,18 @@ export type ClaimLocation =
       kind: 'story';
       /** The sentence, by its index in the story's sentences. */
       sentence: number;
+    }
+  | {
+      /** A finding of the pipeline report in the description. */
+      kind: 'pipeline';
+      /** The finding, by its index in the report's findings. */
+      finding: number;
+      /** The step that reported it. */
+      step: string;
+      /** The file it names, when it names one. */
+      path?: string;
+      /** The head-side line it names, when it names one. */
+      line?: number;
     };
 
 /**
@@ -257,13 +377,15 @@ export type CheckedVerdictKind = 'verified' | 'refuted' | 'unverifiable';
 export const CHECKED_VERDICT_KINDS: readonly CheckedVerdictKind[] = ['refuted', 'unverifiable', 'verified'];
 
 /**
- * One line of the head copy a verdict cites as evidence: the file, the
- * line its quote starts on and the quote. The engine re-reads every
- * citation and keeps only those whose line holds the quote.
+ * One line a verdict cites as evidence: the file, the line its quote
+ * starts on and the quote. The engine re-reads every citation and keeps
+ * only those whose line holds the quote.
  */
 export interface Citation {
-  /** The file, by its path in the head copy. */
+  /** The file, by its path in the head copy; for a CI log's line, the check run's name. */
   path: string;
+  /** True when the line is one of a failed check's trimmed CI log rather than a file's. */
+  ciLog?: true;
   /** The 1-based line the quote starts on. */
   line: number;
   /** The quote, on one line: runs of white space as one space. */
@@ -284,7 +406,7 @@ export type ClaimVerdict =
       source: EvidenceSource;
       /** One plain line saying why the claim has this verdict. */
       reason: string;
-      /** The lines of the head copy that bear the verdict out, each re-checked by the engine. */
+      /** The lines of the head copy, or of a CI log, that bear the verdict out, each re-checked by the engine. */
       evidence: Citation[];
       /**
        * The library whose source the claim needs, when the change cannot

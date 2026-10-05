@@ -1,10 +1,12 @@
 import * as vscode from 'vscode';
 import { randomUUID } from 'node:crypto';
 import {
+  checkFailed,
   hiddenContent,
   isFinding,
   parsePullRequestUrl,
   type AgentStamp,
+  type CheckRun,
   type Claim,
   type ClaimSource,
   type HiddenKind,
@@ -45,14 +47,17 @@ function overviewMessage(value: unknown): OverviewMessage | undefined {
  * comes from, a chip for each stage done and the one still running, the
  * story with its stamp, each part it mentions a button that opens the part
  * in the diff editor, the claims the change makes with where each is made
- * and the part it is attached to, the pull request's description in full
- * with its hidden content shown and flagged, and who made each result.
+ * and the part it is attached to, the pipeline report and whether it is
+ * trusted, the checks run on the merge commit with their annotations and
+ * failed jobs' trimmed logs, the pull request's description in full with
+ * its hidden content shown and flagged, and who made each result.
  *
  * Everything on the page but the companion's own words was written by
- * someone else, the agent's story and the claims' quotes included, so
- * every byte of it reaches the page as escaped text: no remote image, no
- * link and no markup of theirs renders, under a content security policy
- * that loads nothing but the page's own nonce-marked style and script.
+ * someone else, the agent's story, the claims' quotes, the pipeline's
+ * findings and the CI's logs included, so every byte of it reaches the
+ * page as escaped text: no remote image, no link and no markup of theirs
+ * renders, under a content security policy that loads nothing but the
+ * page's own nonce-marked style and script.
  */
 export class OverviewPanel implements vscode.Disposable {
   private panel: vscode.WebviewPanel | undefined;
@@ -289,6 +294,7 @@ function storySection(state: OverviewState): string {
 
 /** How the page names each claim source. */
 const CLAIM_SOURCES: Record<ClaimSource, string> = {
+  pipeline: 'pipeline report',
   description: 'pull request description',
   docstring: 'docstring',
   comment: 'comment',
@@ -308,7 +314,16 @@ export function claimWhere(claim: Claim): string {
       const lines = location.endLine > location.line ? `${location.line}–${location.endLine}` : `${location.line}`;
       return `${source} · ${location.path}:${lines}`;
     }
+    case 'pipeline': {
+      const at = location.path === undefined ? '' : ` · ${location.path}${location.line === undefined ? '' : `:${location.line}`}`;
+      return `${source}, ${location.step} step${at}`;
+    }
   }
+}
+
+/** A citation as the reader reads it: a file's line, or a line of a check's CI log. */
+export function citedWhere(cited: { path: string; line: number; ciLog?: true }): string {
+  return cited.ciLog ? `CI log of ${cited.path}, line ${cited.line}` : `${cited.path}:${cited.line}`;
 }
 
 /**
@@ -321,7 +336,7 @@ function verdictDetail(claim: Claim): string {
   const { verdict } = claim;
   if (verdict.kind === 'not checked') return '';
   const lines = [`${verdict.source}: ${verdict.reason}`];
-  for (const cited of verdict.evidence) lines.push(`${cited.path}:${cited.line} — ${cited.quote}`);
+  for (const cited of verdict.evidence) lines.push(`${citedWhere(cited)} — ${cited.quote}`);
   const { library, libraryFetch: offer } = verdict;
   if (library !== undefined) {
     lines.push(`judged against the source of ${library.library} ${library.pinnedVersion}, as ${library.pinnedBy} pins it (${library.file})`);
@@ -355,7 +370,7 @@ function verdictsNote(claims: NonNullable<ReviewResult['claims']>): string {
   if (judging === undefined) return 'None is checked yet.';
   if (judging.outcome === 'fell back') return `None is checked: ${judging.detail}.`;
   return (
-    `Each is judged against the change and its read-only copy by ${stampText(judging.stamp, 'verdicts', judging.promptVersion)}; ` +
+    `Each is judged against the change, its read-only copy and any failed check's CI log by ${stampText(judging.stamp, 'verdicts', judging.promptVersion)}; ` +
     'the refuted and unverifiable ones are findings, each a thread on the diff.'
   );
 }
@@ -369,12 +384,79 @@ function claimsSection(state: OverviewState): string {
     return `<h2>Claims</h2><p class="note">${why}</p>`;
   }
   const stamp = stampChip(stampText(claims.stamp, 'claims', claims.promptVersion));
-  if (claims.outcome === 'fell back') return `<h2>Claims ${stamp}</h2><p class="note">No claims: ${escapeHtml(claims.detail)}.</p>`;
+  if (claims.outcome === 'fell back' && claims.claims.length === 0) return `<h2>Claims ${stamp}</h2><p class="note">No claims: ${escapeHtml(claims.detail)}.</p>`;
   if (claims.claims.length === 0) return `<h2>Claims ${stamp}</h2><p class="note">The agent found no claim in the change.</p>`;
   const note =
-    '<p class="note">Statements about how code or a library behaves, from the description, the docstrings and comments ' +
+    '<p class="note">Statements about how code or a library behaves, from a fresh pipeline report, the description, the docstrings and comments ' +
     `the change adds, and the story, in that order. ${escapeHtml(verdictsNote(claims))}</p>`;
-  return `<h2>Claims ${stamp}</h2>${note}<ol class="claims">${claims.claims.map((claim) => claimItem(claim, result)).join('')}</ol>`;
+  const fellBack = claims.outcome === 'fell back' ? `<p class="note">Only the pipeline's claims are listed: ${escapeHtml(claims.detail)}.</p>` : '';
+  return `<h2>Claims ${stamp}</h2>${fellBack}${note}<ol class="claims">${claims.claims.map((claim) => claimItem(claim, result)).join('')}</ol>`;
+}
+
+/** How the page names each state of the pipeline report. */
+const ATTESTATIONS: Record<ReviewResult['pipeline']['attestation'], string> = {
+  fresh: 'fresh',
+  stale: 'stale',
+  missing: 'none',
+  malformed: 'unreadable',
+};
+
+/** The pipeline report: its state with why, its steps, and the findings it leaves open, each as escaped text. */
+function pipelineBlock(result: ReviewResult): string {
+  const { pipeline } = result;
+  const state = `<p><span class="att ${pipeline.attestation}">no-mistakes report: ${escapeHtml(ATTESTATIONS[pipeline.attestation])}</span> <span class="note">${escapeHtml(pipeline.detail)}.</span></p>`;
+  const steps = pipeline.steps.length === 0 ? '' : `<div class="note">steps: ${escapeHtml(pipeline.steps.map((step) => `${step.step} ${step.status}`).join(' · '))}</div>`;
+  const trust = pipeline.attestation === 'fresh' ? 'each is a claim, listed first' : 'not trusted, so none is a claim';
+  const findings =
+    pipeline.findings.length === 0
+      ? ''
+      : `<p class="note">Open findings, ${escapeHtml(trust)}:</p><ul class="findings">${pipeline.findings
+          .map((finding) => {
+            const at = finding.path === undefined ? '' : ` · ${finding.path}${finding.line === undefined ? '' : `:${finding.line}`}`;
+            return `<li><span class="sev ${finding.severity}">${escapeHtml(finding.severity)}</span> ${sanitiseUntrusted(finding.text).html}<div class="where">${escapeHtml(`${finding.step} step${at}`)}</div></li>`;
+          })
+          .join('')}</ul>`;
+  return state + steps + findings;
+}
+
+/** One check run: its conclusion, its annotations, and a failed job's trimmed log, labelled as a CI log. */
+function checkItem(check: CheckRun): string {
+  const outcome = check.conclusion ?? check.status;
+  const tone = checkFailed(check.conclusion) ? 'failed' : check.conclusion === 'success' ? 'passed' : 'other';
+  const annotations = check.annotations
+    .map((annotation) => {
+      const lines =
+        annotation.startLine === undefined
+          ? ''
+          : annotation.endLine !== undefined && annotation.endLine > annotation.startLine
+            ? `:${annotation.startLine}–${annotation.endLine}`
+            : `:${annotation.startLine}`;
+      const title = annotation.title === undefined ? '' : `${annotation.title}: `;
+      return `<div class="why">${escapeHtml(`${annotation.level} · ${annotation.path}${lines} — ${title}${annotation.message}`)}</div>`;
+    })
+    .join('');
+  const { log } = check;
+  const logBlock =
+    log === undefined
+      ? ''
+      : `<div class="why">CI log${log.step === undefined ? '' : ` of the step ${escapeHtml(JSON.stringify(log.step))}`}: ${escapeHtml(log.detail)}</div>` +
+        (log.lines.length === 0 ? '' : `<pre class="log">${log.lines.map((line, at) => `${at + 1}: ${sanitiseUntrusted(line).html}`).join('\n')}</pre>`);
+  return `<li><span class="check ${tone}">${escapeHtml(outcome)}</span> ${escapeHtml(check.name)}${annotations}${logBlock}</li>`;
+}
+
+/** The CI read at the head commit, labelled as run on the merge commit, or why there is none. */
+function ciBlock(result: ReviewResult): string {
+  const { ci } = result;
+  if (ci === undefined) return '<p class="note">No CI was read for this review.</p>';
+  const merge = ci.mergeCommit === undefined ? 'the merge commit' : `merge commit ${ci.mergeCommit.slice(0, 7)}`;
+  const head = `<p class="note">Checks listed at head ${escapeHtml(ci.headSha.slice(0, 7))}, ran on ${escapeHtml(merge)}: ${escapeHtml(ci.detail)}.</p>`;
+  if (ci.checks.length === 0) return head;
+  return `${head}<ul class="checks">${ci.checks.map(checkItem).join('')}</ul>`;
+}
+
+/** The pipeline and CI section: the no-mistakes report and whether it is trusted, then the checks. */
+function pipelineSection(result: ReviewResult): string {
+  return `<h2>Pipeline and CI</h2>${pipelineBlock(result)}${ciBlock(result)}`;
 }
 
 /** The description section: the description in full, its hidden content shown and flagged. */
@@ -521,6 +603,23 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
   .verdict { font-style: italic; }
   .verdict.finding { color: var(--vscode-editorWarning-foreground); font-weight: 600; }
   .why { color: var(--vscode-descriptionForeground); font-size: 12px; overflow-wrap: anywhere; }
+  .findings, .checks { padding-left: 18px; margin: 0; }
+  .findings li, .checks li { margin-bottom: 6px; overflow-wrap: anywhere; }
+  .att, .sev, .check { font-size: 11px; font-weight: 600; border: 1px solid var(--vscode-panel-border); border-radius: 10px; padding: 0 7px; }
+  .att.stale, .att.malformed, .sev.error, .sev.warning, .check.failed { color: var(--vscode-editorWarning-foreground); }
+  .att.fresh, .check.passed { color: var(--vscode-testing-iconPassed, #89d185); }
+  .log {
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 12px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 3px;
+    padding: 6px 10px;
+    margin: 4px 0;
+    max-height: 320px;
+    overflow-y: auto;
+  }
   .stamps { padding-left: 18px; margin: 0; }
   .stamps li { margin-bottom: 4px; }
 </style>
@@ -532,6 +631,7 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
   <div class="stages">${stageChips(state)}</div>
   <section id="story">${storySection(state)}</section>
   <section id="claims">${claimsSection(state)}</section>
+  <section id="pipeline">${pipelineSection(result)}</section>
   <section id="description">${descriptionSection(result)}</section>
   <section id="stamps">${stampsSection(state)}</section>
 </main>

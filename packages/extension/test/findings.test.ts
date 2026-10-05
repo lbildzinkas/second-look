@@ -3,7 +3,7 @@ import type { ReviewResult } from '@second-look/engine';
 import { changeUri } from '../src/change-copies.js';
 import { FINDINGS_CONTROLLER_ID, FINDING_THREAD_CONTEXT } from '../src/commands.js';
 import { FindingThreads, escapeMarkdown, findingBody } from '../src/findings.js';
-import { claimsResult, fetchedResult, judgedResult, offeredResult } from './results.js';
+import { claimsResult, fetchedResult, judgedResult, offeredResult, pipelineResult } from './results.js';
 import { StubMarkdownString, stub, type StubCommentController } from './vscode-stub.js';
 
 /** The findings' own controller, beside any other the companion made. */
@@ -64,6 +64,31 @@ describe('FindingThreads', () => {
     findings.show(judgedResult());
     findings.dispose();
     expect(stub.commentControllers.some((each) => each.id === FINDINGS_CONTROLLER_ID)).toBe(false);
+  });
+});
+
+describe('the pipeline and CI on the findings', () => {
+  it("labels a CI log's citation as one, and says the claim was the pipeline's", () => {
+    const [pipeline] = pipelineResult().claims!.claims;
+    const refuted = { ...pipeline!, verdict: { ...pipeline!.verdict, kind: 'refuted' } } as typeof pipeline & object;
+    const body = findingBody(refuted);
+    expect(body).toContain('**Refuted** · evidence source: a CI log');
+    expect(body).toContain('- CI log of check / test, line 2 — FAILED test\\_retry\\.py::test\\_gives\\_up \\- assert 5 == 3');
+    expect(body).toContain('Claim made in pipeline report, Review step · src/retry\\.py:6.');
+    // The finding's text is someone else's, so its markup is escaped.
+    expect(body).toContain('> send gives up after \\<b\\>five\\</b\\> attempts\\.');
+  });
+
+  it('puts a pipeline finding on the line it names', () => {
+    stub.reset();
+    const shown = pipelineResult();
+    const [pipeline] = shown.claims!.claims;
+    const refuted: ReviewResult = {
+      ...shown,
+      claims: { ...shown.claims!, claims: [{ ...pipeline!, verdict: { kind: 'refuted', source: 'a CI log', reason: 'r', evidence: [{ path: 'check / test', line: 2, quote: 'FAILED', ciLog: true }] } }] },
+    };
+    new FindingThreads().show(refuted);
+    expect(controller().threads.map((thread) => [thread.uri.toString(), thread.range?.start.line])).toEqual([[headUri(refuted, 'src/retry.py'), 5]]);
   });
 });
 

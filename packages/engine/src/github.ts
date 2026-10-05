@@ -1,6 +1,6 @@
 import { Octokit } from '@octokit/rest';
 import type { PositionedComment } from './positions.js';
-import type { PullRequestSummary, SentReview, SubmitKind } from './protocol.js';
+import type { CheckAnnotation, PullRequestSummary, SentReview, SubmitKind } from './protocol.js';
 
 /** The parts of a pull request URL the engine needs. */
 export interface PullRequestRef {
@@ -44,8 +44,8 @@ const silentLog = {
 
 /**
  * The engine's view of GitHub, through the official client: read for the
- * review, and one write — submitting the review — when the reviewer
- * sends it (ADR 0002).
+ * review, its checks and their failed jobs' logs included, and one write
+ * — submitting the review — when the reviewer sends it (ADR 0002).
  *
  * The token lives only in the Octokit instance's memory: the client writes
  * it nowhere and echoes it in no error or log line.
@@ -66,12 +66,20 @@ export class GitHubClient {
    * `data.body` in full; the engine never truncates it.
    */
   async getPullRequestSummary(ref: PullRequestRef): Promise<PullRequestSummary> {
+    return (await this.getPullRequest(ref)).summary;
+  }
+
+  /**
+   * Fetches the pull request's metadata and the merge commit GitHub made
+   * for it, which its checks run on; null when GitHub has made none.
+   */
+  async getPullRequest(ref: PullRequestRef): Promise<{ summary: PullRequestSummary; mergeCommit: string | null }> {
     const { data } = await this.octokit.pulls.get({
       owner: ref.owner,
       repo: ref.repo,
       pull_number: ref.number,
     });
-    return {
+    const summary: PullRequestSummary = {
       url: data.html_url,
       number: data.number,
       title: data.title,
@@ -82,6 +90,66 @@ export class GitHubClient {
       baseCommit: data.base.sha,
       headSha: data.head.sha,
     };
+    return { summary, mergeCommit: data.merge_commit_sha ?? null };
+  }
+
+  /** Lists every check run GitHub reports at one commit, in its order. */
+  async listCheckRuns(ref: PullRequestRef, sha: string): Promise<CheckRunListing[]> {
+    const runs = await this.octokit.paginate(this.octokit.checks.listForRef, {
+      owner: ref.owner,
+      repo: ref.repo,
+      ref: sha,
+      per_page: 100,
+    });
+    return runs.map((run) => ({
+      id: run.id,
+      name: run.name,
+      status: run.status,
+      conclusion: run.conclusion,
+      url: run.html_url ?? run.details_url ?? '',
+      annotations: run.output.annotations_count,
+      app: run.app?.slug ?? null,
+    }));
+  }
+
+  /** Reads the annotations one check run left, up to {@link MAX_ANNOTATIONS}. */
+  async listAnnotations(ref: PullRequestRef, checkRunId: number): Promise<CheckAnnotation[]> {
+    const { data } = await this.octokit.checks.listAnnotations({
+      owner: ref.owner,
+      repo: ref.repo,
+      check_run_id: checkRunId,
+      per_page: MAX_ANNOTATIONS,
+    });
+    return data.map((annotation) => {
+      // The bundled API description types an annotation's lines as always
+      // present; GitHub leaves both null on a file-level annotation.
+      const startLine = annotation.start_line as number | null;
+      const endLine = annotation.end_line as number | null;
+      return {
+        path: annotation.path,
+        ...(startLine === null ? {} : { startLine }),
+        ...(endLine === null ? {} : { endLine }),
+        level: annotation.annotation_level === 'failure' || annotation.annotation_level === 'warning' ? annotation.annotation_level : 'notice',
+        message: annotation.message ?? '',
+        ...(annotation.title ? { title: annotation.title } : {}),
+      };
+    });
+  }
+
+  /**
+   * Downloads one GitHub Actions job's plain-text log; a check run of
+   * GitHub Actions has its job's id. Called only for a job that failed.
+   */
+  async downloadJobLog(ref: PullRequestRef, jobId: number): Promise<string> {
+    const response = await this.octokit.actions.downloadJobLogsForWorkflowRun({
+      owner: ref.owner,
+      repo: ref.repo,
+      job_id: jobId,
+    });
+    const data: unknown = response.data;
+    if (typeof data === 'string') return data;
+    if (data instanceof ArrayBuffer) return new TextDecoder().decode(data);
+    throw new Error(`the log of job ${jobId} arrived without a body`);
   }
 
   /**
@@ -213,6 +281,23 @@ export class GitHubClient {
     }
     return null; // Symlinks, directories, or files too large to inline.
   }
+}
+
+/** The most annotations the companion reads of one check run. */
+const MAX_ANNOTATIONS = 50;
+
+/** One check run as GitHub lists it, before its annotations and log are read. */
+export interface CheckRunListing {
+  id: number;
+  name: string;
+  status: string;
+  conclusion: string | null;
+  /** The check run's page on GitHub. */
+  url: string;
+  /** How many annotations it left. */
+  annotations: number;
+  /** The app that ran it, such as `github-actions`; null when GitHub names none. */
+  app: string | null;
 }
 
 /** True when the error is the endpoint's plain 404. */

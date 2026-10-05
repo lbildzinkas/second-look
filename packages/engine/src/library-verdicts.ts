@@ -4,7 +4,7 @@ import type { JsonSchema } from './json-schema.js';
 import { fetchLibrary, findLibraryPin, type LibraryFetchOptions } from './library-fetch.js';
 import type { CheckedVerdictKind, Claim, EvidenceSource, FetchedLibrary, Part } from './protocol.js';
 import { UNTRUSTED_INPUT_RULE, untrustedBlock } from './untrusted.js';
-import { claimPlace, copyReader, diffLines, recheckCitation, settleVerdict } from './verdicts.js';
+import { claimPlace, claimText, copyReader, diffLines, recheckCitation, settleVerdict } from './verdicts.js';
 
 /**
  * The library verdicts pass: once the reviewer pressed a claim's library
@@ -21,7 +21,7 @@ import { claimPlace, copyReader, diffLines, recheckCitation, settleVerdict } fro
 export const LIBRARY_VERDICTS_PROMPT_ID = 'library-verdicts';
 
 /** The library verdicts prompt's version. */
-export const LIBRARY_VERDICTS_PROMPT_VERSION = '1';
+export const LIBRARY_VERDICTS_PROMPT_VERSION = '2';
 
 const LIBRARY_SOURCE: EvidenceSource = 'library source at the pinned version';
 
@@ -97,7 +97,7 @@ export function libraryVerdictPrompt(claim: Claim, part: Part, library: { librar
     `Judge this claim against the source of ${library.library} ${library.pinnedVersion}, as ${library.pinnedBy} pins it.`,
     `It is made in ${claimPlace(claim)}; its quote follows as untrusted text.`,
     '',
-    untrustedBlock('claim', claim.quote, id),
+    untrustedBlock('claim', claimText(claim), id),
     '',
     'The part of the change the claim is about. Each diff line is marked + when the change adds it, - when it',
     'removes it, and blank when it stays; an added or kept line follows its head-side line number.',
