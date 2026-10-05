@@ -197,12 +197,14 @@ export class GitHubClient {
   /**
    * Sends one GraphQL query through the same client, so it carries the
    * same token, the same silent log and the same fetch as every REST
-   * call, and hands back its parsed answer: the query's `data`.
+   * call, and hands back its parsed answer as it arrived: the envelope
+   * with the query's `data` and any `errors`, so a query that failed —
+   * GitHub answers some failures as HTTP 200 with `data: null` — is
+   * seen by whoever reads the answer.
    */
   private async requestGraphql(query: string, variables: Record<string, unknown>): Promise<unknown> {
     const response: { data: unknown } = await this.octokit.request('POST /graphql', { query, variables });
-    const body = response.data;
-    return typeof body === 'object' && body !== null && 'data' in body ? (body as { data: unknown }).data : body;
+    return response.data;
   }
 
   /**
@@ -381,16 +383,16 @@ const LINKED_ISSUES_QUERY = `query($owner: String!, $name: String!, $number: Int
 }`;
 
 /** A GraphQL answer that failed, with the message of its first error. */
-function linkedAnswer(response: unknown): GraphQLAnswer {
-  const answer = (response as GraphQLAnswer) ?? {};
-  const errors = answer.errors;
+function linkedAnswer(response: unknown): GraphQLData {
+  const body = (response as GraphQLAnswer) ?? {};
+  const errors = body.errors;
   if (errors !== undefined && errors.length > 0) {
     const message = errors[0]?.message;
     throw new Error(
       `GitHub's linked-issues query failed${typeof message === 'string' ? `: ${message}` : ''}`,
     );
   }
-  return answer;
+  return body.data ?? {};
 }
 
 /** One linked issue, read defensively: anything GitHub leaves out reads as absent. */
@@ -419,9 +421,8 @@ function linkedIssue(node: unknown, link: LinkedIssue['link']): LinkedIssue | un
   };
 }
 
-/** The answer the linked-issues query can carry, each field optional as GitHub leaves it. */
-interface GraphQLAnswer {
-  errors?: { message?: unknown }[];
+/** The data the linked-issues query asks for, each field optional as GitHub leaves it. */
+interface GraphQLData {
   repository?: {
     defaultBranchRef?: { name?: unknown };
     pullRequest?: {
@@ -429,6 +430,16 @@ interface GraphQLAnswer {
       timelineItems?: { nodes?: ({ source?: unknown } | undefined)[] };
     };
   };
+}
+
+/**
+ * The envelope one GraphQL query answers with: the query's data, and
+ * the errors that make it fail — a rate limit or a permission error
+ * among them — which GitHub can send with HTTP 200 and `data: null`.
+ */
+interface GraphQLAnswer {
+  errors?: { message?: unknown }[];
+  data?: GraphQLData | null;
 }
 
 /** One check run as GitHub lists it, before its annotations and log are read. */

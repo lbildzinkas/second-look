@@ -253,4 +253,28 @@ describe('readCriteria against recorded responses', () => {
     expect(queries[0]!.method).toBe('POST');
     expect(queries[0]!.authorization).toBe('token test-token');
   });
+
+  it('reports a GraphQL failure that arrives as HTTP 200 with null data as unreadable, not as an empty read', async () => {
+    const transport = fixtureFetch(pull42());
+    const rateLimited: typeof fetch = async (input, init) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url === 'https://api.github.com/graphql') {
+        return Response.json({ data: null, errors: [{ message: 'API rate limit exceeded' }] });
+      }
+      return transport.fetch(input, init);
+    };
+    const client = new GitHubClient({ token: 'test-token', fetch: rateLimited });
+
+    const criteria = await readCriteria(client, ref, 'master', DEFAULT_CRITERIA_HEADING);
+
+    // The failure reads as unreadable with its message — never as a
+    // confident "read" result with no linked issue.
+    expect(criteria).toEqual({
+      outcome: 'unreadable',
+      detail: "the linked issues could not be read: GitHub's linked-issues query failed: API rate limit exceeded",
+      heading: DEFAULT_CRITERIA_HEADING,
+      issues: [],
+      criteria: [],
+    });
+  });
 });
