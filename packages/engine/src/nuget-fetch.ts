@@ -15,7 +15,7 @@ import { readZipEntries } from './zip.js';
  * it. It reads the repository commit from the package's nuspec and its
  * PDB — in the package, embedded in an assembly, or from nuget.org's
  * symbol package — and fetches each source file the PDB names at that
- * commit, only from the host its Source Link names. A file is exact
+ * commit, only from an allowed public source host. A file is exact
  * source only when its bytes, as fetched or with LF or CRLF line
  * endings, match the hash the PDB records for it; any other is unproven,
  * and never makes a claim verified. Nothing is built, installed or run.
@@ -340,7 +340,8 @@ type Landed = Omit<LibraryDownload, 'path' | 'reused'>;
  * source file the PDBs name at the repository commit, and keeps them
  * read-only in their own folder of the library cache, each labelled exact
  * source or unproven by the PDB's hash. Throws, saying why, when no source
- * can be found at a known commit: no PDB, no Source Link, or no commit.
+ * can be fetched: no PDB, no Source Link, no commit, or a source host no
+ * download may come from.
  */
 export async function fetchNuGetLibrary(pin: NuGetPin, options: LibraryFetchOptions): Promise<LibraryDownload> {
   const id = pin.name.toLowerCase();
