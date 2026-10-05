@@ -240,8 +240,18 @@ function sourceLinkCommit(pdbs: readonly PackagePdb[]): string | undefined {
   return undefined;
 }
 
-/** A host a source file may come from: a public DNS name, never `localhost`, a bare name or an IP address, so no PDB can point the fetch into the reviewer's network. */
-const PUBLIC_HOST = /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$/i;
+/**
+ * The only hosts a library fetch downloads a PDB's named source from:
+ * the public forges' own hosts, exactly these and only `visualstudio.com`'s
+ * account subdomains, so a PDB cannot point the fetch anywhere else —
+ * not into the reviewer's network, and not at a host that mimics a forge.
+ */
+const SOURCE_HOSTS = /^(?:raw\.githubusercontent\.com|github\.com|gitlab\.com|api\.bitbucket\.org|bitbucket\.org|dev\.azure\.com|[a-z0-9-]+\.visualstudio\.com)$/;
+
+/** Whether one Source Link URL may be downloaded from: https, with no user and no explicit port, on an allowed public source host. */
+function allowedSourceLink(url: URL): boolean {
+  return url.protocol === 'https:' && url.username === '' && url.password === '' && url.port === '' && SOURCE_HOSTS.test(url.hostname);
+}
 
 /** One source file to fetch: its path in the repository, its Source Link URL and every hash a PDB records for it. */
 interface SourceFile {
@@ -252,15 +262,23 @@ interface SourceFile {
 
 /**
  * The source files the PDBs name at one commit, by their path in the
- * repository: what follows the commit in an https Source Link URL on a
- * public host. A document whose URL is not at that commit is left out.
+ * repository: what follows the commit in a Source Link URL the fetch may
+ * download from — https, with no user and no port, on an allowed public
+ * source host. A document whose URL is not at that commit is left out;
+ * one at it whose URL no download may come from is left out with its
+ * origin reported, so the fetch can say so plainly.
  */
-function sourceFiles(pdbs: readonly PackagePdb[], commit: string): SourceFile[] {
+function sourceFiles(pdbs: readonly PackagePdb[], commit: string): { files: SourceFile[]; refused: string[] } {
   const files = new Map<string, SourceFile>();
+  const refused = new Set<string>();
   for (const document of pdbs.flatMap((pdb) => pdb.documents)) {
     const url = linkOf(document);
     const at = url?.pathname.toLowerCase().indexOf(`/${commit}/`) ?? -1;
-    if (url === undefined || url.protocol !== 'https:' || !PUBLIC_HOST.test(url.hostname) || at < 0) continue;
+    if (url === undefined || at < 0) continue;
+    if (!allowedSourceLink(url)) {
+      refused.add(url.origin);
+      continue;
+    }
     let path: string;
     try {
       path = url.pathname.slice(at + commit.length + 2).split('/').map(decodeURIComponent).join('/');
@@ -271,7 +289,7 @@ function sourceFiles(pdbs: readonly PackagePdb[], commit: string): SourceFile[] 
     file.hashes.push(document);
     files.set(path, file);
   }
-  return [...files.values()].sort((a, b) => a.path.localeCompare(b.path));
+  return { files: [...files.values()].sort((a, b) => a.path.localeCompare(b.path)), refused: [...refused] };
 }
 
 const NODE_HASHES: Partial<Record<SourceDocument['hashAlgorithm'], string>> = { 'SHA-1': 'sha1', 'SHA-256': 'sha256' };
@@ -354,7 +372,12 @@ export async function fetchNuGetLibrary(pin: NuGetPin, options: LibraryFetchOpti
     ...(commit === undefined ? ['neither its nuspec nor its PDB names the repository commit it was built from'] : []),
   ];
   if (missing.length > 0 || commit === undefined) throw new Error(`the exact source of ${name} cannot be found: ${missing.join(', and ')}; no source was fetched, and nothing is guessed`);
-  const wanted = sourceFiles(pdbs, commit);
+  const { files: wanted, refused } = sourceFiles(pdbs, commit);
+  if (refused.length > 0) {
+    throw new Error(
+      `the Source Link of ${name}'s PDB names ${refused.join(' and ')} for its source at commit ${commit}, which is not one of the public source hosts a library fetch downloads from; no source was fetched`,
+    );
+  }
   if (wanted.length === 0) throw new Error(`the Source Link of ${name}'s PDB names no source file at commit ${commit}; no source was fetched`);
   if (wanted.length > MAX_SOURCE_FILES) throw new Error(`${name}'s PDBs name ${wanted.length} source files, more than the ${MAX_SOURCE_FILES} a library fetch downloads`);
 

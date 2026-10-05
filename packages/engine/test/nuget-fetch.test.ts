@@ -286,18 +286,44 @@ describe('fetchNuGetLibrary', () => {
     });
   });
 
-  it("never fetches a Source Link URL on localhost, a bare name or an IP address, so no PDB reaches into the reviewer's network", async () => {
-    const pdb = Buffer.from(GUARD_PDB);
-    const at = pdb.indexOf('https://raw.githubusercontent.com/');
-    // Rewrite the host in place, keeping the blob's length: `raw.githubusercontent.com` becomes `127.0.0.1` padded with a path.
-    pdb.write('https://127.0.0.1/abcdefghijklmnop', at, 'latin1');
-    const nuspec = `<package><metadata><id>Ardalis.GuardClauses</id><version>4.5.0</version><repository commit="${GUARD_COMMIT}" /></metadata></package>`;
-    const bytes = zipArchive([{ name: 'Ardalis.GuardClauses.nuspec', content: nuspec }, { name: 'lib/netstandard2.1/Ardalis.GuardClauses.pdb', content: pdb }]);
-    const transport = recordedNuGet({ 'https://api.nuget.org/v3-flatcontainer/ardalis.guardclauses/4.5.0/ardalis.guardclauses.4.5.0.nupkg': bytes });
-    const pin: NuGetPin = { ecosystem: 'NuGet', name: 'Ardalis.GuardClauses', version: '4.5.0', pinnedBy: 'packages.lock.json', contentHash: sha512Base64(bytes) };
+  describe("the source hosts a PDB's Source Link may name", () => {
+    const PACKAGE = 'https://api.nuget.org/v3-flatcontainer/ardalis.guardclauses/4.5.0/ardalis.guardclauses.4.5.0.nupkg';
+    const GUARD_SOURCE = `https://raw.githubusercontent.com/ardalis/GuardClauses/${GUARD_COMMIT}/src/GuardClauses/Guard.cs`;
 
-    await expect(fetchNuGetLibrary(pin, { librariesDir, fetch: transport.fetch })).rejects.toThrow(`names no source file at commit ${GUARD_COMMIT}`);
-    expect(transport.requests.map((request) => new URL(request.url).host)).toEqual(['api.nuget.org']);
+    /** A package embedding the GuardClauses PDB with its Source Link URL's `https://raw.githubusercontent.com/` prefix rewritten to `origin`, padded to the same length. */
+    const packageAt = (origin: string): { bytes: Buffer; pin: NuGetPin } => {
+      const pdb = Buffer.from(GUARD_PDB);
+      const at = pdb.indexOf('https://raw.githubusercontent.com/');
+      pdb.write(`${origin}/`.padEnd('https://raw.githubusercontent.com/'.length, 'b'), at, 'latin1');
+      const bytes = zipArchive([
+        { name: 'Ardalis.GuardClauses.nuspec', content: `<package><metadata><id>Ardalis.GuardClauses</id><version>4.5.0</version><repository commit="${GUARD_COMMIT}" /></metadata></package>` },
+        { name: 'lib/netstandard2.1/Ardalis.GuardClauses.pdb', content: pdb },
+      ]);
+      return { bytes, pin: { ecosystem: 'NuGet', name: 'Ardalis.GuardClauses', version: '4.5.0', pinnedBy: 'packages.lock.json', contentHash: sha512Base64(bytes) } };
+    };
+
+    it("downloads the source its PDB names on an allowed host", async () => {
+      const { bytes, pin } = packageAt('https://raw.githubusercontent.com');
+      const transport = recordedNuGet({ [PACKAGE]: bytes, [GUARD_SOURCE]: 'namespace Ardalis.GuardClauses;\n' });
+
+      const fetched = await fetchNuGetLibrary(pin, { librariesDir, fetch: transport.fetch });
+
+      expect(readFileSync(join(fetched.path, 'src/GuardClauses/Guard.cs'), 'utf8')).toBe('namespace Ardalis.GuardClauses;\n');
+      expect(new Set(transport.requests.map((request) => new URL(request.url).host))).toEqual(new Set(['api.nuget.org', 'raw.githubusercontent.com']));
+    });
+
+    it('never contacts a source host outside the allowed list — wildcard DNS, localhost, a bare IP, a port, plain http — and says so plainly', async () => {
+      for (const origin of ['https://files.127.0.0.1.nip.io', 'https://localhost', 'https://127.0.0.1', 'https://github.com:8443', 'http://raw.githubusercontent.com']) {
+        const { bytes, pin } = packageAt(origin);
+        const transport = recordedNuGet({ [PACKAGE]: bytes });
+
+        await expect(fetchNuGetLibrary(pin, { librariesDir, fetch: transport.fetch })).rejects.toThrow(
+          `the Source Link of Ardalis.GuardClauses 4.5.0's PDB names ${origin} for its source at commit ${GUARD_COMMIT}, which is not one of the public source hosts a library fetch downloads from; no source was fetched`,
+        );
+        expect(transport.requests.map((request) => new URL(request.url).host)).toEqual(['api.nuget.org']);
+        expect(existsSync(librariesDir) ? readdirSync(librariesDir) : []).toEqual([]);
+      }
+    });
   });
 
   it('refuses a package id or version that could steer a URL or the cache path', async () => {
