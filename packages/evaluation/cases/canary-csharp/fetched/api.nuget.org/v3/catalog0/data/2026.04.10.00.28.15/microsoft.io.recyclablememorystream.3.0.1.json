@@ -1,0 +1,265 @@
+{
+  "@id": "https://api.nuget.org/v3/catalog0/data/2026.04.10.00.28.15/microsoft.io.recyclablememorystream.3.0.1.json",
+  "@type": [
+    "PackageDetails",
+    "catalog:Permalink"
+  ],
+  "authors": "Microsoft",
+  "catalog:commitId": "bd7b8b3e-6962-465d-91c3-9c7b6cd144dc",
+  "catalog:commitTimeStamp": "2026-04-10T00:28:15.7994571Z",
+  "copyright": "© Microsoft Corporation. All rights reserved.",
+  "created": "2024-06-11T21:07:57.037Z",
+  "description": "A pooled MemoryStream allocator to decrease GC load and improve performance on highly scalable systems.",
+  "id": "Microsoft.IO.RecyclableMemoryStream",
+  "isPrerelease": false,
+  "lastEdited": "2026-04-10T00:19:22.2Z",
+  "licenseExpression": "MIT",
+  "licenseUrl": "https://licenses.nuget.org/MIT",
+  "listed": true,
+  "packageHash": "xXlOonyQi1+yRC+qRB6fP4H/o9wp1BoxO1QmQ5I65hBwkFscFcLsrZgJLGubKjtCOsqXnnHtl5covVcrafIKRg==",
+  "packageHashAlgorithm": "SHA512",
+  "packageSize": 177094,
+  "projectUrl": "https://github.com/Microsoft/Microsoft.IO.RecyclableMemoryStream",
+  "published": "2024-06-11T21:07:57.037Z",
+  "readmeFile": "README.md",
+  "repository": {
+    "@id": "https://api.nuget.org/v3/catalog0/data/2026.04.10.00.28.15/microsoft.io.recyclablememorystream.3.0.1.json#repository",
+    "commit": "e29a28387da9018fa9605a1dcb3f7a0435aa9974",
+    "type": "git",
+    "url": "https://github.com/Microsoft/Microsoft.IO.RecyclableMemoryStream"
+  },
+  "requireLicenseAcceptance": true,
+  "title": "Microsoft.IO.RecyclableMemoryStream",
+  "verbatimVersion": "3.0.1",
+  "version": "3.0.1",
+  "dependencyGroups": [
+    {
+      "@id": "https://api.nuget.org/v3/catalog0/data/2026.04.10.00.28.15/microsoft.io.recyclablememorystream.3.0.1.json#dependencygroup/net6.0",
+      "@type": "PackageDependencyGroup",
+      "targetFramework": "net6.0"
+    },
+    {
+      "@id": "https://api.nuget.org/v3/catalog0/data/2026.04.10.00.28.15/microsoft.io.recyclablememorystream.3.0.1.json#dependencygroup/.netstandard2.0",
+      "@type": "PackageDependencyGroup",
+      "dependencies": [
+        {
+          "@id": "https://api.nuget.org/v3/catalog0/data/2026.04.10.00.28.15/microsoft.io.recyclablememorystream.3.0.1.json#dependencygroup/.netstandard2.0/system.memory",
+          "@type": "PackageDependency",
+          "id": "System.Memory",
+          "range": "[4.5.5, )"
+        }
+      ],
+      "targetFramework": ".NETStandard2.0"
+    },
+    {
+      "@id": "https://api.nuget.org/v3/catalog0/data/2026.04.10.00.28.15/microsoft.io.recyclablememorystream.3.0.1.json#dependencygroup/.netstandard2.1",
+      "@type": "PackageDependencyGroup",
+      "targetFramework": ".NETStandard2.1"
+    }
+  ],
+  "packageEntries": [
+    {
+      "@id": "https://api.nuget.org/v3/catalog0/data/2026.04.10.00.28.15/microsoft.io.recyclablememorystream.3.0.1.json#Microsoft.IO.RecyclableMemoryStream.nuspec",
+      "@type": "PackageEntry",
+      "compressedLength": 635,
+      "fullName": "Microsoft.IO.RecyclableMemoryStream.nuspec",
+      "length": 1368,
+      "name": "Microsoft.IO.RecyclableMemoryStream.nuspec"
+    },
+    {
+      "@id": "https://api.nuget.org/v3/catalog0/data/2026.04.10.00.28.15/microsoft.io.recyclablememorystream.3.0.1.json#README.md",
+      "@type": "PackageEntry",
+      "compressedLength": 7924,
+      "fullName": "README.md",
+      "length": 22044,
+      "name": "README.md"
+    },
+    {
+      "@id": "https://api.nuget.org/v3/catalog0/data/2026.04.10.00.28.15/microsoft.io.recyclablememorystream.3.0.1.json#lib/",
+      "@type": "PackageEntry",
+      "compressedLength": 0,
+      "fullName": "lib/",
+      "length": 0,
+      "name": ""
+    },
+    {
+      "@id": "https://api.nuget.org/v3/catalog0/data/2026.04.10.00.28.15/microsoft.io.recyclablememorystream.3.0.1.json#lib/net6.0/",
+      "@type": "PackageEntry",
+      "compressedLength": 0,
+      "fullName": "lib/net6.0/",
+      "length": 0,
+      "name": ""
+    },
+    {
+      "@id": "https://api.nuget.org/v3/catalog0/data/2026.04.10.00.28.15/microsoft.io.recyclablememorystream.3.0.1.json#lib/net6.0/Microsoft.IO.RecyclableMemoryStream.dll",
+      "@type": "PackageEntry",
+      "compressedLength": 36360,
+      "fullName": "lib/net6.0/Microsoft.IO.RecyclableMemoryStream.dll",
+      "length": 65968,
+      "name": "Microsoft.IO.RecyclableMemoryStream.dll"
+    },
+    {
+      "@id": "https://api.nuget.org/v3/catalog0/data/2026.04.10.00.28.15/microsoft.io.recyclablememorystream.3.0.1.json#lib/net6.0/Microsoft.IO.RecyclableMemoryStream.xml",
+      "@type": "PackageEntry",
+      "compressedLength": 10517,
+      "fullName": "lib/net6.0/Microsoft.IO.RecyclableMemoryStream.xml",
+      "length": 96042,
+      "name": "Microsoft.IO.RecyclableMemoryStream.xml"
+    },
+    {
+      "@id": "https://api.nuget.org/v3/catalog0/data/2026.04.10.00.28.15/microsoft.io.recyclablememorystream.3.0.1.json#lib/netstandard2.0/",
+      "@type": "PackageEntry",
+      "compressedLength": 0,
+      "fullName": "lib/netstandard2.0/",
+      "length": 0,
+      "name": ""
+    },
+    {
+      "@id": "https://api.nuget.org/v3/catalog0/data/2026.04.10.00.28.15/microsoft.io.recyclablememorystream.3.0.1.json#lib/netstandard2.0/Microsoft.IO.RecyclableMemoryStream.dll",
+      "@type": "PackageEntry",
+      "compressedLength": 34523,
+      "fullName": "lib/netstandard2.0/Microsoft.IO.RecyclableMemoryStream.dll",
+      "length": 62896,
+      "name": "Microsoft.IO.RecyclableMemoryStream.dll"
+    },
+    {
+      "@id": "https://api.nuget.org/v3/catalog0/data/2026.04.10.00.28.15/microsoft.io.recyclablememorystream.3.0.1.json#lib/netstandard2.0/Microsoft.IO.RecyclableMemoryStream.xml",
+      "@type": "PackageEntry",
+      "compressedLength": 10511,
+      "fullName": "lib/netstandard2.0/Microsoft.IO.RecyclableMemoryStream.xml",
+      "length": 95895,
+      "name": "Microsoft.IO.RecyclableMemoryStream.xml"
+    },
+    {
+      "@id": "https://api.nuget.org/v3/catalog0/data/2026.04.10.00.28.15/microsoft.io.recyclablememorystream.3.0.1.json#lib/netstandard2.1/",
+      "@type": "PackageEntry",
+      "compressedLength": 0,
+      "fullName": "lib/netstandard2.1/",
+      "length": 0,
+      "name": ""
+    },
+    {
+      "@id": "https://api.nuget.org/v3/catalog0/data/2026.04.10.00.28.15/microsoft.io.recyclablememorystream.3.0.1.json#lib/netstandard2.1/Microsoft.IO.RecyclableMemoryStream.dll",
+      "@type": "PackageEntry",
+      "compressedLength": 35136,
+      "fullName": "lib/netstandard2.1/Microsoft.IO.RecyclableMemoryStream.dll",
+      "length": 63920,
+      "name": "Microsoft.IO.RecyclableMemoryStream.dll"
+    },
+    {
+      "@id": "https://api.nuget.org/v3/catalog0/data/2026.04.10.00.28.15/microsoft.io.recyclablememorystream.3.0.1.json#lib/netstandard2.1/Microsoft.IO.RecyclableMemoryStream.xml",
+      "@type": "PackageEntry",
+      "compressedLength": 10517,
+      "fullName": "lib/netstandard2.1/Microsoft.IO.RecyclableMemoryStream.xml",
+      "length": 96042,
+      "name": "Microsoft.IO.RecyclableMemoryStream.xml"
+    },
+    {
+      "@id": "https://api.nuget.org/v3/catalog0/data/2026.04.10.00.28.15/microsoft.io.recyclablememorystream.3.0.1.json#package/",
+      "@type": "PackageEntry",
+      "compressedLength": 0,
+      "fullName": "package/",
+      "length": 0,
+      "name": ""
+    },
+    {
+      "@id": "https://api.nuget.org/v3/catalog0/data/2026.04.10.00.28.15/microsoft.io.recyclablememorystream.3.0.1.json#package/services/",
+      "@type": "PackageEntry",
+      "compressedLength": 0,
+      "fullName": "package/services/",
+      "length": 0,
+      "name": ""
+    },
+    {
+      "@id": "https://api.nuget.org/v3/catalog0/data/2026.04.10.00.28.15/microsoft.io.recyclablememorystream.3.0.1.json#package/services/metadata/",
+      "@type": "PackageEntry",
+      "compressedLength": 0,
+      "fullName": "package/services/metadata/",
+      "length": 0,
+      "name": ""
+    },
+    {
+      "@id": "https://api.nuget.org/v3/catalog0/data/2026.04.10.00.28.15/microsoft.io.recyclablememorystream.3.0.1.json#package/services/metadata/core-properties/",
+      "@type": "PackageEntry",
+      "compressedLength": 0,
+      "fullName": "package/services/metadata/core-properties/",
+      "length": 0,
+      "name": ""
+    },
+    {
+      "@id": "https://api.nuget.org/v3/catalog0/data/2026.04.10.00.28.15/microsoft.io.recyclablememorystream.3.0.1.json#_rels/",
+      "@type": "PackageEntry",
+      "compressedLength": 0,
+      "fullName": "_rels/",
+      "length": 0,
+      "name": ""
+    },
+    {
+      "@id": "https://api.nuget.org/v3/catalog0/data/2026.04.10.00.28.15/microsoft.io.recyclablememorystream.3.0.1.json#.signature.p7s",
+      "@type": "PackageEntry",
+      "compressedLength": 25622,
+      "fullName": ".signature.p7s",
+      "length": 25622,
+      "name": ".signature.p7s"
+    }
+  ],
+  "tags": [
+    "MemoryStream",
+    "Memory",
+    "performance",
+    "GC",
+    "garbage",
+    "collection",
+    "stream",
+    "scalable",
+    "buffer"
+  ],
+  "@context": {
+    "@vocab": "http://schema.nuget.org/schema#",
+    "catalog": "http://schema.nuget.org/catalog#",
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+    "dependencies": {
+      "@id": "dependency",
+      "@container": "@set"
+    },
+    "dependencyGroups": {
+      "@id": "dependencyGroup",
+      "@container": "@set"
+    },
+    "packageEntries": {
+      "@id": "packageEntry",
+      "@container": "@set"
+    },
+    "packageTypes": {
+      "@id": "packageType",
+      "@container": "@set"
+    },
+    "supportedFrameworks": {
+      "@id": "supportedFramework",
+      "@container": "@set"
+    },
+    "tags": {
+      "@id": "tag",
+      "@container": "@set"
+    },
+    "vulnerabilities": {
+      "@id": "vulnerability",
+      "@container": "@set"
+    },
+    "published": {
+      "@type": "xsd:dateTime"
+    },
+    "created": {
+      "@type": "xsd:dateTime"
+    },
+    "lastEdited": {
+      "@type": "xsd:dateTime"
+    },
+    "catalog:commitTimeStamp": {
+      "@type": "xsd:dateTime"
+    },
+    "reasons": {
+      "@container": "@set"
+    }
+  }
+}

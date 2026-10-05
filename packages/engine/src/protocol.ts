@@ -416,7 +416,8 @@ export type ClaimVerdict =
       needsLibrary?: string;
       /**
        * The library fetch the companion offers for that library, when the
-       * project pins it in a lock file that records its hashes; nothing is
+       * project pins it in a lock file that records its hashes, or in a
+       * .NET project at one exact version; nothing is
        * downloaded until the reviewer presses it. A verdict judged against
        * the library's source keeps the offer that was pressed.
        */
@@ -452,6 +453,8 @@ export interface LibraryFetchOffer {
  * One pressed library fetch as it landed: the exact file the lock file
  * pins, its hash checked before anything was unpacked, unpacked read-only
  * into the pull request's library cache, never built, installed or run.
+ * For a NuGet package, the folder holds the source files its PDB names,
+ * fetched at the commit it was built from, each exact source or unproven.
  * The agent judged the claim in that folder, and the reviewer opens the
  * cited files from it.
  */
@@ -461,14 +464,24 @@ export interface FetchedLibrary {
   pinnedBy: string;
   /** The file downloaded, by the name the package index gives it. */
   file: string;
-  /** The file's SHA-256, as the lock file pins it and the download matched. */
+  /**
+   * The file's SHA-256, as the lock file pins it and the download matched;
+   * for a NuGet package, as downloaded once its SHA-512 matched.
+   */
   sha256: string;
-  /** A built wheel, or a source archive when the lock file pins no wheel. */
-  archive: 'wheel' | 'source archive';
+  /** A built wheel, a source archive when the lock file pins no wheel, or a NuGet package. */
+  archive: 'wheel' | 'source archive' | 'NuGet package';
   /** Absolute path of the unpacked, read-only source in the engine's cache. */
   path: string;
   /** What the reviewer should know about the source, such as that only a source archive exists. */
   note?: string;
+  /**
+   * The source files not proven to be what the library was built from,
+   * by their path in its folder: a NuGet package's files whose bytes
+   * match no hash its PDB records. Every other file is exact source; an
+   * unproven file never makes a claim verified.
+   */
+  unproven?: string[];
   /** The version of the prompt that judged the claim against this source. */
   promptVersion: string;
   /** Who judged the claim against this source. */

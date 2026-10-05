@@ -362,7 +362,8 @@ async function claimsStage(
  * The verdicts stage, last: the agent judges each claim listed against
  * the change, the read-only head copy and the failed checks' trimmed CI
  * logs, and the engine re-checks every citation it gives; a verdict that
- * needs a library the head copy's lock files pin with hashes then offers
+ * needs a library the head copy's lock files pin with hashes, or a .NET
+ * project pins at one exact version, then offers
  * its library fetch, which downloads nothing until the reviewer presses
  * it. No claims need no judging; when the agent's listing fell back, the
  * pipeline's claims are still judged.

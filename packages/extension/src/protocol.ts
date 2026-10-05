@@ -386,7 +386,7 @@ function isLibraryFetchOffer(value: unknown): boolean {
   );
 }
 
-/** The library source a verdict was judged against: the file fetched, where it landed, and who judged. */
+/** The library source a verdict was judged against: the file fetched, where it landed, its unproven files, and who judged. */
 function isFetchedLibrary(value: unknown): boolean {
   return (
     isRecord(value) &&
@@ -395,9 +395,10 @@ function isFetchedLibrary(value: unknown): boolean {
     isNonEmptyString(value['pinnedBy']) &&
     isNonEmptyString(value['file']) &&
     isNonEmptyString(value['sha256']) &&
-    isOneOf(value['archive'], ['wheel', 'source archive'] as const) &&
+    isOneOf(value['archive'], ['wheel', 'source archive', 'NuGet package'] as const) &&
     isNonEmptyString(value['path']) &&
     isOptionalString(value['note']) &&
+    (value['unproven'] === undefined || isStringList(value['unproven'])) &&
     isString(value['promptVersion']) &&
     isAgentStamp(value['stamp'])
   );

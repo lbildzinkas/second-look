@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { findingAnchor, isFinding, type Claim, type ReviewResult } from '@second-look/engine';
+import { findingAnchor, isFinding, isUnprovenSource, type Claim, type ReviewResult } from '@second-look/engine';
 import { changeUri, partFiles } from './change-copies.js';
 import { FETCH_LIBRARY_COMMAND, FINDINGS_CONTROLLER_ID, FINDING_THREAD_CONTEXT, OPEN_LIBRARY_EVIDENCE_COMMAND } from './commands.js';
 import { citedWhere, claimWhere } from './overview.js';
@@ -27,7 +27,7 @@ function commandLink(text: string, command: string, args: readonly unknown[]): s
  * the claim needs when it needs one — with the library fetch the
  * companion offers for it, a link the reviewer presses, or the library
  * source the verdict was judged against, each cited file a link that
- * opens it read-only — why the engine dropped the verdict when it did,
+ * opens it read-only and labelled when it is unproven — why the engine dropped the verdict when it did,
  * and where the claim is made. Every quote, reason, name and path came
  * from the pull request, the agent or the package index, so each is
  * escaped; `index` is the claim's index in the result's claims, which the
@@ -46,16 +46,22 @@ export function findingBody(claim: Claim, index = 0): string {
   ];
   if (verdict.evidence.length > 0) {
     const where = (cited: (typeof verdict.evidence)[number], at: number): string =>
-      library === undefined ? escapeMarkdown(citedWhere(cited)) : commandLink(`${cited.path}:${cited.line}`, OPEN_LIBRARY_EVIDENCE_COMMAND, [index, at]);
+      library === undefined
+        ? escapeMarkdown(citedWhere(cited))
+        : commandLink(`${cited.path}:${cited.line}`, OPEN_LIBRARY_EVIDENCE_COMMAND, [index, at]) + (isUnprovenSource(cited.path, library.unproven) ? ' (unproven)' : '');
     lines.push('', 'Evidence:', ...verdict.evidence.map((cited, at) => `- ${where(cited, at)} — ${escapeMarkdown(cited.quote)}`));
   }
   if (library !== undefined) {
     lines.push(
       '',
       `Judged against the source of ${escapeMarkdown(`${library.library} ${library.pinnedVersion}`)}, as ${escapeMarkdown(library.pinnedBy)} pins it: ` +
-        `${escapeMarkdown(library.file)}, its SHA-256 checked, unpacked read-only and never run.`,
+        escapeMarkdown(library.file) +
+        (library.archive === 'NuGet package'
+          ? ', its SHA-512 checked and never built or run, its source files fetched read-only at the commit it was built from.'
+          : ', its SHA-256 checked, unpacked read-only and never run.'),
     );
     if (library.note !== undefined) lines.push('', escapeMarkdown(library.note));
+    if (library.unproven !== undefined) lines.push('', `Unproven, so never verified: ${library.unproven.map(escapeMarkdown).join(', ')}.`);
   } else if (offer !== undefined) {
     const name = `${offer.library} ${offer.pinnedVersion}`;
     lines.push('', escapeMarkdown(offer.reason), '', `${commandLink(`Fetch ${name}`, FETCH_LIBRARY_COMMAND, [index])} — downloads only when pressed.`);
