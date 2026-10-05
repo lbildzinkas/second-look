@@ -10,8 +10,9 @@ import {
   NOT_RANKED_YET,
   partsInReadingOrder,
   reviewStatus,
+  UNEXPLAINED_BADGE,
 } from '../src/tree.js';
-import { claimsResult, judgedResult, mixedResult, part, result } from './results.js';
+import { claimsResult, judgedResult, mixedResult, part, result, unexplainedResult } from './results.js';
 
 /** A hunk adding one line at the given place, on both sides. */
 function hunkAt(oldStart: number, newStart: number): Hunk {
@@ -238,6 +239,29 @@ describe('claim counts in the tree', () => {
     expect(mustReview!.parts[0]).not.toHaveProperty('findings');
     expect(mustReview!.parts[0]!.description).toBe('1 claim · New code the send path now runs on every delivery.');
     expect(mustReview!.parts[0]!.tooltip).toContain('1 claim, all verified; the overview lists them');
+  });
+});
+
+describe('unexplained parts in the tree', () => {
+  it('badges a part neither the description nor a linked issue explains, with its reason in the tooltip', () => {
+    const [mustReview, worthReviewing] = buildTree(unexplainedResult());
+    const reason = 'Raises the timeout from 10 to 30 seconds, which <b>nothing</b> mentions.';
+
+    expect(worthReviewing!.parts[0]).toMatchObject({
+      unexplained: reason,
+      description: `${UNEXPLAINED_BADGE} · Changed code that the retry policy reads.`,
+    });
+    expect((worthReviewing!.parts[0] as { tooltip: string }).tooltip.split('\n').at(-1)).toBe(`Unexplained: ${reason}`);
+    expect(mustReview!.parts[0]).not.toHaveProperty('unexplained');
+  });
+
+  it('badges nothing before the comparison arrives, or when it fell back or had nothing to compare with', () => {
+    const shown = unexplainedResult();
+    const fellBack = { ...shown, unexplained: { ...shown.unexplained!, outcome: 'fell back' as const, parts: [], described: [] } };
+    for (const each of [mixedResult(), fellBack]) {
+      const nodes = buildTree(each).flatMap((section) => section.parts);
+      expect(nodes.every((node) => !('unexplained' in node))).toBe(true);
+    }
   });
 });
 

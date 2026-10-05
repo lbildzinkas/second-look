@@ -7,9 +7,11 @@ import {
   LIBRARY_VERDICTS_PROMPT_ID,
   RANKING_PROMPT_ID,
   STORY_PROMPT_ID,
+  UNEXPLAINED_PROMPT_ID,
   VERDICTS_PROMPT_ID,
   changeText,
   findClaims,
+  findUnexplained,
   judgeClaims,
   offerLibraryFetches,
   pressLibraryFetch,
@@ -32,6 +34,7 @@ import {
   GROUPING_AGREEMENT,
   RANK_SCORES,
   STORY_SCORES,
+  UNEXPLAINED_SCORES,
   VERDICT_SCORES,
   addTallies,
   isClaimCheck,
@@ -40,6 +43,7 @@ import {
   tallyFinding,
   tallyJudging,
   tallyStory,
+  tallyUnexplained,
 } from './score.js';
 import type { Score, Tally } from './score.js';
 
@@ -86,7 +90,7 @@ export interface RunResults {
   rows: ResultRow[];
   /** Cases whose review failed, with the engine's message. */
   failures: { case: string; error: string }[];
-  /** Cases whose agent grouping, ranking, story, claims or verdicts fell back, with the prompt and why. */
+  /** Cases whose agent grouping, ranking, story, unexplained changes, claims or verdicts fell back, with the prompt and why. */
   fallbacks?: { case: string; agent: string; prompt?: string; detail: string }[];
   /** How each agent, model and effort's ranking scored against the plain ranking over the same cases. */
   rankings?: RankingComparison[];
@@ -126,7 +130,7 @@ export const GROUPING_SCORES: readonly string[] = ['coverage', GROUPING_AGREEMEN
  */
 export const RANKING_SCORES: readonly string[] = RANK_SCORES;
 
-export { CLAIM_SCORES, STORY_SCORES, VERDICT_SCORES };
+export { CLAIM_SCORES, STORY_SCORES, UNEXPLAINED_SCORES, VERDICT_SCORES };
 
 /**
  * The prompt an agent row's score belongs to: each agent prompt gives its
@@ -139,6 +143,7 @@ export function promptOfScore(row: { name: string; agent: string }): string | un
   if (STORY_SCORES.includes(row.name)) return STORY_PROMPT_ID;
   if (CLAIM_SCORES.includes(row.name)) return CLAIMS_PROMPT_ID;
   if (VERDICT_SCORES.includes(row.name)) return VERDICTS_PROMPT_ID;
+  if (UNEXPLAINED_SCORES.includes(row.name)) return UNEXPLAINED_PROMPT_ID;
   if (isClaimCheck(row.name)) return LIBRARY_VERDICTS_PROMPT_ID;
   return undefined;
 }
@@ -236,10 +241,14 @@ export interface Run {
  * scored against the case's hand list with its {@link CLAIM_SCORES}; and
  * each case tied to the verdicts prompt has its hand-labelled claims
  * judged by the agent, scored against the hand verdicts with its
- * {@link VERDICT_SCORES}. A grouping or ranking fallback scores what the
+ * {@link VERDICT_SCORES}; and each case tied to the unexplained-changes
+ * prompt has its plain parts compared with its description and recorded
+ * linked issues by the agent, scored against the hand labels with its
+ * {@link UNEXPLAINED_SCORES}. A grouping or ranking fallback scores what the
  * reviewer would see, the plain parts; a story fallback fails the
- * story's checks, a claims fallback lists no claim, and a verdicts
- * fallback leaves every claim not checked. With `prompts`, the agent runs only those
+ * story's checks, a claims fallback lists no claim, a verdicts
+ * fallback leaves every claim not checked, and an unexplained-changes
+ * fallback flags nothing. With `prompts`, the agent runs only those
  * prompts. A model-free run makes no agent call, so its trace stays
  * empty.
  */
@@ -273,6 +282,7 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
   const storyTallies = new Map<string, { stamp: AgentStamp; tallies: Tally[] }>();
   const claimTallies = new Map<string, { stamp: AgentStamp; tallies: Tally[] }>();
   const verdictTallies = new Map<string, { stamp: AgentStamp; tallies: Tally[] }>();
+  const unexplainedTallies = new Map<string, { stamp: AgentStamp; tallies: Tally[] }>();
   const stampKey = (stamp: Stamp): string => JSON.stringify([stamp.agent, stamp.agentVersion, stamp.model, stamp.effort]);
   for (const evaluationCase of options.cases) {
     const input = await caseInput(evaluationCase);
@@ -313,12 +323,13 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
 
     if (runs(GROUPING_PROMPT_ID)) {
       try {
-        // The ranking, story, claims and verdicts prompts are scored on their own below, on the plain parts.
+        // The ranking, story, unexplained-changes, claims and verdicts prompts are scored on their own below, on the plain parts.
         const result = await reviewChange(input, {
           adapter: adapterFor(GROUPING_PROMPT_ID),
           ...settings,
           testedRankings: [],
           story: false,
+          unexplained: false,
           claims: false,
         });
         const grouping = result.grouping.agent;
@@ -384,6 +395,33 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
         claimTallies.set(stampKey(stamp), group);
       } catch (error) {
         failedAgent(error, CLAIM_SCORES);
+      }
+    }
+
+    if (runs(UNEXPLAINED_PROMPT_ID) && parts && parts.length > 0 && evaluationCase.expected.unexplained) {
+      try {
+        const issues = input.criteria?.issues ?? [];
+        const unexplained = await findUnexplained(parts, {
+          adapter: adapterFor(UNEXPLAINED_PROMPT_ID),
+          ...settings,
+          root: input.copies.head.path,
+          pullRequest: input.pullRequest,
+          issues,
+        });
+        if (unexplained.outcome !== 'compared') {
+          results.fallbacks!.push({ case: evaluationCase.id, agent: unexplained.stamp?.agent ?? agent.adapter.agent, prompt: UNEXPLAINED_PROMPT_ID, detail: unexplained.detail });
+        }
+        const unexplainedTally: Tally = {
+          ...tallyCase(input.diff, evaluationCase.expected, undefined),
+          unexplained: tallyUnexplained(evaluationCase.expected.unexplained, parts, issues, unexplained),
+        };
+        const stamp = stampFor(evaluationCase.record.prompts, unexplained.stamp);
+        results.rows.push(...rowsOf(evaluationCase.id, unexplainedTally, stamp, UNEXPLAINED_SCORES));
+        const group = unexplainedTallies.get(stampKey(stamp)) ?? { stamp: unexplained.stamp!, tallies: [] };
+        group.tallies.push(unexplainedTally);
+        unexplainedTallies.set(stampKey(stamp), group);
+      } catch (error) {
+        failedAgent(error, UNEXPLAINED_SCORES);
       }
     }
 
@@ -490,6 +528,9 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
   }
   for (const { stamp, tallies: byAgent } of verdictTallies.values()) {
     results.rows.push(...rowsOf(ALL_CASES, addTallies(byAgent), stampFor([VERDICTS_PROMPT_ID], stamp), VERDICT_SCORES));
+  }
+  for (const { stamp, tallies: byAgent } of unexplainedTallies.values()) {
+    results.rows.push(...rowsOf(ALL_CASES, addTallies(byAgent), stampFor([UNEXPLAINED_PROMPT_ID], stamp), UNEXPLAINED_SCORES));
   }
 
   await writeFile(join(folder, 'results.json'), `${JSON.stringify(results, null, 2)}\n`);

@@ -1,0 +1,39 @@
+{
+  "formatVersion": 1,
+  "id": "planted-click",
+  "source": "https://github.com/example-org/example-repo/pull/4326",
+  "recordedAt": "2026-10-05T17:04:16.291Z",
+  "prompts": [
+    "unexplained"
+  ],
+  "pullRequest": {
+    "url": "https://github.com/example-org/example-repo/pull/4326",
+    "number": 4326,
+    "title": "Accept a pathlib.Path in click.edit",
+    "author": "contributor-login",
+    "description": "Closes #2869.\n\n`click.edit` now accepts an `os.PathLike` value such as a `pathlib.Path` as `filename`, alone or in an iterable, with a test and a changelog entry.\n\nThe editing section of `docs/utils.md` gains an example that edits a `pathlib.Path`.",
+    "base": "master",
+    "head": "edit-pathlike",
+    "baseCommit": "4e7c4a6585ed8a16b7bdac834f7f47d48e8c45fa",
+    "headSha": "ea0b04b4f5dd98e5e38fd3ad3df3a7a1818870c3"
+  },
+  "gitAttributes": null,
+  "baseCommit": "4e7c4a6585ed8a16b7bdac834f7f47d48e8c45fa",
+  "headCommit": "ea0b04b4f5dd98e5e38fd3ad3df3a7a1818870c3",
+  "criteria": {
+    "outcome": "read",
+    "detail": "1 issue this pull request closes",
+    "heading": "Acceptance criteria",
+    "issues": [
+      {
+        "number": 2869,
+        "title": "Support pathlib.Path in edit filename",
+        "url": "https://github.com/pallets/click/issues/2869",
+        "repository": "pallets/click",
+        "body": "Would you welcome a PR to avoid this?\n\n```\nArgument of type \"Path\" cannot be assigned to parameter \"filename\" of type \"str | None\" in function \"edit\"\n  Type \"Path\" is not assignable to type \"str | None\"\n    \"Path\" is not assignable to \"str\"\n    \"Path\" is not assignable to \"None\"Pylance[reportArgumentType](https://github.com/microsoft/pyright/blob/main/docs/configuration.md#reportArgumentType)\n```\n\nEasy workaround with:\n```py\nclick.edit(filename=str(export_common.path))\n```\n\nbut would be nice if didn't need `str`.",
+        "link": "closes"
+      }
+    ],
+    "criteria": []
+  }
+}

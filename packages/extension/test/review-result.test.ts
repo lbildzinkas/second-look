@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { REVIEW_RESULT_VERSION, type NoiseAssessment, type ReviewResult } from '@second-look/engine';
 import { ProtocolError, isReviewResult, parseReviewResult } from '../src/index.js';
-import { REQUESTS_FETCH, claimsResult, criteriaResult, fetchedResult, judgedResult, offeredResult, pipelineResult } from './results.js';
+import { REQUESTS_FETCH, claimsResult, criteriaResult, fetchedResult, judgedResult, offeredResult, pipelineResult, unexplainedResult } from './results.js';
 
 function sampleResult(): ReviewResult {
   return {
@@ -577,6 +577,46 @@ describe('isReviewResult for the acceptance criteria', () => {
   });
 });
 
+describe('isReviewResult for the unexplained changes', () => {
+  type Loose = Record<string, unknown> & {
+    criteria: Record<string, unknown>;
+    unexplained: Record<string, unknown> & { parts: Record<string, unknown>[]; described: (Record<string, unknown> & { location: Record<string, unknown> })[] };
+  };
+  const shown = (): Loose => JSON.parse(JSON.stringify(unexplainedResult())) as Loose;
+
+  it('accepts a comparison in both directions, one with nothing to compare with, and a result without one', () => {
+    expect(isReviewResult(unexplainedResult())).toBe(true);
+    const none = shown();
+    delete (none as Record<string, unknown>)['unexplained'];
+    expect(isReviewResult(none)).toBe(true);
+    const notCompared = shown();
+    notCompared.unexplained = { promptVersion: '1', outcome: 'not compared', detail: 'nothing to compare with', parts: [], described: [] };
+    expect(isReviewResult(notCompared)).toBe(true);
+  });
+
+  it('rejects a comparison that is malformed, flags a part twice or one the result lacks, or quotes an issue the result lacks', () => {
+    const changed = (change: (value: Loose) => void): Loose => {
+      const value = shown();
+      change(value);
+      return value;
+    };
+    const cases: unknown[] = [
+      changed((value) => (value.unexplained['outcome'] = 'explained')),
+      changed((value) => delete value.unexplained['stamp']),
+      changed((value) => (value.unexplained['outcome'] = 'not compared')),
+      changed((value) => (value.unexplained['outcome'] = 'fell back')),
+      changed((value) => (value.unexplained.parts[0]!['part'] = 9)),
+      changed((value) => value.unexplained.parts.push({ part: 1, reason: 'again' })),
+      changed((value) => (value.unexplained.parts[0]!['reason'] = 'two\nlines')),
+      changed((value) => (value.unexplained.described[0]!['quote'] = '')),
+      changed((value) => (value.unexplained.described[0]!.location = { kind: 'story', sentence: 0 })),
+      changed((value) => (value.unexplained.described[1]!.location['issue'] = 2)),
+      changed((value) => delete (value as Record<string, unknown>)['criteria']),
+    ];
+    for (const value of cases) expect(isReviewResult(value)).toBe(false);
+  });
+});
+
 describe('parseReviewResult', () => {
   it('reads the JSON the engine printed', () => {
     const result = parseReviewResult(JSON.stringify(sampleResult()));
@@ -592,6 +632,6 @@ describe('parseReviewResult', () => {
 
 describe('the versioned protocol is shared with the engine', () => {
   it('uses the same version constant', () => {
-    expect(REVIEW_RESULT_VERSION).toBe(13);
+    expect(REVIEW_RESULT_VERSION).toBe(14);
   });
 });

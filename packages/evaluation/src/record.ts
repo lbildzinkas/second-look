@@ -72,6 +72,7 @@ export async function recordCase(url: string, options: RecordOptions): Promise<s
       gitAttributes: input.gitAttributes,
       baseCommit: base.commit,
       headCommit: head.commit,
+      ...(input.criteria ? { criteria: input.criteria } : {}),
     };
     const expected: ExpectedResults = {
       noise: Object.fromEntries(live.parts.map((part) => [part.path, null])),

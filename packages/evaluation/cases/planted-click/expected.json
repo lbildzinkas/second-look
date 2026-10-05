@@ -1,0 +1,38 @@
+{
+  "noise": {
+    "CHANGES.md": {
+      "label": "none"
+    },
+    "src/click/_termui_impl.py": {
+      "label": "none"
+    },
+    "src/click/termui.py": {
+      "label": "none"
+    },
+    "tests/test_termui.py": {
+      "label": "none"
+    },
+    "tests/typing/typing_edit.py": {
+      "label": "none"
+    }
+  },
+  "importantParts": [],
+  "claims": [],
+  "unexplained": {
+    "parts": [
+      "pause in src/click/termui.py"
+    ],
+    "optionalParts": [
+      "test_fast_edit, test_edit in tests/test_termui.py"
+    ],
+    "described": [
+      {
+        "text": "The editing section of `docs/utils.md` gains an example that edits a `pathlib.Path`.",
+        "origin": {
+          "in": "description",
+          "line": 5
+        }
+      }
+    ]
+  }
+}

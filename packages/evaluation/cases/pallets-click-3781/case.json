@@ -8,7 +8,8 @@
     "ranking",
     "story",
     "claims",
-    "verdicts"
+    "verdicts",
+    "unexplained"
   ],
   "pullRequest": {
     "url": "https://github.com/pallets/click/pull/3781",
@@ -23,5 +24,21 @@
   },
   "gitAttributes": null,
   "baseCommit": "2103e157683c5e4cadc8ee1838df526a54bde9a4",
-  "headCommit": "a1d87858abd77fa8e3ffc204670ccd75b96c4781"
+  "headCommit": "a1d87858abd77fa8e3ffc204670ccd75b96c4781",
+  "criteria": {
+    "outcome": "read",
+    "detail": "1 issue this pull request closes",
+    "heading": "Acceptance criteria",
+    "issues": [
+      {
+        "number": 2869,
+        "title": "Support pathlib.Path in edit filename",
+        "url": "https://github.com/pallets/click/issues/2869",
+        "repository": "pallets/click",
+        "body": "Would you welcome a PR to avoid this?\n\n```\nArgument of type \"Path\" cannot be assigned to parameter \"filename\" of type \"str | None\" in function \"edit\"\n  Type \"Path\" is not assignable to type \"str | None\"\n    \"Path\" is not assignable to \"str\"\n    \"Path\" is not assignable to \"None\"Pylance[reportArgumentType](https://github.com/microsoft/pyright/blob/main/docs/configuration.md#reportArgumentType)\n```\n\nEasy workaround with:\n```py\nclick.edit(filename=str(export_common.path))\n```\n\nbut would be nice if didn't need `str`.",
+        "link": "closes"
+      }
+    ],
+    "criteria": []
+  }
 }

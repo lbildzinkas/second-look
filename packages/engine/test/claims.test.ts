@@ -353,7 +353,7 @@ describe('reviewChange with the claims stage', () => {
     const stages: ReviewStage[] = [];
     const agent = canaryAgent();
 
-    const result = await reviewChange(await pythonCanary(), { adapter: agent, onStage: (stage) => stages.push(stage) });
+    const result = await reviewChange(await pythonCanary(), { adapter: agent, unexplained: false, onStage: (stage) => stages.push(stage) });
 
     // The canary agent gives the verdicts prompt no usable answer, so the claim stays not checked.
     expect(stages.map((stage) => stage.running)).toEqual(['writing the story with fake', 'listing the claims with fake', 'checking the claims with fake']);

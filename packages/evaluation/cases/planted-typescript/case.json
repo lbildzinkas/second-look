@@ -1,0 +1,56 @@
+{
+  "formatVersion": 1,
+  "id": "planted-typescript",
+  "source": "https://github.com/example-org/example-repo/pull/5236",
+  "recordedAt": "2026-10-05T17:02:57.716Z",
+  "prompts": [
+    "unexplained"
+  ],
+  "pullRequest": {
+    "url": "https://github.com/example-org/example-repo/pull/5236",
+    "number": 5236,
+    "title": "Read a criteria heading written with a trailing colon",
+    "author": "contributor-login",
+    "description": "Closes #212.\n\nA criteria heading written with a trailing colon, such as `## Acceptance criteria:`, now matches the configured heading, so its checklist is read.\n\nThe README's acceptance criteria section now says that a trailing colon is allowed.",
+    "base": "master",
+    "head": "criteria-heading-colon",
+    "baseCommit": "ce30ad27bb1887626d5eef715d888468d1188bce",
+    "headSha": "526b38376154d2209315b5f71e4d81e6044bfa59"
+  },
+  "gitAttributes": null,
+  "baseCommit": "ce30ad27bb1887626d5eef715d888468d1188bce",
+  "headCommit": "526b38376154d2209315b5f71e4d81e6044bfa59",
+  "criteria": {
+    "outcome": "read",
+    "detail": "1 issue this pull request closes",
+    "heading": "Acceptance criteria",
+    "issues": [
+      {
+        "number": 212,
+        "title": "A criteria heading with a trailing colon is not read",
+        "url": "https://github.com/example-org/example-repo/issues/212",
+        "repository": "example-org/example-repo",
+        "body": "Many issue templates write the heading as `## Acceptance criteria:`, with a colon, and the companion then reads no criteria from them.\n\n## Acceptance criteria\n\n- [ ] A heading written with a trailing colon is matched.\n- [ ] The description of the `second-look.criteriaHeading` setting says a trailing colon is allowed.",
+        "link": "closes"
+      }
+    ],
+    "criteria": [
+      {
+        "quote": "A heading written with a trailing colon is matched.",
+        "issue": 0,
+        "line": 5,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "The description of the `second-look.criteriaHeading` setting says a trailing colon is allowed.",
+        "issue": 0,
+        "line": 6,
+        "verdict": {
+          "kind": "not checked"
+        }
+      }
+    ]
+  }
+}

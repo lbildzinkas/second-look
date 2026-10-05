@@ -332,7 +332,7 @@ describe('reviewChange with the story stage', () => {
     const agent = storyAgent((items) => ({ sentences: [`Start with [\`fresh\`](${items[0]!.id}).`] }));
     const stages: ReviewStage[] = [];
 
-    const result = await reviewChange(input, { adapter: agent, claims: false, onStage: (stage) => stages.push(stage) });
+    const result = await reviewChange(input, { adapter: agent, unexplained: false, claims: false, onStage: (stage) => stages.push(stage) });
 
     expect(stages.map((stage) => stage.running)).toEqual(['grouping related hunks with fake', 'writing the story with fake']);
     expect(stages[1]!.timeoutMs).toBe(660_000);

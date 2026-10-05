@@ -5,6 +5,7 @@ import {
   findingCounts,
   isLabelledNoise,
   noiseSinks,
+  unexplainedReasons,
   type Comment,
   type FileSlice,
   type Importance,
@@ -29,6 +30,8 @@ export interface TreePart {
   claims?: number;
   /** How many of its claims are findings, refuted or unverifiable; absent when none is. */
   findings?: number;
+  /** Why neither the description nor a linked issue explains the part; absent when the comparison does not flag it. */
+  unexplained?: string;
   /** The part itself, which clicking opens in the diff editor. */
   part?: Part;
 }
@@ -86,7 +89,9 @@ const SECTION_TOOLTIPS: Record<Importance, string> = {
  * sections are left out, and snapshots and fixtures never sink, because a
  * change there is a behaviour change. A part the listed claims are
  * attached to shows their count beside it, and a badge counting its
- * findings once the claims are judged.
+ * findings once the claims are judged. A part neither the description nor
+ * a linked issue explains carries the unexplained badge, its one-line
+ * reason in the tooltip.
  */
 export function buildTree(result: ReviewResult): TreeSection[] {
   const grouped = new Map<Importance, TreePart[]>(
@@ -98,7 +103,9 @@ export function buildTree(result: ReviewResult): TreeSection[] {
   const counts = claimCounts(result.claims, result.parts.length);
   const findings = findingCounts(result.claims, result.parts.length);
   const judged = result.claims?.judging?.outcome === 'judged';
-  const withCounts = (node: TreePart, index: number): TreePart => withClaims(node, counts[index]!, findings[index]!, judged);
+  const unexplained = unexplainedReasons(result.unexplained, result.parts.length);
+  const withCounts = (node: TreePart, index: number): TreePart =>
+    withUnexplained(withClaims(node, counts[index]!, findings[index]!, judged), unexplained[index]);
   result.parts.forEach((part, index) => {
     const assessment = part.noise;
     if (assessment && isLabelledNoise(assessment) && noiseSinks(assessment)) {
@@ -234,6 +241,25 @@ function withClaims(node: TreePart, count: number, findings: number, judged: boo
     claims: count,
     ...(findings > 0 ? { findings } : {}),
     description: node.description === undefined ? text : `${text} · ${node.description}`,
+    tooltip: node.tooltip === undefined ? line : `${node.tooltip}\n${line}`,
+  };
+}
+
+/** The badge of a part neither the description nor a linked issue explains. */
+export const UNEXPLAINED_BADGE = '? unexplained';
+
+/**
+ * A part's node with the unexplained badge first beside the label, and
+ * its reason in the tooltip; a part the comparison does not flag is left
+ * as it is.
+ */
+function withUnexplained(node: TreePart, reason: string | undefined): TreePart {
+  if (reason === undefined) return node;
+  const line = `Unexplained: ${reason}`;
+  return {
+    ...node,
+    unexplained: reason,
+    description: node.description === undefined ? UNEXPLAINED_BADGE : `${UNEXPLAINED_BADGE} · ${node.description}`,
     tooltip: node.tooltip === undefined ? line : `${node.tooltip}\n${line}`,
   };
 }

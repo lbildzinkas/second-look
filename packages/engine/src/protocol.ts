@@ -10,7 +10,7 @@
 import type { AgentStamp } from './agent.js';
 
 /** Version of the review result schema. */
-export const REVIEW_RESULT_VERSION = 13 as const;
+export const REVIEW_RESULT_VERSION = 14 as const;
 
 /**
  * Version 2 added the head commit's SHA and each part's noise assessment;
@@ -34,7 +34,10 @@ export const REVIEW_RESULT_VERSION = 13 as const;
  * it, the decompiled package it lands, and decompiled library code as an
  * evidence source; version 13 added the acceptance criteria read from
  * the issues the pull request links, each quoted from the checklist
- * under the configured heading and not checked.
+ * under the configured heading and not checked; version 14 added the
+ * unexplained changes in both directions: the parts neither the
+ * description nor a linked issue explains, and the changes they describe
+ * that the diff does not contain.
  */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
@@ -160,6 +163,12 @@ export interface ReviewResult {
   /** The claims the change makes, as the agent listed them; absent when no agent was asked. */
   claims?: Claims;
   /**
+   * The change compared with its description and linked issues in both
+   * directions: the parts neither explains, and the changes they describe
+   * that the diff does not contain; absent when no agent was asked.
+   */
+  unexplained?: UnexplainedChanges;
+  /**
    * The acceptance criteria read from the issues the pull request links,
    * each quoted and not checked; absent when the review read none, such
    * as an offline replay.
@@ -232,6 +241,56 @@ export interface Criteria {
   issues: LinkedIssue[];
   /** The criteria, each quoted and not checked; empty when no checklist was found. */
   criteria: AcceptanceCriterion[];
+}
+
+/**
+ * The unexplained changes, in both directions (the glossary's finding of
+ * an unexplained change): the agent compared the description and the
+ * linked issues with the change, and the engine checked its answer. A
+ * part neither explains carries an "unexplained" badge with a one-line
+ * reason; a statement describing a change the diff does not contain is a
+ * finding of its own, quoted from where it is made.
+ */
+export interface UnexplainedChanges {
+  /** The version of the unexplained-changes prompt. */
+  promptVersion: string;
+  /**
+   * `compared` when the comparison is shown, nothing unexplained being a
+   * valid answer; `fell back` when the agent's answer was missing or
+   * failed the checks; `not compared` when the pull request has neither a
+   * description nor a linked issue to compare with, so no agent was asked.
+   */
+  outcome: 'compared' | 'fell back' | 'not compared';
+  /** One plain line: what the change was compared with and how the answer was checked, or why there is no comparison. */
+  detail: string;
+  /** Who answered; absent when no agent was asked. */
+  stamp?: AgentStamp;
+  /** The parts neither the description nor a linked issue explains, in the parts' order; empty unless compared. */
+  parts: UnexplainedPart[];
+  /** The changes the description or a linked issue describes that the diff does not contain; empty unless compared. */
+  described: DescribedChange[];
+}
+
+/** A part neither the description nor a linked issue explains. */
+export interface UnexplainedPart {
+  /** The part, by its index in the result's parts. */
+  part: number;
+  /** One line saying what the part changes that nothing explains. */
+  reason: string;
+}
+
+/** A statement in the description or a linked issue describing a change the diff does not contain. */
+export interface DescribedChange {
+  /**
+   * The statement, exactly as its source has it, on one line: runs of
+   * white space as one space, and each line's leading quote marker
+   * dropped.
+   */
+  quote: string;
+  /** Where it is made: a line of the description, or a line of a linked issue's body. */
+  location: { kind: 'description'; line: number } | { kind: 'issue'; issue: number; line: number };
+  /** One line saying what the diff lacks. */
+  reason: string;
 }
 
 /**

@@ -1,0 +1,36 @@
+{
+  "noise": {
+    "packages/engine/src/criteria.ts": {
+      "label": "none"
+    },
+    "packages/engine/src/untrusted.ts": {
+      "label": "none"
+    },
+    "packages/engine/test/criteria.test.ts": {
+      "label": "none"
+    }
+  },
+  "importantParts": [],
+  "claims": [],
+  "unexplained": {
+    "parts": [
+      "packages/engine/src/untrusted.ts"
+    ],
+    "described": [
+      {
+        "text": "The README's acceptance criteria section now says that a trailing colon is allowed.",
+        "origin": {
+          "in": "description",
+          "line": 5
+        }
+      },
+      {
+        "text": "The description of the `second-look.criteriaHeading` setting says a trailing colon is allowed.",
+        "origin": {
+          "issue": 212,
+          "line": 6
+        }
+      }
+    ]
+  }
+}

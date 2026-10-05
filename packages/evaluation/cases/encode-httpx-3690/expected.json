@@ -209,5 +209,11 @@
       },
       "optional": true
     }
-  ]
+  ],
+  "unexplained": {
+    "parts": [
+      "HTTPServer.wait in src/httpx/_server.py"
+    ],
+    "described": []
+  }
 }

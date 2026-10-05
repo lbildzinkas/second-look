@@ -9,6 +9,7 @@ import { STORY_INSTRUCTIONS, STORY_PROMPT_VERSION } from '../../engine/src/story
 import { CLAIMS_INSTRUCTIONS, CLAIMS_PROMPT_VERSION } from '../../engine/src/claims.js';
 import { VERDICTS_INSTRUCTIONS, VERDICTS_PROMPT_VERSION } from '../../engine/src/verdicts.js';
 import { LIBRARY_VERDICTS_INSTRUCTIONS, LIBRARY_VERDICTS_PROMPT_VERSION } from '../../engine/src/library-verdicts.js';
+import { UNEXPLAINED_INSTRUCTIONS, UNEXPLAINED_PROMPT_VERSION } from '../../engine/src/unexplained.js';
 import { answeringAgent, offeredParts, scriptedAgent } from '../../engine/test/helpers.js';
 import type { AgentAdapter } from '@second-look/engine';
 import { loadCases } from '../src/case.js';
@@ -375,6 +376,50 @@ describe('runEvaluation with the verdicts prompt', () => {
     ]);
     expect(rowsOf(results.rows, 'fake', 'verdict-accuracy')['misstated-python']).toBe(0);
     expect(rowsOf(results.rows, 'fake', 'false-verified')['misstated-python']).toBe(0);
+  });
+});
+
+describe('runEvaluation with the unexplained-changes prompt', () => {
+  /** An agent comparing planted-typescript: the planted rename's first part and the feature flagged, and only the description's missing change listed. */
+  const comparingAgent = (): AgentAdapter =>
+    answeringAgent((request) =>
+      request.instructions === UNEXPLAINED_INSTRUCTIONS
+        ? {
+            unexplained: [
+              { part: 'p1', reason: 'Renames codePoint to toCodePoint, which nothing mentions.' },
+              { part: 'p2', reason: 'Changes how a heading is matched.' },
+            ],
+            described: [{ source: 'description', quote: "The README's acceptance criteria section now says that a trailing colon is allowed.", reason: 'The README is not changed.' }],
+          }
+        : 'not an answer',
+    );
+
+  it("scores the agent's comparison of the plain parts with the description and the recorded issue against the hand labels", async () => {
+    const { folder, results } = await runVerdicts('planted-typescript', comparingAgent(), ['unexplained']);
+
+    expect(rowsOf(results.rows, 'fake', 'unexplained-recall')).toEqual({ 'planted-typescript': 1, [ALL_CASES]: 1 });
+    expect(rowsOf(results.rows, 'fake', 'unexplained-precision')).toEqual({ 'planted-typescript': 0.5, [ALL_CASES]: 0.5 });
+    expect(rowsOf(results.rows, 'fake', 'described-recall')).toEqual({ 'planted-typescript': 0.5, [ALL_CASES]: 0.5 });
+    expect(rowsOf(results.rows, 'fake', 'described-precision')).toEqual({ 'planted-typescript': 1, [ALL_CASES]: 1 });
+    expect(results.rows.find((row) => row.agent === 'fake' && row.case === 'planted-typescript')).toMatchObject({
+      model: 'fake/model',
+      promptVersions: { unexplained: UNEXPLAINED_PROMPT_VERSION },
+    });
+    expect(rowsOf(results.rows, NO_AGENT, 'unexplained-recall')).toEqual({});
+    const trace = readFileSync(join(folder, TRACE_FILE), 'utf8').trim().split('\n').map((line) => JSON.parse(line) as AgentCall);
+    expect(trace).toHaveLength(1);
+    expect(trace[0]).toMatchObject({ case: 'planted-typescript', prompt: 'unexplained', promptVersion: UNEXPLAINED_PROMPT_VERSION });
+    expect(trace[0]!.input).toContain('[i1] #212 in example-org/example-repo, which the pull request closes');
+  });
+
+  it('records a comparison that fell back, which flags nothing and gives no precision', async () => {
+    const { results } = await runVerdicts('planted-typescript', scriptedAgent([]), ['unexplained']);
+
+    expect(results.fallbacks).toEqual([
+      { case: 'planted-typescript', agent: 'fake', prompt: 'unexplained', detail: expect.stringMatching(/^the agent gave no usable answer/) },
+    ]);
+    expect(rowsOf(results.rows, 'fake', 'unexplained-recall')['planted-typescript']).toBe(0);
+    expect(rowsOf(results.rows, 'fake', 'unexplained-precision')['planted-typescript']).toBeUndefined();
   });
 });
 

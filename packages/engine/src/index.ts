@@ -33,6 +33,7 @@ export * from './grouping.js';
 export * from './ranking.js';
 export * from './story.js';
 export * from './claims.js';
+export * from './unexplained.js';
 export * from './verdicts.js';
 export * from './library-fetch.js';
 export * from './nuget-fetch.js';

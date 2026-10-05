@@ -8,7 +8,8 @@
     "ranking",
     "story",
     "claims",
-    "verdicts"
+    "verdicts",
+    "unexplained"
   ],
   "pullRequest": {
     "url": "https://github.com/encode/httpx/pull/3690",
@@ -23,5 +24,12 @@
   },
   "gitAttributes": null,
   "baseCommit": "20380490fd0bd13c68704080754c1385bff96d69",
-  "headCommit": "350221558d4f079fc4ab3673d81a4bc730fbb9c3"
+  "headCommit": "350221558d4f079fc4ab3673d81a4bc730fbb9c3",
+  "criteria": {
+    "outcome": "read",
+    "detail": "GitHub returns no closing references for a pull request into v1, not the repository's default branch master, and no issue references it",
+    "heading": "Acceptance criteria",
+    "issues": [],
+    "criteria": []
+  }
 }
