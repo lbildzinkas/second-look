@@ -234,7 +234,7 @@ export function claimsPrompt(
 const COMMENT_MARKER = /^\s*(?:\/{2,}!?|\/\*+|\*+|#+|-{2,}|;+|%+)?/;
 
 /** A quote marker at the start of a description line. */
-const QUOTE_MARKER = /^\s*(?:>\s*)*/;
+export const QUOTE_MARKER = /^\s*(?:>\s*)*/;
 
 /** Text on one line: runs of white space as one space. */
 function oneLine(text: string): string {

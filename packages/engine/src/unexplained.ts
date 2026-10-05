@@ -5,7 +5,7 @@ import {
   type AgentAdapter,
   type AgentSettings,
 } from './agent.js';
-import { claimItems, quotedLine, type ClaimItem } from './claims.js';
+import { claimItems, normalizeQuote, quotedLine, QUOTE_MARKER, type ClaimItem } from './claims.js';
 import type { JsonSchema } from './json-schema.js';
 import { filesOfPart } from './parts.js';
 import type { DescribedChange, LinkedIssue, Part, UnexplainedChanges, UnexplainedPart } from './protocol.js';
@@ -213,7 +213,7 @@ function locateDescribed(
   if (entry.source !== 'description' && issue === undefined) {
     return `${name} names ${JSON.stringify(entry.source)}, which is neither the description nor an issue id`;
   }
-  const quote = oneLine(entry.quote);
+  const quote = normalizeQuote(entry.quote, QUOTE_MARKER);
   if (quote === '') return `${name} has an empty quote`;
   if (quote.length > MAX_QUOTE_LENGTH) return `${name}'s quote is over ${MAX_QUOTE_LENGTH} characters`;
   const line = quotedLine(issue === undefined ? description : issue.issue.body, entry.quote);

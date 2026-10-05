@@ -124,6 +124,19 @@ describe('checkUnexplained', () => {
     ]);
   });
 
+  it("stores a described change's quote without the marker of the line its source starts", () => {
+    const checked = checkUnexplained(context(), {
+      unexplained: [],
+      described: [{ source: 'description', quote: '> Each retry is logged with its attempt number.', reason: 'No part logs a retry.' }],
+    });
+
+    expect(checked).toEqual({
+      parts: [],
+      described: [{ quote: 'Each retry is logged with its attempt number.', location: { kind: 'description', line: 3 }, reason: 'No part logs a retry.' }],
+      problems: [],
+    });
+  });
+
   it('refuses an unknown or noise part, a part listed twice, a missing source and a quote its source does not hold, and shows nothing', () => {
     const checked = checkUnexplained(context(), {
       unexplained: [
