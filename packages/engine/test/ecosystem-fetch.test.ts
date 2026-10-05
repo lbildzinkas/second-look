@@ -174,6 +174,12 @@ describe('findEcosystemPin', () => {
     await expect(findEcosystemPin(root, 'github.com/someone/forked')).resolves.toBeUndefined();
   });
 
+  it('finds no Go pin for a module path with a dot segment, which could steer a path', async () => {
+    const root = headWith({ 'go.mod': 'module app\n\nrequire example.com/../x v1.0.0\n', 'go.sum': 'example.com/../x v1.0.0 h1:x=\n' });
+
+    await expect(findEcosystemPin(root, 'example.com/../x')).resolves.toBeUndefined();
+  });
+
   it("reads a pom.xml's dependencies at a literal version or one of its properties, by group and artifact or artifact alone, and a gradle.lockfile", async () => {
     const root = headWith({
       'pom.xml': [

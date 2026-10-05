@@ -98,7 +98,8 @@ function cargoPin(text: string, wanted: string, pinnedBy: string): EcosystemPin 
   return pins.at(-1);
 }
 
-const GO_MODULE = /^[A-Za-z0-9][A-Za-z0-9._~-]*(?:\/[A-Za-z0-9._~-]+)*$/;
+/** A Go module path whose every segment starts plainly, so none is `.` or `..`. */
+const GO_MODULE = /^[A-Za-z0-9][A-Za-z0-9._~-]*(?:\/[A-Za-z0-9_~-][A-Za-z0-9._~-]*)*$/;
 
 /** The modules a go.mod requires, by path, and the paths it replaces. */
 function goRequirements(text: string): { required: Map<string, string>; replaced: Set<string> } {

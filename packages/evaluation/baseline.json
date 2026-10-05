@@ -1,482 +1,6 @@
 {
   "rows": [
     {
-      "case": "canary-csharp",
-      "name": "coverage",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "canary-csharp",
-      "name": "noise-precision:none",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "canary-csharp",
-      "name": "noise-recall:none",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "canary-csharp",
-      "name": "claims-found",
-      "value": 0,
-      "better": "higher",
-      "note": "expected failure: the review reports no claims",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "canary-csharp",
-      "name": "claims-verdict:refuted",
-      "value": 0,
-      "better": "higher",
-      "note": "expected failure: the review reports no claims",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "canary-csharp",
-      "name": "claims-evidence",
-      "value": 0,
-      "better": "higher",
-      "note": "expected failure: the review reports no claims",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "canary-csharp",
-      "name": "claims-fetch-offered",
-      "value": 0,
-      "better": "higher",
-      "note": "expected failure: the review reports no claims",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "canary-python",
-      "name": "coverage",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1",
-        "library-verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "canary-python",
-      "name": "noise-precision:none",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1",
-        "library-verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "canary-python",
-      "name": "noise-recall:none",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1",
-        "library-verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "canary-python",
-      "name": "claims-found",
-      "value": 0,
-      "better": "higher",
-      "note": "expected failure: the review reports no claims",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1",
-        "library-verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "canary-python",
-      "name": "claims-verdict:refuted",
-      "value": 0,
-      "better": "higher",
-      "note": "expected failure: the review reports no claims",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1",
-        "library-verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "canary-python",
-      "name": "claims-verdict:verified",
-      "value": 0,
-      "better": "higher",
-      "note": "expected failure: the review reports no claims",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1",
-        "library-verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "canary-python",
-      "name": "claims-evidence",
-      "value": 0,
-      "better": "higher",
-      "note": "expected failure: the review reports no claims",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1",
-        "library-verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "canary-python",
-      "name": "claims-fetch-offered",
-      "value": 0,
-      "better": "higher",
-      "note": "expected failure: the review reports no claims",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1",
-        "library-verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "encode-httpx-3690",
-      "name": "coverage",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "encode-httpx-3690",
-      "name": "noise-precision:none",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "encode-httpx-3690",
-      "name": "noise-recall:none",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "encode-httpx-3690",
-      "name": "rank-median",
-      "value": 4,
-      "better": "lower",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "encode-httpx-3690",
-      "name": "rank-top-3",
-      "value": 0.5,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "encode-httpx-3690",
-      "name": "grouping-agreement",
-      "value": 0.2777777777777778,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "encode-httpx-3690",
-      "name": "claims-found",
-      "value": 0,
-      "better": "higher",
-      "note": "expected failure: the review reports no claims",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "encode-httpx-3690",
-      "name": "claims-verdict:verified",
-      "value": 0,
-      "better": "higher",
-      "note": "expected failure: the review reports no claims",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "encode-httpx-3690",
-      "name": "claims-evidence",
-      "value": 0,
-      "better": "higher",
-      "note": "expected failure: the review reports no claims",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
       "case": "example-42",
       "name": "coverage",
       "value": 1,
@@ -748,19 +272,403 @@
       "runDate": "2026-10-04T15:43:37.107Z"
     },
     {
-      "case": "misstated-python",
+      "case": "seeded-csharp",
       "name": "coverage",
       "value": 1,
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "verdicts": "1"
+        "ranking": "1",
+        "story": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
       "runDate": "2026-10-04T15:43:37.107Z"
+    },
+    {
+      "case": "seeded-csharp",
+      "name": "noise-precision:none",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-04T15:43:37.107Z"
+    },
+    {
+      "case": "seeded-csharp",
+      "name": "noise-recall:none",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-04T15:43:37.107Z"
+    },
+    {
+      "case": "seeded-csharp",
+      "name": "rank-median",
+      "value": 1,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-04T15:43:37.107Z"
+    },
+    {
+      "case": "seeded-csharp",
+      "name": "rank-top-3",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-04T15:43:37.107Z"
+    },
+    {
+      "case": "seeded-python",
+      "name": "coverage",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-04T15:43:37.107Z"
+    },
+    {
+      "case": "seeded-python",
+      "name": "noise-precision:none",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-04T15:43:37.107Z"
+    },
+    {
+      "case": "seeded-python",
+      "name": "noise-recall:none",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-04T15:43:37.107Z"
+    },
+    {
+      "case": "seeded-python",
+      "name": "rank-median",
+      "value": 1,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-04T15:43:37.107Z"
+    },
+    {
+      "case": "seeded-python",
+      "name": "rank-top-3",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-04T15:43:37.107Z"
+    },
+    {
+      "case": "seeded-typescript",
+      "name": "coverage",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-04T15:43:37.107Z"
+    },
+    {
+      "case": "seeded-typescript",
+      "name": "noise-precision:none",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-04T15:43:37.107Z"
+    },
+    {
+      "case": "seeded-typescript",
+      "name": "noise-recall:none",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-04T15:43:37.107Z"
+    },
+    {
+      "case": "seeded-typescript",
+      "name": "rank-median",
+      "value": 1,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-04T15:43:37.107Z"
+    },
+    {
+      "case": "seeded-typescript",
+      "name": "rank-top-3",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-04T15:43:37.107Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "coverage",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "library-verdicts": "3"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-05T09:46:48.798Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "noise-precision:none",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "library-verdicts": "3"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-05T09:46:48.798Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "noise-recall:none",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "library-verdicts": "3"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-05T09:46:48.798Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "claims-found",
+      "value": 0,
+      "better": "higher",
+      "note": "expected failure: the review reports no claims",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "library-verdicts": "3"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-05T09:46:48.798Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "claims-verdict:refuted",
+      "value": 0,
+      "better": "higher",
+      "note": "expected failure: the review reports no claims",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "library-verdicts": "3"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-05T09:46:48.798Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "claims-evidence",
+      "value": 0,
+      "better": "higher",
+      "note": "expected failure: the review reports no claims",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "library-verdicts": "3"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-05T09:46:48.798Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "claims-fetch-offered",
+      "value": 0,
+      "better": "higher",
+      "note": "expected failure: the review reports no claims",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "library-verdicts": "3"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-05T09:46:48.798Z"
+    },
+    {
+      "case": "misstated-python",
+      "name": "coverage",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "verdicts": "4"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "misstated-python",
@@ -769,13 +677,13 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "misstated-python",
@@ -784,13 +692,13 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "misstated-python",
@@ -800,13 +708,13 @@
       "note": "expected failure: the review reports no claims",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "misstated-python",
@@ -816,13 +724,13 @@
       "note": "expected failure: the review reports no claims",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "misstated-python",
@@ -832,13 +740,13 @@
       "note": "expected failure: the review reports no claims",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "misstated-python",
@@ -848,13 +756,13 @@
       "note": "expected failure: the review reports no claims",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "pallets-click-3781",
@@ -867,13 +775,13 @@
         "ranking": "1",
         "story": "1",
         "claims": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "pallets-click-3781",
@@ -886,13 +794,13 @@
         "ranking": "1",
         "story": "1",
         "claims": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "pallets-click-3781",
@@ -905,13 +813,13 @@
         "ranking": "1",
         "story": "1",
         "claims": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "pallets-click-3781",
@@ -924,13 +832,13 @@
         "ranking": "1",
         "story": "1",
         "claims": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "pallets-click-3781",
@@ -943,13 +851,13 @@
         "ranking": "1",
         "story": "1",
         "claims": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "pallets-click-3781",
@@ -962,13 +870,13 @@
         "ranking": "1",
         "story": "1",
         "claims": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "pallets-click-3781",
@@ -982,13 +890,13 @@
         "ranking": "1",
         "story": "1",
         "claims": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "pallets-click-3781",
@@ -1002,13 +910,13 @@
         "ranking": "1",
         "story": "1",
         "claims": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "pallets-click-3781",
@@ -1022,253 +930,13 @@
         "ranking": "1",
         "story": "1",
         "claims": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "seeded-csharp",
-      "name": "coverage",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "ranking": "1",
-        "story": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "seeded-csharp",
-      "name": "noise-precision:none",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "ranking": "1",
-        "story": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "seeded-csharp",
-      "name": "noise-recall:none",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "ranking": "1",
-        "story": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "seeded-csharp",
-      "name": "rank-median",
-      "value": 1,
-      "better": "lower",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "ranking": "1",
-        "story": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "seeded-csharp",
-      "name": "rank-top-3",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "ranking": "1",
-        "story": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "seeded-python",
-      "name": "coverage",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "ranking": "1",
-        "story": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "seeded-python",
-      "name": "noise-precision:none",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "ranking": "1",
-        "story": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "seeded-python",
-      "name": "noise-recall:none",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "ranking": "1",
-        "story": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "seeded-python",
-      "name": "rank-median",
-      "value": 1,
-      "better": "lower",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "ranking": "1",
-        "story": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "seeded-python",
-      "name": "rank-top-3",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "ranking": "1",
-        "story": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "seeded-typescript",
-      "name": "coverage",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "ranking": "1",
-        "story": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "seeded-typescript",
-      "name": "noise-precision:none",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "ranking": "1",
-        "story": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "seeded-typescript",
-      "name": "noise-recall:none",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "ranking": "1",
-        "story": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "seeded-typescript",
-      "name": "rank-median",
-      "value": 1,
-      "better": "lower",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "ranking": "1",
-        "story": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "seeded-typescript",
-      "name": "rank-top-3",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "ranking": "1",
-        "story": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "sindresorhus-ky-880",
@@ -1281,13 +949,13 @@
         "ranking": "1",
         "story": "1",
         "claims": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "sindresorhus-ky-880",
@@ -1300,13 +968,13 @@
         "ranking": "1",
         "story": "1",
         "claims": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "sindresorhus-ky-880",
@@ -1319,13 +987,13 @@
         "ranking": "1",
         "story": "1",
         "claims": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "sindresorhus-ky-880",
@@ -1338,13 +1006,13 @@
         "ranking": "1",
         "story": "1",
         "claims": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "sindresorhus-ky-880",
@@ -1357,13 +1025,13 @@
         "ranking": "1",
         "story": "1",
         "claims": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "sindresorhus-ky-880",
@@ -1376,13 +1044,13 @@
         "ranking": "1",
         "story": "1",
         "claims": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "sindresorhus-ky-880",
@@ -1396,13 +1064,13 @@
         "ranking": "1",
         "story": "1",
         "claims": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "sindresorhus-ky-880",
@@ -1416,13 +1084,13 @@
         "ranking": "1",
         "story": "1",
         "claims": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "sindresorhus-ky-880",
@@ -1436,13 +1104,352 @@
         "ranking": "1",
         "story": "1",
         "claims": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "coverage",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "library-verdicts": "3"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-05T10:06:13.507Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "noise-precision:none",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "library-verdicts": "3"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-05T10:06:13.507Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "noise-recall:none",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "library-verdicts": "3"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-05T10:06:13.507Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "claims-found",
+      "value": 0,
+      "better": "higher",
+      "note": "expected failure: the review reports no claims",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "library-verdicts": "3"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-05T10:06:13.507Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "claims-verdict:refuted",
+      "value": 0,
+      "better": "higher",
+      "note": "expected failure: the review reports no claims",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "library-verdicts": "3"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-05T10:06:13.507Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "claims-verdict:verified",
+      "value": 0,
+      "better": "higher",
+      "note": "expected failure: the review reports no claims",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "library-verdicts": "3"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-05T10:06:13.507Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "claims-evidence",
+      "value": 0,
+      "better": "higher",
+      "note": "expected failure: the review reports no claims",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "library-verdicts": "3"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-05T10:06:13.507Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "claims-fetch-offered",
+      "value": 0,
+      "better": "higher",
+      "note": "expected failure: the review reports no claims",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "library-verdicts": "3"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-05T10:06:13.507Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "coverage",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-05T10:06:13.507Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "noise-precision:none",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-05T10:06:13.507Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "noise-recall:none",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-05T10:06:13.507Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "rank-median",
+      "value": 4,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-05T10:06:13.507Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "rank-top-3",
+      "value": 0.5,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-05T10:06:13.507Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "grouping-agreement",
+      "value": 0.2777777777777778,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-05T10:06:13.507Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "claims-found",
+      "value": 0,
+      "better": "higher",
+      "note": "expected failure: the review reports no claims",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-05T10:06:13.507Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "claims-verdict:verified",
+      "value": 0,
+      "better": "higher",
+      "note": "expected failure: the review reports no claims",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-05T10:06:13.507Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "claims-evidence",
+      "value": 0,
+      "better": "higher",
+      "note": "expected failure: the review reports no claims",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4"
+      },
+      "agent": "none",
+      "agentVersion": "none",
+      "model": "none",
+      "effort": "none",
+      "runDate": "2026-10-05T10:06:13.507Z"
     },
     {
       "case": "(all)",
@@ -1453,136 +1460,16 @@
       "promptVersions": {
         "claims": "1",
         "grouping": "2",
-        "library-verdicts": "1",
+        "library-verdicts": "3",
         "ranking": "1",
         "story": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "(all)",
-      "name": "noise-precision:generated:claimed",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "claims": "1",
-        "grouping": "2",
-        "library-verdicts": "1",
-        "ranking": "1",
-        "story": "1",
-        "verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "(all)",
-      "name": "noise-recall:generated:claimed",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "claims": "1",
-        "grouping": "2",
-        "library-verdicts": "1",
-        "ranking": "1",
-        "story": "1",
-        "verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "(all)",
-      "name": "noise-precision:lockfile:claimed",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "claims": "1",
-        "grouping": "2",
-        "library-verdicts": "1",
-        "ranking": "1",
-        "story": "1",
-        "verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "(all)",
-      "name": "noise-recall:lockfile:claimed",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "claims": "1",
-        "grouping": "2",
-        "library-verdicts": "1",
-        "ranking": "1",
-        "story": "1",
-        "verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "(all)",
-      "name": "noise-precision:moved or renamed:confirmed",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "claims": "1",
-        "grouping": "2",
-        "library-verdicts": "1",
-        "ranking": "1",
-        "story": "1",
-        "verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "(all)",
-      "name": "noise-recall:moved or renamed:confirmed",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "claims": "1",
-        "grouping": "2",
-        "library-verdicts": "1",
-        "ranking": "1",
-        "story": "1",
-        "verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T10:06:13.507Z"
     },
     {
       "case": "(all)",
@@ -1593,16 +1480,16 @@
       "promptVersions": {
         "claims": "1",
         "grouping": "2",
-        "library-verdicts": "1",
+        "library-verdicts": "3",
         "ranking": "1",
         "story": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T10:06:13.507Z"
     },
     {
       "case": "(all)",
@@ -1613,116 +1500,76 @@
       "promptVersions": {
         "claims": "1",
         "grouping": "2",
-        "library-verdicts": "1",
+        "library-verdicts": "3",
         "ranking": "1",
         "story": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "(all)",
-      "name": "noise-precision:snapshot:claimed",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "claims": "1",
-        "grouping": "2",
-        "library-verdicts": "1",
-        "ranking": "1",
-        "story": "1",
-        "verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
-    },
-    {
-      "case": "(all)",
-      "name": "noise-recall:snapshot:claimed",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "claims": "1",
-        "grouping": "2",
-        "library-verdicts": "1",
-        "ranking": "1",
-        "story": "1",
-        "verdicts": "1"
-      },
-      "agent": "none",
-      "agentVersion": "none",
-      "model": "none",
-      "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T10:06:13.507Z"
     },
     {
       "case": "(all)",
       "name": "rank-median",
-      "value": 2.5,
+      "value": 4,
       "better": "lower",
       "companionVersion": "0.1.0",
       "promptVersions": {
         "claims": "1",
         "grouping": "2",
-        "library-verdicts": "1",
+        "library-verdicts": "3",
         "ranking": "1",
         "story": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T10:06:13.507Z"
     },
     {
       "case": "(all)",
       "name": "rank-top-3",
-      "value": 0.6666666666666666,
+      "value": 0.5,
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
         "claims": "1",
         "grouping": "2",
-        "library-verdicts": "1",
+        "library-verdicts": "3",
         "ranking": "1",
         "story": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T10:06:13.507Z"
     },
     {
       "case": "(all)",
       "name": "grouping-agreement",
-      "value": 0.41964285714285715,
+      "value": 0.2777777777777778,
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
         "claims": "1",
         "grouping": "2",
-        "library-verdicts": "1",
+        "library-verdicts": "3",
         "ranking": "1",
         "story": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T10:06:13.507Z"
     },
     {
       "case": "(all)",
@@ -1734,16 +1581,16 @@
       "promptVersions": {
         "claims": "1",
         "grouping": "2",
-        "library-verdicts": "1",
+        "library-verdicts": "3",
         "ranking": "1",
         "story": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T10:06:13.507Z"
     },
     {
       "case": "(all)",
@@ -1755,16 +1602,16 @@
       "promptVersions": {
         "claims": "1",
         "grouping": "2",
-        "library-verdicts": "1",
+        "library-verdicts": "3",
         "ranking": "1",
         "story": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T10:06:13.507Z"
     },
     {
       "case": "(all)",
@@ -1776,16 +1623,16 @@
       "promptVersions": {
         "claims": "1",
         "grouping": "2",
-        "library-verdicts": "1",
+        "library-verdicts": "3",
         "ranking": "1",
         "story": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T10:06:13.507Z"
     },
     {
       "case": "(all)",
@@ -1797,16 +1644,16 @@
       "promptVersions": {
         "claims": "1",
         "grouping": "2",
-        "library-verdicts": "1",
+        "library-verdicts": "3",
         "ranking": "1",
         "story": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T10:06:13.507Z"
     },
     {
       "case": "(all)",
@@ -1818,16 +1665,16 @@
       "promptVersions": {
         "claims": "1",
         "grouping": "2",
-        "library-verdicts": "1",
+        "library-verdicts": "3",
         "ranking": "1",
         "story": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-04T15:43:37.107Z"
+      "runDate": "2026-10-05T10:06:13.507Z"
     },
     {
       "case": "encode-httpx-3690",
@@ -2903,13 +2750,14 @@
         "ranking": "1",
         "story": "1",
         "claims": "1",
-        "verdicts": "1"
+        "verdicts": "4",
+        "library-verdicts": "3"
       },
       "agent": "pi",
       "agentVersion": "0.86.1",
       "model": "zai-coding-cn/glm-5.3",
       "effort": "default",
-      "runDate": "2026-10-04T15:31:44.365Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "canary-csharp",
@@ -2922,153 +2770,14 @@
         "ranking": "1",
         "story": "1",
         "claims": "1",
-        "verdicts": "1"
+        "verdicts": "4",
+        "library-verdicts": "3"
       },
       "agent": "pi",
       "agentVersion": "0.86.1",
       "model": "zai-coding-cn/glm-5.3",
       "effort": "default",
-      "runDate": "2026-10-04T15:31:44.365Z"
-    },
-    {
-      "case": "canary-python",
-      "name": "verdict-accuracy",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1",
-        "library-verdicts": "1"
-      },
-      "agent": "pi",
-      "agentVersion": "0.86.1",
-      "model": "zai-coding-cn/glm-5.3",
-      "effort": "default",
-      "runDate": "2026-10-04T15:31:44.365Z"
-    },
-    {
-      "case": "canary-python",
-      "name": "false-verified",
-      "value": 0,
-      "better": "lower",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1",
-        "library-verdicts": "1"
-      },
-      "agent": "pi",
-      "agentVersion": "0.86.1",
-      "model": "zai-coding-cn/glm-5.3",
-      "effort": "default",
-      "runDate": "2026-10-04T15:31:44.365Z"
-    },
-    {
-      "case": "canary-python",
-      "name": "claims-found",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1",
-        "library-verdicts": "1"
-      },
-      "agent": "pi",
-      "agentVersion": "0.86.1",
-      "model": "zai-coding-cn/glm-5.3",
-      "effort": "default",
-      "runDate": "2026-10-04T15:31:44.365Z"
-    },
-    {
-      "case": "canary-python",
-      "name": "claims-verdict:refuted",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1",
-        "library-verdicts": "1"
-      },
-      "agent": "pi",
-      "agentVersion": "0.86.1",
-      "model": "zai-coding-cn/glm-5.3",
-      "effort": "default",
-      "runDate": "2026-10-04T15:31:44.365Z"
-    },
-    {
-      "case": "canary-python",
-      "name": "claims-verdict:verified",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1",
-        "library-verdicts": "1"
-      },
-      "agent": "pi",
-      "agentVersion": "0.86.1",
-      "model": "zai-coding-cn/glm-5.3",
-      "effort": "default",
-      "runDate": "2026-10-04T15:31:44.365Z"
-    },
-    {
-      "case": "canary-python",
-      "name": "claims-evidence",
-      "value": 0.5,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1",
-        "library-verdicts": "1"
-      },
-      "agent": "pi",
-      "agentVersion": "0.86.1",
-      "model": "zai-coding-cn/glm-5.3",
-      "effort": "default",
-      "runDate": "2026-10-04T15:31:44.365Z"
-    },
-    {
-      "case": "canary-python",
-      "name": "claims-fetch-offered",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1",
-        "library-verdicts": "1"
-      },
-      "agent": "pi",
-      "agentVersion": "0.86.1",
-      "model": "zai-coding-cn/glm-5.3",
-      "effort": "default",
-      "runDate": "2026-10-04T15:31:44.365Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "canary-csharp",
@@ -3081,14 +2790,14 @@
         "ranking": "1",
         "story": "1",
         "claims": "1",
-        "verdicts": "3",
-        "library-verdicts": "2"
+        "verdicts": "4",
+        "library-verdicts": "3"
       },
       "agent": "pi",
       "agentVersion": "0.86.1",
       "model": "zai-coding-cn/glm-5.3",
       "effort": "default",
-      "runDate": "2026-10-05T07:37:09.258Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "canary-csharp",
@@ -3101,14 +2810,14 @@
         "ranking": "1",
         "story": "1",
         "claims": "1",
-        "verdicts": "3",
-        "library-verdicts": "2"
+        "verdicts": "4",
+        "library-verdicts": "3"
       },
       "agent": "pi",
       "agentVersion": "0.86.1",
       "model": "zai-coding-cn/glm-5.3",
       "effort": "default",
-      "runDate": "2026-10-05T07:37:09.258Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "canary-csharp",
@@ -3121,14 +2830,14 @@
         "ranking": "1",
         "story": "1",
         "claims": "1",
-        "verdicts": "3",
-        "library-verdicts": "2"
+        "verdicts": "4",
+        "library-verdicts": "3"
       },
       "agent": "pi",
       "agentVersion": "0.86.1",
       "model": "zai-coding-cn/glm-5.3",
       "effort": "default",
-      "runDate": "2026-10-05T07:37:09.258Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "canary-csharp",
@@ -3141,33 +2850,14 @@
         "ranking": "1",
         "story": "1",
         "claims": "1",
-        "verdicts": "3",
-        "library-verdicts": "2"
+        "verdicts": "4",
+        "library-verdicts": "3"
       },
       "agent": "pi",
       "agentVersion": "0.86.1",
       "model": "zai-coding-cn/glm-5.3",
       "effort": "default",
-      "runDate": "2026-10-05T07:37:09.258Z"
-    },
-    {
-      "case": "encode-httpx-3690",
-      "name": "verdict-accuracy",
-      "value": 1,
-      "better": "higher",
-      "companionVersion": "0.1.0",
-      "promptVersions": {
-        "grouping": "2",
-        "ranking": "1",
-        "story": "1",
-        "claims": "1",
-        "verdicts": "1"
-      },
-      "agent": "pi",
-      "agentVersion": "0.86.1",
-      "model": "zai-coding-cn/glm-5.3",
-      "effort": "default",
-      "runDate": "2026-10-04T15:31:44.365Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "misstated-python",
@@ -3176,13 +2866,13 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "pi",
       "agentVersion": "0.86.1",
       "model": "zai-coding-cn/glm-5.3",
       "effort": "default",
-      "runDate": "2026-10-04T15:31:44.365Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "misstated-python",
@@ -3191,13 +2881,13 @@
       "better": "lower",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "pi",
       "agentVersion": "0.86.1",
       "model": "zai-coding-cn/glm-5.3",
       "effort": "default",
-      "runDate": "2026-10-04T15:31:44.365Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "pallets-click-3781",
@@ -3210,13 +2900,13 @@
         "ranking": "1",
         "story": "1",
         "claims": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "pi",
       "agentVersion": "0.86.1",
       "model": "zai-coding-cn/glm-5.3",
       "effort": "default",
-      "runDate": "2026-10-04T15:31:44.365Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
     },
     {
       "case": "sindresorhus-ky-880",
@@ -3229,13 +2919,172 @@
         "ranking": "1",
         "story": "1",
         "claims": "1",
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "pi",
       "agentVersion": "0.86.1",
       "model": "zai-coding-cn/glm-5.3",
       "effort": "default",
-      "runDate": "2026-10-04T15:31:44.365Z"
+      "runDate": "2026-10-05T09:46:48.798Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "verdict-accuracy",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "library-verdicts": "3"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-05T10:06:13.507Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "false-verified",
+      "value": 0,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "library-verdicts": "3"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-05T10:06:13.507Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "claims-found",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "library-verdicts": "3"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-05T10:06:13.507Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "claims-verdict:refuted",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "library-verdicts": "3"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-05T10:06:13.507Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "claims-verdict:verified",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "library-verdicts": "3"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-05T10:06:13.507Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "claims-evidence",
+      "value": 0.5,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "library-verdicts": "3"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-05T10:06:13.507Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "claims-fetch-offered",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "library-verdicts": "3"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-05T10:06:13.507Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "verdict-accuracy",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-05T10:06:13.507Z"
     },
     {
       "case": "(all)",
@@ -3244,13 +3093,13 @@
       "better": "higher",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "pi",
       "agentVersion": "0.86.1",
       "model": "zai-coding-cn/glm-5.3",
       "effort": "default",
-      "runDate": "2026-10-04T15:31:44.365Z"
+      "runDate": "2026-10-05T10:06:13.507Z"
     },
     {
       "case": "(all)",
@@ -3259,13 +3108,13 @@
       "better": "lower",
       "companionVersion": "0.1.0",
       "promptVersions": {
-        "verdicts": "1"
+        "verdicts": "4"
       },
       "agent": "pi",
       "agentVersion": "0.86.1",
       "model": "zai-coding-cn/glm-5.3",
       "effort": "default",
-      "runDate": "2026-10-04T15:31:44.365Z"
+      "runDate": "2026-10-05T10:06:13.507Z"
     }
   ],
   "failures": [],
