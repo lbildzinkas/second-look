@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { DEFAULT_AGENT_SETTINGS, runAgentTasks, type AgentAdapter, type AgentSettings, type AgentStamp } from './agent.js';
 import type { JsonSchema } from './json-schema.js';
 import { fetchLibrary, findLibraryPin, type LibraryFetchOptions } from './library-fetch.js';
-import type { CheckedVerdictKind, Claim, EvidenceSource, FetchedLibrary, Part } from './protocol.js';
+import type { CheckedVerdictKind, Claim, ClaimVerdict, EvidenceSource, FetchedLibrary, Part } from './protocol.js';
 import { UNTRUSTED_INPUT_RULE, untrustedBlock } from './untrusted.js';
 import { claimPlace, claimText, copyReader, diffLines, recheckCitation, settleVerdict } from './verdicts.js';
 
@@ -108,6 +108,19 @@ export function libraryVerdictPrompt(claim: Claim, part: Part, library: { librar
   ].join('\n');
 }
 
+/**
+ * Holds a verdict judged in a fetched library's source to its unproven
+ * files: a verified verdict that cites any file not proven to be what the
+ * library was built from drops to unverifiable, naming those files.
+ */
+export function holdToExactSource(verdict: ClaimVerdict, unproven: readonly string[]): ClaimVerdict {
+  if (verdict.kind !== 'verified') return verdict;
+  const cited = [...new Set(verdict.evidence.map((each) => each.path).filter((path) => unproven.includes(path)))];
+  if (cited.length === 0) return verdict;
+  const files = cited.length === 1 ? `${cited[0]}, which is unproven` : `${cited.join(', ')}, which are unproven`;
+  return { ...verdict, kind: 'unverifiable', recheck: `the verdict cites ${files}: no hash its PDB records matches, so it may not be the source the library was built from` };
+}
+
 /** What came of pressing a library fetch: the claim judged again, or why it kept its verdict. */
 export type LibraryJudging =
   | { outcome: 'judged'; claim: Claim; stamp: AgentStamp }
@@ -126,7 +139,9 @@ export interface PressLibraryFetchOptions extends LibraryFetchOptions {
  * {@link fetchLibrary}), and asks the agent to judge the claim again in
  * the library's source, re-reading every citation there. The new verdict
  * keeps the offer that was pressed and carries the library it was judged
- * against; a rejected answer is retried once and then reported, and the
+ * against, and a verified verdict citing an unproven file drops to
+ * unverifiable (see {@link holdToExactSource}); a rejected answer is
+ * retried once and then reported, and the
  * claim keeps its verdict and its offer. Throws when the claim offers no
  * fetch, or when the fetch fails, such as on a hash mismatch.
  */
@@ -162,9 +177,9 @@ export async function pressLibraryFetch(parts: readonly Part[], claim: Claim, op
   const read = copyReader(fetched.path);
   const cited = answer.source === "the model's memory" ? [] : answer.evidence;
   const rechecked = await Promise.all(cited.map((each) => recheckCitation(read, each, where)));
-  const settled = settleVerdict({ id: '', ...answer, library: null }, rechecked, where);
+  const settled = holdToExactSource(settleVerdict({ id: '', ...answer, library: null }, rechecked, where), fetched.unproven ?? []);
   if (settled.kind === 'not checked') return { outcome: 'fell back', claim, detail: 'the verdict could not be settled', stamp: result.stamp };
-  const { file, sha256, archive, path, note } = fetched;
+  const { file, sha256, archive, path, note, unproven } = fetched;
   const library: FetchedLibrary = {
     library: pin.name,
     pinnedVersion: pin.version,
@@ -174,6 +189,7 @@ export async function pressLibraryFetch(parts: readonly Part[], claim: Claim, op
     archive,
     path,
     ...(note ? { note } : {}),
+    ...(unproven ? { unproven } : {}),
     promptVersion: LIBRARY_VERDICTS_PROMPT_VERSION,
     stamp: result.stamp,
   };

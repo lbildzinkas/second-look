@@ -455,6 +455,8 @@ describe('isReviewResult for the verdicts', () => {
   it('accepts a verdict offering a library fetch, and one judged against the fetched library', () => {
     expect(isReviewResult(offeredResult())).toBe(true);
     expect(isReviewResult(fetchedResult())).toBe(true);
+    const library = (fetchedResult().claims!.claims[2]!.verdict as unknown as { library: Record<string, unknown> }).library;
+    expect(isReviewResult(withVerdict({ ...refuted, library: { ...library, archive: 'NuGet package', unproven: ['src/Events.cs'] } }))).toBe(true);
   });
 
   it('rejects a malformed library fetch offer or fetched library', () => {
@@ -465,6 +467,7 @@ describe('isReviewResult for the verdicts', () => {
       withVerdict({ ...refuted, library: { ...library, archive: 'egg' } }),
       withVerdict({ ...refuted, library: { ...library, path: undefined } }),
       withVerdict({ ...refuted, library: { ...library, stamp: undefined } }),
+      withVerdict({ ...refuted, library: { ...library, unproven: [7] } }),
     ];
     for (const value of cases) expect(isReviewResult(value)).toBe(false);
   });

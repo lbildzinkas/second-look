@@ -3,6 +3,7 @@ import { mkdir, readFile, readdir, rename, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { extractTarball, extractZip } from './archive.js';
 import { removeCopy } from './cache.js';
+import { fetchNuGetLibrary, findNuGetPin, type NuGetPin } from './nuget-fetch.js';
 import type { Claim, LibraryFetchOffer } from './protocol.js';
 import { isTomlTable, parseToml, type TomlValue } from './toml.js';
 
@@ -15,7 +16,8 @@ import { isTomlTable, parseToml, type TomlValue } from './toml.js';
  * check that hash, and unpack the file read-only into the pull request's
  * library cache. Nothing downloaded is built, installed or run: a wheel
  * is unzipped, a source archive untarred, and the agent and the reviewer
- * only read what landed.
+ * only read what landed. A .NET library is fetched the same way, from
+ * nuget.org, by {@link fetchNuGetLibrary}.
  */
 
 /** One library as a lock file pins it, with the hashes it records for the version's files. */
@@ -101,9 +103,10 @@ async function lockFiles(root: string): Promise<string[]> {
  * then poetry.lock, then `requirements.txt` before every other requirements
  * file. Only a pin that records at
  * least one SHA-256 hash counts, since a fetch must check what it
- * downloads; undefined when no lock file pins the library so.
+ * downloads. When none pins it, a .NET project's pin of it is looked for
+ * (see {@link findNuGetPin}); undefined when nothing pins the library so.
  */
-export async function findLibraryPin(headRoot: string, library: string): Promise<LibraryPin | undefined> {
+export async function findLibraryPin(headRoot: string, library: string): Promise<LibraryPin | NuGetPin | undefined> {
   const wanted = normalizePackageName(library);
   for (const name of await lockFiles(headRoot)) {
     const text = await readFile(join(headRoot, name), 'utf8').catch(() => '');
@@ -111,11 +114,11 @@ export async function findLibraryPin(headRoot: string, library: string): Promise
     const pin = pins.find((each) => normalizePackageName(each.name) === wanted && each.hashes.length > 0);
     if (pin) return pin;
   }
-  return undefined;
+  return findNuGetPin(headRoot, library);
 }
 
 /** The offer for a pin: the library, its pinned version, the lock file and why. */
-export function fetchOffer(pin: LibraryPin): LibraryFetchOffer {
+export function fetchOffer(pin: LibraryPin | NuGetPin): LibraryFetchOffer {
   return {
     library: pin.name,
     pinnedVersion: pin.version,
@@ -126,7 +129,8 @@ export function fetchOffer(pin: LibraryPin): LibraryFetchOffer {
 
 /**
  * Adds a library fetch offer to every verdict that needs a library the
- * head copy's lock files pin with hashes. Only local files are read:
+ * head copy's lock files pin with hashes, or a .NET project pins at one
+ * exact version. Only local files are read:
  * nothing is downloaded until the reviewer presses an offer.
  */
 export async function offerLibraryFetches(claims: readonly Claim[], headRoot: string): Promise<Claim[]> {
@@ -222,10 +226,12 @@ async function exists(path: string): Promise<boolean> {
 export interface LibraryDownload {
   file: string;
   sha256: string;
-  archive: 'wheel' | 'source archive';
+  archive: 'wheel' | 'source archive' | 'NuGet package';
   /** Absolute path of the unpacked, read-only source. */
   path: string;
   note?: string;
+  /** The source files not proven to be what the library was built from, by their path in it; none when every file is. */
+  unproven?: string[];
   /** True when an earlier fetch of the same file was reused. */
   reused: boolean;
 }
@@ -244,9 +250,10 @@ export interface LibraryFetchOptions {
  * into its own folder of the library cache — a wheel unzipped, a source
  * archive untarred, never built, installed or run. The folder is renamed
  * into place only once complete, and reused by a later fetch of the same
- * file.
+ * file. A .NET pin is fetched by {@link fetchNuGetLibrary}.
  */
-export async function fetchLibrary(pin: LibraryPin, options: LibraryFetchOptions): Promise<LibraryDownload> {
+export async function fetchLibrary(pin: LibraryPin | NuGetPin, options: LibraryFetchOptions): Promise<LibraryDownload> {
+  if ('ecosystem' in pin) return fetchNuGetLibrary(pin, options);
   if (!SAFE_VERSION.test(pin.version)) throw new Error(`not a version a library fetch can download: ${pin.version}`);
   const fetchFn = options.fetch ?? fetch;
   const file = chooseFile(pin, await indexFiles(pin, fetchFn));

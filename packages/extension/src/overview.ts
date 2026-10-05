@@ -336,11 +336,12 @@ function verdictDetail(claim: Claim): string {
   const { verdict } = claim;
   if (verdict.kind === 'not checked') return '';
   const lines = [`${verdict.source}: ${verdict.reason}`];
-  for (const cited of verdict.evidence) lines.push(`${citedWhere(cited)} — ${cited.quote}`);
   const { library, libraryFetch: offer } = verdict;
+  for (const cited of verdict.evidence) lines.push(`${citedWhere(cited)}${library?.unproven?.includes(cited.path) ? ' (unproven)' : ''} — ${cited.quote}`);
   if (library !== undefined) {
     lines.push(`judged against the source of ${library.library} ${library.pinnedVersion}, as ${library.pinnedBy} pins it (${library.file})`);
     if (library.note !== undefined) lines.push(library.note);
+    if (library.unproven !== undefined) lines.push(`unproven, so never verified: ${library.unproven.join(', ')}`);
   } else if (offer !== undefined) {
     lines.push(`library fetch offered: ${offer.reason} Press it on the finding's thread.`);
   } else if (verdict.needsLibrary !== undefined) {

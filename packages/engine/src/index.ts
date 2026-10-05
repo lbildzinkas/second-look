@@ -35,6 +35,7 @@ export * from './story.js';
 export * from './claims.js';
 export * from './verdicts.js';
 export * from './library-fetch.js';
+export * from './nuget-fetch.js';
 export * from './library-verdicts.js';
 export * from './pipeline.js';
 export * from './ci.js';

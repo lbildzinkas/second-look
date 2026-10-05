@@ -140,6 +140,27 @@ describe('findingBody', () => {
     expect(body).not.toContain('command:second-look.fetchLibrary');
   });
 
+  it("names a NuGet package's checked SHA-512, and labels each citation of an unproven file", () => {
+    const claim = fetchedResult().claims!.claims[2]!;
+    const verdict = claim.verdict as Exclude<typeof claim.verdict, { kind: 'not checked' }>;
+    const nuget = {
+      ...claim,
+      verdict: {
+        ...verdict,
+        evidence: [{ path: 'src/RecyclableMemoryStream.cs', line: 490, quote: 'The buffer may be longer than the stream length.' }],
+        library: { ...verdict.library!, file: 'microsoft.io.recyclablememorystream.3.0.1.nupkg', archive: 'NuGet package' as const, unproven: ['src/RecyclableMemoryStream.cs'] },
+      },
+    };
+
+    const body = findingBody(nuget, 2);
+
+    expect(body).toContain(
+      `- [src/RecyclableMemoryStream\\.cs:490](command:second-look.openLibraryEvidence?${encodeURIComponent('[2,0]')}) (unproven) — The buffer may be longer than the stream length\\.`,
+    );
+    expect(body).toContain('microsoft\\.io\\.recyclablememorystream\\.3\\.0\\.1\\.nupkg, its SHA-512 checked and never built or run, its source files fetched read-only at the commit it was built from.');
+    expect(body).toContain('Unproven, so never verified: src/RecyclableMemoryStream\\.cs.');
+  });
+
   it('trusts only the fetch and the open-evidence commands in a finding', () => {
     stub.reset();
     new FindingThreads().show(offeredResult());

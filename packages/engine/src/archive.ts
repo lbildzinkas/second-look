@@ -229,6 +229,23 @@ export async function extractZip(bytes: Uint8Array, dir: string, limits: Extract
   return sealFolders(into);
 }
 
+/**
+ * Writes downloaded files, such as a library's source files fetched one
+ * by one, into `dir` as a read-only copy, by their forward-slash paths.
+ * The same rules as {@link extractZip} hold: each file read-only, paths
+ * that would leave `dir` refused, the folders read-only at the end.
+ */
+export async function writeReadOnlyFiles(
+  files: readonly { path: string; content: Uint8Array }[],
+  dir: string,
+  limits: ExtractLimits = {},
+): Promise<ExtractedArchive> {
+  const into = destination(dir, limits);
+  await mkdir(into.root, { recursive: true });
+  for (const file of files) await writeEntry(into, file.path, archivePath(file.path, 0), file.content);
+  return sealFolders(into);
+}
+
 /** The file-type bits of a Unix mode, and the value that marks a regular file. */
 const FILE_TYPE_BITS = 0o170000;
 const REGULAR_FILE = 0o100000;
