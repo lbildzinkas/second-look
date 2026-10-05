@@ -199,18 +199,21 @@ export async function run(): Promise<void> {
           url?: string;
           token?: string;
           agent?: { agent?: string; model?: string; account?: string };
+          criteriaHeading?: string;
         };
       });
     deepStrictEqual(requests.length, 2);
     ok(requests[0] && requests[0].method === 'initialize');
     ok(requests[1] && requests[1].method === 'review');
-    // The request carries the agent choice the settings read — their
-    // defaults in this clean editor — beside the URL and the token, so
-    // the engine runs every agent pass with it.
+    // The request carries the agent choice and the criteria heading the
+    // settings read — their defaults in this clean editor — beside the URL
+    // and the token, so the engine runs every agent pass with it and reads
+    // the criteria checklist under the configured heading.
     deepStrictEqual(requests[1]?.params, {
       url: PR_URL,
       token: TOKEN,
       agent: { agent: 'pi', model: '', account: '' },
+      criteriaHeading: 'Acceptance criteria',
     });
   } finally {
     delete process.env['SECOND_LOOK_ENGINE_ENTRY'];
