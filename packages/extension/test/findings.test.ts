@@ -179,6 +179,30 @@ describe('findingBody', () => {
     expect(judged('sources jar', 'slf4j-api-2.0.13-sources.jar')).toContain(", its SHA-1 checked against Maven Central's record, unpacked read-only and never built or run.");
   });
 
+  it('offers a decompile by its own link, and labels every citation and verdict from decompiled code decompiled', () => {
+    const offeredClaim = offeredResult().claims!.claims[2]!;
+    const offeredVerdict = offeredClaim.verdict as Exclude<typeof offeredClaim.verdict, { kind: 'not checked' }>;
+    const offer = { ...offeredVerdict.libraryFetch!, reason: 'No exact source of requests 2.32.3 exists.', decompile: { licence: 'MIT' } };
+
+    const offering = findingBody({ ...offeredClaim, verdict: { ...offeredVerdict, libraryFetch: offer } }, 2);
+    expect(offering).toContain('No exact source of requests 2\\.32\\.3 exists\\.');
+    expect(offering).toContain(
+      `[Decompile requests 2\\.32\\.3](command:second-look.fetchLibrary?${encodeURIComponent('[2]')}) — decompiles only when pressed, with the decompiler you installed.`,
+    );
+
+    const claim = fetchedResult().claims!.claims[2]!;
+    const verdict = claim.verdict as Exclude<typeof claim.verdict, { kind: 'not checked' }>;
+    const body = findingBody(
+      { ...claim, verdict: { ...verdict, source: 'decompiled library code', libraryFetch: offer, library: { ...verdict.library!, file: 'requests.2.32.3.nupkg', archive: 'decompiled NuGet package', note: "Decompiled, not the library's source." } } },
+      2,
+    );
+
+    expect(body).toContain('**Refuted** · evidence source: decompiled library code');
+    expect(body).toMatch(/\(command:second-look\.openLibraryEvidence\?[^)]*\) \(decompiled\) — /);
+    expect(body).toContain('Judged against code decompiled from requests 2\\.32\\.3, as requirements\\.txt pins it: decompiled, not its source. requests\\.2\\.32\\.3\\.nupkg had its SHA-512 checked');
+    expect(body).toContain("Decompiled, not the library's source\\.");
+  });
+
   it('offers a named repository by its URL and tag, and labels a verdict judged in one weaker than pinned source', () => {
     const named = { url: 'https://github.com/psf/requests', tag: 'v2.32.3' };
     const offeredClaim = offeredResult().claims!.claims[2]!;

@@ -10,3 +10,7 @@ Reading a library's real source is the companion's strongest check, but it is fe
 ## Amendment (issue 40)
 
 Where no ecosystem route exists, the agent may name the library's repository and the tag of the version the project uses; the companion, never the agent, fetches that tag itself and runs nothing. Nothing pins what it downloads and no hash is checked, so every verdict that uses it labels its evidence as a named repository, weaker than pinned source.
+
+## Amendment (issue 39)
+
+Where a pinned .NET package has no exact source — no PDB, no Source Link or no commit — the companion offers to decompile it only when that package version's own licence, read from the nuspec of the exact package it downloaded and checked, is a known open-source licence; a restrictive or unknown licence means nothing is decompiled, and the verdict says why. The reviewer starts the decompile. The companion, never the agent, runs the one decompiler it knows, as the reviewer installed it, with fixed arguments, on the package's assemblies alone and with the network cut by the operating system's sandbox; nothing in the package decides which program runs. Its output lands read-only beside the other fetched libraries, is never built or run, and every verdict that uses it labels its evidence as decompiled library code, never as source.

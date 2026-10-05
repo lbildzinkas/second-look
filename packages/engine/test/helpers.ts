@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import type { AgentAdapter, AgentProbe, AgentRunRequest } from '../src/agent.js';
 import { parseDiff } from '../src/diff.js';
+import { readZipEntries } from '../src/zip.js';
 import type { ChangeKind, DiffLine, Part } from '../src/protocol.js';
 
 export const PR_URL = 'https://github.com/example-org/example-repo/pull/42';
@@ -557,4 +558,17 @@ export function recordedFetch(downloads: Readonly<Record<string, Buffer | string
     throw new Error(`unexpected request to ${url}: tests run against recorded responses only`);
   };
   return { fetch: fetchImpl, requests };
+}
+
+/** Version 1.2.2 of RecyclableMemoryStream: assemblies with no Source Link, and a nuspec naming no commit and linking its licence. */
+export const OLD_NUGET_PACKAGE = readFileSync(fileURLToPath(new URL('./fixtures/pdb/Microsoft.IO.RecyclableMemoryStream.1.2.2.nupkg', import.meta.url)));
+
+/** Version 1.2.2 repacked with its nuspec's licence link replaced by `licence`, as a later version's licence may change. */
+export function relicensed(licence: string): Buffer {
+  return zipArchive(
+    readZipEntries(OLD_NUGET_PACKAGE).map((entry) => ({
+      name: entry.name,
+      content: entry.name.endsWith('.nuspec') ? Buffer.from(entry.read()).toString('utf8').replace(/<licenseUrl>[^<]*<\/licenseUrl>/, licence) : Buffer.from(entry.read()),
+    })),
+  );
 }

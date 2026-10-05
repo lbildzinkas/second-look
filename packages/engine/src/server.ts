@@ -306,10 +306,13 @@ async function review(
  * Presses one claim's library fetch in the pull request's latest review:
  * fetches the library into the pull request's library cache and has the
  * agent judge the claim again there, then answers with the review result
- * holding the new verdict, which later fetches build on. A fetch fails
+ * holding the new verdict, which later fetches build on; a .NET library
+ * with no exact source answers with the claim offering to decompile it,
+ * or saying why it is not decompiled, and pressing that offer decompiles
+ * it. A fetch fails
  * with a plain message when the review is unknown, the claim offers no
  * fetch, the download does not match the hash it is checked against, or
- * the agent gives no usable answer.
+ * the agent gives no usable answer, or a decompile finds no decompiler.
  */
 async function fetchLibrary(
   params: unknown,

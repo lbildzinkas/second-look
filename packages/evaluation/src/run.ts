@@ -504,7 +504,9 @@ function claimChecksOf(diff: string, evaluationCase: EvaluationCase): string[] {
 /**
  * Presses the library fetch of every claim whose verdict offers one, as
  * the reviewer would, one after another: each fetch downloads the pinned
- * library and the agent judges the claim again in its source. Returns the
+ * library and the agent judges the claim again in its source; a .NET
+ * library with no exact source is left offering its decompile, which
+ * the evaluation never presses. Returns the
  * claims as they stand after the presses, the stamp of the last judging,
  * and why any judging fell back.
  */
@@ -523,7 +525,7 @@ async function pressOfferedFetches(
       continue;
     }
     const judging = await pressLibraryFetch(parts, claim, options);
-    stamp = judging.stamp;
+    if (judging.outcome !== 'no exact source') stamp = judging.stamp;
     if (judging.outcome === 'fell back') fallbacks.push(judging.detail);
     claims.push(judging.claim);
   }

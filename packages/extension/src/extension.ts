@@ -394,7 +394,9 @@ class ReviewSession {
    * checks its hash where one is recorded, unpacks it read-only and has
    * the agent the settings pick judge the claim again, and the result it
    * answers with replaces the one shown, keeping the reviewer's place.
-   * Nothing is fetched without this press (ADR 0003).
+   * A .NET library with no exact source comes back offering to decompile
+   * it, or saying why not, and pressing that offer decompiles it.
+   * Nothing is fetched or decompiled without this press (ADR 0003).
    */
   async fetchLibrary(arg?: unknown): Promise<void> {
     const offer = typeof arg === 'number' ? libraryFetchOf(this.result, arg) : undefined;
@@ -405,12 +407,16 @@ class ReviewSession {
     const review = this.reviews;
     try {
       const result = await vscode.window.withProgress(
-        { location: { viewId: REVIEW_TREE_VIEW }, title: `Fetching ${offer.library} ${offer.pinnedVersion} and checking the claim again…` },
+        { location: { viewId: REVIEW_TREE_VIEW }, title: `${offer.decompile === undefined ? 'Fetching' : 'Decompiling'} ${offer.library} ${offer.pinnedVersion} and checking the claim again…` },
         async () => (await this.readyEngine()).fetchLibrary(this.url!, arg as number, reviewAgentChoice(readAgentSettings())),
       );
       // A review started meanwhile replaces this one, fetch and all.
       if (review !== this.reviews) return;
       await this.show(result, true);
+      const verdict = result.claims?.claims[arg as number]?.verdict;
+      if (verdict !== undefined && verdict.kind !== 'not checked' && verdict.library === undefined) {
+        vscode.window.showInformationMessage(`${offer.library} ${offer.pinnedVersion} has no exact source; its finding says whether it can be decompiled.`);
+      }
     } catch (error) {
       vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
     }

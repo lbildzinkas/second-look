@@ -1,7 +1,9 @@
 import { randomBytes } from 'node:crypto';
 import { DEFAULT_AGENT_SETTINGS, runAgentTasks, type AgentAdapter, type AgentSettings, type AgentStamp } from './agent.js';
+import { decompileNuGetLibrary, type DecompileOptions } from './decompile.js';
 import type { JsonSchema } from './json-schema.js';
-import { fetchLibrary, findLibraryPin, type LibraryFetchOptions } from './library-fetch.js';
+import { fetchLibrary, findLibraryPin, type LibraryDownload } from './library-fetch.js';
+import { NoExactSourceError } from './nuget-fetch.js';
 import type { CheckedVerdictKind, Claim, ClaimVerdict, EvidenceSource, FetchedLibrary, LibraryFetchOffer, Part } from './protocol.js';
 import { fetchNamedRepository } from './repository-fetch.js';
 import { UNTRUSTED_INPUT_RULE, untrustedBlock } from './untrusted.js';
@@ -164,12 +166,36 @@ export function holdToExactSource(verdict: ClaimVerdict, unproven: readonly stri
   return { ...verdict, kind: 'unverifiable', recheck: `the verdict cites ${files}: no hash its PDB records matches, so it may not be the source the library was built from` };
 }
 
-/** What came of pressing a library fetch: the claim judged again, or why it kept its verdict. */
+/**
+ * What came of pressing a library fetch: the claim judged again, why it
+ * kept its verdict, or — for a .NET library with no exact source — the
+ * claim offering to decompile it, or saying why it is not decompiled.
+ */
 export type LibraryJudging =
   | { outcome: 'judged'; claim: Claim; stamp: AgentStamp }
-  | { outcome: 'fell back'; claim: Claim; detail: string; stamp: AgentStamp };
+  | { outcome: 'fell back'; claim: Claim; detail: string; stamp: AgentStamp }
+  | { outcome: 'no exact source'; claim: Claim };
 
-export interface PressLibraryFetchOptions extends LibraryFetchOptions {
+type CheckedVerdict = Exclude<ClaimVerdict, { kind: 'not checked' }>;
+
+/**
+ * A verdict whose pressed .NET library fetch found no exact source: when
+ * the package version's own licence allows it, the offer turns into an
+ * offer to decompile, with why; otherwise the offer is withdrawn and the
+ * verdict says plainly why nothing was decompiled.
+ */
+export function noExactSourceVerdict(verdict: CheckedVerdict, offer: LibraryFetchOffer, error: NoExactSourceError): CheckedVerdict {
+  const { libraryFetch: _pressed, ...rest } = verdict;
+  const { licence } = error;
+  const missing = error.message.charAt(0).toUpperCase() + error.message.slice(1);
+  if (licence.kind !== 'permissive' || licence.licence === undefined) return { ...rest, noLibraryFetch: `${missing}. Not decompiled: ${licence.why}.` };
+  const reason =
+    `${missing}. Since ${licence.why}, the companion offers to decompile the assemblies of ${offer.library} ${offer.pinnedVersion}, as ${offer.pinnedBy} pins it, ` +
+    "with the decompiler you installed; everything from it is labelled decompiled, never the library's source.";
+  return { ...rest, libraryFetch: { ...offer, reason, decompile: { licence: licence.licence } } };
+}
+
+export interface PressLibraryFetchOptions extends DecompileOptions {
   adapter: AgentAdapter;
   settings?: AgentSettings;
   /** The read-only head copy, read again for the library's pin. */
@@ -186,10 +212,16 @@ export interface PressLibraryFetchOptions extends LibraryFetchOptions {
  * unverifiable (see {@link holdToExactSource}). An offer of a named
  * repository fetches the tag the agent named instead (see
  * {@link fetchNamedRepository}), and its verdict's evidence source is a
- * named repository, weaker than pinned source; a rejected answer is
- * retried once and then reported, and the
+ * named repository, weaker than pinned source. A .NET library with no
+ * exact source turns the offer into an offer to decompile it, or, when
+ * the package version's licence does not allow that, withdraws it with
+ * why (see {@link noExactSourceVerdict}); pressing a decompile offer
+ * decompiles the package (see {@link decompileNuGetLibrary}), and its
+ * verdict's evidence source is decompiled library code. A rejected
+ * answer is retried once and then reported, and the
  * claim keeps its verdict and its offer. Throws when the claim offers no
- * fetch, or when the fetch fails, such as on a hash mismatch.
+ * fetch, or when the fetch fails, such as on a hash mismatch or a
+ * missing decompiler.
  */
 export async function pressLibraryFetch(parts: readonly Part[], claim: Claim, options: PressLibraryFetchOptions): Promise<LibraryJudging> {
   const { verdict } = claim;
@@ -202,7 +234,17 @@ export async function pressLibraryFetch(parts: readonly Part[], claim: Claim, op
     throw new Error(`the head copy no longer pins ${offer.library} ${offer.pinnedVersion} with a hash; review the pull request again`);
   }
   if (named !== undefined && pin !== undefined) throw new Error(`the head copy now pins ${offer.library}; review the pull request again`);
-  const fetched = pin === undefined ? await fetchNamedRepository(offer.library, named!, options) : await fetchLibrary(pin, options);
+  const decompile = offer.decompile !== undefined;
+  let fetched: LibraryDownload;
+  try {
+    if (pin === undefined) fetched = await fetchNamedRepository(offer.library, named!, options);
+    else if (!decompile) fetched = await fetchLibrary(pin, options);
+    else if ('ecosystem' in pin && pin.ecosystem === 'NuGet') fetched = await decompileNuGetLibrary(pin, options);
+    else throw new Error(`only a .NET library is decompiled, and the head copy pins ${offer.library} otherwise; review the pull request again`);
+  } catch (error) {
+    if (decompile || !(error instanceof NoExactSourceError)) throw error;
+    return { outcome: 'no exact source', claim: { ...claim, verdict: noExactSourceVerdict(verdict, offer, error) } };
+  }
   const { results } = await runAgentTasks(
     options.adapter,
     [
@@ -225,8 +267,8 @@ export async function pressLibraryFetch(parts: readonly Part[], claim: Claim, op
   const read = copyReader(fetched.path);
   const cited = answer.source === "the model's memory" ? [] : answer.evidence;
   const rechecked = await Promise.all(cited.map((each) => recheckCitation(read, each, where)));
-  // A named repository's evidence is labelled as such, never as pinned source.
-  const source = named !== undefined && answer.source === LIBRARY_SOURCE ? 'a named repository' : answer.source;
+  // A named repository's evidence is labelled as such, and decompiled code's as decompiled, never as pinned source.
+  const source = answer.source !== LIBRARY_SOURCE ? answer.source : named !== undefined ? 'a named repository' : decompile ? 'decompiled library code' : answer.source;
   const settled = holdToExactSource(settleVerdict({ id: '', ...answer, source, library: null }, rechecked, where), fetched.unproven ?? []);
   if (settled.kind === 'not checked') return { outcome: 'fell back', claim, detail: 'the verdict could not be settled', stamp: result.stamp };
   const { file, sha256, archive, path, note, unproven } = fetched;
