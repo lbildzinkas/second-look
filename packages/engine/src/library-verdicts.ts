@@ -110,15 +110,15 @@ export function libraryVerdictPrompt(claim: Claim, part: Part, library: { librar
 
 /**
  * A cited path as the copy's reader resolves it: empty and `.` segments
- * dropped, `..` resolved, and case folded, as the copy's filesystem
- * compares names.
+ * dropped, `..` resolved, and Unicode normalization and case folded, as
+ * the copy's filesystem compares names.
  */
 function resolvedPathKey(path: string): string {
   const segments: string[] = [];
   for (const segment of path.split('/')) {
     if (segment === '' || segment === '.') continue;
     if (segment === '..') segments.pop();
-    else segments.push(segment.toLowerCase());
+    else segments.push(segment.normalize('NFC').toLowerCase());
   }
   return segments.join('/');
 }

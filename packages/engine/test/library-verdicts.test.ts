@@ -261,6 +261,12 @@ describe('holdToExactSource', () => {
     }
   });
 
+  it("treats a citation that spells an unproven file's path in the other Unicode normalization as unproven", () => {
+    const decomposed = { ...verified, evidence: [{ path: 'src/cafe\u0301.cs', line: 1, quote: 'using System;' }] };
+
+    expect(holdToExactSource(decomposed, ['src/caf\u00e9.cs'])).toMatchObject({ kind: 'unverifiable' });
+  });
+
   it('keeps a verified verdict citing only exact source, and a refuted or unverifiable one whatever it cites', () => {
     expect(holdToExactSource(verified, [])).toBe(verified);
     expect(holdToExactSource(verified, ['src/Other.cs'])).toBe(verified);
