@@ -499,7 +499,7 @@ describe('the criteria verdicts on the overview', () => {
       '<span class="label">Tests</span><span><button type="button" class="pt cite" data-criterion="0" data-evidence="tests" data-index="0">test/retry.test.ts:12</button>',
     );
     expect(html).toContain(
-      '<span class="label">Manual check</span><span><q class="quote">Tested by hand: the third retry gave up.</q> <span class="cited">description, line 3</span></span>',
+      '<span class="label">Manual check</span><span><q class="quote">Tested by hand: the third retry gave up.</q> <button type="button" class="pt manual">description, line 3</button></span>',
     );
     expect(html).toContain('<span class="verdict finding">not met</span></div><div class="why">Nothing logs a retry.</div>');
     expect(html).toContain('<span class="label">Tests</span><span><span class="none">none</span></span>');
@@ -507,6 +507,19 @@ describe('the criteria verdicts on the overview', () => {
     expect(html).toContain('Each is judged against the change, its read-only copy and the manual checks the description reports, by pi · zai/glm-4.6 · criteria-mapping prompt v1');
     expect(html).toContain('<span class="stg done">criteria mapped</span>');
     expect(html).toContain('<li><b>Acceptance criteria</b> mapped by pi · zai/glm-4.6 · criteria-mapping prompt v1: every citation was re-read');
+  });
+
+  it('makes each reported manual check a link the reviewer follows to the description it names', () => {
+    const html = overviewHtml({ result: mappedCriteriaResult() }, 'N');
+
+    // The page's own contract, as delivered to the webview: the check's place is a button, and the page it runs
+    // scrolls the description section — which holds the quoted statement — into view when that button is clicked.
+    expect(html).toContain('<q class="quote">Tested by hand: the third retry gave up.</q> <button type="button" class="pt manual">description, line 3</button>');
+    expect(html).toContain('<section id="description">');
+    expect(html).toContain("document.querySelectorAll('button.manual')");
+    expect(html).toContain("document.getElementById('description')");
+    expect(html).toContain("description.scrollIntoView({ block: 'start' })");
+    expect(loadsOrLinks(html)).toBe(false); // The jump is the page's own script, never a link that loads anything.
   });
 
   it("says why a criterion was dropped to can't tell, and why none is checked when the mapping fell back", () => {

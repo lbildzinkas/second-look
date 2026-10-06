@@ -73,7 +73,8 @@ function overviewMessage(value: unknown): OverviewMessage | undefined {
  * in the diff editor, the acceptance criteria of the linked issues, each
  * quoted and its issue a button that opens it on GitHub, with its verdict,
  * the code and tests it cites each a button that opens the line in the
- * head copy, and the manual checks the description reports, the unexplained
+ * head copy, and the manual checks the description reports, each its
+ * place a button that jumps to the description, the unexplained
  * changes in both directions, the claims the change makes with where each
  * is made and the part it is attached to, the pipeline report and whether it is trusted, the checks run on the merge
  * commit with their annotations and failed jobs' trimmed logs, the pull
@@ -372,7 +373,8 @@ function citedLines(criterion: number, evidence: CitedEvidence, cited: readonly 
 /**
  * A mapped criterion's evidence: its reason, the code that implements it
  * and the tests that cover it, each a button that opens the line, the
- * manual checks the description reports, each quoted from it, and why
+ * manual checks the description reports, each quoted from it with its
+ * place a button that jumps to the description, and why
  * the engine dropped the verdict, when it did; nothing for a criterion
  * not checked.
  */
@@ -383,7 +385,10 @@ function criterionEvidence(criterion: AcceptanceCriterion, index: number): strin
     verdict.manualChecks.length === 0
       ? '<span class="cited">none reported in the pull request</span>'
       : verdict.manualChecks
-          .map((check) => `<q class="quote">${sanitiseUntrusted(check.quote).html}</q> <span class="cited">${escapeHtml(`description, line ${check.line}`)}</span>`)
+          .map(
+            (check) =>
+              `<q class="quote">${sanitiseUntrusted(check.quote).html}</q> <button type="button" class="pt manual">${escapeHtml(`description, line ${check.line}`)}</button>`,
+          )
           .join('<br>');
   const rows: [string, string][] = [
     ['Code', citedLines(index, 'code', verdict.code)],
@@ -931,6 +936,14 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
         evidence: button.getAttribute('data-evidence'),
         index: Number(button.getAttribute('data-index'))
       });
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('button.manual'), function (button) {
+    button.addEventListener('click', function () {
+      var description = document.getElementById('description');
+      if (description !== null) {
+        description.scrollIntoView({ block: 'start' });
+      }
     });
   });
   var focused = document.querySelector('.sentence.focus');
