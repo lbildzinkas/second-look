@@ -110,7 +110,8 @@ describe('criteriaMappingPrompt', () => {
     for (const verdict of ['- met:', '- partly met:', '- not met:', "- can't tell:", '- needs manual check:']) {
       expect(CRITERIA_MAPPING_INSTRUCTIONS).toContain(verdict);
     }
-    expect(CRITERIA_MAPPING_INSTRUCTIONS).toContain('Every citation is checked against the file');
+    expect(CRITERIA_MAPPING_INSTRUCTIONS).toContain('citation is checked against the file, and one that does not match, even one line off');
+    expect(CRITERIA_MAPPING_INSTRUCTIONS).toContain('write no list of your verdicts before it');
     expect(CRITERIA_MAPPING_INSTRUCTIONS).toContain('Every quote is checked against');
     expect(CRITERIA_MAPPING_INSTRUCTIONS).toContain('"required":["id","verdict","reason","code","tests","manual"]');
   });

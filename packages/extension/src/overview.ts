@@ -5,6 +5,7 @@ import {
   checkFailed,
   hiddenContent,
   isFinding,
+  isUnmetCriterion,
   isUnprovenSource,
   parsePullRequestUrl,
   type AcceptanceCriterion,
@@ -356,11 +357,6 @@ function issueName(issue: LinkedIssue): string {
   return `#${issue.number} in ${issue.repository}`;
 }
 
-/** Whether a criterion's verdict is a finding: not met or partly met, which the reviewer must see. */
-function isUnmet(kind: AcceptanceCriterion['verdict']['kind']): boolean {
-  return kind === 'not met' || kind === 'partly met';
-}
-
 /** A criterion's cited lines of one kind, each a button that opens the line in the head copy, with its quote; or none. */
 function citedLines(criterion: number, evidence: CitedEvidence, cited: readonly { path: string; line: number; quote: string }[]): string {
   if (cited.length === 0) return '<span class="none">none</span>';
@@ -409,10 +405,9 @@ function criterionItem(criterion: AcceptanceCriterion, index: number, criteria: 
     issue === undefined
       ? ''
       : `<button type="button" class="pt issue" data-issue="${criterion.issue}">${escapeHtml(issueName(issue))}</button> · ${escapeHtml(ISSUE_LINKS[issue.link])} · `;
-  const kind = criterion.verdict.kind;
   return (
     `<li><q class="quote">${sanitiseUntrusted(criterion.quote).html}</q>` +
-    `<div class="where">${from}<span class="verdict${isUnmet(kind) ? ' finding' : ''}">${escapeHtml(kind)}</span></div>` +
+    `<div class="where">${from}<span class="verdict${isUnmetCriterion(criterion) ? ' finding' : ''}">${escapeHtml(criterion.verdict.kind)}</span></div>` +
     `${criterionEvidence(criterion, index)}</li>`
   );
 }
