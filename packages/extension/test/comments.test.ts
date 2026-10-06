@@ -5,11 +5,12 @@ import { changeUri } from '../src/change-copies.js';
 import {
   commentTargetOf,
   commentableRanges,
+  draftTarget,
   ReviewComments,
 } from '../src/comments.js';
 import { pendingReviewSection } from '../src/tree.js';
-import { mixedResult, part } from './results.js';
-import { Range, Uri, stub, type StubCommentThread } from './vscode-stub.js';
+import { judgedResult, mappedCriteriaResult, mixedResult, part, unexplainedResult } from './results.js';
+import { CommentMode, Range, Uri, stub, type StubCommentThread } from './vscode-stub.js';
 
 /** The head and base document URIs of one file of the mixed result. */
 function docs(result: ReviewResult, path: string, previousPath?: string): { head: Uri; base: Uri } {
@@ -368,5 +369,138 @@ describe('ReviewComments', () => {
 
     expect(comments.pending()).toEqual([]);
     expect(stub.commentControllers[0]!.threads).not.toContain(thread);
+  });
+});
+
+describe('draftTarget', () => {
+  it('writes a claim\'s draft on the line its finding sits on, when the diff shows it on the head side', () => {
+    const result = judgedResult();
+
+    expect(draftTarget(result, { kind: 'claim', index: 1 })).toEqual({ kind: 'line', path: 'src/retry.py', line: 3 });
+    expect(draftTarget(result, { kind: 'claim', index: 2 })).toEqual({ kind: 'line', path: 'src/retry.py', line: 9 });
+  });
+
+  it('writes it on the claim\'s part when its line is outside the diff, or it has none', () => {
+    const result = judgedResult();
+    const claims = result.claims!.claims;
+    claims[1] = { ...claims[1]!, location: { kind: 'description', line: 1 }, verdict: { ...(claims[1]!.verdict as object), evidence: [{ path: 'src/retry.py', line: 40, quote: 'x' }] } as never };
+
+    expect(draftTarget(result, { kind: 'claim', index: 1 })).toEqual({ kind: 'part', part: result.parts[0] });
+    // The story's claim cites nothing: its draft goes on its part, the settings.
+    expect(draftTarget(result, { kind: 'claim', index: 3 })).toEqual({ kind: 'part', part: result.parts[1] });
+  });
+
+  it('writes an unexplained part\'s draft on that part, and gives a finding on the whole pull request no place in the diff', () => {
+    const result = unexplainedResult();
+
+    expect(draftTarget(result, { kind: 'unexplained part', index: 0 })).toEqual({ kind: 'part', part: result.parts[1] });
+    expect(draftTarget(result, { kind: 'described change', index: 0 })).toBeUndefined();
+    expect(draftTarget(mappedCriteriaResult(), { kind: 'criterion', index: 1 })).toBeUndefined();
+    expect(draftTarget(result, { kind: 'unexplained part', index: 5 })).toBeUndefined();
+  });
+});
+
+describe('ReviewComments drafts', () => {
+  beforeEach(() => {
+    stub.reset();
+  });
+
+  /** The draft comment a thread shows, as the editor hands it to the add and discard commands. */
+  function draftIn(thread: StubCommentThread): vscode.Comment {
+    return thread.comments[0] as unknown as vscode.Comment;
+  }
+
+  it('opens a draft on its line, editable, outside the pending review', () => {
+    const comments = new ReviewComments();
+    comments.setReview(judgedResult());
+
+    comments.draft({ kind: 'line', path: 'src/retry.py', line: 3 }, 'The loop runs five times, see `src/retry.py:6`.', 'refuted claim');
+
+    const thread = stub.commentControllers[0]!.threads[0]!;
+    expect(thread.range).toEqual(new Range(2, 0, 2, 0));
+    expect(thread.uri.toString()).toBe(docs(judgedResult(), 'src/retry.py').head.toString());
+    expect(thread.comments[0]).toMatchObject({
+      body: 'The loop runs five times, see `src/retry.py:6`.',
+      mode: CommentMode.Editing,
+      label: 'draft from refuted claim',
+      contextValue: 'second-look-draft',
+    });
+    expect(thread.label).toBe('Draft comment · src/retry.py:3');
+    expect(thread.canReply).toBe(false);
+    expect(comments.pending()).toEqual([]);
+  });
+
+  it('adds the draft as the reviewer edited it to the pending review, as a line comment', () => {
+    const comments = new ReviewComments();
+    comments.setReview(judgedResult());
+    let changes = 0;
+    comments.onDidChange(() => changes++);
+    comments.draft({ kind: 'line', path: 'src/retry.py', line: 3 }, 'draft text', 'refuted claim');
+    const thread = stub.commentControllers[0]!.threads[0]!;
+    const draft = draftIn(thread);
+
+    // The editor writes the reviewer's edit into the comment it hands the command.
+    draft.body = 'The docstring says three attempts; the loop runs five.';
+    comments.addDraft(draft);
+
+    expect(comments.pending()).toEqual([
+      { kind: 'line', path: 'src/retry.py', side: 'head', line: 3, body: 'The docstring says three attempts; the loop runs five.' },
+    ]);
+    expect(thread.comments[0]).toMatchObject({ label: 'pending', mode: CommentMode.Preview });
+    expect(thread.contextValue).toBe('second-look-pending');
+    expect(thread.label).toBe('src/retry.py:3');
+    expect(changes).toBe(1);
+    // Added once: pressing add again adds nothing more.
+    comments.addDraft(draft);
+    expect(comments.pending()).toHaveLength(1);
+  });
+
+  it('adds a draft on a part as a comment on the whole part', () => {
+    const result = unexplainedResult();
+    const comments = new ReviewComments();
+    comments.setReview(result);
+
+    comments.draft({ kind: 'part', part: result.parts[1]! }, 'Why does the timeout change here?', 'unexplained change');
+    const thread = stub.commentControllers[0]!.threads[0]!;
+    expect(thread.range).toBeUndefined();
+    expect(thread.label).toBe('Draft comment · src/settings.ts (part)');
+    comments.addDraft(draftIn(thread));
+
+    expect(comments.pending()).toEqual([{ kind: 'part', path: 'src/settings.ts', body: 'Why does the timeout change here?' }]);
+  });
+
+  it('refuses to add an emptied draft, keeping it open, and discards a draft with no trace', () => {
+    const comments = new ReviewComments();
+    comments.setReview(judgedResult());
+    comments.draft({ kind: 'line', path: 'src/retry.py', line: 9 }, 'draft', 'unverifiable claim');
+    const thread = stub.commentControllers[0]!.threads[0]!;
+    const draft = draftIn(thread);
+
+    draft.body = '   ';
+    comments.addDraft(draft);
+    expect(stub.warningMessages).toEqual(['The draft is empty: write it or discard it.']);
+    expect(stub.commentControllers[0]!.threads).toContain(thread);
+
+    comments.discardDraft(draft);
+    expect(stub.commentControllers[0]!.threads).not.toContain(thread);
+    expect(comments.pending()).toEqual([]);
+  });
+
+  it('refuses a draft while the review is being sent, and drops open drafts on a new review', async () => {
+    const comments = new ReviewComments();
+    comments.setReview(judgedResult());
+    comments.draft({ kind: 'line', path: 'src/retry.py', line: 9 }, 'open draft', 'unverifiable claim');
+    const open = stub.commentControllers[0]!.threads[0]!;
+
+    await comments.sendWhileSealed(async () => {
+      comments.draft({ kind: 'line', path: 'src/retry.py', line: 3 }, 'late draft', 'refuted claim');
+      comments.addDraft(draftIn(open));
+    });
+    expect(stub.warningMessages).toEqual(['The review is being sent: try again once it finishes.', 'The review is being sent: try again once it finishes.']);
+    expect(stub.commentControllers[0]!.threads).toEqual([open]);
+    expect(comments.pending()).toEqual([]);
+
+    comments.setReview(mixedResult());
+    expect(stub.commentControllers[0]!.threads).toEqual([]);
   });
 });

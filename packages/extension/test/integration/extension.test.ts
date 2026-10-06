@@ -7,8 +7,11 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type * as vscode from 'vscode';
 import {
   ADD_COMMENT_COMMAND,
+  ADD_DRAFT_COMMAND,
   COMMENT_ON_PART_COMMAND,
   DISCARD_COMMENT_COMMAND,
+  DISCARD_DRAFT_COMMAND,
+  DRAFT_COMMENT_COMMAND,
   FETCH_LIBRARY_COMMAND,
   OPEN_ALL_PARTS_COMMAND,
   OPEN_LIBRARY_EVIDENCE_COMMAND,
@@ -22,7 +25,7 @@ import {
 } from '../../src/extension.js';
 import { changeUri, libraryUri } from '../../src/change-copies.js';
 import { SEND_REVIEW_VIEW_TYPE } from '../../src/send-page.js';
-import { claimsResult, criteriaResult, fetchedResult, judgedResult, mixedResult, offeredResult, storyResult } from '../results.js';
+import { claimsResult, criteriaResult, fetchedResult, judgedResult, mixedResult, offeredResult, storyResult, unexplainedResult } from '../results.js';
 import { OVERVIEW_VIEW_TYPE } from '../../src/overview.js';
 import {
   Range,
@@ -55,6 +58,8 @@ interface FakeEngineOptions {
   sendDelayMs?: number;
   /** The result the engine answers a library fetch with. */
   fetchResult?: unknown;
+  /** The draft the engine answers a draft request with. */
+  draftResult?: unknown;
 }
 
 function fakeEngine(options: FakeEngineOptions): ChildProcessWithoutNullStreams {
@@ -77,6 +82,7 @@ function fakeEngine(options: FakeEngineOptions): ChildProcessWithoutNullStreams 
         ? { FAKE_ENGINE_SEND_DELAY_MS: String(options.sendDelayMs) }
         : {}),
       ...(options.fetchResult !== undefined ? { FAKE_ENGINE_FETCH_RESULT: JSON.stringify(options.fetchResult) } : {}),
+      ...(options.draftResult !== undefined ? { FAKE_ENGINE_DRAFT_RESULT: JSON.stringify(options.draftResult) } : {}),
       FAKE_ENGINE_LOG: join(workDir, options.logName),
     },
   });
@@ -104,6 +110,9 @@ async function reviewWithFakeEngine(options: FakeEngineOptions): Promise<StubTre
     WHY_THIS_MATTERS_COMMAND,
     FETCH_LIBRARY_COMMAND,
     OPEN_LIBRARY_EVIDENCE_COMMAND,
+    DRAFT_COMMENT_COMMAND,
+    ADD_DRAFT_COMMAND,
+    DISCARD_DRAFT_COMMAND,
   ]);
 
   stub.inputBoxResult = PR_URL;
@@ -220,6 +229,9 @@ describe('activating the companion', () => {
       WHY_THIS_MATTERS_COMMAND,
       FETCH_LIBRARY_COMMAND,
       OPEN_LIBRARY_EVIDENCE_COMMAND,
+      DRAFT_COMMENT_COMMAND,
+      ADD_DRAFT_COMMAND,
+      DISCARD_DRAFT_COMMAND,
     ]);
     expect(stub.treeViews.map((view) => view.id)).toEqual([REVIEW_TREE_VIEW]);
     expect(stub.fileSystemProviders.map((entry) => entry.scheme)).toEqual(['second-look-change']);
@@ -954,6 +966,104 @@ describe('the pending review and sending it', () => {
     expect(sendPages()).toHaveLength(0);
     expect(renderedTree(view)[0]).toEqual({ label: 'Must review', tooltip: 'The parts to read first.' });
     expect(stub.commentControllers[0]!.threads).toHaveLength(0);
+  });
+
+  /** A draft the engine answers with, from the finding named. */
+  function draftOf(finding: { kind: string; index: number }, statement: string, body: string) {
+    return {
+      finding,
+      statement,
+      body,
+      promptVersion: '1',
+      stamp: { agent: 'pi', agentVersion: '0.86.1', model: 'zai/glm-4.6', effort: null, runAt: '2026-10-06T00:00:00.000Z' },
+    };
+  }
+
+  it('drafts a comment from a refuted claim, which the reviewer edits, adds to the pending review and sends', async () => {
+    const draft = draftOf(
+      { kind: 'claim', index: 1 },
+      'Gives up after three attempts, whatever the status.',
+      'The docstring says three attempts, but `src/retry.py:6` loops five times.',
+    );
+    const view = await reviewWithFakeEngine({ result: judgedResult(), draftResult: draft, logName: 'draft.log' });
+    const findings = stub.commentControllers.find((controller) => controller.id === 'second-look.findings')!;
+    expect((findings.threads[0]!.comments[0]!.body as { value: string }).value).toContain('command:second-look.draftComment');
+
+    await registeredCommands().get(DRAFT_COMMENT_COMMAND)!({ kind: 'claim', index: 1 });
+
+    // The engine drafted from the finding, with no token: nothing reached GitHub.
+    const asked = engineRequests('draft.log').at(-1)!;
+    expect(asked).toMatchObject({ method: 'draftComment', params: { url: PR_URL, finding: { kind: 'claim', index: 1 } } });
+    expect(asked.params).not.toHaveProperty('token');
+    // The draft opens on the claim's line, editable, outside the pending review.
+    const thread = stub.commentControllers[0]!.threads.at(-1)!;
+    expect(thread.uri.toString()).toBe(head('src/retry.py').toString());
+    expect(thread.range?.start.line).toBe(2);
+    expect(thread.label).toBe('Draft comment · src/retry.py:3');
+    expect(thread.comments[0]).toMatchObject({ body: draft.body, contextValue: 'second-look-draft' });
+    expect(renderedTree(view)[0]).toEqual({ label: 'Must review', tooltip: 'The parts to read first.' });
+
+    // The reviewer edits the draft and adds it: it joins the pending review.
+    thread.comments[0]!.body = 'The docstring says three attempts, but `src/retry.py:6` loops five times. Which is meant?';
+    await registeredCommands().get(ADD_DRAFT_COMMAND)!(thread.comments[0]);
+    expect(renderedTree(view)[1]).toMatchObject({ label: 'src/retry.py:3', contextValue: 'comment' });
+    expect(engineRequests('draft.log').map((request) => request.method)).toEqual(['initialize', 'review', 'draftComment']);
+
+    // Sending stays the Send review page's one press.
+    await registeredCommands().get(SUBMIT_REVIEW_COMMAND)!() as Promise<void>;
+    drive(sendPage(), { type: 'submit' });
+    await eventually('the review to be sent', () => (stub.informationMessages[0] !== undefined ? true : undefined));
+    expect(engineRequests('draft.log').at(-1)).toMatchObject({
+      method: 'sendReview',
+      params: {
+        review: {
+          submit: 'comment',
+          comments: [
+            { kind: 'line', path: 'src/retry.py', side: 'head', line: 3, body: 'The docstring says three attempts, but `src/retry.py:6` loops five times. Which is meant?' },
+          ],
+        },
+      },
+    });
+  });
+
+  it('discards a draft with no trace in the pending review', async () => {
+    const draft = draftOf({ kind: 'claim', index: 3 }, 'it reads', 'Where does the story see this?');
+    const view = await reviewWithFakeEngine({ result: judgedResult(), draftResult: draft, logName: 'draft-discard.log' });
+
+    await registeredCommands().get(DRAFT_COMMENT_COMMAND)!({ kind: 'claim', index: 3 });
+    const thread = stub.commentControllers[0]!.threads.at(-1)!;
+    // The story's claim cites nothing in the diff: its draft is on its part.
+    expect(thread.range).toBeUndefined();
+    expect(thread.label).toBe('Draft comment · src/settings.ts (part)');
+
+    await registeredCommands().get(DISCARD_DRAFT_COMMAND)!(thread.comments[0]);
+
+    expect(stub.commentControllers[0]!.threads).not.toContain(thread);
+    expect(renderedTree(view)[0]).toEqual({ label: 'Must review', tooltip: 'The parts to read first.' });
+  });
+
+  it('adds a draft from a finding on the whole pull request to the overall comment only once the reviewer accepts it', async () => {
+    const draft = draftOf({ kind: 'described change', index: 0 }, 'Retries failed sends.', 'The description says failed sends are retried, but no part logs a retry.');
+    await reviewWithFakeEngine({ result: unexplainedResult(), draftResult: draft, logName: 'draft-overall.log' });
+
+    stub.inputBoxResult = undefined;
+    await registeredCommands().get(DRAFT_COMMENT_COMMAND)!({ kind: 'described change', index: 0 });
+    expect(sendPages()).toHaveLength(0);
+
+    stub.inputBoxResult = 'The description says failed sends are retried and logged, but nothing logs a retry.';
+    await registeredCommands().get(DRAFT_COMMENT_COMMAND)!({ kind: 'described change', index: 0 });
+
+    expect(sendPage().webview.posted.at(-1)).toMatchObject({ type: 'state', body: 'The description says failed sends are retried and logged, but nothing logs a retry.', drafts: [] });
+    expect(engineRequests('draft-overall.log').map((request) => request.method)).toEqual(['initialize', 'review', 'draftComment', 'draftComment']);
+  });
+
+  it('refuses a draft from something that is no finding, asking the engine nothing', async () => {
+    await reviewWithFakeEngine({ result: judgedResult(), logName: 'draft-none.log' });
+
+    await registeredCommands().get(DRAFT_COMMENT_COMMAND)!({ kind: 'claim', index: 0 });
+
+    expect(stub.warningMessages).toEqual(['This finding cannot be drafted from; review the pull request again.']);
+    expect(engineRequests('draft-none.log').map((request) => request.method)).toEqual(['initialize', 'review']);
   });
 
   it('drops a comment on the page instead of sending it', async () => {

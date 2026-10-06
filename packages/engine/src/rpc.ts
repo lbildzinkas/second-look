@@ -11,7 +11,8 @@
  * `REVIEW_RESULT_VERSION`.
  *
  * After the handshake, {@link REVIEW_METHOD} reviews a pull request,
- * {@link FETCH_LIBRARY_METHOD} presses one finding's library fetch, and
+ * {@link FETCH_LIBRARY_METHOD} presses one finding's library fetch,
+ * {@link DRAFT_COMMENT_METHOD} drafts a comment from one finding, and
  * {@link SEND_REVIEW_METHOD} sends the pending review to GitHub as one
  * review — the protocol's one write, asked for only when the reviewer
  * presses send (ADR 0002). A review request also carries the reviewer's
@@ -22,7 +23,7 @@
  */
 
 import type { AgentName } from './agents.js';
-import type { PendingReview, ReviewResult, SentReview } from './protocol.js';
+import type { DraftComment, FindingRef, PendingReview, ReviewResult, SentReview } from './protocol.js';
 
 /** Version of the JSON-RPC protocol between the extension and the engine. */
 export const ENGINE_PROTOCOL_VERSION = 1 as const;
@@ -155,6 +156,28 @@ export interface FetchLibraryParams {
 
 /** The fetch request's result: the review result with the claim judged against the library's source. */
 export type FetchLibraryRpcResult = ReviewResult;
+
+/**
+ * The request that drafts a comment from one finding, sent only when the
+ * reviewer asks for it: the agent writes a short draft from the finding
+ * and its evidence, and the engine checks it before answering. The
+ * finding is one of the engine's own latest review of the pull request.
+ * The draft reaches GitHub only if the reviewer adds it to the pending
+ * review and sends that (ADR 0002).
+ */
+export const DRAFT_COMMENT_METHOD = 'draftComment' as const;
+
+/** One draft request: the reviewed pull request, the finding and the agent that drafts. */
+export interface DraftCommentParams {
+  /** The pull request's HTML URL, as the review result names it. */
+  url: string;
+  finding: FindingRef;
+  /** The agent, model and account that draft; see {@link ReviewAgentChoice}. */
+  agent?: ReviewAgentChoice;
+}
+
+/** The draft request's result: the checked draft. */
+export type DraftCommentRpcResult = DraftComment;
 
 /** The request that sends the pending review to GitHub as one review. */
 export const SEND_REVIEW_METHOD = 'sendReview' as const;

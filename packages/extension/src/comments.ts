@@ -1,8 +1,9 @@
 import * as vscode from 'vscode';
-import type { Comment, Part, ReviewResult } from '@second-look/engine';
-import { partFiles, type ChangeSide } from './change-copies.js';
+import { findingAnchor, type Comment, type FindingRef, type Part, type ReviewResult } from '@second-look/engine';
+import { changeUri, partFiles, type ChangeSide } from './change-copies.js';
 import {
   COMMENT_CONTROLLER_ID,
+  DRAFT_COMMENT_CONTEXT,
   PENDING_THREAD_CONTEXT,
 } from './commands.js';
 
@@ -94,6 +95,38 @@ export function commentableRanges(
   return ranges;
 }
 
+/**
+ * Where a draft from a finding is written: a line of the head side's
+ * diff, or a whole part.
+ */
+export type DraftTarget = { kind: 'line'; path: string; line: number } | { kind: 'part'; part: Part };
+
+/**
+ * Where a draft from a finding is written: a claim's on the line its
+ * finding's thread sits on, when the diff shows that line on the head
+ * side, where GitHub can anchor a comment, else on the claim's part; an
+ * unexplained part's on that part. A described change and an acceptance
+ * criterion are about the whole pull request, so theirs has no place in
+ * the diff: undefined, as for a finding the result does not hold.
+ */
+export function draftTarget(result: ReviewResult, ref: FindingRef): DraftTarget | undefined {
+  if (ref.kind === 'unexplained part') {
+    const entry = result.unexplained?.parts[ref.index];
+    const part = entry === undefined ? undefined : result.parts[entry.part];
+    return part === undefined ? undefined : { kind: 'part', part };
+  }
+  const claim = ref.kind === 'claim' ? result.claims?.claims[ref.index] : undefined;
+  if (claim === undefined) return undefined;
+  const anchor = findingAnchor(claim, result.parts);
+  if (anchor !== undefined) {
+    const line = anchor.line - 1;
+    const ranges = commentableRanges({ path: anchor.path, side: 'head', sidePath: anchor.path }, result);
+    if (ranges.some((range) => range.start.line <= line && line <= range.end.line)) return { kind: 'line', path: anchor.path, line: anchor.line };
+  }
+  const part = result.parts[claim.part];
+  return part === undefined ? undefined : { kind: 'part', part };
+}
+
 /** Where a comment points: `path:line`, or `path (part)` for a whole part. */
 export function commentLocation(comment: Comment): string {
   return comment.kind === 'line' ? `${comment.path}:${comment.line}` : `${comment.path} (part)`;
@@ -125,6 +158,9 @@ export class ReviewComments implements vscode.Disposable {
   private readonly controller: vscode.CommentController;
 
   private readonly threads = new Map<vscode.CommentThread, Comment>();
+
+  /** The drafts open for editing, each with its thread; none is in the pending review yet. */
+  private readonly drafts = new Map<vscode.Comment, vscode.CommentThread>();
 
   private readonly changed = new vscode.EventEmitter<void>();
 
@@ -188,10 +224,14 @@ export class ReviewComments implements vscode.Disposable {
 
   /**
    * Turns to a new review: the pending review of the old one is gone, so
-   * its comments and threads are too.
+   * its comments, its open drafts and their threads are too.
    */
   setReview(result: ReviewResult): void {
     this.result = result;
+    for (const thread of this.drafts.values()) {
+      thread.dispose();
+    }
+    this.drafts.clear();
     this.clear();
   }
 
@@ -206,29 +246,49 @@ export class ReviewComments implements vscode.Disposable {
       this.refuseWhileSending();
       return;
     }
+    this.gather(reply.thread, reply.text);
+  }
+
+  /** Gathers what was written in a thread into the pending review, the thread showing it as pending. */
+  private gather(thread: vscode.CommentThread, text: string): void {
     const result = this.result;
-    const target = result === undefined ? undefined : commentTargetOf(result, reply.thread.uri);
+    const target = result === undefined ? undefined : commentTargetOf(result, thread.uri);
     if (result === undefined || target === undefined) {
-      reply.thread.dispose();
+      thread.dispose();
       return;
     }
     const comment: Comment =
-      reply.thread.range === undefined
-        ? { kind: 'part', path: target.path, body: reply.text }
+      thread.range === undefined
+        ? { kind: 'part', path: target.path, body: text }
         : {
             kind: 'line',
             path: target.path,
             side: target.side,
-            line: reply.thread.range.start.line + 1,
-            body: reply.text,
+            line: thread.range.start.line + 1,
+            body: text,
           };
-    this.threads.set(reply.thread, comment);
-    reply.thread.comments = [shownComment(reply.text)];
-    reply.thread.canReply = false;
-    reply.thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
-    reply.thread.contextValue = PENDING_THREAD_CONTEXT;
-    reply.thread.label = commentLocation(comment);
+    this.threads.set(thread, comment);
+    thread.comments = [shownComment(text)];
+    thread.canReply = false;
+    thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+    thread.contextValue = PENDING_THREAD_CONTEXT;
+    thread.label = commentLocation(comment);
     this.changed.fire();
+  }
+
+  /** A thread on a part's first file, at no line: the editor's own file comment. */
+  private partThread(result: ReviewResult, part: Part): vscode.CommentThread | undefined {
+    const [file] = partFiles(result.copies, part);
+    if (file === undefined) {
+      return undefined;
+    }
+    const uri = part.changeKind === 'deletion' ? file.original : file.modified;
+    // A thread at no line is the editor's own file comment; it is created
+    // over a line first, then let loose of it.
+    const thread = this.controller.createCommentThread(uri, new vscode.Range(0, 0, 0, 0), []);
+    thread.range = undefined;
+    thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+    return thread;
   }
 
   /** Starts a comment on a whole part: a thread on its file, at no line. */
@@ -241,19 +301,84 @@ export class ReviewComments implements vscode.Disposable {
       this.refuseWhileSending();
       return;
     }
-    const [file] = partFiles(result.copies, part);
-    if (file === undefined) {
+    const thread = this.partThread(result, part);
+    if (thread === undefined) {
       return;
     }
-    const uri = part.changeKind === 'deletion' ? file.original : file.modified;
-    // A thread at no line is the editor's own file comment; it is created
-    // over a line first, then let loose of it.
-    const thread = this.controller.createCommentThread(uri, new vscode.Range(0, 0, 0, 0), []);
-    thread.range = undefined;
     thread.canReply = true;
-    thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
     thread.contextValue = PENDING_THREAD_CONTEXT;
     thread.label = commentLocation({ kind: 'part', path: part.path, body: '' });
+  }
+
+  /**
+   * Opens a comment the companion drafted from a finding in a thread of
+   * its own, its text open for editing: on its line of the head side's
+   * diff, or on its part as a whole. The draft joins the pending review
+   * only when the reviewer adds it ({@link addDraft}), and leaves no trace
+   * when they discard it ({@link discardDraft}).
+   */
+  draft(target: DraftTarget, body: string, from: string): void {
+    const result = this.result;
+    if (result === undefined) {
+      return;
+    }
+    if (this.sending) {
+      this.refuseWhileSending();
+      return;
+    }
+    const thread =
+      target.kind === 'line'
+        ? this.controller.createCommentThread(
+            changeUri('head', result.copies.head.commit, target.path),
+            new vscode.Range(target.line - 1, 0, target.line - 1, 0),
+            [],
+          )
+        : this.partThread(result, target.part);
+    if (thread === undefined) {
+      return;
+    }
+    const comment: vscode.Comment = {
+      body,
+      mode: vscode.CommentMode.Editing,
+      author: { name: 'Second Look' },
+      label: `draft from ${from}`,
+      contextValue: DRAFT_COMMENT_CONTEXT,
+    };
+    thread.comments = [comment];
+    thread.canReply = false;
+    thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+    thread.label = `Draft comment · ${target.kind === 'line' ? `${target.path}:${target.line}` : `${target.part.path} (part)`}`;
+    this.drafts.set(comment, thread);
+  }
+
+  /**
+   * Adds a draft, with whatever the reviewer edited it to, to the pending
+   * review: its thread becomes a pending comment's. An emptied draft is
+   * refused with a warning, and stays open.
+   */
+  addDraft(comment: vscode.Comment): void {
+    if (this.sending) {
+      this.refuseWhileSending();
+      return;
+    }
+    const thread = this.drafts.get(comment);
+    if (thread === undefined) {
+      return;
+    }
+    const text = typeof comment.body === 'string' ? comment.body : comment.body.value;
+    if (text.trim() === '') {
+      vscode.window.showWarningMessage('The draft is empty: write it or discard it.');
+      return;
+    }
+    this.drafts.delete(comment);
+    this.gather(thread, text);
+  }
+
+  /** Discards a draft, thread and all; it never joined the pending review. */
+  discardDraft(comment: vscode.Comment): void {
+    const thread = this.drafts.get(comment);
+    this.drafts.delete(comment);
+    thread?.dispose();
   }
 
   /** Discards one thread of the pending review, gathered comment and all. */
@@ -321,6 +446,7 @@ export class ReviewComments implements vscode.Disposable {
 
   dispose(): void {
     this.threads.clear();
+    this.drafts.clear();
     this.changed.dispose();
     this.controller.dispose();
   }

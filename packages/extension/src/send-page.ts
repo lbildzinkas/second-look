@@ -185,6 +185,22 @@ export class SendReviewPage implements vscode.Disposable {
     } satisfies SendPageState);
   }
 
+  /**
+   * Adds text to the overall comment on the whole pull request, after
+   * what it already says, the way a draft from a finding on the whole
+   * pull request joins the pending review once the reviewer adds it. The
+   * page shows it when it is open, and nothing is sent before Submit.
+   * False while the review's one write is under way.
+   */
+  addToOverall(text: string): boolean {
+    if (this.sending) {
+      return false;
+    }
+    this.body = this.body.trim() === '' ? text : `${this.body.trimEnd()}\n\n${text}`;
+    this.post();
+    return true;
+  }
+
   /** The gathered comment a draft number renders, if it is still gathered. */
   private byDraft(id: number): Comment | undefined {
     for (const [comment, draft] of this.drafts) {

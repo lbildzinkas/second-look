@@ -5,6 +5,7 @@ import {
   checkFailed,
   hiddenContent,
   isFinding,
+  isFindingRef,
   isUnmetCriterion,
   isUnprovenSource,
   parsePullRequestUrl,
@@ -15,6 +16,7 @@ import {
   type ClaimSource,
   type CriterionVerdictKind,
   type DescribedChange,
+  type FindingRef,
   type HiddenKind,
   type LinkedIssue,
   type Part,
@@ -51,17 +53,25 @@ export type OverviewMessage =
       evidence: CitedEvidence;
       /** The cited line, by its index in that evidence. */
       index: number;
+    }
+  | {
+      type: 'draft';
+      /** The finding to draft a comment from. */
+      finding: FindingRef;
     };
+
 
 /** Reads a page message out of what the webview delivered, if it is one. */
 function overviewMessage(value: unknown): OverviewMessage | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
-  const { type, part, issue, criterion, evidence, index } = value as Record<string, unknown>;
+  const { type, part, issue, criterion, evidence, index, finding } = value as Record<string, unknown>;
   if (type === 'openPart' && Number.isInteger(part)) return { type, target: part as number };
   if (type === 'openIssue' && Number.isInteger(issue)) return { type, target: issue as number };
   if (type === 'openEvidence' && Number.isInteger(criterion) && (evidence === 'code' || evidence === 'tests') && Number.isInteger(index)) {
     return { type, criterion: criterion as number, evidence, index: index as number };
   }
+  const ref = { kind: finding, index };
+  if (type === 'draft' && isFindingRef(ref)) return { type, finding: ref };
   return undefined;
 }
 
@@ -76,7 +86,8 @@ function overviewMessage(value: unknown): OverviewMessage | undefined {
  * head copy, and the manual checks the description reports, each its
  * place a button that jumps to the description, the unexplained
  * changes in both directions, the claims the change makes with where each
- * is made and the part it is attached to, the pipeline report and whether it is trusted, the checks run on the merge
+ * is made and the part it is attached to, each finding with a button that
+ * drafts a comment from it, the pipeline report and whether it is trusted, the checks run on the merge
  * commit with their annotations and failed jobs' trimmed logs, the pull
  * request's description in full with its hidden content shown and flagged,
  * and who made each result.
@@ -102,9 +113,13 @@ export class OverviewPanel implements vscode.Disposable {
   /** Opens a line a criterion's verdict cites, in the read-only head copy. */
   private readonly openLine: (path: string, line: number) => void;
 
-  constructor(openPart: (part: Part) => void, openLine: (path: string, line: number) => void) {
+  /** Drafts a comment from a finding the page lists. */
+  private readonly draft: (finding: FindingRef) => void;
+
+  constructor(openPart: (part: Part) => void, openLine: (path: string, line: number) => void, draft: (finding: FindingRef) => void) {
     this.openPart = openPart;
     this.openLine = openLine;
+    this.draft = draft;
   }
 
   /**
@@ -152,11 +167,15 @@ export class OverviewPanel implements vscode.Disposable {
   /**
    * The part a story, claim or unexplained-change button names, opened in
    * the diff editor; a linked issue, opened on GitHub; a line a criterion's
-   * verdict cites, opened in the head copy.
+   * verdict cites, opened in the head copy; a finding, drafted from.
    */
   private handle(value: unknown): void {
     const message = overviewMessage(value);
     if (message === undefined) return;
+    if (message.type === 'draft') {
+      this.draft(message.finding);
+      return;
+    }
     if (message.type === 'openEvidence') {
       const verdict = this.state?.result.criteria?.criteria[message.criterion]?.verdict;
       const cited = verdict === undefined || verdict.kind === 'not checked' ? undefined : verdict[message.evidence][message.index];
@@ -403,7 +422,12 @@ function criterionEvidence(criterion: AcceptanceCriterion, index: number): strin
   );
 }
 
-/** One acceptance criterion: its quote, the issue it comes from as a button that opens it, its verdict, and its evidence once mapped. */
+/** The button that drafts a comment from a finding the page lists. */
+function draftButton(finding: FindingRef): string {
+  return ` <button type="button" class="pt draft" data-draft="${escapeHtml(finding.kind)}" data-index="${finding.index}">Draft comment</button>`;
+}
+
+/** One acceptance criterion: its quote, the issue it comes from as a button that opens it, its verdict, its evidence once mapped, and a draft button when it is a finding. */
 function criterionItem(criterion: AcceptanceCriterion, index: number, criteria: NonNullable<ReviewResult['criteria']>): string {
   const issue = criteria.issues[criterion.issue];
   const from =
@@ -412,7 +436,8 @@ function criterionItem(criterion: AcceptanceCriterion, index: number, criteria: 
       : `<button type="button" class="pt issue" data-issue="${criterion.issue}">${escapeHtml(issueName(issue))}</button> · ${escapeHtml(ISSUE_LINKS[issue.link])} · `;
   return (
     `<li><q class="quote">${sanitiseUntrusted(criterion.quote).html}</q>` +
-    `<div class="where">${from}<span class="verdict${isUnmetCriterion(criterion) ? ' finding' : ''}">${escapeHtml(criterion.verdict.kind)}</span></div>` +
+    `<div class="where">${from}<span class="verdict${isUnmetCriterion(criterion) ? ' finding' : ''}">${escapeHtml(criterion.verdict.kind)}</span>` +
+    `${isUnmetCriterion(criterion) ? draftButton({ kind: 'criterion', index }) : ''}</div>` +
     `${criterionEvidence(criterion, index)}</li>`
   );
 }
@@ -521,15 +546,15 @@ function unexplainedSection(state: OverviewState): string {
   const note =
     '<p class="note">The change compared with its description and linked issues in both directions: the parts neither explains, ' +
     'then the changes they describe that the diff does not contain. Each is a finding.</p>';
-  const parts = unexplained.parts.map(({ part, reason }) => {
+  const parts = unexplained.parts.map(({ part, reason }, index) => {
     const shown = result.parts[part];
     const button = shown === undefined ? '' : `<button type="button" class="pt" data-part="${part}">${escapeHtml(shown.name ?? shown.path)}</button>`;
-    return `<li><span class="verdict finding">in the code, not explained</span> ${button}<div class="why">${escapeHtml(reason)}</div></li>`;
+    return `<li><span class="verdict finding">in the code, not explained</span> ${button}${draftButton({ kind: 'unexplained part', index })}<div class="why">${escapeHtml(reason)}</div></li>`;
   });
   const described = unexplained.described.map(
-    (change) =>
+    (change, index) =>
       `<li><span class="verdict finding">described, not in the code</span> <q class="quote">${sanitiseUntrusted(change.quote).html}</q>` +
-      `<div class="where">${describedWhere(change, result)}</div><div class="why">${escapeHtml(change.reason)}</div></li>`,
+      `<div class="where">${describedWhere(change, result)}${draftButton({ kind: 'described change', index })}</div><div class="why">${escapeHtml(change.reason)}</div></li>`,
   );
   return `<h2>Unexplained changes${stamp}</h2>${note}<ol class="claims">${[...parts, ...described].join('')}</ol>`;
 }
@@ -603,8 +628,8 @@ function verdictDetail(claim: Claim): string {
   return lines.map((line) => `<div class="why">${escapeHtml(line)}</div>`).join('');
 }
 
-/** One claim: its quote, where it is made, the part it is attached to as a button that opens it, and its verdict with its evidence. */
-function claimItem(claim: Claim, result: ReviewResult): string {
+/** One claim: its quote, where it is made, the part it is attached to as a button that opens it, its verdict with its evidence, and a draft button when it is a finding. */
+function claimItem(claim: Claim, index: number, result: ReviewResult): string {
   const part = result.parts[claim.part];
   const button =
     part === undefined
@@ -612,7 +637,8 @@ function claimItem(claim: Claim, result: ReviewResult): string {
       : ` · <button type="button" class="pt" data-part="${claim.part}">${escapeHtml(part.name ?? part.path)}</button>`;
   return (
     `<li><q class="quote">${sanitiseUntrusted(claim.quote).html}</q>` +
-    `<div class="where">${escapeHtml(claimWhere(claim))}${button} · <span class="verdict${isFinding(claim) ? ' finding' : ''}">${escapeHtml(claim.verdict.kind)}</span></div>` +
+    `<div class="where">${escapeHtml(claimWhere(claim))}${button} · <span class="verdict${isFinding(claim) ? ' finding' : ''}">${escapeHtml(claim.verdict.kind)}</span>` +
+    `${isFinding(claim) ? draftButton({ kind: 'claim', index }) : ''}</div>` +
     `${verdictDetail(claim)}</li>`
   );
 }
@@ -643,7 +669,7 @@ function claimsSection(state: OverviewState): string {
     '<p class="note">Statements about how code or a library behaves, from a fresh pipeline report, the description, the docstrings and comments ' +
     `the change adds, and the story, in that order. ${escapeHtml(verdictsNote(claims))}</p>`;
   const fellBack = claims.outcome === 'fell back' ? `<p class="note">Only the pipeline's claims are listed: ${escapeHtml(claims.detail)}.</p>` : '';
-  return `<h2>Claims ${stamp}</h2>${fellBack}${note}<ol class="claims">${claims.claims.map((claim) => claimItem(claim, result)).join('')}</ol>`;
+  return `<h2>Claims ${stamp}</h2>${fellBack}${note}<ol class="claims">${claims.claims.map((claim, index) => claimItem(claim, index, result)).join('')}</ol>`;
 }
 
 /** How the page names each state of the pipeline report. */
@@ -936,6 +962,11 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
         evidence: button.getAttribute('data-evidence'),
         index: Number(button.getAttribute('data-index'))
       });
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('button.draft'), function (button) {
+    button.addEventListener('click', function () {
+      vscode.postMessage({ type: 'draft', finding: button.getAttribute('data-draft'), index: Number(button.getAttribute('data-index')) });
     });
   });
   Array.prototype.forEach.call(document.querySelectorAll('button.manual'), function (button) {

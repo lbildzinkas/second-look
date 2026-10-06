@@ -4,7 +4,8 @@
   "source": "https://github.com/example-org/example-repo/pull/4326",
   "recordedAt": "2026-10-05T17:04:16.291Z",
   "prompts": [
-    "unexplained"
+    "unexplained",
+    "draft-comment"
   ],
   "pullRequest": {
     "url": "https://github.com/example-org/example-repo/pull/4326",

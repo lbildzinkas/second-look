@@ -280,6 +280,27 @@ describe('SendReviewPage', () => {
     expect(states(panel).some((state) => state.sending)).toBe(true);
   });
 
+  it('adds an accepted draft to the overall comment after what it says, and sends it only on the press', async () => {
+    const { comments } = gatheredComments();
+    const recorder = recordingSend(comments);
+    const page = new SendReviewPage({ comments, send: recorder.send });
+
+    // A draft added before the page opens waits in it.
+    expect(page.addToOverall('The README section the issue asks for is missing.')).toBe(true);
+    page.open();
+    const panel = stub.webviewPanels[0]!;
+    expect(states(panel).at(-1)!.body).toBe('The README section the issue asks for is missing.');
+
+    drive(panel, { type: 'body', body: 'One deliberate pass.  ' });
+    expect(page.addToOverall('Nothing logs a retry, which #30 asks for.')).toBe(true);
+    expect(states(panel).at(-1)!.body).toBe('One deliberate pass.\n\nNothing logs a retry, which #30 asks for.');
+    expect(recorder.sent).toEqual([]);
+
+    drive(panel, { type: 'submit' });
+    await eventually('the review to go', () => (recorder.sent.length > 0 ? true : undefined));
+    expect(recorder.sent[0]!.body).toBe('One deliberate pass.\n\nNothing logs a retry, which #30 asks for.');
+  });
+
   it('sends only once for presses while a send is under way', async () => {
     const { comments } = gatheredComments();
     let release: () => void = () => undefined;

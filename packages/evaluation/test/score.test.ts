@@ -10,6 +10,7 @@ import {
   scoresOf,
   tallyCase,
   tallyCriteria,
+  tallyDrafts,
   tallyFinding,
   tallyJudging,
   tallyStory,
@@ -400,6 +401,28 @@ describe('the story checks', () => {
 
   it('gives a case without a story no story score', () => {
     expect(storyScores({ ...story(true), story: tallyCase(DIFF, { noise: {}, importantParts: [], claims: [] }, undefined).story })).toEqual({});
+  });
+});
+
+describe('the draft checks', () => {
+  const base = () => tallyCase(DIFF, { noise: {}, importantParts: [], claims: [] }, undefined);
+  const draftScores = (tally: ReturnType<typeof base>) =>
+    Object.fromEntries(scoresOf(tally).filter((score) => score.name.startsWith('draft-')).map((score) => [score.name, score.value]));
+  const good = { length: 90, underCap: true, cited: ['src/x.py:3'], added: [] };
+  const inventive = { length: 700, underCap: false, cited: [], added: ['RETRY_LIMIT'] };
+
+  it('scores the drafts that cite an evidence location, add no claim and stay within the cap, a missing draft failing all three', () => {
+    expect(draftScores({ ...base(), drafts: tallyDrafts([good, inventive, undefined, good]) })).toEqual({
+      'draft-cites-evidence': 0.5,
+      'draft-no-new-claim': 0.5,
+      'draft-under-cap': 0.5,
+    });
+  });
+
+  it('adds the draft counts across cases, and gives a case that drafts nothing no draft score', () => {
+    const added = addTallies([{ ...base(), drafts: tallyDrafts([good]) }, { ...base(), drafts: tallyDrafts([inventive]) }]);
+    expect(draftScores(added)).toEqual({ 'draft-cites-evidence': 0.5, 'draft-no-new-claim': 0.5, 'draft-under-cap': 0.5 });
+    expect(draftScores(base())).toEqual({});
   });
 });
 

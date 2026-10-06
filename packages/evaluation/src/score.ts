@@ -4,6 +4,7 @@ import type {
   Claim,
   ClaimVerdict,
   DescribedChange,
+  DraftChecks,
   FileSlice,
   LinkedIssue,
   NoiseAssessment,
@@ -66,6 +67,15 @@ export const CRITERIA_SCORES: readonly string[] = [
   'criteria-tests-recall',
   'criteria-manual-recall',
 ];
+
+/**
+ * The plain checks of the drafts the agent writes from the hand-written
+ * findings: the share that cite one of the finding's evidence locations,
+ * the share that add no claim the finding lacks — no file or code name,
+ * place or number it does not hold — and the share that stay within the
+ * length cap.
+ */
+export const DRAFT_SCORES: readonly string[] = ['draft-cites-evidence', 'draft-no-new-claim', 'draft-under-cap'];
 
 /** One score of a run, with the direction in which it improves. */
 export interface Score {
@@ -137,6 +147,40 @@ export interface Tally {
   unexplained: UnexplainedTally;
   /** The counts behind the verdicts the agent gave the acceptance criteria, against the hand labels. */
   criteria: CriteriaTally;
+  /** The counts behind the plain checks of the drafts the agent wrote. */
+  drafts: DraftTally;
+}
+
+/**
+ * The counts behind the drafts' plain checks: the findings drafted from,
+ * and the drafts that cite an evidence location, add nothing the finding
+ * lacks, and stay within the length cap.
+ */
+export interface DraftTally {
+  findings: number;
+  cited: number;
+  noNewClaim: number;
+  underCap: number;
+}
+
+function noDrafts(): DraftTally {
+  return { findings: 0, cited: 0, noNewClaim: 0, underCap: 0 };
+}
+
+/**
+ * Tallies the drafts' plain checks, one per finding: a finding the agent
+ * wrote no draft for fails every check.
+ */
+export function tallyDrafts(checks: readonly (DraftChecks | undefined)[]): DraftTally {
+  const tally = noDrafts();
+  for (const each of checks) {
+    tally.findings++;
+    if (each === undefined) continue;
+    if (each.cited.length > 0) tally.cited++;
+    if (each.added.length === 0) tally.noNewClaim++;
+    if (each.underCap) tally.underCap++;
+  }
+  return tally;
 }
 
 /**
@@ -529,6 +573,7 @@ export function tallyCase(
     judging: noJudging(),
     unexplained: noUnexplained(),
     criteria: noCriteria(),
+    drafts: noDrafts(),
   };
   if (!parts) return tally;
 
@@ -636,6 +681,7 @@ export function addTallies(tallies: readonly Tally[]): Tally {
     judging: noJudging(),
     unexplained: noUnexplained(),
     criteria: noCriteria(),
+    drafts: noDrafts(),
   };
   for (const tally of tallies) {
     total.changedLines += tally.changedLines;
@@ -648,6 +694,7 @@ export function addTallies(tallies: readonly Tally[]): Tally {
     for (const key of Object.keys(total.judging) as (keyof JudgingTally)[]) total.judging[key] += tally.judging[key];
     for (const key of Object.keys(total.unexplained) as (keyof UnexplainedTally)[]) total.unexplained[key] += tally.unexplained[key];
     for (const key of Object.keys(total.criteria) as (keyof CriteriaTally)[]) total.criteria[key] += tally.criteria[key];
+    for (const key of Object.keys(total.drafts) as (keyof DraftTally)[]) total.drafts[key] += tally.drafts[key];
     for (const [name, counts] of tally.noise) {
       const sum = total.noise.get(name) ?? { expected: 0, predicted: 0, matched: 0 };
       sum.expected += counts.expected;
@@ -687,8 +734,9 @@ function median(values: readonly number[]): number {
  * story's plain checks, the recall and precision of the claims the agent
  * listed, the accuracy and false-verified rate of the verdicts it
  * gave, the recall and precision of the unexplained changes it found
- * in each direction, and the accuracy, false-met rate and evidence recall
- * of the verdicts it gave the acceptance criteria. A score with nothing to
+ * in each direction, the accuracy, false-met rate and evidence recall
+ * of the verdicts it gave the acceptance criteria, and the plain checks
+ * of the drafts it wrote from findings. A score with nothing to
  * count is left out rather than given a value it did not earn.
  */
 export function scoresOf(tally: Tally): Score[] {
@@ -740,6 +788,12 @@ export function scoresOf(tally: Tally): Score[] {
     ...ratio('criteria-code-recall', criteria.codeCited, criteria.codeFiles),
     ...ratio('criteria-tests-recall', criteria.testsCited, criteria.testFiles),
     ...ratio('criteria-manual-recall', criteria.manualCited, criteria.manualChecks),
+  );
+  const { drafts } = tally;
+  scores.push(
+    ...ratio('draft-cites-evidence', drafts.cited, drafts.findings),
+    ...ratio('draft-no-new-claim', drafts.noNewClaim, drafts.findings),
+    ...ratio('draft-under-cap', drafts.underCap, drafts.findings),
   );
   return scores;
 }

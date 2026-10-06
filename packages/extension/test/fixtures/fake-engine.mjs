@@ -10,6 +10,8 @@
 //   FAKE_ENGINE_SEND_DELAY_MS      wait this long before answering sendReview
 //   FAKE_ENGINE_FETCH_RESULT      JSON review result to return for fetchLibrary
 //   FAKE_ENGINE_FETCH_ERROR       answer fetchLibrary with this plain error message
+//   FAKE_ENGINE_DRAFT_RESULT      JSON draft comment to return for draftComment
+//   FAKE_ENGINE_DRAFT_ERROR       answer draftComment with this plain error message
 //   FAKE_ENGINE_PROTOCOL_VERSION  protocol version to speak (default 1)
 //   FAKE_ENGINE_EXIT_ON           exit right after this method, answering nothing
 //   FAKE_ENGINE_STALL_ON          receive this method, answer nothing, stay alive
@@ -35,6 +37,8 @@ const sendResult = process.env.FAKE_ENGINE_SEND_RESULT
 const sendError = process.env.FAKE_ENGINE_SEND_ERROR;
 const fetchResult = process.env.FAKE_ENGINE_FETCH_RESULT ? JSON.parse(process.env.FAKE_ENGINE_FETCH_RESULT) : null;
 const fetchError = process.env.FAKE_ENGINE_FETCH_ERROR;
+const draftResult = process.env.FAKE_ENGINE_DRAFT_RESULT ? JSON.parse(process.env.FAKE_ENGINE_DRAFT_RESULT) : null;
+const draftError = process.env.FAKE_ENGINE_DRAFT_ERROR;
 const sendDelayMs = Number(process.env.FAKE_ENGINE_SEND_DELAY_MS ?? '0');
 const exitOn = process.env.FAKE_ENGINE_EXIT_ON;
 const stallOn = process.env.FAKE_ENGINE_STALL_ON;
@@ -117,6 +121,11 @@ function handle(line) {
   if (request.method === 'fetchLibrary') {
     if (fetchError) fail(request.id, -32002, fetchError);
     else send({ jsonrpc: '2.0', id: request.id, result: fetchResult });
+    return;
+  }
+  if (request.method === 'draftComment') {
+    if (draftError) fail(request.id, -32002, draftError);
+    else send({ jsonrpc: '2.0', id: request.id, result: draftResult });
     return;
   }
   fail(request.id, -32601, `unknown method: ${request.method}`);

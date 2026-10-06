@@ -57,3 +57,20 @@ export const FETCH_LIBRARY_COMMAND = 'second-look.fetchLibrary' as const;
 
 /** Opens one file a verdict cites in a fetched library's source, read-only, at the cited line. */
 export const OPEN_LIBRARY_EVIDENCE_COMMAND = 'second-look.openLibraryEvidence' as const;
+
+/**
+ * Drafts a comment from one finding: the engine's agent writes a short
+ * draft from the finding and its evidence, which the reviewer edits and
+ * adds to the pending review, or discards. Runs from the link in a
+ * finding's thread and the overview's buttons, which the reviewer presses.
+ */
+export const DRAFT_COMMENT_COMMAND = 'second-look.draftComment' as const;
+
+/** Adds a draft comment, as the reviewer edited it, to the pending review. */
+export const ADD_DRAFT_COMMAND = 'second-look.addDraft' as const;
+
+/** Discards a draft comment, thread and all, before it joins the pending review. */
+export const DISCARD_DRAFT_COMMAND = 'second-look.discardDraft' as const;
+
+/** The context value the companion's draft comments carry while the reviewer edits them. */
+export const DRAFT_COMMENT_CONTEXT = 'second-look-draft' as const;

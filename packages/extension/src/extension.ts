@@ -7,8 +7,11 @@ import {
 } from './engine-client.js';
 import {
   ADD_COMMENT_COMMAND,
+  ADD_DRAFT_COMMAND,
   COMMENT_ON_PART_COMMAND,
   DISCARD_COMMENT_COMMAND,
+  DISCARD_DRAFT_COMMAND,
+  DRAFT_COMMENT_COMMAND,
   FETCH_LIBRARY_COMMAND,
   OPEN_ALL_PARTS_COMMAND,
   OPEN_LIBRARY_EVIDENCE_COMMAND,
@@ -31,18 +34,21 @@ import {
   type TreePart,
   type TreeSection,
 } from './tree.js';
-import { ReviewComments } from './comments.js';
+import { draftTarget, ReviewComments } from './comments.js';
 import { FindingThreads } from './findings.js';
 import { isSubmitKind, SendReviewPage } from './send-page.js';
 import { OverviewPanel } from './overview.js';
 import { AgentStatusBar } from './agent-status.js';
 import { readAgentSettings, reviewAgentChoice } from './agent-settings.js';
-import type { LibraryFetchOffer, Part, PendingReview, ReviewResult } from '@second-look/engine';
+import { draftFinding, isFindingRef, type LibraryFetchOffer, type Part, type PendingReview, type ReviewResult } from '@second-look/engine';
 
 export {
   ADD_COMMENT_COMMAND,
+  ADD_DRAFT_COMMAND,
   COMMENT_ON_PART_COMMAND,
   DISCARD_COMMENT_COMMAND,
+  DISCARD_DRAFT_COMMAND,
+  DRAFT_COMMENT_COMMAND,
   FETCH_LIBRARY_COMMAND,
   OPEN_ALL_PARTS_COMMAND,
   OPEN_LIBRARY_EVIDENCE_COMMAND,
@@ -89,6 +95,11 @@ function isPart(value: unknown): value is Part {
 function libraryFetchOf(result: ReviewResult | undefined, index: number): LibraryFetchOffer | undefined {
   const verdict = result?.claims?.claims[index]?.verdict;
   return verdict === undefined || verdict.kind === 'not checked' || verdict.library !== undefined ? undefined : verdict.libraryFetch;
+}
+
+/** Whether a value is a comment the editor handed a command, such as a draft as the reviewer edited it. */
+function isEditorComment(value: unknown): value is vscode.Comment {
+  return typeof value === 'object' && value !== null && 'body' in value && 'mode' in value;
 }
 
 /**
@@ -209,6 +220,7 @@ class ReviewSession {
   private readonly overview = new OverviewPanel(
     (part) => void this.openPart(part),
     (path, line) => void this.openHeadLine(path, line),
+    (finding) => void this.draftComment(finding),
   );
   /** The review's findings, its refuted and unverifiable claims, as threads on the diff. */
   private readonly findings = new FindingThreads();
@@ -425,6 +437,69 @@ class ReviewSession {
     }
   }
 
+  /**
+   * Drafts a comment from one finding, the reviewer having asked for it:
+   * the engine has the agent the settings pick write a short draft from
+   * the finding and its evidence, checked before it arrives. A draft from
+   * a claim or an unexplained part opens in a thread of its own on the
+   * diff, its text open for editing, with the buttons that add it to the
+   * pending review or discard it. A draft from a finding on the whole
+   * pull request — a described change the diff does not contain, or an
+   * unmet acceptance criterion — opens for editing in an input box, and
+   * joins the overall comment of the Send review page only when the
+   * reviewer accepts it. Nothing is sent on its own (ADR 0002).
+   */
+  async draftComment(arg?: unknown): Promise<void> {
+    const ref = isFindingRef(arg) ? { kind: arg.kind, index: arg.index } : undefined;
+    const finding = ref === undefined || this.result === undefined ? undefined : draftFinding(this.result, ref);
+    if (ref === undefined || finding === undefined || this.url === undefined) {
+      vscode.window.showWarningMessage('This finding cannot be drafted from; review the pull request again.');
+      return;
+    }
+    const review = this.reviews;
+    try {
+      const draft = await vscode.window.withProgress(
+        { location: { viewId: REVIEW_TREE_VIEW }, title: `Drafting a comment from the ${finding.kind}…` },
+        async () => (await this.readyEngine()).draftComment(this.url!, ref, reviewAgentChoice(readAgentSettings())),
+      );
+      // A review started meanwhile replaces this one, drafts and all.
+      if (review !== this.reviews || this.result === undefined) return;
+      if (draftFinding(this.result, ref)?.statement !== draft.statement) {
+        vscode.window.showWarningMessage('The review changed while the comment was drafted; draft it again.');
+        return;
+      }
+      const target = draftTarget(this.result, ref);
+      if (target !== undefined) {
+        this.comments.draft(target, draft.body, finding.kind);
+        return;
+      }
+      const edited = await vscode.window.showInputBox({
+        title: `Draft comment from the ${finding.kind}`,
+        prompt: 'Edit the draft, then press Enter to add it to the overall comment, or Escape to discard it. Nothing is sent until you submit the review.',
+        value: draft.body,
+        ignoreFocusOut: true,
+      });
+      if (edited === undefined || edited.trim() === '') return;
+      if (!this.sendPage().addToOverall(edited.trim())) {
+        vscode.window.showWarningMessage('The review is being sent: try again once it finishes.');
+        return;
+      }
+      this.sendPage().open();
+    } catch (error) {
+      vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  /** Adds a draft, as the reviewer edited it, to the pending review. */
+  addDraft(comment: vscode.Comment): void {
+    this.comments.addDraft(comment);
+  }
+
+  /** Discards a draft, thread and all. */
+  discardDraft(comment: vscode.Comment): void {
+    this.comments.discardDraft(comment);
+  }
+
   /** Opens one file a verdict cites in a fetched library's source, read-only, at the cited line. */
   async openLibraryEvidence(claimArg?: unknown, citationArg?: unknown): Promise<void> {
     const claim = typeof claimArg === 'number' ? this.result?.claims?.claims[claimArg] : undefined;
@@ -531,11 +606,16 @@ class ReviewSession {
       });
       return;
     }
+    this.sendPage().open();
+  }
+
+  /** The Send review page of the review under way, made when first needed. */
+  private sendPage(): SendReviewPage {
     this.page ??= new SendReviewPage({
       comments: this.comments,
       send: (review) => this.sendPending(review),
     });
-    this.page.open();
+    return this.page;
   }
 
   /**
@@ -662,7 +742,9 @@ class ReviewSession {
  * in the editor's multi-file diff, the comment threads the reviewer
  * writes the pending review in, the command that submits it to GitHub,
  * the commands that open the review's overview — at the story's start, or
- * at one part as its "why this matters" — and the status bar entry that
+ * at one part as its "why this matters" — the commands that draft a
+ * comment from a finding and add the draft to the pending review or
+ * discard it, and the status bar entry that
  * shows the agent and model in use.
  * Nothing here runs anything from the workspace — the engine is started
  * from the companion's own install, reads GitHub, and writes only the
@@ -721,6 +803,13 @@ export function activate(
     vscode.commands.registerCommand(FETCH_LIBRARY_COMMAND, (arg?: unknown) => session.fetchLibrary(arg)),
     vscode.commands.registerCommand(OPEN_LIBRARY_EVIDENCE_COMMAND, (claim?: unknown, citation?: unknown) =>
       session.openLibraryEvidence(claim, citation),
+    ),
+    vscode.commands.registerCommand(DRAFT_COMMENT_COMMAND, (finding?: unknown) => session.draftComment(finding)),
+    vscode.commands.registerCommand(ADD_DRAFT_COMMAND, (comment?: unknown) =>
+      isEditorComment(comment) ? session.addDraft(comment) : undefined,
+    ),
+    vscode.commands.registerCommand(DISCARD_DRAFT_COMMAND, (comment?: unknown) =>
+      isEditorComment(comment) ? session.discardDraft(comment) : undefined,
     ),
   );
   return tree;

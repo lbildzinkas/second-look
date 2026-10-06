@@ -42,5 +42,40 @@
       "optional": true
     }
   ],
-  "groups": [["app/doc_links.py#1"]]
+  "groups": [["app/doc_links.py#1"]],
+  "drafts": [
+    {
+      "kind": "unverifiable claim",
+      "statement": "Any redirect on the way is followed, so the caller always receives the final page rather than a 3xx status.",
+      "madeIn": "a docstring the change adds to \"app/doc_links.py\", lines 9-10",
+      "reason": "Whether client.get follows redirects depends on how httpx configures the client, which the change does not show.",
+      "evidence": [],
+      "notes": [
+        "evidence source: the change itself",
+        "the claim needs the source of httpx, which the companion does not have"
+      ],
+      "locations": [
+        "app/doc_links.py:9"
+      ]
+    },
+    {
+      "kind": "refuted claim",
+      "statement": "Any redirect on the way is followed, so the caller always receives the final page rather than a 3xx status.",
+      "madeIn": "a docstring the change adds to \"app/doc_links.py\", lines 9-10",
+      "reason": "httpx's Client defaults follow_redirects to False, so a redirect comes back as a 3xx response unless the caller turns it on.",
+      "evidence": [
+        {
+          "at": "httpx/_client.py:643",
+          "quote": "follow_redirects: bool = False,"
+        }
+      ],
+      "notes": [
+        "evidence source: library source at the pinned version",
+        "the evidence is in the source of httpx 0.27.2, as requirements.txt pins it"
+      ],
+      "locations": [
+        "httpx/_client.py:643"
+      ]
+    }
+  ]
 }
