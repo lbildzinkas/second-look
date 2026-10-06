@@ -67,7 +67,9 @@ pairwise hunk agreement with the hand labels, the story's plain checks
 (every must-review part linked, reading order, only names the change
 shows), the recall and precision of the claims the agent lists against
 the hand lists, the accuracy and false-verified rate of the verdicts the
-agent gives the hand-labelled claims, and the claim checks over the
+agent gives the hand-labelled claims, the recall and precision of the
+unexplained changes the agent finds in each direction against the hand
+labels, and the claim checks over the
 hand-labelled verdicts (found, verdict, evidence, fetch offered), which
 the plain pass fails as expected failures, since it reports no claims;
 the stored baseline records them at those failing values. It reads the cases in
@@ -82,6 +84,8 @@ cases tied to the story prompt have the story of their plain parts
 written by it, the cases tied to the claims prompt have the claims of
 their plain parts listed by it, the cases tied to the verdicts prompt
 have their hand-labelled claims judged by it, the cases tied to the
+unexplained-changes prompt have their plain parts compared by it with
+their description and recorded linked issues, the cases tied to the
 library verdicts prompt have every library fetch those verdicts offer
 pressed from their recorded downloads and each pressed claim judged again
 in the library's source, scored by the claim checks, and those rows are

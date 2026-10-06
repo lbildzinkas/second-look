@@ -11,6 +11,7 @@ import {
   type CheckRun,
   type Claim,
   type ClaimSource,
+  type DescribedChange,
   type HiddenKind,
   type LinkedIssue,
   type Part,
@@ -52,19 +53,19 @@ function overviewMessage(value: unknown): OverviewMessage | undefined {
  * comes from, a chip for each stage done and the one still running, the
  * story with its stamp, each part it mentions a button that opens the part
  * in the diff editor, the acceptance criteria of the linked issues, each
- * quoted and its issue a button that opens it on GitHub, the claims the
- * change makes with where each is made and the part it is attached to, the
- * pipeline report and whether it is trusted, the checks run on the merge
+ * quoted and its issue a button that opens it on GitHub, the unexplained
+ * changes in both directions, the claims the change makes with where each
+ * is made and the part it is attached to, the pipeline report and whether it is trusted, the checks run on the merge
  * commit with their annotations and failed jobs' trimmed logs, the pull
  * request's description in full with its hidden content shown and flagged,
  * and who made each result.
  *
  * Everything on the page but the companion's own words was written by
- * someone else, the agent's story, the claims' quotes, the criteria's
- * quotes from untrusted issue text, the pipeline's findings and the CI's
- * logs included, so every byte of it reaches the page as escaped text:
- * no remote image, no link and no markup of theirs
- * renders, under a content security policy that loads nothing but the
+ * someone else, the agent's story and reasons, the claims' quotes, the
+ * criteria's and the described changes' quotes from untrusted text, the
+ * pipeline's findings and the CI's logs included, so every byte of it
+ * reaches the page as escaped text: no remote image, no link and no
+ * markup of theirs renders, under a content security policy that loads nothing but the
  * page's own nonce-marked style and script.
  */
 export class OverviewPanel implements vscode.Disposable {
@@ -123,7 +124,7 @@ export class OverviewPanel implements vscode.Disposable {
     return true;
   }
 
-  /** The part a story or claim button names, opened in the diff editor; a criterion's issue, opened on GitHub. */
+  /** The part a story, claim or unexplained-change button names, opened in the diff editor; a linked issue, opened on GitHub. */
   private handle(value: unknown): void {
     const message = overviewMessage(value);
     if (message === undefined) return;
@@ -251,6 +252,7 @@ function stageChips(state: OverviewState): string {
   const ranking = result.ranking.agent;
   if (ranking) chips.push({ text: result.ranking.by === 'agent' ? 'ranked by the agent' : 'plain ranking kept', done: true });
   if (result.story) chips.push({ text: result.story.outcome === 'written' ? 'story' : 'no story', done: true });
+  if (result.unexplained) chips.push({ text: result.unexplained.outcome === 'compared' ? 'unexplained changes' : 'no comparison', done: true });
   if (result.claims) chips.push({ text: result.claims.outcome === 'listed' ? 'claims' : 'no claims', done: true });
   const judging = result.claims?.judging;
   if (judging) chips.push({ text: judging.outcome === 'judged' ? 'verdicts' : 'no verdicts', done: true });
@@ -368,6 +370,57 @@ function criteriaSection(state: OverviewState): string {
       ? ''
       : `<ol class="claims criteria">${criteria.criteria.map((criterion) => criterionItem(criterion, criteria)).join('')}</ol>`;
   return `<h2>Acceptance criteria</h2>${detail}${note}${list}${issuesWithoutChecklist(criteria)}`;
+}
+
+/** Where a described change is quoted from: a description line, or a linked issue as a button that opens it, with its line. */
+function describedWhere(change: DescribedChange, result: ReviewResult): string {
+  const { location } = change;
+  if (location.kind === 'description') return escapeHtml(`pull request description, line ${location.line}`);
+  const issue = result.criteria?.issues[location.issue];
+  if (issue === undefined) return escapeHtml(`linked issue, line ${location.line}`);
+  return `<button type="button" class="pt issue" data-issue="${location.issue}">${escapeHtml(issueName(issue))}</button> · ${escapeHtml(`line ${location.line}`)}`;
+}
+
+/**
+ * The unexplained changes section, in both directions: each part neither
+ * the description nor a linked issue explains, as a button that opens it,
+ * with its one-line reason, then each change they describe that the diff
+ * does not contain, quoted from where it is made, with what the diff
+ * lacks. The quotes come from untrusted text, so their hidden content is
+ * shown and flagged; the agent's reasons reach the page escaped.
+ */
+function unexplainedSection(state: OverviewState): string {
+  const { result } = state;
+  const unexplained = result.unexplained;
+  if (unexplained === undefined) {
+    const why =
+      state.running !== undefined
+        ? 'The unexplained changes come once the agent has compared the change with its description and issues.'
+        : 'The change was not compared with its description and issues for this review.';
+    return `<h2>Unexplained changes</h2><p class="note">${why}</p>`;
+  }
+  const stamp = unexplained.stamp === undefined ? '' : ` ${stampChip(stampText(unexplained.stamp, 'unexplained', unexplained.promptVersion))}`;
+  if (unexplained.outcome !== 'compared') {
+    const what = unexplained.outcome === 'not compared' ? 'Not compared' : 'No comparison';
+    return `<h2>Unexplained changes${stamp}</h2><p class="note">${what}: ${escapeHtml(unexplained.detail)}.</p>`;
+  }
+  if (unexplained.parts.length === 0 && unexplained.described.length === 0) {
+    return `<h2>Unexplained changes${stamp}</h2><p class="note">The agent found every part explained, and every change described in the diff.</p>`;
+  }
+  const note =
+    '<p class="note">The change compared with its description and linked issues in both directions: the parts neither explains, ' +
+    'then the changes they describe that the diff does not contain. Each is a finding.</p>';
+  const parts = unexplained.parts.map(({ part, reason }) => {
+    const shown = result.parts[part];
+    const button = shown === undefined ? '' : `<button type="button" class="pt" data-part="${part}">${escapeHtml(shown.name ?? shown.path)}</button>`;
+    return `<li><span class="verdict finding">in the code, not explained</span> ${button}<div class="why">${escapeHtml(reason)}</div></li>`;
+  });
+  const described = unexplained.described.map(
+    (change) =>
+      `<li><span class="verdict finding">described, not in the code</span> <q class="quote">${sanitiseUntrusted(change.quote).html}</q>` +
+      `<div class="where">${describedWhere(change, result)}</div><div class="why">${escapeHtml(change.reason)}</div></li>`,
+  );
+  return `<h2>Unexplained changes${stamp}</h2>${note}<ol class="claims">${[...parts, ...described].join('')}</ol>`;
 }
 
 /** How the page names each claim source. */
@@ -587,6 +640,15 @@ function stampsSection(state: OverviewState): string {
         : `none: ${story.detail}`,
     ]);
   }
+  const unexplained = result.unexplained;
+  if (unexplained) {
+    rows.push([
+      'Unexplained changes',
+      unexplained.outcome === 'compared' && unexplained.stamp
+        ? `compared by ${stampText(unexplained.stamp, 'unexplained', unexplained.promptVersion)}: ${unexplained.detail}`
+        : `none: ${unexplained.detail}`,
+    ]);
+  }
   const claims = result.claims;
   if (claims) {
     rows.push([
@@ -721,6 +783,7 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
   <div class="stages">${stageChips(state)}</div>
   <section id="story">${storySection(state)}</section>
   <section id="criteria">${criteriaSection(state)}</section>
+  <section id="unexplained">${unexplainedSection(state)}</section>
   <section id="claims">${claimsSection(state)}</section>
   <section id="pipeline">${pipelineSection(result)}</section>
   <section id="description">${descriptionSection(result)}</section>

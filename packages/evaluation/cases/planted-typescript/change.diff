@@ -1,0 +1,70 @@
+diff --git a/packages/engine/src/criteria.ts b/packages/engine/src/criteria.ts
+index 3544ba2..2378fcc 100644
+--- a/packages/engine/src/criteria.ts
++++ b/packages/engine/src/criteria.ts
+@@ -21,9 +21,9 @@ const HEADING = /^ {0,3}#{1,6}[ \t]+(.+?)[ \t]*#*[ \t]*$/;
+ /** One task-list item, its checkbox mark and its text captured. */
+ const TASK_ITEM = /^[ \t]*(?:[-*+]|\d+[.)])[ \t]+\[([ xX])\][ \t]*(.*)$/;
+ 
+-/** A heading's text, as the heading is matched against the configured one. */
++/** A heading's text, as the heading is matched against the configured one: a trailing colon dropped. */
+ function headingText(line: string): string | undefined {
+-  return HEADING.exec(line)?.[1]?.trim();
++  return HEADING.exec(line)?.[1]?.replace(/:$/, '').trim();
+ }
+ 
+ /**
+diff --git a/packages/engine/src/untrusted.ts b/packages/engine/src/untrusted.ts
+index 57324f4..73863cb 100644
+--- a/packages/engine/src/untrusted.ts
++++ b/packages/engine/src/untrusted.ts
+@@ -105,7 +105,7 @@ const INVISIBLE = new RegExp(
+ );
+ 
+ /** A character as its code point, such as `U+200B`. */
+-function codePoint(character: string): string {
++function toCodePoint(character: string): string {
+   return `U+${character.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}`;
+ }
+ 
+@@ -114,7 +114,7 @@ function decodeTags(run: string): string {
+   return [...run]
+     .map((character) => {
+       const ascii = character.codePointAt(0)! - 0xe0000;
+-      return ascii >= 0x20 && ascii <= 0x7e ? String.fromCharCode(ascii) : `[${codePoint(character)}]`;
++      return ascii >= 0x20 && ascii <= 0x7e ? String.fromCharCode(ascii) : `[${toCodePoint(character)}]`;
+     })
+     .join('');
+ }
+@@ -133,13 +133,13 @@ export function hiddenContent(text: string): TextPiece[] {
+     if (match.index > shownUpTo) pieces.push({ text: text.slice(shownUpTo, match.index) });
+     shownUpTo = match.index + run.length;
+     if (comment !== undefined) {
+-      const shown = comment.replace(INVISIBLE, (character) => `[${codePoint(character)}]`);
++      const shown = comment.replace(INVISIBLE, (character) => `[${toCodePoint(character)}]`);
+       pieces.push({ text: run, hidden: 'html comment', shown });
+     } else if (tags !== undefined) {
+       pieces.push({ text: run, hidden: 'tag characters', shown: decodeTags(run) });
+     } else {
+       const hidden = zeroWidth !== undefined ? 'zero-width characters' : 'bidirectional controls';
+-      pieces.push({ text: run, hidden, shown: [...run].map(codePoint).join(' ') });
++      pieces.push({ text: run, hidden, shown: [...run].map(toCodePoint).join(' ') });
+     }
+   }
+   if (shownUpTo < text.length) pieces.push({ text: text.slice(shownUpTo) });
+diff --git a/packages/engine/test/criteria.test.ts b/packages/engine/test/criteria.test.ts
+index 3b08485..6c18b35 100644
+--- a/packages/engine/test/criteria.test.ts
++++ b/packages/engine/test/criteria.test.ts
+@@ -54,6 +54,11 @@ describe('checklistUnder', () => {
+     ]);
+   });
+ 
++  it('matches a heading written with a trailing colon', () => {
++    const body = ['## Acceptance criteria:', '', '- [ ] A send that fails is retried'].join('\n');
++    expect(checklistUnder(body, DEFAULT_CRITERIA_HEADING)).toEqual([{ text: 'A send that fails is retried', line: 3 }]);
++  });
++
+   it('matches the heading whatever its level and letter case, and keeps a later heading’s checklist when an earlier one lists nothing', () => {
+     const body = [
+       '### aCcePtAnCe CrItErIa',

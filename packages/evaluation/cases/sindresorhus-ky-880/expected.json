@@ -51,5 +51,30 @@
       },
       "optional": true
     }
-  ]
+  ],
+  "unexplained": {
+    "parts": [],
+    "optionalParts": [
+      "deepMergeInternal in source/utils/merge.ts",
+      "top-level code in test/main.ts"
+    ],
+    "described": [
+      {
+        "text": "Similarly, passing `{signal: undefined}` or `{signal: null}` in `.extend()` does not remove parent signals from being combined via `AbortSignal.any()`.",
+        "origin": {
+          "issue": 879,
+          "line": 24
+        },
+        "optional": true
+      },
+      {
+        "text": "Unwrap `replaceState` before the `key === 'signal'` branch and handle `isReplace` / `undefined` / `null` to reset the accumulated `signals` array.",
+        "origin": {
+          "issue": 879,
+          "line": 35
+        },
+        "optional": true
+      }
+    ]
+  }
 }

@@ -33,6 +33,7 @@ import {
 import { signalParts } from './signals.js';
 import { writeStory } from './story.js';
 import { analyseParts } from './syntax.js';
+import { findUnexplained } from './unexplained.js';
 import { judgeClaims } from './verdicts.js';
 
 export interface ReviewOptions {
@@ -47,7 +48,7 @@ export interface ReviewOptions {
   cacheDir: string;
   /** The heading the acceptance criteria checklist sits under in a linked issue; "Acceptance criteria" when absent. */
   criteriaHeading?: string;
-  /** Asks the agent to group and rank the parts, write the story, list the claims and judge them too, after the plain pass; see {@link reviewChange}. */
+  /** Asks the agent to group and rank the parts, write the story, compare the change with its description and issues, and list the claims and judge them too, after the plain pass; see {@link reviewChange}. */
   agentStage?: AgentStageOptions;
 }
 
@@ -134,9 +135,10 @@ export async function fetchChange(url: string, options: ReviewOptions): Promise<
 }
 
 /**
- * The agent stages, grouping, ranking, the story, the claims then their
- * verdicts, when a review asks the agent to group and rank the parts,
- * write the story, list the claims and judge them too.
+ * The agent stages, grouping, ranking, the story, the unexplained
+ * changes, the claims then their verdicts, when a review asks the agent
+ * to group and rank the parts, write the story, compare the change with
+ * its description and linked issues, list the claims and judge them too.
  */
 export interface AgentStageOptions {
   adapter: AgentAdapter;
@@ -147,6 +149,8 @@ export interface AgentStageOptions {
   testedRankings?: readonly TestedRanking[];
   /** Whether the agent writes the story after ranking; true when absent. */
   story?: boolean;
+  /** Whether the agent compares the change with its description and linked issues after the story; true when absent. */
+  unexplained?: boolean;
   /** Whether the agent lists the claims; true when absent. */
   claims?: boolean;
   /** Whether the agent judges the claims it listed, last; true when absent. */
@@ -159,7 +163,7 @@ export interface ReviewStage {
   running: string;
   /** The stage ends within this many milliseconds. */
   timeoutMs: number;
-  /** The result so far: the plain pass's, then the grouping, ranking, story, claims and verdicts stages' in turn. */
+  /** The result so far: the plain pass's, then the grouping, ranking, story, unexplained changes, claims and verdicts stages' in turn. */
   result: ReviewResult;
 }
 
@@ -186,9 +190,11 @@ function coverageProblems(diff: ParsedDiff, parts: Part[]): string | undefined {
  * invalid, or its parts fail the coverage check, the plain grouping stays
  * and the result says why. The parts shown then go to `onStage` again
  * while the agent ranks them, see {@link rankStage}, once more while it
- * writes their story, see {@link storyStage}, while it lists the claims
- * the change makes, see {@link claimsStage}, and last while it judges
- * them, see {@link verdictsStage}.
+ * writes their story, see {@link storyStage}, while it compares the
+ * change with its description and linked issues, see
+ * {@link unexplainedStage}, while it lists the claims the change makes,
+ * see {@link claimsStage}, and last while it judges them, see
+ * {@link verdictsStage}.
  */
 export async function reviewChange(
   input: ReviewInput,
@@ -221,8 +227,9 @@ export async function reviewChange(
   if (!agentStage) return plain;
   const ranked = await groupAndRank(plain, agentStage, input, parsed, files);
   const told = agentStage.story === false ? ranked : await storyStage(ranked, agentStage, input);
-  if (agentStage.claims === false) return told;
-  const claimed = await claimsStage(told, agentStage, input);
+  const compared = agentStage.unexplained === false ? told : await unexplainedStage(told, agentStage, input);
+  if (agentStage.claims === false) return compared;
+  const claimed = await claimsStage(compared, agentStage, input);
   return agentStage.verdicts === false ? claimed : verdictsStage(claimed, agentStage, input);
 }
 
@@ -312,7 +319,7 @@ async function rankStage(
 }
 
 /**
- * The story stage, last: the agent writes the story of the parts the
+ * The story stage: the agent writes the story of the parts the
  * result shows, in their reading order. A change with no parts needs no
  * story. The result carries the story the checks accepted, or says why
  * there is none.
@@ -336,6 +343,42 @@ async function storyStage(
     pullRequest: input.pullRequest,
   });
   return { ...shown, story };
+}
+
+/**
+ * The unexplained-changes stage: the agent compares the description and
+ * the linked issues with the parts the result shows, in both directions —
+ * the parts neither explains, and the changes they describe that the diff
+ * does not contain. With neither a description nor a linked issue, no
+ * agent is asked and the result says so. A change with no parts needs no
+ * comparison.
+ */
+async function unexplainedStage(
+  shown: ReviewResult,
+  agentStage: AgentStageOptions,
+  input: ReviewInput,
+): Promise<ReviewResult> {
+  if (shown.parts.length === 0) return shown;
+  const settings = agentStage.settings ?? DEFAULT_AGENT_SETTINGS;
+  const criteria = input.criteria;
+  const issuesDetail =
+    criteria === undefined ? 'the review read no linked issue' : criteria.outcome === 'unreadable' ? criteria.detail : undefined;
+  const options = {
+    adapter: agentStage.adapter,
+    settings,
+    root: input.copies.head.path,
+    pullRequest: input.pullRequest,
+    issues: criteria?.issues ?? [],
+    ...(issuesDetail === undefined ? {} : { issuesDetail }),
+  };
+  if (input.pullRequest.description.trim() !== '' || options.issues.length > 0) {
+    agentStage.onStage?.({
+      running: `comparing the change with its description and issues with ${agentStage.adapter.agent}`,
+      timeoutMs: agentStageTimeoutMs(settings),
+      result: shown,
+    });
+  }
+  return { ...shown, unexplained: await findUnexplained(shown.parts, options) };
 }
 
 /**

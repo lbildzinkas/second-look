@@ -234,7 +234,7 @@ export function claimsPrompt(
 const COMMENT_MARKER = /^\s*(?:\/{2,}!?|\/\*+|\*+|#+|-{2,}|;+|%+)?/;
 
 /** A quote marker at the start of a description line. */
-const QUOTE_MARKER = /^\s*(?:>\s*)*/;
+export const QUOTE_MARKER = /^\s*(?:>\s*)*/;
 
 /** Text on one line: runs of white space as one space. */
 function oneLine(text: string): string {
@@ -290,6 +290,23 @@ function matches(flat: Flattened, quote: string): { line: number; endLine: numbe
     found.push({ line: flat.lineOf[at]!, endLine: flat.lineOf[end - 1]! });
   }
   return found;
+}
+
+/** Untrusted text such as a description, flattened by its 1-based lines, each line's quote marker dropped. */
+function flattenText(text: string): Flattened {
+  return flatten(
+    text.split('\n').map((line, index) => ({ line: index + 1, text: line })),
+    QUOTE_MARKER,
+  );
+}
+
+/**
+ * The 1-based line a quote starts on in untrusted text, such as a
+ * description or an issue's body, located as a description's claim is;
+ * undefined when the text does not hold it.
+ */
+export function quotedLine(text: string, quote: string): number | undefined {
+  return matches(flattenText(text), normalizeQuote(quote, QUOTE_MARKER))[0]?.line;
 }
 
 /** Splits added lines into runs of consecutive lines, so a quote never spans a gap. */
@@ -410,10 +427,7 @@ export function locateClaims(context: ClaimContext, answer: ClaimsAnswer): { cla
   const sources: Sources = {
     byId: new Map(context.items.map((item) => [item.id, item.index])),
     files: fileLines(context.items),
-    description: flatten(
-      context.description.split('\n').map((text, index) => ({ line: index + 1, text })),
-      QUOTE_MARKER,
-    ),
+    description: flattenText(context.description),
     sentences: storySentences(context.story).map((text) => flatten([{ line: 0, text }], NO_MARKER)),
   };
   const located = new Map<string, Claim>();

@@ -11,6 +11,7 @@ import {
 } from '../src/rpc.js';
 import type { AgentName } from '../src/agents.js';
 import { CLAIMS_INSTRUCTIONS } from '../src/claims.js';
+import { UNEXPLAINED_INSTRUCTIONS } from '../src/unexplained.js';
 import { GROUPING_INSTRUCTIONS } from '../src/grouping.js';
 import { LIBRARY_VERDICTS_INSTRUCTIONS } from '../src/library-verdicts.js';
 import { VERDICTS_INSTRUCTIONS } from '../src/verdicts.js';
@@ -141,7 +142,7 @@ describe('runRpcServer', () => {
 
     expect(responses[0]!.result).toEqual({ protocolVersion: ENGINE_PROTOCOL_VERSION });
     const first = responses[1]!.result as { version: number; parts: unknown[] };
-    expect(first.version).toBe(13);
+    expect(first.version).toBe(14);
     expect(first.parts).toHaveLength(11);
     const second = responses[2]!.result as { parts: unknown[] };
     expect(second.parts).toHaveLength(11);
@@ -316,7 +317,7 @@ describe('runRpcServer', () => {
 });
 
 describe('runRpcServer with an agent', () => {
-  it('sends the plain result as a stage notification before the answer with the agent parts, story and claims', async () => {
+  it('sends the plain result as a stage notification before the answer with the agent parts, story, unexplained changes and claims', async () => {
     const lines = [
       request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
       request('review', { url: PR_7_URL, token: TOKEN }, 2),
@@ -339,8 +340,8 @@ describe('runRpcServer with an agent', () => {
       },
     );
 
-    const [handshake, stage, storyStage, claimsStage, final] = written.map((line) => JSON.parse(line) as Record<string, unknown>);
-    expect(written).toHaveLength(5);
+    const [handshake, stage, storyStage, unexplainedStage, claimsStage, final] = written.map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(written).toHaveLength(6);
     expect(handshake).toMatchObject({ id: 1 });
     // A notification has no id of its own; its params name the review request.
     expect(stage).not.toHaveProperty('id');
@@ -351,7 +352,7 @@ describe('runRpcServer with an agent', () => {
         id: 2,
         running: 'grouping related hunks with fake',
         timeoutMs: 660_000,
-        result: { version: 13, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
+        result: { version: 14, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
       },
     });
     // The fake agent has no tested ranking, so the story stage follows the grouping.
@@ -359,13 +360,22 @@ describe('runRpcServer with an agent', () => {
       method: REVIEW_STAGE_METHOD,
       params: { id: 2, running: 'writing the story with fake', result: { grouping: { by: 'agent' } } },
     });
+    expect(unexplainedStage).toMatchObject({
+      method: REVIEW_STAGE_METHOD,
+      params: { id: 2, running: 'comparing the change with its description and issues with fake', result: { story: { outcome: 'fell back' } } },
+    });
     expect(claimsStage).toMatchObject({
       method: REVIEW_STAGE_METHOD,
-      params: { id: 2, running: 'listing the claims with fake', result: { story: { outcome: 'fell back' } } },
+      params: { id: 2, running: 'listing the claims with fake', result: { unexplained: { outcome: 'fell back' } } },
     });
     expect(final).toMatchObject({
       id: 2,
-      result: { grouping: { by: 'agent' }, story: { outcome: 'fell back' }, claims: { outcome: 'fell back', claims: [] } },
+      result: {
+        grouping: { by: 'agent' },
+        story: { outcome: 'fell back' },
+        unexplained: { outcome: 'fell back', parts: [], described: [] },
+        claims: { outcome: 'fell back', claims: [] },
+      },
     });
     expect((final!['result'] as { parts: unknown[] }).parts).toHaveLength(2);
     expect(written.join('\n')).not.toContain(TOKEN);
@@ -449,7 +459,9 @@ describe('runRpcServer with an agent', () => {
             ? GROUPING
             : request.instructions === CLAIMS_INSTRUCTIONS
               ? { claims: [] }
-              : {
+              : request.instructions === UNEXPLAINED_INSTRUCTIONS
+                ? { unexplained: [], described: [] }
+                : {
                 parts: [...offeredParts(request.prompt)].reverse().map(({ id }, index) => ({
                   part: id,
                   importance: index === 0 ? 'must review' : 'worth reviewing',
@@ -502,12 +514,12 @@ describe('runRpcServer with an agent', () => {
       },
     );
 
-    // Both reviews grouped, ranked, wrote their story and listed the claims
-    // through the same engine, each pass asking for the model the request
+    // Both reviews grouped, ranked, wrote their story, compared the change
+    // with its description and listed the claims through the same engine, each pass asking for the model the request
     // named; the fake's story answer is refused and retried once, so the
     // story costs two runs.
-    expect(pi.requests.map((run) => run.model)).toEqual(['pi/model', 'pi/model', 'pi/model', 'pi/model', 'pi/model']);
-    expect(claude.requests.map((run) => run.model)).toEqual(['claude/model', 'claude/model', 'claude/model', 'claude/model', 'claude/model']);
+    expect(pi.requests.map((run) => run.model)).toEqual(Array(6).fill('pi/model'));
+    expect(claude.requests.map((run) => run.model)).toEqual(Array(6).fill('claude/model'));
     const first = answers(2).result as {
       grouping: { by: string; agent?: { stamp?: { agent: string; model: string; account?: string } } };
       ranking: { by: string; agent?: { stamp?: { agent: string; model: string; account?: string } } };
@@ -534,12 +546,12 @@ describe('runRpcServer with an agent', () => {
       },
     );
 
-    // The grouping, story and claims passes ran: the serve default agent
+    // The grouping, story, unexplained-changes and claims passes ran: the serve default agent
     // has no tested ranking here, so the plain ranking stayed and said so;
     // the fake's story answer is refused and retried once, so the story
     // costs two runs.
     expect(pi.requests).toHaveLength(0);
-    expect(claude.requests).toHaveLength(4);
+    expect(claude.requests).toHaveLength(5);
     expect(claude.requests[0]!.model).toBe('claude/model');
     expect(answers(2).result).toMatchObject({
       grouping: { by: 'agent', agent: { stamp: { agent: 'claude-code', model: 'claude/model' } } },
@@ -676,7 +688,7 @@ describe('runRpcServer fetching a library', () => {
     });
     expect(pypiBeforeFetch).toBe(0);
     expect(answer(3).result).toMatchObject({
-      version: 13,
+      version: 14,
       claims: {
         claims: [
           {
@@ -729,7 +741,7 @@ describe('runRpcServer fetching a library', () => {
 
     expect(answer(3).error).toBeUndefined();
     expect(answer(3).result).toMatchObject({
-      version: 13,
+      version: 14,
       claims: {
         claims: [
           {

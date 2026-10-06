@@ -2,6 +2,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { pathInCopy } from '@second-look/engine';
 import type {
+  Criteria,
   NoiseLabel,
   NoiseState,
   PullRequestSummary,
@@ -41,6 +42,12 @@ export interface CaseRecord {
   /** The commits the base and head content were read at. */
   baseCommit: string;
   headCommit: string;
+  /**
+   * The acceptance criteria as the review read them, with every linked
+   * issue's full body, so a replay compares the change with the same
+   * issues; absent for a case recorded before the issues were read.
+   */
+  criteria?: Criteria;
 }
 
 /** The noise a reviewer expects on one changed file. */
@@ -112,6 +119,36 @@ export interface ExpectedClaim {
   libraryFetch?: true;
 }
 
+/**
+ * One statement in the description or a linked issue that describes a
+ * change the diff does not contain, as a reviewer expects the companion
+ * to find it: its text and where it is made.
+ */
+export interface ExpectedDescribed {
+  /** The statement's text, exactly as its source states it, on one line. */
+  text: string;
+  /**
+   * Where it is made: the 1-based line of the description, or of the
+   * body of the linked issue with that number in the case's criteria.
+   */
+  origin: { in: 'description'; line: number } | { issue: number; line: number };
+  /** Set on a statement a reviewer may or may not count: listing it is no false finding, and leaving it out no miss. */
+  optional?: true;
+}
+
+/**
+ * The unexplained changes a reviewer expects, in both directions: the
+ * parts neither the description nor a linked issue explains, and the
+ * changes they describe that the diff does not contain.
+ */
+export interface ExpectedUnexplained {
+  /** The parts that must be flagged, each by its name as the engine prints it, or else by a path it holds. */
+  parts: string[];
+  /** Parts a reviewer may or may not call unexplained: flagging one is no false flag, and leaving it out no miss. */
+  optionalParts?: string[];
+  described: ExpectedDescribed[];
+}
+
 /** A case's `expected.json`, written by hand. */
 export interface ExpectedResults {
   /**
@@ -134,6 +171,8 @@ export interface ExpectedResults {
    * grouping is not labelled.
    */
   groups?: string[][];
+  /** The hand-labelled unexplained changes; absent when the case labels none. */
+  unexplained?: ExpectedUnexplained;
 }
 
 /** A case loaded from its folder. */
@@ -162,6 +201,7 @@ export async function loadCase(folder: string): Promise<EvaluationCase> {
     importantParts: recorded.importantParts ?? [],
     claims: recorded.claims ?? [],
     ...(recorded.groups ? { groups: recorded.groups } : {}),
+    ...(recorded.unexplained ? { unexplained: recorded.unexplained } : {}),
   };
   return { id: record.id, folder, record, expected };
 }
@@ -208,6 +248,7 @@ export async function caseInput(evaluationCase: EvaluationCase): Promise<ReviewI
       base: { commit: record.baseCommit, path: join(folder, 'base'), reused: true },
       head: { commit: record.headCommit, path: join(folder, 'head'), reused: true },
     },
+    ...(record.criteria ? { criteria: record.criteria } : {}),
   };
 }
 

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { parseDiff } from '@second-look/engine';
-import type { Claim, ClaimVerdict, NoiseAssessment, Part } from '@second-look/engine';
-import type { ExpectedClaim, ExpectedResults } from '../src/case.js';
+import type { Claim, ClaimVerdict, DescribedChange, LinkedIssue, NoiseAssessment, Part, UnexplainedChanges } from '@second-look/engine';
+import type { ExpectedClaim, ExpectedResults, ExpectedUnexplained } from '../src/case.js';
 import type { PressedClaim } from '../src/claims.js';
-import { addTallies, sameClaim, scoresOf, tallyCase, tallyFinding, tallyJudging, tallyStory, verdictBeforeFetch } from '../src/score.js';
+import { addTallies, sameClaim, sameDescribed, scoresOf, tallyCase, tallyFinding, tallyJudging, tallyStory, tallyUnexplained, verdictBeforeFetch } from '../src/score.js';
 
 const DIFF = [
   'diff --git a/package-lock.json b/package-lock.json',
@@ -435,5 +435,67 @@ describe('the verdicts the agent gives', () => {
     expect(tallyJudging([{ wanted: library, got: got('unverifiable') }]).right).toBe(0);
     expect(tallyJudging([{ wanted: library, got: got('unverifiable', 'requests') }]).right).toBe(0);
     expect(tallyJudging([{ wanted: refuted, got: { kind: 'not checked' } }])).toEqual({ labelled: 1, right: 0, notVerified: 1, falseVerified: 0 });
+  });
+});
+
+describe('the unexplained changes the agent finds', () => {
+  const ISSUES: LinkedIssue[] = [
+    { number: 30, title: 't', url: 'https://github.com/example-org/example-repo/issues/30', repository: 'example-org/example-repo', body: 'b', link: 'closes' },
+  ];
+  const EXPECTED_UNEXPLAINED: ExpectedUnexplained = {
+    parts: ['src/cart.ts'],
+    optionalParts: ['top-level code in README.md'],
+    described: [
+      { text: 'Each retry is logged.', origin: { in: 'description', line: 3 } },
+      { text: 'A send that gives up goes to the dead-letter queue.', origin: { issue: 30, line: 5 } },
+      { text: 'Retries are configurable.', origin: { in: 'description', line: 4 }, optional: true },
+    ],
+  };
+
+  function described(quote: string, location: DescribedChange['location']): DescribedChange {
+    return { quote, location, reason: 'r' };
+  }
+
+  function found(flagged: number[], listed: DescribedChange[]): UnexplainedChanges {
+    return { promptVersion: '1', outcome: 'compared', detail: 'd', parts: flagged.map((part) => ({ part, reason: 'r' })), described: listed };
+  }
+
+  it('matches a described change made in the same place, the same issue by its number, whose text holds the label or is held by it', () => {
+    const [logged, queued] = EXPECTED_UNEXPLAINED.described as [ExpectedUnexplained['described'][number], ExpectedUnexplained['described'][number]];
+    expect(sameDescribed(described('Each retry is logged.', { kind: 'description', line: 3 }), logged, ISSUES)).toBe(true);
+    expect(sameDescribed(described('retry is logged', { kind: 'description', line: 9 }), logged, ISSUES)).toBe(true);
+    expect(sameDescribed(described('Each retry is logged.', { kind: 'issue', issue: 0, line: 3 }), logged, ISSUES)).toBe(false);
+    expect(sameDescribed(described('- [ ] A send that gives up goes to the dead-letter queue.', { kind: 'issue', issue: 0, line: 5 }), queued, ISSUES)).toBe(true);
+    expect(sameDescribed(described('A send that gives up goes to the dead-letter queue.', { kind: 'issue', issue: 1, line: 5 }), queued, ISSUES)).toBe(false);
+  });
+
+  it('scores recall and precision in each direction, an optional label counting in neither', () => {
+    // parts(): package-lock.json, src/cart.ts, README.md.
+    const tally = tallyUnexplained(
+      EXPECTED_UNEXPLAINED,
+      parts({}),
+      ISSUES,
+      found([0, 1, 2], [described('Each retry is logged.', { kind: 'description', line: 3 }), described('Retries are configurable.', { kind: 'description', line: 4 }), described('Adds a flag.', { kind: 'description', line: 1 })]),
+    );
+    expect(tally).toEqual({ requiredParts: 1, foundParts: 1, flaggedRight: 1, flaggedWrong: 1, requiredDescribed: 2, foundDescribed: 1, listedRight: 1, listedWrong: 1 });
+
+    const scores = byName(scoresOf({ ...tallyCase(DIFF, { noise: {}, importantParts: [], claims: [] }, undefined), unexplained: tally }));
+    expect(scores['unexplained-recall']).toBe(1);
+    expect(scores['unexplained-precision']).toBe(0.5);
+    expect(scores['described-recall']).toBe(0.5);
+    expect(scores['described-precision']).toBe(0.5);
+  });
+
+  it('gives no precision when nothing was flagged, adds the counts across cases, and leaves them out of the plain scores', () => {
+    const none = { ...tallyCase(DIFF, { noise: {}, importantParts: [], claims: [] }, undefined), unexplained: tallyUnexplained(EXPECTED_UNEXPLAINED, parts({}), ISSUES, found([], [])) };
+    const scores = byName(scoresOf(none));
+    expect(scores['unexplained-recall']).toBe(0);
+    expect(scores['described-recall']).toBe(0);
+    expect(scores['unexplained-precision']).toBeUndefined();
+    expect(scores['described-precision']).toBeUndefined();
+    expect(addTallies([none, none]).unexplained).toMatchObject({ requiredParts: 2, requiredDescribed: 4 });
+
+    const plain = scoresOf(tallyCase(DIFF, { ...EXPECTED, unexplained: EXPECTED_UNEXPLAINED }, parts({})));
+    expect(plain.filter((score) => score.name.includes('unexplained') || score.name.startsWith('described'))).toEqual([]);
   });
 });

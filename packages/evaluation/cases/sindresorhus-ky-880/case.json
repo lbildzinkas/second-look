@@ -8,7 +8,8 @@
     "ranking",
     "story",
     "claims",
-    "verdicts"
+    "verdicts",
+    "unexplained"
   ],
   "pullRequest": {
     "url": "https://github.com/sindresorhus/ky/pull/880",
@@ -23,5 +24,21 @@
   },
   "gitAttributes": "* text=auto eol=lf\n*.ai binary\n",
   "baseCommit": "294fe63be57d73bda18194b7e23ab7225c054643",
-  "headCommit": "e22943f7dacf64beec1efb1958604424f07dd4b4"
+  "headCommit": "e22943f7dacf64beec1efb1958604424f07dd4b4",
+  "criteria": {
+    "outcome": "read",
+    "detail": "1 issue this pull request closes",
+    "heading": "Acceptance criteria",
+    "issues": [
+      {
+        "number": 879,
+        "title": "Bug: `replaceOption` and `undefined` do not work with `signal` option in `ky.extend()`",
+        "url": "https://github.com/sindresorhus/ky/issues/879",
+        "repository": "sindresorhus/ky",
+        "body": "### Problem\n\n`replaceOption` does not work when replacing an `AbortSignal` on an extended instance:\n\n```ts\nimport ky, {replaceOption} from 'ky';\n\nconst baseController = new AbortController();\nconst extendedController = new AbortController();\n\nconst base = ky.create({\n  signal: baseController.signal,\n});\n\nconst extended = base.extend({\n  signal: replaceOption(extendedController.signal),\n});\n\n// Aborting the base controller still aborts the extended instance!\nbaseController.abort();\nawait extended('https://example.com'); // Throws AbortError (unexpected)\n```\n\nSimilarly, passing `{signal: undefined}` or `{signal: null}` in `.extend()` does not remove parent signals from being combined via `AbortSignal.any()`.\n\n### Cause\n\nIn `source/utils/merge.ts` (`deepMergeInternal`):\n1. The `if (key === 'signal' && value instanceof globalThis.AbortSignal)` check occurs **before** `const replaceState = getReplaceState(value)`.\n2. When wrapping a signal in `replaceOption(signal)`, `value` is a symbol-tagged object and fails the `instanceof AbortSignal` check.\n3. As a result, the parent signal remains in the `signals` array and gets merged via `AbortSignal.any()` at the end of the merge function, overriding the replaced value.\n\n### Solution\n\nUnwrap `replaceState` before the `key === 'signal'` branch and handle `isReplace` / `undefined` / `null` to reset the accumulated `signals` array.\n\nFull fix and tests are available on fork branch: https://github.com/koding88/ky/commit/99b41dd51a37c95e1e07b8b7d41f39cb70503e4d\n",
+        "link": "closes"
+      }
+    ],
+    "criteria": []
+  }
 }

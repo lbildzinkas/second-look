@@ -601,6 +601,48 @@ function isCriteria(value: unknown): boolean {
   return Array.isArray(value['criteria']) && value['criteria'].every((criterion) => isCriterion(criterion, issues.length));
 }
 
+/** A one-line reason the companion shows. */
+function isReason(value: unknown): boolean {
+  return isNonEmptyString(value) && !/[\r\n]/.test(value);
+}
+
+/** Where a described change is quoted from: a description line, or a line of a linked issue the result has. */
+function isDescribedLocation(value: unknown, issueCount: number): boolean {
+  if (!isRecord(value)) return false;
+  if (value['kind'] === 'description') return isLine(value['line']);
+  return value['kind'] === 'issue' && isNumber(value['issue']) && value['issue'] < issueCount && isLine(value['line']);
+}
+
+/**
+ * The unexplained changes: compared, fallen back or not compared, stamped
+ * whenever an agent was asked; only a comparison flags parts — each a
+ * part the result has, once, with a one-line reason — or lists described
+ * changes, each quoted from the description or a linked issue.
+ */
+function isUnexplained(value: unknown, partCount: number, issueCount: number): boolean {
+  if (!isRecord(value)) return false;
+  const { parts, described } = value;
+  if (
+    !isString(value['promptVersion']) ||
+    !isOneOf(value['outcome'], ['compared', 'fell back', 'not compared'] as const) ||
+    !isString(value['detail']) ||
+    !Array.isArray(parts) ||
+    !Array.isArray(described)
+  ) {
+    return false;
+  }
+  if (value['outcome'] === 'not compared' ? value['stamp'] !== undefined : !isAgentStamp(value['stamp'])) return false;
+  if (value['outcome'] !== 'compared' && (parts.length > 0 || described.length > 0)) return false;
+  const flagged = parts.map((part) => (isRecord(part) ? part['part'] : undefined));
+  return (
+    parts.every((part) => isRecord(part) && isNumber(part['part']) && part['part'] < partCount && isReason(part['reason'])) &&
+    new Set(flagged).size === flagged.length &&
+    described.every(
+      (change) => isRecord(change) && isNonEmptyString(change['quote']) && isDescribedLocation(change['location'], issueCount) && isReason(change['reason']),
+    )
+  );
+}
+
 function isPullRequestSummary(value: unknown): boolean {
   if (!isRecord(value)) return false;
   return (
@@ -651,6 +693,8 @@ export function isReviewResult(value: unknown): value is ReviewResult {
   if (!Array.isArray(parts) || !parts.every(isPart)) return false;
   const story = value['story'];
   if (story !== undefined && !isStory(story, parts.length)) return false;
+  const issues = isRecord(value['criteria']) && Array.isArray(value['criteria']['issues']) ? value['criteria']['issues'].length : 0;
+  if (value['unexplained'] !== undefined && !isUnexplained(value['unexplained'], parts.length, issues)) return false;
   const sentences = isRecord(story) && Array.isArray(story['sentences']) ? story['sentences'].length : 0;
   return value['claims'] === undefined || isClaims(value['claims'], parts.length, sentences);
 }

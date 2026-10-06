@@ -1,6 +1,6 @@
 import { filesOfPart, parseDiff } from '@second-look/engine';
-import type { Claim, ClaimVerdict, FileSlice, NoiseAssessment, Part, StoryChecks } from '@second-look/engine';
-import type { ExpectedClaim, ExpectedNoise, ExpectedResults, Verdict } from './case.js';
+import type { Claim, ClaimVerdict, DescribedChange, FileSlice, LinkedIssue, NoiseAssessment, Part, StoryChecks, UnexplainedChanges } from '@second-look/engine';
+import type { ExpectedClaim, ExpectedDescribed, ExpectedNoise, ExpectedResults, ExpectedUnexplained, Verdict } from './case.js';
 import type { LibraryFetchOffer, PressedClaim } from './claims.js';
 
 /** How many leading parts count as the top of the ranking. */
@@ -32,6 +32,14 @@ export const CLAIM_SCORES: readonly string[] = ['claims-recall', 'claims-precisi
  * not deserve verified that it verified anyway.
  */
 export const VERDICT_SCORES: readonly string[] = ['verdict-accuracy', 'false-verified'];
+
+/**
+ * The scores of the unexplained changes the agent finds, against the hand
+ * labels, in both directions: recall and precision of the parts it flags
+ * as unexplained, and of the described changes it lists as missing from
+ * the diff.
+ */
+export const UNEXPLAINED_SCORES: readonly string[] = ['unexplained-recall', 'unexplained-precision', 'described-recall', 'described-precision'];
 
 /** One score of a run, with the direction in which it improves. */
 export interface Score {
@@ -99,6 +107,78 @@ export interface Tally {
   finding: FindingTally;
   /** The counts behind the verdicts the agent gave the hand-labelled claims. */
   judging: JudgingTally;
+  /** The counts behind the unexplained changes the agent found, against the hand labels. */
+  unexplained: UnexplainedTally;
+}
+
+/**
+ * The counts behind the unexplained changes, in each direction: the
+ * hand-labelled ones a reviewer must see and those found, and the ones the
+ * agent gave that match a required label or none at all. One that matches
+ * only an optional label counts in neither.
+ */
+export interface UnexplainedTally {
+  requiredParts: number;
+  foundParts: number;
+  flaggedRight: number;
+  flaggedWrong: number;
+  requiredDescribed: number;
+  foundDescribed: number;
+  listedRight: number;
+  listedWrong: number;
+}
+
+function noUnexplained(): UnexplainedTally {
+  return { requiredParts: 0, foundParts: 0, flaggedRight: 0, flaggedWrong: 0, requiredDescribed: 0, foundDescribed: 0, listedRight: 0, listedWrong: 0 };
+}
+
+/** Whether a part is the one a hand label names: by its name as the engine prints it, or by a path it holds. */
+function namesPart(part: Part | undefined, label: string): boolean {
+  return part !== undefined && (part.name === label || filesOfPart(part).some((file) => file.path === label));
+}
+
+/**
+ * Whether a described change the agent listed is a hand-labelled one:
+ * made in the same place — the description, or the same linked issue —
+ * with the one's text holding the other's, as claims are matched.
+ */
+export function sameDescribed(listed: DescribedChange, wanted: ExpectedDescribed, issues: readonly LinkedIssue[]): boolean {
+  const samePlace =
+    'in' in wanted.origin
+      ? listed.location.kind === 'description'
+      : listed.location.kind === 'issue' && issues[listed.location.issue]?.number === wanted.origin.issue;
+  if (!samePlace) return false;
+  const [quote, text] = [matchText(listed.quote), matchText(wanted.text)];
+  return quote.includes(text) || text.includes(quote);
+}
+
+/**
+ * Tallies the unexplained changes the agent found against the hand
+ * labels: recall over the required parts and described changes, and
+ * precision over what it flagged and listed. A comparison that fell back
+ * flags nothing.
+ */
+export function tallyUnexplained(
+  expected: ExpectedUnexplained,
+  parts: readonly Part[],
+  issues: readonly LinkedIssue[],
+  found: UnexplainedChanges,
+): UnexplainedTally {
+  const flagged = found.parts.map((each) => parts[each.part]);
+  const optional = expected.optionalParts ?? [];
+  const required = expected.described.filter((wanted) => wanted.optional !== true);
+  const tally: UnexplainedTally = { ...noUnexplained(), requiredParts: expected.parts.length, requiredDescribed: required.length };
+  tally.foundParts = expected.parts.filter((label) => flagged.some((part) => namesPart(part, label))).length;
+  for (const part of flagged) {
+    if (expected.parts.some((label) => namesPart(part, label))) tally.flaggedRight++;
+    else if (!optional.some((label) => namesPart(part, label))) tally.flaggedWrong++;
+  }
+  tally.foundDescribed = required.filter((wanted) => found.described.some((listed) => sameDescribed(listed, wanted, issues))).length;
+  for (const listed of found.described) {
+    if (required.some((wanted) => sameDescribed(listed, wanted, issues))) tally.listedRight++;
+    else if (!expected.described.some((wanted) => sameDescribed(listed, wanted, issues))) tally.listedWrong++;
+  }
+  return tally;
 }
 
 /**
@@ -360,6 +440,7 @@ export function tallyCase(
     story: noStory(),
     finding: noFinding(),
     judging: noJudging(),
+    unexplained: noUnexplained(),
   };
   if (!parts) return tally;
 
@@ -465,6 +546,7 @@ export function addTallies(tallies: readonly Tally[]): Tally {
     story: noStory(),
     finding: noFinding(),
     judging: noJudging(),
+    unexplained: noUnexplained(),
   };
   for (const tally of tallies) {
     total.changedLines += tally.changedLines;
@@ -475,6 +557,7 @@ export function addTallies(tallies: readonly Tally[]): Tally {
     for (const key of Object.keys(total.story) as (keyof StoryTally)[]) total.story[key] += tally.story[key];
     for (const key of Object.keys(total.finding) as (keyof FindingTally)[]) total.finding[key] += tally.finding[key];
     for (const key of Object.keys(total.judging) as (keyof JudgingTally)[]) total.judging[key] += tally.judging[key];
+    for (const key of Object.keys(total.unexplained) as (keyof UnexplainedTally)[]) total.unexplained[key] += tally.unexplained[key];
     for (const [name, counts] of tally.noise) {
       const sum = total.noise.get(name) ?? { expected: 0, predicted: 0, matched: 0 };
       sum.expected += counts.expected;
@@ -512,8 +595,9 @@ function median(values: readonly number[]): number {
  * known important parts, the grouping's pairwise hunk agreement with
  * the hand labels, the claim checks over the hand-labelled claims, the
  * story's plain checks, the recall and precision of the claims the agent
- * listed, and the accuracy and false-verified rate of the verdicts it
- * gave. A score with nothing to count is left out rather than given a
+ * listed, the accuracy and false-verified rate of the verdicts it
+ * gave, and the recall and precision of the unexplained changes it found
+ * in each direction. A score with nothing to count is left out rather than given a
  * value it did not earn.
  */
 export function scoresOf(tally: Tally): Score[] {
@@ -550,6 +634,14 @@ export function scoresOf(tally: Tally): Score[] {
   const { judging } = tally;
   if (judging.labelled > 0) scores.push({ name: 'verdict-accuracy', value: judging.right / judging.labelled, better: 'higher' });
   if (judging.notVerified > 0) scores.push({ name: 'false-verified', value: judging.falseVerified / judging.notVerified, better: 'lower' });
+  const { unexplained } = tally;
+  const ratio = (name: string, part: number, whole: number): Score[] => (whole > 0 ? [{ name, value: part / whole, better: 'higher' }] : []);
+  scores.push(
+    ...ratio('unexplained-recall', unexplained.foundParts, unexplained.requiredParts),
+    ...ratio('unexplained-precision', unexplained.flaggedRight, unexplained.flaggedRight + unexplained.flaggedWrong),
+    ...ratio('described-recall', unexplained.foundDescribed, unexplained.requiredDescribed),
+    ...ratio('described-precision', unexplained.listedRight, unexplained.listedRight + unexplained.listedWrong),
+  );
   return scores;
 }
 
