@@ -35,7 +35,7 @@ import {
   type TreeSection,
 } from './tree.js';
 import { draftTarget, ReviewComments } from './comments.js';
-import { FindingThreads } from './findings.js';
+import { escapeMarkdown, FindingThreads } from './findings.js';
 import { isSubmitKind, SendReviewPage } from './send-page.js';
 import { OverviewPanel } from './overview.js';
 import { AgentStatusBar } from './agent-status.js';
@@ -469,17 +469,24 @@ class ReviewSession {
         return;
       }
       const target = draftTarget(this.result, ref);
+      // The draft quotes the pull request's own words, so it shows and
+      // sends escaped, the way every agent-derived text does.
       if (target !== undefined) {
-        this.comments.draft(target, draft.body, finding.kind);
+        this.comments.draft(target, escapeMarkdown(draft.body), finding.kind);
         return;
       }
       const edited = await vscode.window.showInputBox({
         title: `Draft comment from the ${finding.kind}`,
         prompt: 'Edit the draft, then press Enter to add it to the overall comment, or Escape to discard it. Nothing is sent until you submit the review.',
-        value: draft.body,
+        value: escapeMarkdown(draft.body),
         ignoreFocusOut: true,
       });
       if (edited === undefined || edited.trim() === '') return;
+      // A review started while the box was open replaces this one.
+      if (review !== this.reviews) {
+        vscode.window.showWarningMessage('The review changed while you edited the draft; draft it again.');
+        return;
+      }
       if (!this.sendPage().addToOverall(edited.trim())) {
         vscode.window.showWarningMessage('The review is being sent: try again once it finishes.');
         return;

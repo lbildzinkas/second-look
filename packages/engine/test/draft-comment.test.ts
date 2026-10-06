@@ -251,6 +251,16 @@ describe('draftChecks', () => {
     expect(draftChecks(withName, 'At `app/retry.py:1`, `send_with_retry(send)` reads `MAX_ATTEMPTS` as 5, not three.').added).toEqual([]);
   });
 
+  it('refuses a near-miss line number and a restated constant, however they are wrapped', () => {
+    const nearMiss = draftChecks(refuted(), 'The docstring is wrong: `app/retry.py:12` shows otherwise.');
+    expect(nearMiss.cited).toEqual([]);
+    expect(nearMiss.added).toEqual(['12']);
+
+    const restated = draftChecks(refuted(), 'At `app/retry.py:1`, `MAX_ATTEMPTS = 15`, not three.');
+    expect(restated.cited).toEqual(['app/retry.py:1']);
+    expect(restated.added).toEqual(['15']);
+  });
+
   it('caps the length, and fails an empty draft', () => {
     const long = `See \`app/retry.py:1\`. ${'x'.repeat(MAX_DRAFT_LENGTH)}`;
     expect(draftChecks(refuted(), long).underCap).toBe(false);

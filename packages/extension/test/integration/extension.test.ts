@@ -24,6 +24,7 @@ import {
   activate,
 } from '../../src/extension.js';
 import { changeUri, libraryUri } from '../../src/change-copies.js';
+import { escapeMarkdown } from '../../src/findings.js';
 import { SEND_REVIEW_VIEW_TYPE } from '../../src/send-page.js';
 import { claimsResult, criteriaResult, fetchedResult, judgedResult, mixedResult, offeredResult, storyResult, unexplainedResult } from '../results.js';
 import { OVERVIEW_VIEW_TYPE } from '../../src/overview.js';
@@ -1000,7 +1001,7 @@ describe('the pending review and sending it', () => {
     expect(thread.uri.toString()).toBe(head('src/retry.py').toString());
     expect(thread.range?.start.line).toBe(2);
     expect(thread.label).toBe('Draft comment · src/retry.py:3');
-    expect(thread.comments[0]).toMatchObject({ body: draft.body, contextValue: 'second-look-draft' });
+    expect(thread.comments[0]).toMatchObject({ body: escapeMarkdown(draft.body), contextValue: 'second-look-draft' });
     expect(renderedTree(view)[0]).toEqual({ label: 'Must review', tooltip: 'The parts to read first.' });
 
     // The reviewer edits the draft and adds it: it joins the pending review.
@@ -1055,6 +1056,62 @@ describe('the pending review and sending it', () => {
 
     expect(sendPage().webview.posted.at(-1)).toMatchObject({ type: 'state', body: 'The description says failed sends are retried and logged, but nothing logs a retry.', drafts: [] });
     expect(engineRequests('draft-overall.log').map((request) => request.method)).toEqual(['initialize', 'review', 'draftComment', 'draftComment']);
+  });
+
+  it('shows and sends a draft with injected markup escaped, so it never renders', async () => {
+    const draft = draftOf(
+      { kind: 'claim', index: 1 },
+      'Gives up after three attempts, whatever the status.',
+      'The docstring says three attempts, but `src/retry.py:6` loops five times — [see the loop](http://evil.example).',
+    );
+    await reviewWithFakeEngine({ result: judgedResult(), draftResult: draft, logName: 'draft-escaped.log' });
+
+    await registeredCommands().get(DRAFT_COMMENT_COMMAND)!({ kind: 'claim', index: 1 });
+    const thread = stub.commentControllers[0]!.threads.at(-1)!;
+    const escaped = escapeMarkdown(draft.body);
+    expect(escaped).not.toBe(draft.body);
+    expect(thread.comments[0]).toMatchObject({ body: escaped, contextValue: 'second-look-draft' });
+
+    // Added to the pending review: the pending preview shows the escaped text too.
+    await registeredCommands().get(ADD_DRAFT_COMMAND)!(thread.comments[0]);
+    expect(thread.comments[0]).toMatchObject({ body: escaped });
+
+    // And the one write carries the escaped text, so nothing renders as markup on GitHub either.
+    await registeredCommands().get(SUBMIT_REVIEW_COMMAND)!() as Promise<void>;
+    drive(sendPage(), { type: 'submit' });
+    await eventually('the review to be sent', () => (stub.informationMessages[0] !== undefined ? true : undefined));
+    expect(engineRequests('draft-escaped.log').at(-1)).toMatchObject({
+      method: 'sendReview',
+      params: { review: { comments: [{ kind: 'line', path: 'src/retry.py', line: 3, body: escaped }] } },
+    });
+  });
+
+  it('opens a whole-pull-request draft escaped, and drops it when a new review starts while it is edited', async () => {
+    const draft = draftOf(
+      { kind: 'described change', index: 0 },
+      'Retries failed sends.',
+      'The description says failed sends are retried, but no part logs a retry — [proof](http://evil.example).',
+    );
+    await reviewWithFakeEngine({ result: unexplainedResult(), draftResult: draft, logName: 'draft-race.log' });
+
+    let acceptDraft: (edited: string) => void = () => undefined;
+    stub.inputBoxResult = new Promise<string>((resolve) => {
+      acceptDraft = resolve;
+    });
+    const drafting = registeredCommands().get(DRAFT_COMMENT_COMMAND)!({ kind: 'described change', index: 0 }) as Promise<void>;
+    await eventually('the draft input box to open', () =>
+      stub.inputBoxes.at(-1)?.title === 'Draft comment from the described change the diff does not contain' ? true : undefined,
+    );
+    expect(stub.inputBoxes.at(-1)?.value).toBe(escapeMarkdown(draft.body));
+
+    // A new review starts while the box is open, replacing the one the draft belongs to.
+    await registeredCommands().get(REVIEW_COMMAND)!(PR_URL) as Promise<void>;
+    acceptDraft('The description says failed sends are retried and logged, but nothing logs a retry.');
+    await drafting;
+
+    expect(stub.warningMessages).toEqual(['The review changed while you edited the draft; draft it again.']);
+    await registeredCommands().get(SUBMIT_REVIEW_COMMAND)!() as Promise<void>;
+    expect(sendPage().webview.posted.at(-1)).toMatchObject({ type: 'state', body: '', drafts: [] });
   });
 
   it('refuses a draft from something that is no finding, asking the engine nothing', async () => {

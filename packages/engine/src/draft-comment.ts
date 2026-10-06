@@ -241,7 +241,7 @@ export interface DraftChecks {
   length: number;
   /** True when the draft is not empty and stays within {@link MAX_DRAFT_LENGTH}. */
   underCap: boolean;
-  /** The finding's locations the draft cites, each found as written, in any case. */
+  /** The finding's locations the draft cites, each named as written, in any case, and not as the start of a longer number. */
   cited: string[];
   /** The file and code names and the numbers the draft uses that the finding does not hold. */
   added: string[];
@@ -266,18 +266,29 @@ function findingText(finding: DraftFinding): string {
   ].join('\n');
 }
 
+/** A location's own text, escaped to match itself in a draft. */
+function escapeRegExp(text: string): string {
+  return text.replace(/[$()*+.?[\\^{|}]/g, (character) => `\\${character}`);
+}
+
+/** Whether a draft cites a location: it names it, in any case, and not as the start of a longer number, which names another place. */
+function cites(body: string, location: string): boolean {
+  return new RegExp(`${escapeRegExp(location)}(?!\\d)`, 'i').test(body);
+}
+
 /**
  * Runs the plain checks on a draft. A name is held when the finding has
  * it as written, or else every identifier in it, so a signature passes
  * when the finding shows each of its words; a number is held when the
- * finding has it among its own numbers.
+ * finding has it among its own numbers, wherever in the draft it is
+ * written; a location is cited when the draft names it as written, in
+ * any case, and not as the start of a longer number.
  */
 export function draftChecks(finding: DraftFinding, comment: string): DraftChecks {
   const body = comment.trim();
   const text = findingText(finding);
   const identifiers = new Set(text.match(IDENTIFIER) ?? []);
   const numbers = new Set(text.match(NUMBER) ?? []);
-  const lower = body.toLowerCase();
   const holds = (name: string): boolean => {
     if (text.includes(name)) return true;
     const words = name.match(IDENTIFIER) ?? [];
@@ -285,12 +296,12 @@ export function draftChecks(finding: DraftFinding, comment: string): DraftChecks
   };
   const added = [
     ...namesIn(body).filter((name) => !holds(name)),
-    ...(body.replace(/`[^`\n]*`/g, (code) => (holds(code.slice(1, -1)) ? ' ' : code)).match(NUMBER) ?? []).filter((number) => !numbers.has(number)),
+    ...(body.match(NUMBER) ?? []).filter((number) => !numbers.has(number)),
   ];
   return {
     length: body.length,
     underCap: body !== '' && body.length <= MAX_DRAFT_LENGTH,
-    cited: finding.locations.filter((location) => lower.includes(location.toLowerCase())),
+    cited: finding.locations.filter((location) => cites(body, location)),
     added: [...new Set(added)],
   };
 }
