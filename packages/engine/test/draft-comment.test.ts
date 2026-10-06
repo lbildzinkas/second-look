@@ -136,7 +136,7 @@ describe('draftFinding', () => {
       kind: 'unverifiable claim',
       evidence: [],
       notes: ['evidence source: the change itself', 'the claim needs the source of requests, which the companion does not have'],
-      locations: ['the description'],
+      locations: ['description'],
     });
   });
 
@@ -164,7 +164,7 @@ describe('draftFinding', () => {
     expect(draftFinding(reviewed(), { kind: 'described change', index: 0 })).toMatchObject({
       statement: 'Each retry is logged.',
       madeIn: "the pull request's description, line 3",
-      locations: ['the description'],
+      locations: ['description'],
     });
     expect(draftFinding(reviewed(), { kind: 'described change', index: 1 })).toMatchObject({
       statement: 'A send that gives up goes to the dead-letter queue.',
@@ -224,9 +224,11 @@ describe('draftChecks', () => {
     expect(draftProblems(refuted(), checks)).toEqual([]);
   });
 
-  it('finds a cited location in any case, such as "The description"', () => {
+  it('finds a cited location in any case, the description by its name however it is put', () => {
     const finding = draftFinding(reviewed(), { kind: 'claim', index: 1 })!;
-    expect(draftChecks(finding, 'The description says a 4xx is never retried; can you show where?').cited).toEqual(['the description']);
+    expect(draftChecks(finding, 'The Description says a 4xx is never retried; can you show where?').cited).toEqual(['description']);
+    expect(draftChecks(finding, "The pull request's description says a 4xx is never retried.").cited).toEqual(['description']);
+    expect(draftChecks(finding, 'A 4xx is never retried, it says.').cited).toEqual([]);
   });
 
   it('names each name, place and number the finding does not hold, and a draft that cites nothing', () => {

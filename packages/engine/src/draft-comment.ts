@@ -136,7 +136,7 @@ function evidenceOf(cited: Citation): DraftFinding['evidence'][number] {
 function claimLocation(claim: Claim): string {
   const { location } = claim;
   if (location.kind === 'file') return `${location.path}:${location.line}`;
-  if (location.kind === 'description') return 'the description';
+  if (location.kind === 'description') return 'description';
   if (location.kind === 'story') return 'the story';
   return location.path !== undefined && location.line !== undefined ? `${location.path}:${location.line}` : 'the pipeline report';
 }
@@ -209,7 +209,7 @@ export function draftFinding(result: ReviewResult, ref: FindingRef): DraftFindin
       reason: change.reason,
       evidence: [],
       notes: ['the diff does not contain this change'],
-      locations: [issue === undefined ? 'the description' : `#${issue.number}`],
+      locations: [issue === undefined ? 'description' : `#${issue.number}`],
     };
   }
   const criterion = result.criteria?.criteria[ref.index];

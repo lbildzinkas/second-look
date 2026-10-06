@@ -106,6 +106,22 @@ const LABELLED: readonly LabelledDraft[] = [
   {
     case: 'planted-click',
     finding: 1,
+    comment: "The pull request description mentions an example in `docs/utils.md` that edits a `pathlib.Path`, but I don't see that file in this diff.",
+    cites: true,
+    addsClaim: false,
+    short: true,
+  },
+  {
+    case: 'planted-click',
+    finding: 1,
+    comment: 'An example that edits a `pathlib.Path` seems to be missing from `docs/utils.md`.',
+    cites: false,
+    addsClaim: false,
+    short: true,
+  },
+  {
+    case: 'planted-click',
+    finding: 1,
     comment: 'The description promises a `docs/utils.md` example; it should go under `docs/api.md` line 40 too.',
     cites: true,
     addsClaim: true,
