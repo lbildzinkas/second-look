@@ -7,18 +7,34 @@ import {
   ENGINE_PROTOCOL_VERSION,
   FETCH_LIBRARY_METHOD,
   INITIALIZE_METHOD,
+  MARK_REVIEWED_METHOD,
+  MARK_VIEWED_METHOD,
+  REVIEWED_MARKS_METHOD,
   REVIEW_METHOD,
   REVIEW_STAGE_METHOD,
   SEND_REVIEW_METHOD,
   type DraftComment,
   type FindingRef,
   type InitializeResult,
+  type MarkedPart,
   type PendingReview,
   type ReviewAgentChoice,
+  type ReviewedMarks,
   type ReviewResult,
   type SentReview,
+  type ViewedFiles,
 } from '@second-look/engine';
-import { DraftProtocolError, ProtocolError, SendProtocolError, isDraftComment, isReviewResult, isSentReview } from './protocol.js';
+import {
+  DraftProtocolError,
+  MarksProtocolError,
+  ProtocolError,
+  SendProtocolError,
+  isDraftComment,
+  isReviewResult,
+  isReviewedMarks,
+  isSentReview,
+  isViewedFiles,
+} from './protocol.js';
 
 /**
  * Creates the engine process this client talks to. Tests inject their own
@@ -79,6 +95,12 @@ const DRAFT_COMMENT_TIMEOUT_MS = 720_000;
 
 /** How long one send request may take before the engine is given up on. */
 const SEND_REVIEW_TIMEOUT_MS = 60_000;
+
+/** How long reading or changing the reviewed marks in the local store may take. */
+const MARKS_TIMEOUT_MS = 10_000;
+
+/** How long marking files "Viewed" on GitHub may take before the engine is given up on. */
+const MARK_VIEWED_TIMEOUT_MS = 60_000;
 
 /** How long a stalled engine gets to die from SIGTERM before it is killed outright. */
 const KILL_GRACE_MS = 2_000;
@@ -296,6 +318,49 @@ export class EngineClient {
     );
     if (!isSentReview(result)) {
       throw new SendProtocolError();
+    }
+    return result;
+  }
+
+  /** Reads the pull request's reviewed marks from the engine's local store. */
+  async reviewedMarks(url: string): Promise<ReviewedMarks> {
+    if (!this.handshaken) {
+      throw new Error('the engine has not completed its handshake yet');
+    }
+    const result = await this.request(REVIEWED_MARKS_METHOD, { url }, MARKS_TIMEOUT_MS);
+    if (!isReviewedMarks(result)) {
+      throw new MarksProtocolError();
+    }
+    return result;
+  }
+
+  /**
+   * Ticks or clears one part's reviewed checkbox in the engine's local
+   * store. Resolves with the marks as they now stand.
+   */
+  async markReviewed(url: string, part: MarkedPart, reviewed: boolean): Promise<ReviewedMarks> {
+    if (!this.handshaken) {
+      throw new Error('the engine has not completed its handshake yet');
+    }
+    const result = await this.request(MARK_REVIEWED_METHOD, { url, part, reviewed }, MARKS_TIMEOUT_MS);
+    if (!isReviewedMarks(result)) {
+      throw new MarksProtocolError();
+    }
+    return result;
+  }
+
+  /**
+   * Marks whole files "Viewed" on GitHub for the reviewer's opt-in mirror,
+   * with the token VS Code's GitHub sign-in gave; the engine marks only the
+   * files whose every part is reviewed. Resolves with the files marked.
+   */
+  async markViewed(url: string, token: string, paths: string[]): Promise<ViewedFiles> {
+    if (!this.handshaken) {
+      throw new Error('the engine has not completed its handshake yet');
+    }
+    const result = await this.request(MARK_VIEWED_METHOD, { url, token, paths }, MARK_VIEWED_TIMEOUT_MS);
+    if (!isViewedFiles(result)) {
+      throw new MarksProtocolError();
     }
     return result;
   }

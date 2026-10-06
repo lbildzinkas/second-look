@@ -30,6 +30,7 @@ import { claimsResult, criteriaResult, fetchedResult, judgedResult, mixedResult,
 import { OVERVIEW_VIEW_TYPE } from '../../src/overview.js';
 import {
   Range,
+  TreeItemCheckboxState,
   stub,
   stubContext,
   workspace,
@@ -806,7 +807,7 @@ describe('the overview', () => {
     expect(offered).toContain('command:second-look.fetchLibrary');
     const logged = (): { method: string; params: unknown }[] =>
       readFileSync(join(workDir, 'fetch-library.log'), 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line) as { method: string; params: unknown });
-    expect(logged().map((request) => request.method)).toEqual(['initialize', 'review']);
+    expect(logged().map((request) => request.method)).toEqual(['initialize', 'review', 'reviewedMarks']);
 
     await registeredCommands().get(FETCH_LIBRARY_COMMAND)!(2);
 
@@ -909,7 +910,7 @@ describe('the pending review and sending it', () => {
       { label: 'src/retry.py:5', description: 'this retry loop needs a cap', tooltip: 'this retry loop needs a cap', contextValue: 'comment' },
       { label: 'src/retry.py (part)', description: 'the loop reads well overall', tooltip: 'the loop reads well overall', contextValue: 'comment' },
     ]);
-    expect(engineRequests('send.log').map((request) => request.method)).toEqual(['initialize', 'review']);
+    expect(engineRequests('send.log').map((request) => request.method)).toEqual(['initialize', 'review', 'reviewedMarks']);
     expect(stub.sessionRequests).toHaveLength(sessionRequestsBefore);
 
     // Submit review… opens the Send review page: both comments together,
@@ -1008,7 +1009,7 @@ describe('the pending review and sending it', () => {
     thread.comments[0]!.body = 'The docstring says three attempts, but `src/retry.py:6` loops five times. Which is meant?';
     await registeredCommands().get(ADD_DRAFT_COMMAND)!(thread.comments[0]);
     expect(renderedTree(view)[1]).toMatchObject({ label: 'src/retry.py:3', contextValue: 'comment' });
-    expect(engineRequests('draft.log').map((request) => request.method)).toEqual(['initialize', 'review', 'draftComment']);
+    expect(engineRequests('draft.log').map((request) => request.method)).toEqual(['initialize', 'review', 'reviewedMarks', 'draftComment']);
 
     // Sending stays the Send review page's one press.
     await registeredCommands().get(SUBMIT_REVIEW_COMMAND)!() as Promise<void>;
@@ -1055,7 +1056,7 @@ describe('the pending review and sending it', () => {
     await registeredCommands().get(DRAFT_COMMENT_COMMAND)!({ kind: 'described change', index: 0 });
 
     expect(sendPage().webview.posted.at(-1)).toMatchObject({ type: 'state', body: 'The description says failed sends are retried and logged, but nothing logs a retry.', drafts: [] });
-    expect(engineRequests('draft-overall.log').map((request) => request.method)).toEqual(['initialize', 'review', 'draftComment', 'draftComment']);
+    expect(engineRequests('draft-overall.log').map((request) => request.method)).toEqual(['initialize', 'review', 'reviewedMarks', 'draftComment', 'draftComment']);
   });
 
   it('shows and sends a draft with injected markup escaped, so it never renders', async () => {
@@ -1120,7 +1121,7 @@ describe('the pending review and sending it', () => {
     await registeredCommands().get(DRAFT_COMMENT_COMMAND)!({ kind: 'claim', index: 0 });
 
     expect(stub.warningMessages).toEqual(['This finding cannot be drafted from; review the pull request again.']);
-    expect(engineRequests('draft-none.log').map((request) => request.method)).toEqual(['initialize', 'review']);
+    expect(engineRequests('draft-none.log').map((request) => request.method)).toEqual(['initialize', 'review', 'reviewedMarks']);
   });
 
   it('drops a comment on the page instead of sending it', async () => {
@@ -1352,7 +1353,7 @@ describe('the pending review and sending it', () => {
     page.dispose(); // The reviewer closes the page's tab.
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(engineRequests('closed-page.log').map((request) => request.method)).toEqual(['initialize', 'review']);
+    expect(engineRequests('closed-page.log').map((request) => request.method)).toEqual(['initialize', 'review', 'reviewedMarks']);
     expect(stub.sessionRequests).toHaveLength(1); // Only the review's own.
     expect(stub.progressTitles).toHaveLength(1);
     expect(stub.commentControllers[0]!.threads).toContain(thread);
@@ -1382,7 +1383,7 @@ describe('the pending review and sending it', () => {
     expect(stub.warningMessages).toEqual([
       'Nothing to send yet: write a comment or an overall comment, or approve.',
     ]);
-    expect(engineRequests('empty-send.log').map((request) => request.method)).toEqual(['initialize', 'review']);
+    expect(engineRequests('empty-send.log').map((request) => request.method)).toEqual(['initialize', 'review', 'reviewedMarks']);
   });
 
   it('refuses an empty request-changes review; an empty approve still sends', async () => {
@@ -1398,7 +1399,7 @@ describe('the pending review and sending it', () => {
     expect(stub.warningMessages).toEqual([
       'Nothing to send yet: write a comment or an overall comment, or approve.',
     ]);
-    expect(engineRequests('empty-request-changes.log').map((request) => request.method)).toEqual(['initialize', 'review']);
+    expect(engineRequests('empty-request-changes.log').map((request) => request.method)).toEqual(['initialize', 'review', 'reviewedMarks']);
     expect(sendPages()).toContain(page); // The page keeps the choice.
 
     drive(page, { type: 'kind', submit: 'approve' });
@@ -1429,7 +1430,7 @@ describe('the pending review and sending it', () => {
     expect(stub.warningMessages).toEqual([
       'One comment is empty: write it or drop it before sending.',
     ]);
-    expect(engineRequests('blank-comment.log').map((request) => request.method)).toEqual(['initialize', 'review']);
+    expect(engineRequests('blank-comment.log').map((request) => request.method)).toEqual(['initialize', 'review', 'reviewedMarks']);
     expect(stub.commentControllers[0]!.threads).toContain(thread);
   });
 
@@ -1447,7 +1448,7 @@ describe('the pending review and sending it', () => {
 
     expect(stub.warningMessages).toEqual(['Sign in to GitHub to send the review.']);
     expect(renderedTree(view)[1]).toMatchObject({ label: 'src/retry.py:5' });
-    expect(engineRequests('no-sign-in-send.log').map((request) => request.method)).toEqual(['initialize', 'review']);
+    expect(engineRequests('no-sign-in-send.log').map((request) => request.method)).toEqual(['initialize', 'review', 'reviewedMarks']);
   });
 
   it('closes the page when a new review starts', async () => {
@@ -1466,7 +1467,9 @@ describe('the pending review and sending it', () => {
     expect(engineRequests('new-review-page.log').map((request) => request.method)).toEqual([
       'initialize',
       'review',
+      'reviewedMarks',
       'review',
+      'reviewedMarks',
     ]);
   });
 
@@ -1487,5 +1490,69 @@ describe('the pending review and sending it', () => {
       { label: 'src/retry.py:5', description: 'stays', tooltip: 'stays', contextValue: 'comment' },
     ]);
     expect(stub.commentControllers[0]!.threads).not.toContain(onBase);
+  });
+});
+
+describe('reviewed marks', () => {
+  /** The tree's parts, each with the item the view renders for it. */
+  function partNodes(view: StubTreeView): { node: unknown; label?: string; checkboxState?: number }[] {
+    const provider = providerOf(view);
+    return provider
+      .getChildren()
+      .flatMap((section) => provider.getChildren(section))
+      .map((node) => ({ node, item: provider.getTreeItem(node) as ReturnType<TestProvider['getTreeItem']> & { checkboxState?: number } }))
+      .filter(({ item }) => item.contextValue === 'part' || item.contextValue === 'noise')
+      .map(({ node, item }) => ({ node, label: item.label, checkboxState: item.checkboxState }));
+  }
+
+  function loggedRequests(logName: string): { method: string; params?: Record<string, unknown> }[] {
+    return readFileSync(join(workDir, logName), 'utf8')
+      .split('\n')
+      .filter((line) => line !== '')
+      .map((line) => JSON.parse(line) as { method: string; params?: Record<string, unknown> });
+  }
+
+  it("gives every part a checkbox, keeps a tick in the engine's store, and counts the parts left in the view's badge", async () => {
+    const view = await reviewWithFakeEngine({ result: mixedResult(), logName: 'marks.log' });
+    const parts = partNodes(view);
+
+    expect(view.options).toMatchObject({ manageCheckboxStateManually: true });
+    expect(parts).toHaveLength(7);
+    expect(parts.every((each) => each.checkboxState === TreeItemCheckboxState.Unchecked)).toBe(true);
+    expect(view.badge).toEqual({ value: 7, tooltip: '7 of 7 parts left to review' });
+
+    view.fireCheckboxChange([[parts[0]!.node, TreeItemCheckboxState.Checked]]);
+    await until('the mark to be kept', () => view.badge?.value === 6);
+
+    expect(partNodes(view)[0]).toMatchObject({ label: 'src/retry.py', checkboxState: TreeItemCheckboxState.Checked });
+    const marks = loggedRequests('marks.log').filter((request) => request.method === 'markReviewed');
+    expect(marks.map((request) => request.params)).toEqual([
+      { url: PR_URL, part: { name: 'src/retry.py', pieces: [expect.stringMatching(/^[0-9a-f]{64}$/)] }, reviewed: true },
+    ]);
+    // The mirror is off by default: nothing asked GitHub, and no sign-in beyond the review's own.
+    expect(loggedRequests('marks.log').map((request) => request.method)).not.toContain('markViewed');
+    expect(stub.sessionRequests).toHaveLength(1);
+
+    view.fireCheckboxChange([[partNodes(view)[0]!.node, TreeItemCheckboxState.Unchecked]]);
+    await until('the mark to be cleared', () => view.badge?.value === 7);
+    expect(partNodes(view)[0]!.checkboxState).toBe(TreeItemCheckboxState.Unchecked);
+    expect(stub.errorMessages).toEqual([]);
+  });
+
+  it('with the mirror setting on, marks a file "Viewed" on GitHub once its every part is reviewed, never on a clear', async () => {
+    stub.configuration['second-look.mirrorViewedToGitHub'] = true;
+    const view = await reviewWithFakeEngine({ result: mixedResult(), logName: 'mirror.log' });
+
+    view.fireCheckboxChange([[partNodes(view)[0]!.node, TreeItemCheckboxState.Checked]]);
+    await until('the file to be mirrored', () => loggedRequests('mirror.log').some((request) => request.method === 'markViewed'));
+
+    const viewed = loggedRequests('mirror.log').filter((request) => request.method === 'markViewed');
+    expect(viewed.map((request) => request.params)).toEqual([{ url: PR_URL, token: TOKEN, paths: ['src/retry.py'] }]);
+    expect(stub.sessionRequests.at(-1)).toEqual({ id: 'github', scopes: ['repo'], createIfNone: false });
+
+    view.fireCheckboxChange([[partNodes(view)[0]!.node, TreeItemCheckboxState.Unchecked]]);
+    await until('the mark to be cleared', () => view.badge?.value === 7);
+    expect(loggedRequests('mirror.log').filter((request) => request.method === 'markViewed')).toHaveLength(1);
+    expect(stub.errorMessages).toEqual([]);
   });
 });

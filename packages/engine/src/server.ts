@@ -3,11 +3,12 @@ import { DEFAULT_AGENT_SETTINGS, type AgentAdapter, type AgentSettings } from '.
 import { AGENT_NAMES, isAgentName, type AgentName } from './agents.js';
 import { pullRequestCacheDir } from './cache.js';
 import { draftComment, draftFinding, isFindingRef } from './draft-comment.js';
-import { parsePullRequestUrl } from './github.js';
+import { GitHubClient, parsePullRequestUrl } from './github.js';
 import { pressLibraryFetch } from './library-verdicts.js';
 import { FINDING_REF_KINDS, type ReviewResult } from './protocol.js';
 import { reviewPullRequest } from './review.js';
 import { sendReview } from './send.js';
+import { isMarkedPart, readReviewedMarks, saveReviewedMark, wholeFilesReviewed } from './reviewed-marks.js';
 import type { TestedRanking } from './ranking.js';
 import {
   DRAFT_COMMENT_METHOD,
@@ -19,7 +20,10 @@ import {
   JSON_RPC_INVALID_REQUEST,
   JSON_RPC_METHOD_NOT_FOUND,
   JSON_RPC_PARSE_ERROR,
+  MARK_REVIEWED_METHOD,
+  MARK_VIEWED_METHOD,
   NOT_INITIALIZED_CODE,
+  REVIEWED_MARKS_METHOD,
   REVIEW_METHOD,
   REVIEW_STAGE_METHOD,
   SEND_REVIEW_METHOD,
@@ -29,8 +33,11 @@ import {
   type DraftCommentParams,
   type FetchLibraryParams,
   type InitializeParams,
+  type MarkReviewedParams,
+  type MarkViewedParams,
   type ReviewAgentChoice,
   type ReviewParams,
+  type ReviewedMarksParams,
   type ReviewStageParams,
   type RpcNotification,
   type RpcResponse,
@@ -109,7 +116,11 @@ export interface RpcServerDeps {
  * `draftComment` drafts a comment from one finding of that latest
  * result, only when the reviewer asks for it, and answers with the
  * checked draft, which the reviewer edits and adds to the pending review
- * or discards; nothing sends it.
+ * or discards; nothing sends it. `reviewedMarks` and `markReviewed`
+ * read and change the reviewed marks in the pull request's local store,
+ * which outlives the engine, and `markViewed` marks the whole files of
+ * the latest review that every mark covers "Viewed" on GitHub, only for
+ * the reviewer's opt-in mirror.
  *
  * With an agent, a review arrives in stages: as soon as the plain result
  * is ready the engine sends it in a {@link REVIEW_STAGE_METHOD}
@@ -176,12 +187,24 @@ export async function runRpcServer(
       running.push(send(value.params, value.id, sink, initialized, deps));
       continue;
     }
+    if (value.method === REVIEWED_MARKS_METHOD) {
+      running.push(reviewedMarks(value.params, value.id, sink, initialized, deps));
+      continue;
+    }
+    if (value.method === MARK_REVIEWED_METHOD) {
+      running.push(markReviewed(value.params, value.id, sink, initialized, deps));
+      continue;
+    }
+    if (value.method === MARK_VIEWED_METHOD) {
+      running.push(markViewed(value.params, value.id, sink, initialized, deps, reviews));
+      continue;
+    }
     respond(
       sink,
       failure(
         value.id,
         JSON_RPC_METHOD_NOT_FOUND,
-        `unknown method: ${value.method}; this engine speaks ${INITIALIZE_METHOD}, ${REVIEW_METHOD}, ${FETCH_LIBRARY_METHOD}, ${DRAFT_COMMENT_METHOD} and ${SEND_REVIEW_METHOD}`,
+        `unknown method: ${value.method}; this engine speaks ${INITIALIZE_METHOD}, ${REVIEW_METHOD}, ${FETCH_LIBRARY_METHOD}, ${DRAFT_COMMENT_METHOD}, ${SEND_REVIEW_METHOD}, ${REVIEWED_MARKS_METHOD}, ${MARK_REVIEWED_METHOD} and ${MARK_VIEWED_METHOD}`,
       ),
     );
   }
@@ -521,6 +544,96 @@ async function send(
       ...(deps.fetch ? { fetch: deps.fetch } : {}),
     });
     respond(sink, { jsonrpc: '2.0', id, result });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    respond(sink, failure(id, ENGINE_FAILED_CODE, redactToken(message, token)));
+  }
+}
+
+/** Reads one pull request's reviewed marks from its local store. */
+async function reviewedMarks(
+  params: unknown,
+  id: number,
+  sink: RpcLineSink,
+  initialized: boolean,
+  deps: RpcServerDeps,
+): Promise<void> {
+  if (!initialized) {
+    respond(sink, failure(id, NOT_INITIALIZED_CODE, `the protocol starts with a version handshake: ${INITIALIZE_METHOD} before ${REVIEWED_MARKS_METHOD}`));
+    return;
+  }
+  const { url } = (params ?? {}) as Partial<ReviewedMarksParams>;
+  const ref = typeof url === 'string' ? parsePullRequestUrl(url) : null;
+  if (ref === null) {
+    respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${REVIEWED_MARKS_METHOD} needs params: { "url": string }`));
+    return;
+  }
+  try {
+    respond(sink, { jsonrpc: '2.0', id, result: await readReviewedMarks(deps.cacheDir, ref) });
+  } catch (error) {
+    respond(sink, failure(id, ENGINE_FAILED_CODE, error instanceof Error ? error.message : String(error)));
+  }
+}
+
+/** Ticks or clears one part's checkbox in the pull request's local store, answering with the marks as they now stand. */
+async function markReviewed(
+  params: unknown,
+  id: number,
+  sink: RpcLineSink,
+  initialized: boolean,
+  deps: RpcServerDeps,
+): Promise<void> {
+  if (!initialized) {
+    respond(sink, failure(id, NOT_INITIALIZED_CODE, `the protocol starts with a version handshake: ${INITIALIZE_METHOD} before ${MARK_REVIEWED_METHOD}`));
+    return;
+  }
+  const { url, part, reviewed } = (params ?? {}) as Partial<MarkReviewedParams>;
+  const ref = typeof url === 'string' ? parsePullRequestUrl(url) : null;
+  if (ref === null || !isMarkedPart(part) || typeof reviewed !== 'boolean') {
+    respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${MARK_REVIEWED_METHOD} needs params: { "url": string, "part": { "name": string, "pieces": [sha256 hex string, ...] }, "reviewed": boolean }`));
+    return;
+  }
+  try {
+    respond(sink, { jsonrpc: '2.0', id, result: await saveReviewedMark(deps.cacheDir, ref, part, reviewed) });
+  } catch (error) {
+    respond(sink, failure(id, ENGINE_FAILED_CODE, error instanceof Error ? error.message : String(error)));
+  }
+}
+
+/**
+ * Marks files "Viewed" on GitHub for the reviewer's opt-in mirror: only
+ * the asked-for files whose every part in the pull request's latest review
+ * the local store holds as reviewed, so no file is marked while part of it
+ * is left. The token is used for this request only and redacted from any
+ * error.
+ */
+async function markViewed(
+  params: unknown,
+  id: number,
+  sink: RpcLineSink,
+  initialized: boolean,
+  deps: RpcServerDeps,
+  reviews: Map<string, ReviewResult>,
+): Promise<void> {
+  if (!initialized) {
+    respond(sink, failure(id, NOT_INITIALIZED_CODE, `the protocol starts with a version handshake: ${INITIALIZE_METHOD} before ${MARK_VIEWED_METHOD}`));
+    return;
+  }
+  const { url, token, paths } = (params ?? {}) as Partial<MarkViewedParams>;
+  const ref = typeof url === 'string' ? parsePullRequestUrl(url) : null;
+  if (ref === null || typeof url !== 'string' || typeof token !== 'string' || token.length === 0 || !Array.isArray(paths) || !paths.every((path) => typeof path === 'string')) {
+    respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${MARK_VIEWED_METHOD} needs params: { "url": string, "token": string, "paths": string[] }`));
+    return;
+  }
+  const result = reviews.get(url);
+  if (result === undefined) {
+    respond(sink, failure(id, ENGINE_FAILED_CODE, `this engine has no finished review of ${url} to mirror; review the pull request again`));
+    return;
+  }
+  try {
+    const whole = wholeFilesReviewed(result.parts, await readReviewedMarks(deps.cacheDir, ref), paths);
+    await new GitHubClient({ token, ...(deps.fetch ? { fetch: deps.fetch } : {}) }).markFilesAsViewed(ref, whole);
+    respond(sink, { jsonrpc: '2.0', id, result: { paths: whole } });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     respond(sink, failure(id, ENGINE_FAILED_CODE, redactToken(message, token)));

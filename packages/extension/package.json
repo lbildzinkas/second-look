@@ -247,6 +247,11 @@
           "default": "",
           "description": "A label for the account or subscription the agent bills, such as `Claude Max (work address)` or `Pi personal key`, stamped on every agent-produced result of a review and shown in the status bar beside the agent and model. The companion never reads the agent's login: this label is what you tell it. For Claude Code, the status bar warns when an inherited ANTHROPIC_API_KEY overrides the Claude subscription."
         },
+        "second-look.mirrorViewedToGitHub": {
+          "type": "boolean",
+          "default": false,
+          "description": "Mirror the reviewed marks to GitHub's \"Viewed\" checkbox: once every part in a file is marked reviewed, the companion marks that whole file \"Viewed\" on the pull request, and never marks a file only partly reviewed or unmarks one. Off by default because the GitHub Pull Requests extension syncs the same field. The reviewed marks themselves are always kept locally, per pull request."
+        },
         "second-look.criteriaHeading": {
           "type": "string",
           "default": "Acceptance criteria",

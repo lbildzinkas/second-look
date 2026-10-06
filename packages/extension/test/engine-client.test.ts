@@ -32,6 +32,7 @@ interface FakeEngineOptions {
   fetchError?: string;
   draftResult?: unknown;
   draftError?: string;
+  viewedError?: string;
 }
 
 /** Starts the fake engine as a separate process, speaking real stdio. */
@@ -59,6 +60,7 @@ function fakeEngine(options: FakeEngineOptions = {}): ChildProcessWithoutNullStr
       ...(options.fetchError !== undefined ? { FAKE_ENGINE_FETCH_ERROR: options.fetchError } : {}),
       ...(options.draftResult !== undefined ? { FAKE_ENGINE_DRAFT_RESULT: JSON.stringify(options.draftResult) } : {}),
       ...(options.draftError !== undefined ? { FAKE_ENGINE_DRAFT_ERROR: options.draftError } : {}),
+      ...(options.viewedError !== undefined ? { FAKE_ENGINE_VIEWED_ERROR: options.viewedError } : {}),
     },
   });
 }
@@ -190,6 +192,51 @@ describe('EngineClient against a fake engine', () => {
     await malformed.initialize();
     await expect(malformed.draftComment(PR_URL, { kind: 'claim', index: 0 })).rejects.toThrow("the engine's answer is not a draft comment");
     malformed.dispose();
+  });
+
+  it('ticks and clears a part’s reviewed checkbox, and reads the marks back', async () => {
+    const client = new EngineClient(() => fakeEngine({ logName: 'reviewed-marks.log' }));
+    const part = { name: 'Cart.total in web/cart.ts', pieces: ['a'.repeat(64), 'b'.repeat(64)] };
+
+    await client.initialize();
+    expect(await client.reviewedMarks(PR_URL)).toEqual({ marks: [] });
+    const marked = await client.markReviewed(PR_URL, part, true);
+    expect(marked.marks).toEqual([expect.objectContaining({ name: part.name, pieces: part.pieces })]);
+    expect(await client.reviewedMarks(PR_URL)).toEqual(marked);
+    expect(await client.markReviewed(PR_URL, part, false)).toEqual({ marks: [] });
+
+    const requests = loggedRequests('reviewed-marks.log') as { method: string; params: unknown }[];
+    // Marks stay local: no request about them carries a token.
+    expect(requests.filter((each) => each.method === 'markReviewed').map((each) => each.params)).toEqual([
+      { url: PR_URL, part, reviewed: true },
+      { url: PR_URL, part, reviewed: false },
+    ]);
+    client.dispose();
+  });
+
+  it('marks files "Viewed" with the token of that one request, and reads a refusal as its plain message', async () => {
+    const client = new EngineClient(() => fakeEngine({ logName: 'mark-viewed.log' }));
+    await client.initialize();
+
+    expect(await client.markViewed(PR_URL, TOKEN, ['web/cart.ts'])).toEqual({ paths: ['web/cart.ts'] });
+    const request = loggedRequests('mark-viewed.log').find((each) => (each as { method: string }).method === 'markViewed') as { params: unknown };
+    expect(request.params).toEqual({ url: PR_URL, token: TOKEN, paths: ['web/cart.ts'] });
+    client.dispose();
+
+    const failing = new EngineClient(() => fakeEngine({ viewedError: 'GitHub refused' }));
+    await failing.initialize();
+    await expect(failing.markViewed(PR_URL, TOKEN, ['web/cart.ts'])).rejects.toThrow('GitHub refused');
+    failing.dispose();
+  });
+
+  it('refuses a marks answer that is not the reviewed marks', async () => {
+    const client = new EngineClient(() => fakeEngine());
+    await client.initialize();
+
+    await expect(client.markReviewed(PR_URL, { name: 'x', pieces: ['not a hash'] }, true)).rejects.toThrow(
+      "the engine's answer is not the pull request's reviewed marks",
+    );
+    client.dispose();
   });
 
   it('carries the agent, model and account choice with the review request', async () => {

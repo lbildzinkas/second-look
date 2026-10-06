@@ -51,7 +51,9 @@ const silentLog = {
 /**
  * The engine's view of GitHub, through the official client: read for the
  * review, its checks and their failed jobs' logs included, and one write
- * — submitting the review — when the reviewer sends it (ADR 0002).
+ * — submitting the review — when the reviewer sends it (ADR 0002), besides
+ * marking files "Viewed" when the reviewer's opt-in setting mirrors their
+ * reviewed marks there.
  *
  * The token lives only in the Octokit instance's memory: the client writes
  * it nowhere and echoes it in no error or log line.
@@ -302,6 +304,26 @@ export class GitHubClient {
   }
 
   /**
+   * Marks files of the pull request "Viewed" on GitHub, the field the
+   * GitHub Pull Requests extension syncs too: one GraphQL mutation per
+   * path, after one query for the pull request's id. Only the reviewer's
+   * opt-in setting asks for it, and only for files whose every part they
+   * reviewed. Nothing is ever unmarked.
+   */
+  async markFilesAsViewed(ref: PullRequestRef, paths: readonly string[]): Promise<void> {
+    if (paths.length === 0) return;
+    const answer = graphqlData(
+      await this.requestGraphql(PULL_REQUEST_ID_QUERY, { owner: ref.owner, name: ref.repo, number: ref.number }),
+      'pull-request-id query',
+    ) as { repository?: { pullRequest?: { id?: unknown } | null } | null };
+    const id = answer.repository?.pullRequest?.id;
+    if (typeof id !== 'string') throw new Error(`GitHub has no pull request ${ref.owner}/${ref.repo}#${ref.number}`);
+    for (const path of paths) {
+      graphqlData(await this.requestGraphql(MARK_FILE_AS_VIEWED_MUTATION, { id, path }), 'mark-as-viewed mutation');
+    }
+  }
+
+  /**
    * Reads the repository's root `.gitattributes` as stored at the given
    * commit, without a checkout: the contents endpoint serves the blob at
    * that ref. Returns null when the repository has no such file; any other
@@ -384,16 +406,31 @@ const LINKED_ISSUES_QUERY = `query($owner: String!, $name: String!, $number: Int
 
 /** A GraphQL answer that failed, with the message of its first error. */
 function linkedAnswer(response: unknown): GraphQLData {
+  return graphqlData(response, 'linked-issues query') as GraphQLData;
+}
+
+/** A GraphQL answer's data, or a plain error naming the request when GitHub reports one. */
+function graphqlData(response: unknown, request: string): unknown {
   const body = (response as GraphQLAnswer) ?? {};
   const errors = body.errors;
   if (errors !== undefined && errors.length > 0) {
     const message = errors[0]?.message;
     throw new Error(
-      `GitHub's linked-issues query failed${typeof message === 'string' ? `: ${message}` : ''}`,
+      `GitHub's ${request} failed${typeof message === 'string' ? `: ${message}` : ''}`,
     );
   }
   return body.data ?? {};
 }
+
+/** The query that reads the pull request's GraphQL id, which the mark-as-viewed mutation names it by. */
+const PULL_REQUEST_ID_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) { pullRequest(number: $number) { id } }
+}`;
+
+/** The mutation that marks one file of the pull request "Viewed" for the signed-in reviewer. */
+const MARK_FILE_AS_VIEWED_MUTATION = `mutation($id: ID!, $path: String!) {
+  markFileAsViewed(input: { pullRequestId: $id, path: $path }) { clientMutationId }
+}`;
 
 /** One linked issue, read defensively: anything GitHub leaves out reads as absent. */
 function linkedIssue(node: unknown, link: LinkedIssue['link']): LinkedIssue | undefined {

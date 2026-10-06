@@ -18,6 +18,8 @@ import { LIBRARY_VERDICTS_INSTRUCTIONS } from '../src/library-verdicts.js';
 import { VERDICTS_INSTRUCTIONS } from '../src/verdicts.js';
 import { DEFAULT_EFFORT } from '../src/ranking.js';
 import { runRpcServer, type RpcAgentDeps } from '../src/server.js';
+import { markedPart } from '../src/reviewed-marks.js';
+import type { ReviewResult } from '../src/protocol.js';
 import { removeCopy } from '../src/cache.js';
 import {
   PR_7_URL,
@@ -219,7 +221,7 @@ describe('runRpcServer', () => {
     expect(responses[0]!.id).toBeNull();
     expect(responses[0]!.error!.message).toContain('not JSON');
     expect(responses[1]!.error!.message).toContain('unknown method: start');
-    expect(responses[1]!.error!.message).toContain('initialize, review, fetchLibrary, draftComment and sendReview');
+    expect(responses[1]!.error!.message).toContain('initialize, review, fetchLibrary, draftComment, sendReview, reviewedMarks, markReviewed and markViewed');
     expect(responses[2]!.result).toEqual({ protocolVersion: ENGINE_PROTOCOL_VERSION });
   });
 
@@ -822,5 +824,143 @@ describe('runRpcServer fetching a library', () => {
     expect(answers[2]).toMatchObject({ id: 3, error: { code: JSON_RPC_INVALID_PARAMS } });
     expect(answers[3]).toMatchObject({ id: 4, error: { code: JSON_RPC_INVALID_PARAMS } });
     expect(state.pypi.requests).toEqual([]);
+  });
+});
+
+describe('runRpcServer keeping reviewed marks', () => {
+  const GRAPHQL = 'https://api.github.com/graphql';
+
+  /** The recorded pull request, plus GitHub's GraphQL side of the "Viewed" mirror, recording each file marked. */
+  function viewedFetch(): { fetch: typeof fetch; marked: string[]; tokens: (string | null)[] } {
+    const transport = fixtureFetch();
+    const marked: string[] = [];
+    const tokens: (string | null)[] = [];
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const body = typeof init?.body === 'string' ? (JSON.parse(init.body) as { query: string; variables: Record<string, unknown> }) : undefined;
+      if (url === GRAPHQL && body?.query.includes('markFileAsViewed')) {
+        expect(body.variables['id']).toBe('PR_kwDOfixture42');
+        marked.push(body.variables['path'] as string);
+        tokens.push(new Headers(init?.headers).get('authorization'));
+        return Response.json({ data: { markFileAsViewed: { clientMutationId: null } } });
+      }
+      if (url === GRAPHQL && body?.query.includes('pullRequest(number: $number) { id }')) {
+        return Response.json({ data: { repository: { pullRequest: { id: 'PR_kwDOfixture42' } } } });
+      }
+      return transport.fetch(input, init);
+    };
+    return { fetch: fetchImpl, marked, tokens };
+  }
+
+  /** Serves the lines one at a time, each sent once the one before it is answered. */
+  async function serveInOrder(lines: string[], deps: { fetch?: typeof fetch; cacheDir: string }): Promise<Response[]> {
+    const written: Response[] = [];
+    let index = 0;
+    let answered: () => void = () => undefined;
+    await runRpcServer(
+      {
+        readLine: async () => {
+          if (index >= lines.length) return null;
+          while (written.length < index) await new Promise<void>((resolve) => (answered = resolve));
+          return lines[index++]!;
+        },
+      },
+      {
+        writeLine: (line) => {
+          const response = JSON.parse(line) as Response;
+          if (response.id === null || response.id === undefined) return;
+          written.push(response);
+          answered();
+        },
+      },
+      deps,
+    );
+    return written;
+  }
+
+  const initialize = request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION });
+
+  it('keeps a mark in the pull request’s local store, which a new engine reads back', async () => {
+    const store = temporaryCacheDir();
+    const part = { name: 'Cart.total in web/cart.ts', pieces: [sha256Hex(Buffer.from('a hunk'))] };
+    const first = await serveInOrder(
+      [initialize, request('markReviewed', { url: PR_URL, part, reviewed: true }, 2), request('reviewedMarks', { url: PR_URL }, 3)],
+      { cacheDir: store },
+    );
+    const again = await serveInOrder([initialize, request('reviewedMarks', { url: PR_URL }, 2)], { cacheDir: store });
+
+    const marks = first[1]!.result as { marks: { name: string; pieces: string[]; hash: string }[] };
+    expect(marks.marks).toEqual([expect.objectContaining({ name: part.name, pieces: part.pieces, hash: createHash('sha256').update(part.pieces.join('\n')).digest('hex') })]);
+    expect(first[2]!.result).toEqual(marks);
+    expect(again[1]!.result).toEqual(marks);
+
+    const cleared = await serveInOrder([initialize, request('markReviewed', { url: PR_URL, part, reviewed: false }, 2)], { cacheDir: store });
+    expect(cleared[1]!.result).toEqual({ marks: [] });
+    await removeCopy(store);
+  });
+
+  it('refuses a mark whose part is not a name with content hashes', async () => {
+    const responses = await serveInOrder(
+      [initialize, request('markReviewed', { url: PR_URL, part: { name: 'x', pieces: ['../escape'] }, reviewed: true }, 2), request('reviewedMarks', { url: 'https://example.com/x' }, 3)],
+      { cacheDir },
+    );
+
+    expect(responses[1]!.error!.code).toBe(JSON_RPC_INVALID_PARAMS);
+    expect(responses[2]!.error!.code).toBe(JSON_RPC_INVALID_PARAMS);
+  });
+
+  it('marks on GitHub only the files whose every part is reviewed, with the request’s token', async () => {
+    const store = temporaryCacheDir();
+    const transport = viewedFetch();
+    const reviewed = await serveInOrder([initialize, request('review', { url: PR_URL, token: TOKEN }, 2)], { fetch: transport.fetch, cacheDir: store });
+    const parts = (reviewed[1]!.result as ReviewResult).parts;
+    const [first, second] = parts;
+    const lines = [
+      initialize,
+      request('review', { url: PR_URL, token: TOKEN }, 2),
+      request('markReviewed', { url: PR_URL, part: markedPart(first!), reviewed: true }, 3),
+      request('markViewed', { url: PR_URL, token: TOKEN, paths: [first!.path, second!.path] }, 4),
+    ];
+    const responses = await serveInOrder(lines, { fetch: transport.fetch, cacheDir: store });
+
+    // Each recorded file is one part: the first is reviewed, the second is not.
+    expect(responses[3]!.result).toEqual({ paths: [first!.path] });
+    expect(transport.marked).toEqual([first!.path]);
+    expect(transport.tokens.every((header) => header === `token ${TOKEN}`)).toBe(true);
+    await removeCopy(store);
+  });
+
+  it('refuses to mirror a pull request it holds no finished review of, and calls GitHub for nothing', async () => {
+    const transport = viewedFetch();
+    const responses = await serveInOrder([initialize, request('markViewed', { url: PR_URL, token: TOKEN, paths: ['web/cart.ts'] }, 2)], { fetch: transport.fetch, cacheDir });
+
+    expect(responses[1]!.error!.code).toBe(ENGINE_FAILED_CODE);
+    expect(responses[1]!.error!.message).toContain('review the pull request again');
+    expect(transport.marked).toEqual([]);
+  });
+
+  it('redacts the token from a mirror GitHub refused', async () => {
+    const store = temporaryCacheDir();
+    const transport = fixtureFetch();
+    const refusing: typeof fetch = async (input, init) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const body = typeof init?.body === 'string' ? init.body : '';
+      if (url === GRAPHQL && body.includes('{ id }')) return Response.json({ data: null, errors: [{ message: `bad credentials ${TOKEN}` }] });
+      return transport.fetch(input, init);
+    };
+    const reviewed = await serveInOrder([initialize, request('review', { url: PR_URL, token: TOKEN }, 2)], { fetch: refusing, cacheDir: store });
+    const parts = (reviewed[1]!.result as ReviewResult).parts;
+    const lines = [
+      initialize,
+      request('review', { url: PR_URL, token: TOKEN }, 2),
+      ...parts.map((part, index) => request('markReviewed', { url: PR_URL, part: markedPart(part), reviewed: true }, 3 + index)),
+      request('markViewed', { url: PR_URL, token: TOKEN, paths: [parts[0]!.path] }, 3 + parts.length),
+    ];
+    const responses = await serveInOrder(lines, { fetch: refusing, cacheDir: store });
+
+    const failed = responses.at(-1)!;
+    expect(failed.error!.message).toContain("GitHub's pull-request-id query failed: bad credentials [REDACTED]");
+    expect(failed.error!.message).not.toContain(TOKEN);
+    await removeCopy(store);
   });
 });

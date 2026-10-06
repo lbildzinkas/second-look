@@ -21,9 +21,15 @@
 //                                 review/stage notification before the answer
 //   FAKE_ENGINE_STAGE_ONLY        send the stage notification, then never answer
 //   FAKE_ENGINE_ANSWER_DELAY_MS   wait this long after the stage before answering
+//   FAKE_ENGINE_VIEWED_ERROR      answer markViewed with this plain error message
+//
+// The reviewed marks live in the fake's memory: markReviewed ticks or
+// clears a part by its name, reviewedMarks reads them back, and markViewed
+// answers with the paths it was asked to mark.
 //
 // Every request it receives is appended to the log, so a test can prove
 // what reached the engine, including the token carried per request.
+import { createHash } from 'node:crypto';
 import { appendFileSync } from 'node:fs';
 
 const protocolVersion = Number(process.env.FAKE_ENGINE_PROTOCOL_VERSION ?? '1');
@@ -46,6 +52,8 @@ const log = process.env.FAKE_ENGINE_LOG;
 const stage = process.env.FAKE_ENGINE_STAGE ? JSON.parse(process.env.FAKE_ENGINE_STAGE) : null;
 const stageOnly = Boolean(process.env.FAKE_ENGINE_STAGE_ONLY);
 const answerDelayMs = Number(process.env.FAKE_ENGINE_ANSWER_DELAY_MS ?? '0');
+const viewedError = process.env.FAKE_ENGINE_VIEWED_ERROR;
+let marks = [];
 
 if (process.env.FAKE_ENGINE_IGNORE_SIGTERM) {
   process.on('SIGTERM', () => {
@@ -126,6 +134,25 @@ function handle(line) {
   if (request.method === 'draftComment') {
     if (draftError) fail(request.id, -32002, draftError);
     else send({ jsonrpc: '2.0', id: request.id, result: draftResult });
+    return;
+  }
+  if (request.method === 'reviewedMarks') {
+    send({ jsonrpc: '2.0', id: request.id, result: { marks } });
+    return;
+  }
+  if (request.method === 'markReviewed') {
+    const { part, reviewed } = request.params;
+    marks = marks.filter((mark) => mark.name !== part.name);
+    if (reviewed) {
+      const hash = createHash('sha256').update(part.pieces.join('\n')).digest('hex');
+      marks.push({ hash, name: part.name, pieces: part.pieces, markedAt: '2026-10-06T00:00:00.000Z' });
+    }
+    send({ jsonrpc: '2.0', id: request.id, result: { marks } });
+    return;
+  }
+  if (request.method === 'markViewed') {
+    if (viewedError) fail(request.id, -32002, viewedError);
+    else send({ jsonrpc: '2.0', id: request.id, result: { paths: request.params.paths } });
     return;
   }
   fail(request.id, -32601, `unknown method: ${request.method}`);
