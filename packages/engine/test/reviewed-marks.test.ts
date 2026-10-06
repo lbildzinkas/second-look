@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { pullRequestCacheDir, removeCopy } from '../src/cache.js';
 import { parseDiff } from '../src/diff.js';
 import type { PullRequestRef } from '../src/github.js';
+import { groupParts } from '../src/parts.js';
 import type { Part, ReviewedMarks } from '../src/protocol.js';
 import {
   NO_MARKS,
@@ -189,8 +190,70 @@ describe('reviewed state', () => {
     const marks = mark(markAll(partsOf(BEFORE)), partsOf(AFTER)[0]!);
 
     expect(marks.marks).toHaveLength(3);
-    expect(marks.marks.find((each) => each.name === 'top-level code in web/cart.ts')?.hash).toBe(partContentHash(partsOf(AFTER)[0]!));
+    expect(marks.marks.find((each) => each.name === markedPart(partsOf(AFTER)[0]!).name)?.hash).toBe(partContentHash(partsOf(AFTER)[0]!));
     expect(reviewedState(partsOf(BEFORE)[0]!, marks)).toBe('changed since marked');
+  });
+});
+
+describe('parts that share a display name', () => {
+  /** A TypeScript file whose two hunks touch an interface and a class of one name, as the syntax pass names them. */
+  function mergedConfig(interfaceHead: string, classHead: string): Part {
+    const hunk = (start: number, oldText: string, newText: string, kind: 'interface' | 'class') => ({
+      oldStart: start,
+      oldLines: 1,
+      newStart: start,
+      newLines: 1,
+      lines: [
+        { kind: 'deletion' as const, oldLineNumber: start, text: oldText },
+        { kind: 'addition' as const, newLineNumber: start, text: newText },
+      ],
+      entities: [{ kind, name: 'Config', public: true, change: 'body' as const }],
+    });
+    return {
+      path: 'src/config.ts',
+      changeKind: 'modification',
+      isBinary: false,
+      oldMissingFinalNewline: false,
+      newMissingFinalNewline: false,
+      hunks: [hunk(3, '  interface body;', interfaceHead, 'interface'), hunk(21, '  class body;', classHead, 'class')],
+      additions: 2,
+      deletions: 2,
+      syntax: { language: 'typescript', formattingOnly: { status: 'not-checked', reason: '' }, checksNotRun: [] },
+    };
+  }
+
+  it('keeps the marks of an interface and a class of one name in one file', () => {
+    const parts = groupParts([mergedConfig('  debug?: boolean;', '  currency = "USD";')]);
+    expect(parts.map((part) => part.name)).toEqual(['Config in src/config.ts', 'Config in src/config.ts']);
+
+    const marks = markAll(parts);
+    expect(marks.marks).toHaveLength(2);
+    expect(parts.map((part) => reviewedState(part, marks))).toEqual(['reviewed', 'reviewed']);
+    expect(partsLeft(parts, marks)).toBe(0);
+  });
+
+  it('still says changed since marked when one of the same-named parts changes', () => {
+    const marks = markAll(groupParts([mergedConfig('  debug?: boolean;', '  currency = "USD";')]));
+    const after = groupParts([mergedConfig('  debug?: boolean;', '  currency = "EUR";')]);
+
+    expect(after.map((part) => reviewedState(part, marks))).toEqual(['reviewed', 'changed since marked']);
+  });
+
+  it('keeps the marks of an agent part named like a noise part', () => {
+    const file = mergedConfig('  debug?: boolean;', '  currency = "USD";');
+    const agent: Part = { ...file, name: 'web/deps.lock', origin: 'agent', hunks: [file.hunks[0]!] };
+    const noise: Part = {
+      ...file,
+      path: 'web/deps.lock',
+      name: 'web/deps.lock',
+      origin: 'plain',
+      hunks: [{ ...file.hunks[1]!, entities: [] }],
+    };
+
+    const marks = markAll([agent, noise]);
+    expect(marks.marks).toHaveLength(2);
+    expect(reviewedState(agent, marks)).toBe('reviewed');
+    expect(reviewedState(noise, marks)).toBe('reviewed');
   });
 });
 
@@ -251,13 +314,13 @@ describe('the local per-pull-request store', () => {
     // A fresh read stands for an engine started again: only the file is shared.
     const read = await readReviewedMarks(cacheDir, ref);
     expect(read).toEqual(answered);
-    expect(read.marks.map((each) => each.name)).toEqual(['top-level code in web/cart.ts', 'top-level code in web/money.ts']);
+    expect(read.marks.map((each) => each.name)).toEqual([markedPart(cart!).name, markedPart(money!).name]);
     const stored = JSON.parse(await readFile(join(pullRequestCacheDir(cacheDir, ref), REVIEWED_MARKS_FILE), 'utf8')) as {
       version: number;
       marks: Record<string, { name: string; markedAt: string }>;
     };
     expect(stored.version).toBe(1);
-    expect(stored.marks[partContentHash(cart!)]).toMatchObject({ name: 'top-level code in web/cart.ts', markedAt: NOW.toISOString() });
+    expect(stored.marks[partContentHash(cart!)]).toMatchObject({ name: markedPart(cart!).name, markedAt: NOW.toISOString() });
   });
 
   it('applies marks made in quick succession one after another', async () => {

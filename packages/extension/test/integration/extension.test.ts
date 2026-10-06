@@ -27,6 +27,7 @@ import { changeUri, libraryUri } from '../../src/change-copies.js';
 import { escapeMarkdown } from '../../src/findings.js';
 import { SEND_REVIEW_VIEW_TYPE } from '../../src/send-page.js';
 import { claimsResult, criteriaResult, fetchedResult, judgedResult, mixedResult, offeredResult, storyResult, unexplainedResult } from '../results.js';
+import { markedPart } from '@second-look/engine';
 import { OVERVIEW_VIEW_TYPE } from '../../src/overview.js';
 import {
   Range,
@@ -1527,7 +1528,7 @@ describe('reviewed marks', () => {
     expect(partNodes(view)[0]).toMatchObject({ label: 'src/retry.py', checkboxState: TreeItemCheckboxState.Checked });
     const marks = loggedRequests('marks.log').filter((request) => request.method === 'markReviewed');
     expect(marks.map((request) => request.params)).toEqual([
-      { url: PR_URL, part: { name: 'src/retry.py', pieces: [expect.stringMatching(/^[0-9a-f]{64}$/)] }, reviewed: true },
+      { url: PR_URL, part: { name: markedPart(mixedResult().parts[0]!).name, pieces: [expect.stringMatching(/^[0-9a-f]{64}$/)] }, reviewed: true },
     ]);
     // The mirror is off by default: nothing asked GitHub, and no sign-in beyond the review's own.
     expect(loggedRequests('marks.log').map((request) => request.method)).not.toContain('markViewed');

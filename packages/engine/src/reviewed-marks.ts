@@ -3,7 +3,7 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pullRequestCacheDir } from './cache.js';
 import type { PullRequestRef } from './github.js';
-import { filesOfPart } from './parts.js';
+import { entityKey, filesOfPart } from './parts.js';
 import type { FileSlice, Hunk, Part, ReviewedMark, ReviewedMarks, ReviewedState } from './protocol.js';
 
 /** The file in a pull request's cache folder that holds its reviewed marks. */
@@ -57,15 +57,26 @@ export function partContentHash(part: Part): string {
   return sha256(partPieces(part).join('\n'));
 }
 
-/** The name a mark records for a part: its name, or its path when it has none. */
+/**
+ * The identity a mark records for a part: its name, or its path when it
+ * has none, with the sorted paths of its files and the sorted keys —
+ * kind with qualified name — of the entities its hunks touch, so two
+ * parts that share a display name never share the identity the store
+ * matches marks on.
+ */
 function markName(part: Part): string {
-  return part.name ?? part.path;
+  const files = filesOfPart(part);
+  return JSON.stringify([
+    part.name ?? part.path,
+    files.map((file) => file.path).sort(),
+    [...new Set(files.flatMap((file) => file.hunks.flatMap((hunk) => hunk.entities.map(entityKey))))].sort(),
+  ]);
 }
 
 /**
  * Where a part stands against the marks: reviewed when every one of its
  * pieces is marked, changed since marked when only some are, or when a
- * mark of the same name covers other content, and not reviewed otherwise.
+ * mark of the same identity covers other content, and not reviewed otherwise.
  */
 export function reviewedState(part: Part, marks: ReviewedMarks): ReviewedState {
   const marked = new Set(marks.marks.flatMap((mark) => mark.pieces));
@@ -95,7 +106,7 @@ export function wholeFilesReviewed(parts: readonly Part[], marks: ReviewedMarks,
   });
 }
 
-/** What the store needs of the part the reviewer marks or unmarks: its name and its pieces. */
+/** What the store needs of the part the reviewer marks or unmarks: its identity — its name with its files and entity kinds — and its pieces. */
 export interface MarkedPart {
   name: string;
   pieces: string[];
@@ -108,10 +119,10 @@ export function markedPart(part: Part): MarkedPart {
 
 /**
  * The marks after the reviewer ticks or clears a part's checkbox. Ticking
- * it replaces every mark of the same name with one keyed by the part's
- * content hash now; clearing it removes the part's pieces from every mark
- * and every mark of the same name, so a regrouped part clears exactly the
- * content it shows.
+ * it replaces every mark of the same identity with one keyed by the
+ * part's content hash now; clearing it removes the part's pieces from
+ * every mark and every mark of the same identity, so a regrouped part
+ * clears exactly the content it shows.
  */
 export function applyMark(marks: ReviewedMarks, part: MarkedPart, reviewed: boolean, now: Date): ReviewedMarks {
   const pieces = new Set(part.pieces);

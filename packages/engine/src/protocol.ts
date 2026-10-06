@@ -189,7 +189,7 @@ export interface DraftComment {
 export interface ReviewedMark {
   /** The part's content hash when the reviewer marked it: the store's key. */
   hash: string;
-  /** The part's name when marked, so a part that changed since can say so. */
+  /** The part's identity when marked — its name with its files and entity kinds — so a part that changed since can say so. */
   name: string;
   /** The content hashes of the pieces the mark covers. */
   pieces: string[];

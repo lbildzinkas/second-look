@@ -227,7 +227,7 @@ export const MARK_REVIEWED_METHOD = 'markReviewed' as const;
 export interface MarkReviewedParams {
   /** The pull request's HTML URL. */
   url: string;
-  /** The part: its name and the content hashes of its pieces. */
+  /** The part: its identity — its name with its files and entity kinds — and the content hashes of its pieces. */
   part: MarkedPart;
   /** True to tick the part's checkbox, false to clear it. */
   reviewed: boolean;
