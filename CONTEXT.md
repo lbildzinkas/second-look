@@ -76,6 +76,10 @@ _Avoid_: Supported model, certified model
 A fixed, typed request the reviewer makes about one part for deeper analysis, such as "explain" or "verify this claim".
 _Avoid_: Chat, prompt, question
 
+**Reviewed mark**:
+A part the reviewer has checked off, stored locally per pull request and keyed by the part's content, cleared automatically when that content changes, and mirrored to GitHub's **Viewed** only for whole files when the opt-in setting is on.
+_Avoid_: Tick, checkmark, done flag
+
 **Comment**:
 A review comment the reviewer sends to GitHub from the companion, as part of one pending GitHub review.
 _Avoid_: Bot comment, annotation
