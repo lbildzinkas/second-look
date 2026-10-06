@@ -1,0 +1,74 @@
+{
+  "noise": {
+    "packages/engine/src/criteria.ts": {
+      "label": "none"
+    },
+    "packages/engine/src/protocol.ts": {
+      "label": "none"
+    },
+    "packages/engine/test/criteria.test.ts": {
+      "label": "none"
+    },
+    "packages/extension/src/overview.ts": {
+      "label": "none"
+    }
+  },
+  "importantParts": [],
+  "claims": [],
+  "criteria": [
+    {
+      "text": "A criterion ticked in the issue's checklist is read as ticked.",
+      "verdict": "met",
+      "code": [
+        "packages/engine/src/criteria.ts"
+      ],
+      "tests": [
+        "packages/engine/test/criteria.test.ts"
+      ]
+    },
+    {
+      "text": "Both `[x]` and `[X]` count as ticked.",
+      "verdict": "partly met",
+      "alsoRight": [
+        "not met"
+      ],
+      "code": [
+        "packages/engine/src/criteria.ts"
+      ]
+    },
+    {
+      "text": "The overview shows a ✓ beside the quote of a ticked criterion.",
+      "verdict": "met",
+      "code": [
+        "packages/extension/src/overview.ts"
+      ],
+      "manual": [
+        {
+          "text": "Checked by hand in VS Code on a pull request whose linked issue ticks two of its four criteria: those two show a ✓ beside their quotes, and the other two show none.",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "text": "A screen reader announces a ticked criterion as ticked.",
+      "verdict": "needs manual check",
+      "alsoRight": [
+        "can't tell"
+      ],
+      "code": [
+        "packages/extension/src/overview.ts"
+      ]
+    },
+    {
+      "text": "Reading the ticks adds no noticeable time to a review.",
+      "verdict": "can't tell",
+      "alsoRight": [
+        "needs manual check"
+      ]
+    },
+    {
+      "text": "The overview counts the ticked criteria beside its heading, such as `2 of 4 ticked`.",
+      "verdict": "not met"
+    }
+  ]
+}

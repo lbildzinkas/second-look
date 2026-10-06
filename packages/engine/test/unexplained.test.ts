@@ -265,7 +265,7 @@ describe('reviewChange with the unexplained-changes stage', () => {
     const agent = comparingAgent();
     const stages: ReviewStage[] = [];
 
-    const result = await reviewChange(input, { adapter: agent, testedRankings: [], claims: false, onStage: (stage) => stages.push(stage) });
+    const result = await reviewChange(input, { adapter: agent, testedRankings: [], claims: false, criteria: false, onStage: (stage) => stages.push(stage) });
 
     const running = stages.map((stage) => stage.running);
     expect(running.slice(-1)).toEqual(['comparing the change with its description and issues with fake']);

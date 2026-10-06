@@ -10,7 +10,7 @@
 import type { AgentStamp } from './agent.js';
 
 /** Version of the review result schema. */
-export const REVIEW_RESULT_VERSION = 14 as const;
+export const REVIEW_RESULT_VERSION = 15 as const;
 
 /**
  * Version 2 added the head commit's SHA and each part's noise assessment;
@@ -37,7 +37,10 @@ export const REVIEW_RESULT_VERSION = 14 as const;
  * under the configured heading and not checked; version 14 added the
  * unexplained changes in both directions: the parts neither the
  * description nor a linked issue explains, and the changes they describe
- * that the diff does not contain.
+ * that the diff does not contain; version 15 added each acceptance
+ * criterion's verdict — met, partly met, not met, can't tell or needs
+ * manual check — with the code, the tests and the manual checks that
+ * show it, and the criteria's mapping.
  */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
@@ -170,8 +173,8 @@ export interface ReviewResult {
   unexplained?: UnexplainedChanges;
   /**
    * The acceptance criteria read from the issues the pull request links,
-   * each quoted and not checked; absent when the review read none, such
-   * as an offline replay.
+   * each quoted, with its verdict once the agent mapped it to the change;
+   * absent when the review read none, such as an offline replay.
    */
   criteria?: Criteria;
   /** The no-mistakes report the description carries, and whether it is trusted. */
@@ -203,8 +206,8 @@ export interface LinkedIssue {
 /**
  * One condition from a linked issue that the change must meet (the
  * glossary's acceptance criterion), quoted from the checklist under the
- * configured heading. Criteria start as not checked; judging them
- * against the change is a later pass.
+ * configured heading. Criteria start as not checked, and keep that
+ * verdict until the agent maps them to the change.
  */
 export interface AcceptanceCriterion {
   /**
@@ -217,8 +220,74 @@ export interface AcceptanceCriterion {
   issue: number;
   /** The 1-based line of the issue's body the quote sits on. */
   line: number;
-  /** The criterion's verdict: not checked until a later pass judges it. */
-  verdict: { kind: 'not checked' };
+  /** The criterion's verdict: not checked until the agent maps it to the change. */
+  verdict: CriterionVerdict;
+}
+
+/** A mapped criterion's verdict kind: what judging a criterion against the change can come to. */
+export type CriterionVerdictKind = 'met' | 'partly met' | 'not met' | "can't tell" | 'needs manual check';
+
+/** The mapped criterion verdict kinds, the order a reviewer reads them in: what needs them first. */
+export const CRITERION_VERDICT_KINDS: readonly CriterionVerdictKind[] = ['not met', 'partly met', 'needs manual check', "can't tell", 'met'];
+
+/**
+ * A manual check (the glossary's): verification a person performed and
+ * the pull request reports, such as steps followed, what they saw, or a
+ * measurement, quoted from the description where it is reported.
+ */
+export interface ManualCheck {
+  /**
+   * The report, exactly as the description has it, on one line: runs of
+   * white space as one space, and each line's leading quote marker
+   * dropped.
+   */
+  quote: string;
+  /** The 1-based line of the description the quote starts on. */
+  line: number;
+}
+
+/**
+ * Whether the change meets an acceptance criterion, and where. A
+ * criterion is listed before the agent maps it, so it starts as not
+ * checked; once mapped, it is met, partly met, not met, can't tell or
+ * needs manual check, always with its reason and the evidence that shows
+ * it: the code that implements it and the automated tests that cover it,
+ * each a line of the head copy the engine re-read, and the manual checks
+ * the description reports, each a quote the engine found there.
+ */
+export type CriterionVerdict =
+  | { kind: 'not checked' }
+  | {
+      kind: CriterionVerdictKind;
+      /** One plain line saying why the criterion has this verdict. */
+      reason: string;
+      /** The lines of the head copy that implement the criterion, each re-checked by the engine. */
+      code: Citation[];
+      /** The lines of the head copy's automated tests that cover it, each re-checked by the engine. */
+      tests: Citation[];
+      /** The manual checks the description reports for it, each found there by the engine. */
+      manualChecks: ManualCheck[];
+      /** Why the engine dropped the agent's verdict to can't tell, when it did. */
+      recheck?: string;
+    };
+
+/**
+ * The criteria mapping's outcome: the agent judged each criterion against
+ * the change, the read-only copy and the description, and the engine
+ * re-checked every citation and manual check.
+ */
+export interface CriteriaMapping {
+  /** The version of the criteria-mapping prompt. */
+  promptVersion: string;
+  /**
+   * `mapped` when the criteria carry the agent's verdicts, as the re-check
+   * left them; `fell back` when its answer was missing or invalid, so
+   * every criterion stays not checked.
+   */
+  outcome: 'mapped' | 'fell back';
+  /** One plain line: how the verdicts were checked, or why there are none. */
+  detail: string;
+  stamp: AgentStamp;
 }
 
 /**
@@ -227,8 +296,9 @@ export interface AcceptanceCriterion {
  * request's own closing keywords and the sidebar's "will close" links,
  * and the issues its timeline shows referencing it, in this repository
  * or another — and lists each criterion found in the checklist under
- * the configured heading, quoted and not checked. Model-free: issue
- * text is parsed, never followed.
+ * the configured heading, quoted and not checked. Reading them is
+ * model-free: issue text is parsed, never followed. The agent then maps
+ * each criterion to the change, and its mapping says what came of it.
  */
 export interface Criteria {
   /** `read` when the linked issues were read; `unreadable` when GitHub refused or failed. */
@@ -239,8 +309,10 @@ export interface Criteria {
   heading: string;
   /** The issues the pull request links, closing references first, in GitHub's order; empty when none was read. */
   issues: LinkedIssue[];
-  /** The criteria, each quoted and not checked; empty when no checklist was found. */
+  /** The criteria, each quoted, and not checked until mapped; empty when no checklist was found. */
   criteria: AcceptanceCriterion[];
+  /** What came of asking the agent to map the criteria to the change; absent until it was asked. */
+  mapping?: CriteriaMapping;
 }
 
 /**

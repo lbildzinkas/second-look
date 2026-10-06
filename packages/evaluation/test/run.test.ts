@@ -10,6 +10,7 @@ import { CLAIMS_INSTRUCTIONS, CLAIMS_PROMPT_VERSION } from '../../engine/src/cla
 import { VERDICTS_INSTRUCTIONS, VERDICTS_PROMPT_VERSION } from '../../engine/src/verdicts.js';
 import { LIBRARY_VERDICTS_INSTRUCTIONS, LIBRARY_VERDICTS_PROMPT_VERSION } from '../../engine/src/library-verdicts.js';
 import { UNEXPLAINED_INSTRUCTIONS, UNEXPLAINED_PROMPT_VERSION } from '../../engine/src/unexplained.js';
+import { CRITERIA_MAPPING_INSTRUCTIONS, CRITERIA_MAPPING_PROMPT_VERSION } from '../../engine/src/criteria-mapping.js';
 import { answeringAgent, offeredParts, scriptedAgent } from '../../engine/test/helpers.js';
 import type { AgentAdapter } from '@second-look/engine';
 import { loadCases } from '../src/case.js';
@@ -420,6 +421,52 @@ describe('runEvaluation with the unexplained-changes prompt', () => {
     ]);
     expect(rowsOf(results.rows, 'fake', 'unexplained-recall')['planted-typescript']).toBe(0);
     expect(rowsOf(results.rows, 'fake', 'unexplained-precision')['planted-typescript']).toBeUndefined();
+  });
+});
+
+describe('runEvaluation with the criteria-mapping prompt', () => {
+  /** An agent mapping planted-typescript's criteria: the heading one met by its code and test, the setting one wrongly met by the same code. */
+  const mappingAgent = (): AgentAdapter =>
+    answeringAgent((request) => {
+      if (request.instructions !== CRITERIA_MAPPING_INSTRUCTIONS) return 'not an answer';
+      const code = [{ file: 'packages/engine/src/criteria.ts', line: 26, quote: "return HEADING.exec(line)?.[1]?.replace(/:$/, '').trim();" }];
+      const tests = [{ file: 'packages/engine/test/criteria.test.ts', line: 57, quote: "it('matches a heading written with a trailing colon', () => {" }];
+      return {
+        criteria: [
+          { id: 'a1', verdict: 'met', reason: 'The heading match drops a trailing colon.', code, tests, manual: [] },
+          { id: 'a2', verdict: 'met', reason: 'The heading match drops a trailing colon.', code, tests: [], manual: [] },
+        ],
+      };
+    });
+
+  it("scores the agent's verdicts on the recorded criteria against the hand labels, stamped with who answered", async () => {
+    const { folder, results } = await runVerdicts('planted-typescript', mappingAgent(), ['criteria-mapping']);
+
+    expect(rowsOf(results.rows, 'fake', 'criteria-accuracy')).toEqual({ 'planted-typescript': 0.5, [ALL_CASES]: 0.5 });
+    expect(rowsOf(results.rows, 'fake', 'criteria-false-met')).toEqual({ 'planted-typescript': 1, [ALL_CASES]: 1 });
+    expect(rowsOf(results.rows, 'fake', 'criteria-code-recall')).toEqual({ 'planted-typescript': 1, [ALL_CASES]: 1 });
+    expect(rowsOf(results.rows, 'fake', 'criteria-tests-recall')).toEqual({ 'planted-typescript': 1, [ALL_CASES]: 1 });
+    expect(rowsOf(results.rows, 'fake', 'criteria-manual-recall')).toEqual({});
+    expect(results.rows.find((row) => row.agent === 'fake' && row.case === 'planted-typescript')).toMatchObject({
+      model: 'fake/model',
+      promptVersions: { 'criteria-mapping': CRITERIA_MAPPING_PROMPT_VERSION },
+    });
+    expect(rowsOf(results.rows, NO_AGENT, 'criteria-accuracy')).toEqual({});
+    const trace = readFileSync(join(folder, TRACE_FILE), 'utf8').trim().split('\n').map((line) => JSON.parse(line) as AgentCall);
+    expect(trace).toHaveLength(1);
+    expect(trace[0]).toMatchObject({ case: 'planted-typescript', prompt: 'criteria-mapping', promptVersion: CRITERIA_MAPPING_PROMPT_VERSION });
+    expect(trace[0]!.input).toContain('[a2] from issue i1, line 6');
+  });
+
+  it('records a mapping that fell back, which leaves every criterion not checked', async () => {
+    const { results } = await runVerdicts('planted-typescript', scriptedAgent([]), ['criteria-mapping']);
+
+    expect(results.fallbacks).toEqual([
+      { case: 'planted-typescript', agent: 'fake', prompt: 'criteria-mapping', detail: expect.stringMatching(/^the agent gave no usable answer/) },
+    ]);
+    expect(rowsOf(results.rows, 'fake', 'criteria-accuracy')['planted-typescript']).toBe(0);
+    expect(rowsOf(results.rows, 'fake', 'criteria-false-met')['planted-typescript']).toBe(0);
+    expect(rowsOf(results.rows, 'fake', 'criteria-code-recall')['planted-typescript']).toBe(0);
   });
 });
 

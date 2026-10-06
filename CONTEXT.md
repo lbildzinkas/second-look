@@ -57,7 +57,7 @@ _Avoid_: Dependency sync, auto-fetch, install
 ### Acting on the review
 
 **Acceptance criterion**:
-One condition from the linked issue that the change must meet, proven by code, automated tests, or a manual check the PR reports.
+One condition from the linked issue that the change must meet, proven by code, automated tests, or a manual check the PR reports; its verdict is **met**, **partly met**, **not met**, **can't tell**, or **needs manual check**, always with the code, tests and manual checks that show it.
 _Avoid_: Requirement, AC item
 
 **Manual check**:

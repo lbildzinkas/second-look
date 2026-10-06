@@ -73,13 +73,18 @@ behaves — from the description, the docstrings and comments the change
 adds, and the story — each quoted from its source and attached to a part;
 a quote not found in its source rejects the answer, which is retried once
 before the result says why the agent listed none. A fresh pipeline
-report's open findings are claims too, listed first by the engine. Last,
+report's open findings are claims too, listed first by the engine. Then
 the agent judges each claim against the change, the head copy and, when
 a check failed, its trimmed CI log: verified, refuted or unverifiable,
 with its evidence source and the lines it cites, each of which the engine
 re-reads; a citation that does not match, or the
-model's memory alone, keeps a claim from verified. Each stage is
-announced on stderr while the agent works.
+model's memory alone, keeps a claim from verified. Last, the agent maps
+each acceptance criterion of the linked issues to the change: met, partly
+met, not met, can't tell or needs manual check, with the code that
+implements it and the tests that cover it, each a line the engine
+re-reads, and the manual checks the description reports, each a quote
+the engine finds there; one that does not match makes the criterion
+can't tell. Each stage is announced on stderr while the agent works.
 
 It keeps read-only copies of the base and head versions, downloaded as
 archives, in a per-pull-request cache: --cache-dir, else the
@@ -90,8 +95,9 @@ The review also reads the issues the pull request links — the closing
 references GitHub returns, which cover the description's closing keywords
 and the sidebar's "will close" links in this repository or another, and
 the issues referencing the pull request — and lists each acceptance
-criterion from the checklist under a heading, quoted and not checked.
-Issue text is untrusted: it is parsed and never followed. The heading is
+criterion from the checklist under a heading, quoted and not checked
+until the agent maps it. Issue text is untrusted: it is parsed and never
+followed, and the agent reads it only as marked untrusted text. The heading is
 "Acceptance criteria" unless --criteria-heading names another; GitHub
 returns no closing references for a pull request into a non-default
 branch, and the result says so.
@@ -132,7 +138,8 @@ the agent writes the story, then the result with the story in another
 while the agent compares the change with its description and issues,
 then the result with the comparison in another while the agent lists
 the claims, then the result with the claims in another while the agent
-judges them, then the judged result. Each review
+judges them, then the result with the verdicts in another while the agent
+maps the acceptance criteria, then the mapped result. Each review
 request may also carry the reviewer's agent choice — the agent, model and
 account from the editor's settings — which runs that review's agent passes
 and stamps the account label on their results, replacing this command's

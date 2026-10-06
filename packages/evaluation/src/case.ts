@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { pathInCopy } from '@second-look/engine';
 import type {
   Criteria,
+  CriterionVerdictKind,
   NoiseLabel,
   NoiseState,
   PullRequestSummary,
@@ -149,6 +150,38 @@ export interface ExpectedUnexplained {
   described: ExpectedDescribed[];
 }
 
+/**
+ * A manual check the description reports, as a reviewer expects the
+ * companion to cite it for a criterion: its text and the description line
+ * it starts on.
+ */
+export interface ExpectedManualCheck {
+  /** The report's text, exactly as the description states it, on one line. */
+  text: string;
+  /** The 1-based line of the description it starts on. */
+  line: number;
+}
+
+/**
+ * One acceptance criterion of the case's recorded linked issues, as a
+ * reviewer expects the companion to map it: its quote, the verdict it
+ * deserves, and where the change shows it.
+ */
+export interface ExpectedCriterion {
+  /** The criterion's quote, exactly as the review reads it from the issue's checklist, on one line. */
+  text: string;
+  /** The verdict it deserves. */
+  verdict: CriterionVerdictKind;
+  /** Other verdicts a reviewer would accept as well, such as partly met beside not met for a gap that is arguable. */
+  alsoRight?: CriterionVerdictKind[];
+  /** The files of the head copy whose lines implement it; a citation of any line of one counts. */
+  code?: string[];
+  /** The test files whose lines cover it. */
+  tests?: string[];
+  /** The manual checks the description reports for it. */
+  manual?: ExpectedManualCheck[];
+}
+
 /** A case's `expected.json`, written by hand. */
 export interface ExpectedResults {
   /**
@@ -173,6 +206,8 @@ export interface ExpectedResults {
   groups?: string[][];
   /** The hand-labelled unexplained changes; absent when the case labels none. */
   unexplained?: ExpectedUnexplained;
+  /** The hand-labelled verdicts of the acceptance criteria; absent when the case labels none. */
+  criteria?: ExpectedCriterion[];
 }
 
 /** A case loaded from its folder. */
@@ -202,6 +237,7 @@ export async function loadCase(folder: string): Promise<EvaluationCase> {
     claims: recorded.claims ?? [],
     ...(recorded.groups ? { groups: recorded.groups } : {}),
     ...(recorded.unexplained ? { unexplained: recorded.unexplained } : {}),
+    ...(recorded.criteria ? { criteria: recorded.criteria } : {}),
   };
   return { id: record.id, folder, record, expected };
 }

@@ -1,0 +1,88 @@
+{
+  "formatVersion": 1,
+  "id": "criteria-python",
+  "source": "https://github.com/example-org/example-repo/pull/7359",
+  "recordedAt": "2026-10-06T08:30:53.460Z",
+  "prompts": [
+    "criteria-mapping"
+  ],
+  "pullRequest": {
+    "url": "https://github.com/example-org/example-repo/pull/7359",
+    "number": 7359,
+    "title": "Let load take a path",
+    "author": "contributor-login",
+    "description": "Closes #250.\n\n`load` now takes a path as well as a binary file object: a `pathlib.Path` or a `str` names the file to read.\n\nTimed by hand on my machine: loading `benchmark/data.toml` 100 times took 0.41 s by path and 0.41 s from an open file.",
+    "base": "master",
+    "head": "load-path",
+    "baseCommit": "1b76d419790b4f842c3535a263702b2e47b013ea",
+    "headSha": "b134f0c8bf4d048726515b652354e3d24a0085dd"
+  },
+  "gitAttributes": null,
+  "baseCommit": "1b76d419790b4f842c3535a263702b2e47b013ea",
+  "headCommit": "b134f0c8bf4d048726515b652354e3d24a0085dd",
+  "criteria": {
+    "outcome": "read",
+    "detail": "1 issue this pull request closes",
+    "heading": "Acceptance criteria",
+    "issues": [
+      {
+        "number": 250,
+        "title": "Accept a path in `load`",
+        "url": "https://github.com/example-org/example-repo/issues/250",
+        "repository": "example-org/example-repo",
+        "body": "`tomli.load` takes only a binary file object, so every caller writes `with open(path, \"rb\") as f: tomli.load(f)`.\n\n## Acceptance criteria\n\n- [ ] `load` accepts a `pathlib.Path` and parses the file it names.\n- [ ] `load` accepts a path given as `str` or as `bytes`.\n- [ ] Passing a file opened in text mode still raises the `TypeError` that says to open it in binary mode.\n- [ ] Type checkers accept a path argument to `load`.\n- [ ] Loading by path is no slower than loading from an open file.\n- [ ] The README's \"Parse a TOML file\" section shows loading a path.\n",
+        "link": "closes"
+      }
+    ],
+    "criteria": [
+      {
+        "quote": "`load` accepts a `pathlib.Path` and parses the file it names.",
+        "issue": 0,
+        "line": 5,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "`load` accepts a path given as `str` or as `bytes`.",
+        "issue": 0,
+        "line": 6,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "Passing a file opened in text mode still raises the `TypeError` that says to open it in binary mode.",
+        "issue": 0,
+        "line": 7,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "Type checkers accept a path argument to `load`.",
+        "issue": 0,
+        "line": 8,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "Loading by path is no slower than loading from an open file.",
+        "issue": 0,
+        "line": 9,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "The README's \"Parse a TOML file\" section shows loading a path.",
+        "issue": 0,
+        "line": 10,
+        "verdict": {
+          "kind": "not checked"
+        }
+      }
+    ]
+  }
+}

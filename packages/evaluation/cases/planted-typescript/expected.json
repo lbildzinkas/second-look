@@ -32,5 +32,21 @@
         }
       }
     ]
-  }
+  },
+  "criteria": [
+    {
+      "text": "A heading written with a trailing colon is matched.",
+      "verdict": "met",
+      "code": [
+        "packages/engine/src/criteria.ts"
+      ],
+      "tests": [
+        "packages/engine/test/criteria.test.ts"
+      ]
+    },
+    {
+      "text": "The description of the `second-look.criteriaHeading` setting says a trailing colon is allowed.",
+      "verdict": "not met"
+    }
+  ]
 }

@@ -1,6 +1,17 @@
 import { filesOfPart, parseDiff } from '@second-look/engine';
-import type { Claim, ClaimVerdict, DescribedChange, FileSlice, LinkedIssue, NoiseAssessment, Part, StoryChecks, UnexplainedChanges } from '@second-look/engine';
-import type { ExpectedClaim, ExpectedDescribed, ExpectedNoise, ExpectedResults, ExpectedUnexplained, Verdict } from './case.js';
+import type {
+  AcceptanceCriterion,
+  Claim,
+  ClaimVerdict,
+  DescribedChange,
+  FileSlice,
+  LinkedIssue,
+  NoiseAssessment,
+  Part,
+  StoryChecks,
+  UnexplainedChanges,
+} from '@second-look/engine';
+import type { ExpectedClaim, ExpectedCriterion, ExpectedDescribed, ExpectedNoise, ExpectedResults, ExpectedUnexplained, Verdict } from './case.js';
 import type { LibraryFetchOffer, PressedClaim } from './claims.js';
 
 /** How many leading parts count as the top of the ranking. */
@@ -40,6 +51,21 @@ export const VERDICT_SCORES: readonly string[] = ['verdict-accuracy', 'false-ver
  * the diff.
  */
 export const UNEXPLAINED_SCORES: readonly string[] = ['unexplained-recall', 'unexplained-precision', 'described-recall', 'described-precision'];
+
+/**
+ * The scores of the verdicts the agent gives the acceptance criteria,
+ * against the hand labels: the share given a verdict the labels accept,
+ * the share of the criteria that do not deserve met that it called met
+ * anyway, and the share of the labelled code files, test files and
+ * manual checks its verdicts cite.
+ */
+export const CRITERIA_SCORES: readonly string[] = [
+  'criteria-accuracy',
+  'criteria-false-met',
+  'criteria-code-recall',
+  'criteria-tests-recall',
+  'criteria-manual-recall',
+];
 
 /** One score of a run, with the direction in which it improves. */
 export interface Score {
@@ -109,6 +135,67 @@ export interface Tally {
   judging: JudgingTally;
   /** The counts behind the unexplained changes the agent found, against the hand labels. */
   unexplained: UnexplainedTally;
+  /** The counts behind the verdicts the agent gave the acceptance criteria, against the hand labels. */
+  criteria: CriteriaTally;
+}
+
+/**
+ * The counts behind the criteria verdicts: the labelled criteria and
+ * those given a verdict the labels accept, those that do not deserve met
+ * and those called met anyway, and the labelled code files, test files
+ * and manual checks with those the verdicts cite.
+ */
+export interface CriteriaTally {
+  labelled: number;
+  right: number;
+  notMet: number;
+  falseMet: number;
+  codeFiles: number;
+  codeCited: number;
+  testFiles: number;
+  testsCited: number;
+  manualChecks: number;
+  manualCited: number;
+}
+
+function noCriteria(): CriteriaTally {
+  return { labelled: 0, right: 0, notMet: 0, falseMet: 0, codeFiles: 0, codeCited: 0, testFiles: 0, testsCited: 0, manualChecks: 0, manualCited: 0 };
+}
+
+/**
+ * Tallies the verdicts the agent gave the acceptance criteria against
+ * the hand labels, each criterion matched by its quote: right when its
+ * verdict is the labelled one or one the labels also accept; each
+ * labelled code or test file cited when a line of it is cited under that
+ * evidence; each labelled manual check cited when a quoted one holds its
+ * text or is held by it. A criterion the review did not read, or left not
+ * checked, cites nothing and is right about nothing.
+ */
+export function tallyCriteria(expected: readonly ExpectedCriterion[], mapped: readonly AcceptanceCriterion[]): CriteriaTally {
+  const tally = noCriteria();
+  for (const wanted of expected) {
+    const found = mapped.find((criterion) => matchText(criterion.quote) === matchText(wanted.text));
+    const verdict = found === undefined || found.verdict.kind === 'not checked' ? undefined : found.verdict;
+    const accepted = [wanted.verdict, ...(wanted.alsoRight ?? [])];
+    tally.labelled++;
+    if (verdict !== undefined && accepted.includes(verdict.kind)) tally.right++;
+    if (!accepted.includes('met')) {
+      tally.notMet++;
+      if (verdict?.kind === 'met') tally.falseMet++;
+    }
+    const cites = (files: readonly string[] | undefined, cited: readonly { path: string }[] | undefined): number =>
+      (files ?? []).filter((file) => (cited ?? []).some((each) => each.path === file)).length;
+    tally.codeFiles += wanted.code?.length ?? 0;
+    tally.codeCited += cites(wanted.code, verdict?.code);
+    tally.testFiles += wanted.tests?.length ?? 0;
+    tally.testsCited += cites(wanted.tests, verdict?.tests);
+    for (const check of wanted.manual ?? []) {
+      tally.manualChecks++;
+      const text = matchText(check.text);
+      if ((verdict?.manualChecks ?? []).some((each) => matchText(each.quote).includes(text) || text.includes(matchText(each.quote)))) tally.manualCited++;
+    }
+  }
+  return tally;
 }
 
 /**
@@ -441,6 +528,7 @@ export function tallyCase(
     finding: noFinding(),
     judging: noJudging(),
     unexplained: noUnexplained(),
+    criteria: noCriteria(),
   };
   if (!parts) return tally;
 
@@ -547,6 +635,7 @@ export function addTallies(tallies: readonly Tally[]): Tally {
     finding: noFinding(),
     judging: noJudging(),
     unexplained: noUnexplained(),
+    criteria: noCriteria(),
   };
   for (const tally of tallies) {
     total.changedLines += tally.changedLines;
@@ -558,6 +647,7 @@ export function addTallies(tallies: readonly Tally[]): Tally {
     for (const key of Object.keys(total.finding) as (keyof FindingTally)[]) total.finding[key] += tally.finding[key];
     for (const key of Object.keys(total.judging) as (keyof JudgingTally)[]) total.judging[key] += tally.judging[key];
     for (const key of Object.keys(total.unexplained) as (keyof UnexplainedTally)[]) total.unexplained[key] += tally.unexplained[key];
+    for (const key of Object.keys(total.criteria) as (keyof CriteriaTally)[]) total.criteria[key] += tally.criteria[key];
     for (const [name, counts] of tally.noise) {
       const sum = total.noise.get(name) ?? { expected: 0, predicted: 0, matched: 0 };
       sum.expected += counts.expected;
@@ -596,9 +686,10 @@ function median(values: readonly number[]): number {
  * the hand labels, the claim checks over the hand-labelled claims, the
  * story's plain checks, the recall and precision of the claims the agent
  * listed, the accuracy and false-verified rate of the verdicts it
- * gave, and the recall and precision of the unexplained changes it found
- * in each direction. A score with nothing to count is left out rather than given a
- * value it did not earn.
+ * gave, the recall and precision of the unexplained changes it found
+ * in each direction, and the accuracy, false-met rate and evidence recall
+ * of the verdicts it gave the acceptance criteria. A score with nothing to
+ * count is left out rather than given a value it did not earn.
  */
 export function scoresOf(tally: Tally): Score[] {
   const scores: Score[] = [];
@@ -641,6 +732,14 @@ export function scoresOf(tally: Tally): Score[] {
     ...ratio('unexplained-precision', unexplained.flaggedRight, unexplained.flaggedRight + unexplained.flaggedWrong),
     ...ratio('described-recall', unexplained.foundDescribed, unexplained.requiredDescribed),
     ...ratio('described-precision', unexplained.listedRight, unexplained.listedRight + unexplained.listedWrong),
+  );
+  const { criteria } = tally;
+  scores.push(
+    ...ratio('criteria-accuracy', criteria.right, criteria.labelled),
+    ...(criteria.notMet > 0 ? [{ name: 'criteria-false-met', value: criteria.falseMet / criteria.notMet, better: 'lower' as const }] : []),
+    ...ratio('criteria-code-recall', criteria.codeCited, criteria.codeFiles),
+    ...ratio('criteria-tests-recall', criteria.testsCited, criteria.testFiles),
+    ...ratio('criteria-manual-recall', criteria.manualCited, criteria.manualChecks),
   );
   return scores;
 }

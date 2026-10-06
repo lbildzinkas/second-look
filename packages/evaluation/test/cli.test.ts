@@ -210,6 +210,8 @@ describe('the record command', () => {
     expect(cases.map((each) => each.id)).toEqual([
       'canary-csharp',
       'canary-python',
+      'criteria-python',
+      'criteria-typescript',
       'encode-httpx-3690',
       'example-42',
       'example-7',

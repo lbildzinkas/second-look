@@ -1,9 +1,11 @@
 import * as vscode from 'vscode';
 import { randomUUID } from 'node:crypto';
 import {
+  CRITERION_VERDICT_KINDS,
   checkFailed,
   hiddenContent,
   isFinding,
+  isUnmetCriterion,
   isUnprovenSource,
   parsePullRequestUrl,
   type AcceptanceCriterion,
@@ -11,6 +13,7 @@ import {
   type CheckRun,
   type Claim,
   type ClaimSource,
+  type CriterionVerdictKind,
   type DescribedChange,
   type HiddenKind,
   type LinkedIssue,
@@ -31,19 +34,34 @@ export interface OverviewState {
   focus?: number;
 }
 
+/** The evidence of a criterion's verdict that cites lines of the head copy. */
+export type CitedEvidence = 'code' | 'tests';
+
 /** A move the reviewer makes on the page, as its script reports it. */
-export interface OverviewMessage {
-  type: 'openPart' | 'openIssue';
-  /** The part or the linked issue, by its index in the result's parts or the criteria's issues. */
-  target: number;
-}
+export type OverviewMessage =
+  | {
+      type: 'openPart' | 'openIssue';
+      /** The part or the linked issue, by its index in the result's parts or the criteria's issues. */
+      target: number;
+    }
+  | {
+      type: 'openEvidence';
+      /** The criterion, by its index in the criteria. */
+      criterion: number;
+      evidence: CitedEvidence;
+      /** The cited line, by its index in that evidence. */
+      index: number;
+    };
 
 /** Reads a page message out of what the webview delivered, if it is one. */
 function overviewMessage(value: unknown): OverviewMessage | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
-  const { type, part, issue } = value as Record<string, unknown>;
+  const { type, part, issue, criterion, evidence, index } = value as Record<string, unknown>;
   if (type === 'openPart' && Number.isInteger(part)) return { type, target: part as number };
   if (type === 'openIssue' && Number.isInteger(issue)) return { type, target: issue as number };
+  if (type === 'openEvidence' && Number.isInteger(criterion) && (evidence === 'code' || evidence === 'tests') && Number.isInteger(index)) {
+    return { type, criterion: criterion as number, evidence, index: index as number };
+  }
   return undefined;
 }
 
@@ -53,7 +71,10 @@ function overviewMessage(value: unknown): OverviewMessage | undefined {
  * comes from, a chip for each stage done and the one still running, the
  * story with its stamp, each part it mentions a button that opens the part
  * in the diff editor, the acceptance criteria of the linked issues, each
- * quoted and its issue a button that opens it on GitHub, the unexplained
+ * quoted and its issue a button that opens it on GitHub, with its verdict,
+ * the code and tests it cites each a button that opens the line in the
+ * head copy, and the manual checks the description reports, each its
+ * place a button that jumps to the description, the unexplained
  * changes in both directions, the claims the change makes with where each
  * is made and the part it is attached to, the pipeline report and whether it is trusted, the checks run on the merge
  * commit with their annotations and failed jobs' trimmed logs, the pull
@@ -78,8 +99,12 @@ export class OverviewPanel implements vscode.Disposable {
   /** Opens a part the story links or a claim is attached to, in the diff editor. */
   private readonly openPart: (part: Part) => void;
 
-  constructor(openPart: (part: Part) => void) {
+  /** Opens a line a criterion's verdict cites, in the read-only head copy. */
+  private readonly openLine: (path: string, line: number) => void;
+
+  constructor(openPart: (part: Part) => void, openLine: (path: string, line: number) => void) {
     this.openPart = openPart;
+    this.openLine = openLine;
   }
 
   /**
@@ -124,10 +149,20 @@ export class OverviewPanel implements vscode.Disposable {
     return true;
   }
 
-  /** The part a story, claim or unexplained-change button names, opened in the diff editor; a linked issue, opened on GitHub. */
+  /**
+   * The part a story, claim or unexplained-change button names, opened in
+   * the diff editor; a linked issue, opened on GitHub; a line a criterion's
+   * verdict cites, opened in the head copy.
+   */
   private handle(value: unknown): void {
     const message = overviewMessage(value);
     if (message === undefined) return;
+    if (message.type === 'openEvidence') {
+      const verdict = this.state?.result.criteria?.criteria[message.criterion]?.verdict;
+      const cited = verdict === undefined || verdict.kind === 'not checked' ? undefined : verdict[message.evidence][message.index];
+      if (cited !== undefined) this.openLine(cited.path, cited.line);
+      return;
+    }
     if (message.type === 'openPart') {
       const part = this.state?.result.parts[message.target];
       if (part !== undefined) this.openPart(part);
@@ -256,6 +291,8 @@ function stageChips(state: OverviewState): string {
   if (result.claims) chips.push({ text: result.claims.outcome === 'listed' ? 'claims' : 'no claims', done: true });
   const judging = result.claims?.judging;
   if (judging) chips.push({ text: judging.outcome === 'judged' ? 'verdicts' : 'no verdicts', done: true });
+  const mapping = result.criteria?.mapping;
+  if (mapping) chips.push({ text: mapping.outcome === 'mapped' ? 'criteria mapped' : 'criteria not mapped', done: true });
   if (state.running !== undefined) chips.push({ text: state.running, done: false });
   return chips
     .map((chip) => `<span class="stg ${chip.done ? 'done' : 'run'}">${escapeHtml(chip.text)}${chip.done ? '' : '…'}</span>`)
@@ -321,8 +358,53 @@ function issueName(issue: LinkedIssue): string {
   return `#${issue.number} in ${issue.repository}`;
 }
 
-/** One acceptance criterion: its quote, the issue it comes from as a button that opens it, and its verdict. */
-function criterionItem(criterion: AcceptanceCriterion, criteria: NonNullable<ReviewResult['criteria']>): string {
+/** A criterion's cited lines of one kind, each a button that opens the line in the head copy, with its quote; or none. */
+function citedLines(criterion: number, evidence: CitedEvidence, cited: readonly { path: string; line: number; quote: string }[]): string {
+  if (cited.length === 0) return '<span class="none">none</span>';
+  return cited
+    .map(
+      (each, index) =>
+        `<button type="button" class="pt cite" data-criterion="${criterion}" data-evidence="${evidence}" data-index="${index}">${escapeHtml(`${each.path}:${each.line}`)}</button>` +
+        ` <span class="cited">${escapeHtml(each.quote)}</span>`,
+    )
+    .join('<br>');
+}
+
+/**
+ * A mapped criterion's evidence: its reason, the code that implements it
+ * and the tests that cover it, each a button that opens the line, the
+ * manual checks the description reports, each quoted from it with its
+ * place a button that jumps to the description, and why
+ * the engine dropped the verdict, when it did; nothing for a criterion
+ * not checked.
+ */
+function criterionEvidence(criterion: AcceptanceCriterion, index: number): string {
+  const { verdict } = criterion;
+  if (verdict.kind === 'not checked') return '';
+  const manual =
+    verdict.manualChecks.length === 0
+      ? '<span class="cited">none reported in the pull request</span>'
+      : verdict.manualChecks
+          .map(
+            (check) =>
+              `<q class="quote">${sanitiseUntrusted(check.quote).html}</q> <button type="button" class="pt manual">${escapeHtml(`description, line ${check.line}`)}</button>`,
+          )
+          .join('<br>');
+  const rows: [string, string][] = [
+    ['Code', citedLines(index, 'code', verdict.code)],
+    ['Tests', citedLines(index, 'tests', verdict.tests)],
+    ['Manual check', manual],
+  ];
+  const recheck = verdict.recheck === undefined ? '' : `<div class="why">${escapeHtml(`dropped to can't tell: ${verdict.recheck}`)}</div>`;
+  return (
+    `<div class="why">${escapeHtml(verdict.reason)}</div>` +
+    `<div class="evidence">${rows.map(([label, value]) => `<span class="label">${escapeHtml(label)}</span><span>${value}</span>`).join('')}</div>` +
+    recheck
+  );
+}
+
+/** One acceptance criterion: its quote, the issue it comes from as a button that opens it, its verdict, and its evidence once mapped. */
+function criterionItem(criterion: AcceptanceCriterion, index: number, criteria: NonNullable<ReviewResult['criteria']>): string {
   const issue = criteria.issues[criterion.issue];
   const from =
     issue === undefined
@@ -330,7 +412,30 @@ function criterionItem(criterion: AcceptanceCriterion, criteria: NonNullable<Rev
       : `<button type="button" class="pt issue" data-issue="${criterion.issue}">${escapeHtml(issueName(issue))}</button> · ${escapeHtml(ISSUE_LINKS[issue.link])} · `;
   return (
     `<li><q class="quote">${sanitiseUntrusted(criterion.quote).html}</q>` +
-    `<div class="where">${from}<span class="verdict">${escapeHtml(criterion.verdict.kind)}</span></div></li>`
+    `<div class="where">${from}<span class="verdict${isUnmetCriterion(criterion) ? ' finding' : ''}">${escapeHtml(criterion.verdict.kind)}</span></div>` +
+    `${criterionEvidence(criterion, index)}</li>`
+  );
+}
+
+/** How many criteria have each verdict, in the order a reviewer reads them, such as `1 not met · 2 met`. */
+export function criteriaCounts(criteria: readonly AcceptanceCriterion[]): string {
+  const counts = new Map<CriterionVerdictKind, number>();
+  for (const { verdict } of criteria) {
+    if (verdict.kind !== 'not checked') counts.set(verdict.kind, (counts.get(verdict.kind) ?? 0) + 1);
+  }
+  return CRITERION_VERDICT_KINDS.filter((kind) => counts.has(kind))
+    .map((kind) => `${counts.get(kind)!} ${kind}`)
+    .join(' · ');
+}
+
+/** What the criteria section says of their verdicts: mapped, why none was, or that none is yet. */
+function mappingNote(criteria: NonNullable<ReviewResult['criteria']>): string {
+  const mapping = criteria.mapping;
+  if (mapping === undefined) return 'None is checked yet.';
+  if (mapping.outcome === 'fell back') return `None is checked: ${mapping.detail}.`;
+  return (
+    'Each is judged against the change, its read-only copy and the manual checks the description reports, ' +
+    `by ${stampText(mapping.stamp, 'criteria-mapping', mapping.promptVersion)}; the not met and partly met ones are findings.`
   );
 }
 
@@ -345,13 +450,16 @@ function issuesWithoutChecklist(criteria: NonNullable<ReviewResult['criteria']>)
 }
 
 /**
- * The acceptance criteria section: each condition from the issues the
- * pull request links, quoted from the checklist under the heading, its
- * issue a button that opens it, and its verdict — not checked, since
- * judging them is a later pass. What was read, and why nothing was — a
- * pull request into a non-default branch among the reasons — is said
- * plainly. Issue text is untrusted: every quote reaches the page escaped,
- * and the content GitHub hides is shown and flagged.
+ * The acceptance criteria section, at the top of the review after the
+ * story: each condition from the issues the pull request links, quoted
+ * from the checklist under the heading, its issue a button that opens
+ * it, and its verdict — not checked until the agent maps it, then met,
+ * partly met, not met, can't tell or needs manual check, with the code,
+ * tests and manual checks that show it, and how many have each verdict
+ * beside the heading. What was read, and why nothing was — a pull request
+ * into a non-default branch among the reasons — is said plainly. Issue
+ * text is untrusted: every quote reaches the page escaped, and the
+ * content GitHub hides is shown and flagged.
  */
 function criteriaSection(state: OverviewState): string {
   const criteria = state.result.criteria;
@@ -364,12 +472,15 @@ function criteriaSection(state: OverviewState): string {
     return `<h2>Acceptance criteria</h2>${detail}<p class="note">No criteria were read, so none is checked.</p>`;
   }
   const heading = `, quoted from the checklist under ${escapeHtml(JSON.stringify(criteria.heading))}`;
-  const note = `<p class="note">Each condition listed in the issues this pull request links${heading}. Issue text is untrusted: its hidden content is shown and flagged. None is checked yet.</p>`;
+  const note = `<p class="note">Each condition listed in the issues this pull request links${heading}. Issue text is untrusted: its hidden content is shown and flagged. ${escapeHtml(mappingNote(criteria))}</p>`;
   const list =
     criteria.criteria.length === 0
       ? ''
-      : `<ol class="claims criteria">${criteria.criteria.map((criterion) => criterionItem(criterion, criteria)).join('')}</ol>`;
-  return `<h2>Acceptance criteria</h2>${detail}${note}${list}${issuesWithoutChecklist(criteria)}`;
+      : `<ol class="claims criteria">${criteria.criteria.map((criterion, index) => criterionItem(criterion, index, criteria)).join('')}</ol>`;
+  const { mapping } = criteria;
+  const counts = mapping?.outcome === 'mapped' ? criteriaCounts(criteria.criteria) : '';
+  const title = `Acceptance criteria${counts === '' ? '' : ` <span class="stamp">${escapeHtml(counts)}</span>`}${mapping === undefined ? '' : ` ${stampChip(stampText(mapping.stamp, 'criteria-mapping', mapping.promptVersion))}`}`;
+  return `<h2>${title}</h2>${detail}${note}${list}${issuesWithoutChecklist(criteria)}`;
 }
 
 /** Where a described change is quoted from: a description line, or a linked issue as a button that opens it, with its line. */
@@ -667,6 +778,15 @@ function stampsSection(state: OverviewState): string {
         : `none: ${judging.detail}`,
     ]);
   }
+  const mapping = result.criteria?.mapping;
+  if (mapping) {
+    rows.push([
+      'Acceptance criteria',
+      mapping.outcome === 'mapped'
+        ? `mapped by ${stampText(mapping.stamp, 'criteria-mapping', mapping.promptVersion)}: ${mapping.detail}`
+        : `none: ${mapping.detail}`,
+    ]);
+  }
   const items = rows.map(([what, how]) => `<li><b>${escapeHtml(what)}</b> ${escapeHtml(how)}</li>`).join('');
   return `<h2>How these results were made</h2><ul class="stamps">${items}</ul>`;
 }
@@ -755,6 +875,11 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
   .verdict { font-style: italic; }
   .verdict.finding { color: var(--vscode-editorWarning-foreground); font-weight: 600; }
   .why { color: var(--vscode-descriptionForeground); font-size: 12px; overflow-wrap: anywhere; }
+  .evidence { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 10px; font-size: 12px; margin-top: 2px; }
+  .evidence .label, .cited { color: var(--vscode-descriptionForeground); }
+  .evidence span { min-width: 0; overflow-wrap: anywhere; }
+  .cite { font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; }
+  .none { color: var(--vscode-editorWarning-foreground); }
   .findings, .checks { padding-left: 18px; margin: 0; }
   .findings li, .checks li { margin-bottom: 6px; overflow-wrap: anywhere; }
   .att, .sev, .check { font-size: 11px; font-weight: 600; border: 1px solid var(--vscode-panel-border); border-radius: 10px; padding: 0 7px; }
@@ -801,6 +926,24 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
   Array.prototype.forEach.call(document.querySelectorAll('button.issue'), function (button) {
     button.addEventListener('click', function () {
       vscode.postMessage({ type: 'openIssue', issue: Number(button.getAttribute('data-issue')) });
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('button.cite'), function (button) {
+    button.addEventListener('click', function () {
+      vscode.postMessage({
+        type: 'openEvidence',
+        criterion: Number(button.getAttribute('data-criterion')),
+        evidence: button.getAttribute('data-evidence'),
+        index: Number(button.getAttribute('data-index'))
+      });
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('button.manual'), function (button) {
+    button.addEventListener('click', function () {
+      var description = document.getElementById('description');
+      if (description !== null) {
+        description.scrollIntoView({ block: 'start' });
+      }
     });
   });
   var focused = document.querySelector('.sentence.focus');
