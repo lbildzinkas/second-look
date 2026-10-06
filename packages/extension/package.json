@@ -211,7 +211,7 @@
         "second-look.criteriaHeading": {
           "type": "string",
           "default": "Acceptance criteria",
-          "description": "The heading the acceptance criteria checklist sits under in the issues a pull request links. The companion reads every task-list item under it — closing references, sidebar links and issues in other repositories alike — and lists each one in the overview, quoted and not checked. The heading travels with each review request, so changing it and re-running a review reads the new checklist; GitHub returns no closing references for a pull request into a non-default branch, and the overview says so."
+          "description": "The heading the acceptance criteria checklist sits under in the issues a pull request links. The companion reads every task-list item under it — closing references, sidebar links and issues in other repositories alike — and lists each one in the overview, quoted and not checked until the agent maps it to the change. The heading travels with each review request, so changing it and re-running a review reads the new checklist; GitHub returns no closing references for a pull request into a non-default branch, and the overview says so."
         }
       }
     }

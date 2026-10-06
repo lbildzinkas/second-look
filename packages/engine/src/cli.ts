@@ -138,7 +138,8 @@ the agent writes the story, then the result with the story in another
 while the agent compares the change with its description and issues,
 then the result with the comparison in another while the agent lists
 the claims, then the result with the claims in another while the agent
-judges them, then the judged result. Each review
+judges them, then the result with the verdicts in another while the agent
+maps the acceptance criteria, then the mapped result. Each review
 request may also carry the reviewer's agent choice — the agent, model and
 account from the editor's settings — which runs that review's agent passes
 and stamps the account label on their results, replacing this command's
