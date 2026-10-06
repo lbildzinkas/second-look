@@ -30,6 +30,8 @@ interface FakeEngineOptions {
   stageOnly?: boolean;
   fetchResult?: unknown;
   fetchError?: string;
+  draftResult?: unknown;
+  draftError?: string;
 }
 
 /** Starts the fake engine as a separate process, speaking real stdio. */
@@ -55,6 +57,8 @@ function fakeEngine(options: FakeEngineOptions = {}): ChildProcessWithoutNullStr
       ...(options.stageOnly ? { FAKE_ENGINE_STAGE_ONLY: '1' } : {}),
       ...(options.fetchResult !== undefined ? { FAKE_ENGINE_FETCH_RESULT: JSON.stringify(options.fetchResult) } : {}),
       ...(options.fetchError !== undefined ? { FAKE_ENGINE_FETCH_ERROR: options.fetchError } : {}),
+      ...(options.draftResult !== undefined ? { FAKE_ENGINE_DRAFT_RESULT: JSON.stringify(options.draftResult) } : {}),
+      ...(options.draftError !== undefined ? { FAKE_ENGINE_DRAFT_ERROR: options.draftError } : {}),
     },
   });
 }
@@ -153,6 +157,39 @@ describe('EngineClient against a fake engine', () => {
 
     await expect(client.fetchLibrary(PR_URL, 2)).rejects.toThrow(message);
     client.dispose();
+  });
+
+  it('drafts a comment from a finding, with the agent choice and no token, and returns the draft', async () => {
+    const draft = {
+      finding: { kind: 'claim', index: 1 },
+      statement: 'Gives up after three attempts, whatever the status.',
+      body: 'The docstring says three attempts, but `src/retry.py:6` loops five times.',
+      promptVersion: '1',
+      stamp: { agent: 'pi', agentVersion: '0.86.1', model: 'pi/model', effort: null, runAt: '2026-10-06T00:00:00.000Z' },
+    };
+    const client = new EngineClient(() => fakeEngine({ draftResult: draft, logName: 'draft-comment.log' }));
+
+    await client.initialize();
+    const drafted = await client.draftComment(PR_URL, { kind: 'claim', index: 1 }, { agent: 'pi', model: 'pi/model' });
+
+    expect(drafted).toEqual(draft);
+    const request = loggedRequests('draft-comment.log').find((each) => (each as { method: string }).method === 'draftComment') as { params: unknown };
+    // A draft carries no token: nothing of it reaches GitHub.
+    expect(request.params).toEqual({ url: PR_URL, finding: { kind: 'claim', index: 1 }, agent: { agent: 'pi', model: 'pi/model' } });
+    client.dispose();
+  });
+
+  it("reads a draft's failure as the engine's plain message, and refuses an answer that is no draft", async () => {
+    const message = 'no comment was drafted: the agent gave no usable answer';
+    const failing = new EngineClient(() => fakeEngine({ draftError: message }));
+    await failing.initialize();
+    await expect(failing.draftComment(PR_URL, { kind: 'criterion', index: 0 })).rejects.toThrow(message);
+    failing.dispose();
+
+    const malformed = new EngineClient(() => fakeEngine({ draftResult: { finding: { kind: 'claim', index: 0 }, statement: 's', body: '' } }));
+    await malformed.initialize();
+    await expect(malformed.draftComment(PR_URL, { kind: 'claim', index: 0 })).rejects.toThrow("the engine's answer is not a draft comment");
+    malformed.dispose();
   });
 
   it('carries the agent, model and account choice with the review request', async () => {

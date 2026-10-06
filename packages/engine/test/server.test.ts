@@ -11,6 +11,7 @@ import {
 } from '../src/rpc.js';
 import type { AgentName } from '../src/agents.js';
 import { CLAIMS_INSTRUCTIONS } from '../src/claims.js';
+import { DRAFT_COMMENT_INSTRUCTIONS } from '../src/draft-comment.js';
 import { UNEXPLAINED_INSTRUCTIONS } from '../src/unexplained.js';
 import { GROUPING_INSTRUCTIONS } from '../src/grouping.js';
 import { LIBRARY_VERDICTS_INSTRUCTIONS } from '../src/library-verdicts.js';
@@ -218,7 +219,7 @@ describe('runRpcServer', () => {
     expect(responses[0]!.id).toBeNull();
     expect(responses[0]!.error!.message).toContain('not JSON');
     expect(responses[1]!.error!.message).toContain('unknown method: start');
-    expect(responses[1]!.error!.message).toContain('initialize, review, fetchLibrary and sendReview');
+    expect(responses[1]!.error!.message).toContain('initialize, review, fetchLibrary, draftComment and sendReview');
     expect(responses[2]!.result).toEqual({ protocolVersion: ENGINE_PROTOCOL_VERSION });
   });
 
@@ -614,6 +615,9 @@ describe('runRpcServer fetching a library', () => {
       if (run.instructions === VERDICTS_INSTRUCTIONS) {
         return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: `It turns on ${library}.`, evidence: [], library }] };
       }
+      if (run.instructions === DRAFT_COMMENT_INSTRUCTIONS) {
+        return { comment: `The description says the helper ${CLAIM} Could you show where, since checking it needs ${library}'s source?` };
+      }
       if (run.instructions === LIBRARY_VERDICTS_INSTRUCTIONS) {
         return {
           verdict: 'refuted',
@@ -639,7 +643,7 @@ describe('runRpcServer fetching a library', () => {
         readLine: async () => {
           const line = lines[index++];
           if (line === undefined) return null;
-          if (line.includes('"fetchLibrary"')) {
+          if (line.includes('"fetchLibrary"') || line.includes('"draftComment"')) {
             await answeredReview;
             if (pypiBeforeFetch < 0) pypiBeforeFetch = pypi.requests.length;
           }
@@ -755,6 +759,51 @@ describe('runRpcServer fetching a library', () => {
       },
     });
     expect((answer(3).result as { claims: { claims: { verdict: object }[] } }).claims.claims[0]!.verdict).not.toHaveProperty('library');
+  });
+
+  it('drafts a comment from a finding of its latest review, and sends nothing', async () => {
+    state = transports();
+    const { answer } = await serveInTurn(
+      [
+        request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+        request('review', { url: PR_7_URL, token: TOKEN }, 2),
+        request('draftComment', { url: PR_7_URL, finding: { kind: 'claim', index: 0 }, agent: { agent: 'pi', model: 'pi/model' } }, 3),
+      ],
+      state.fetch,
+    );
+
+    expect(answer(3).error).toBeUndefined();
+    expect(answer(3).result).toEqual({
+      finding: { kind: 'claim', index: 0 },
+      statement: CLAIM,
+      body: `The description says the helper ${CLAIM} Could you show where, since checking it needs httpx's source?`,
+      promptVersion: '1',
+      stamp: expect.objectContaining({ agent: 'fake' }),
+    });
+    // A draft reads nothing from PyPI and writes nothing to GitHub.
+    expect(state.pypi.requests).toEqual([]);
+  });
+
+  it('refuses a draft from a finding it never reviewed, from something that is no finding, and malformed draft params', async () => {
+    state = transports();
+    const { answer } = await serveInTurn(
+      [
+        request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+        request('review', { url: PR_7_URL, token: TOKEN }, 2),
+        request('draftComment', { url: PR_7_URL, finding: { kind: 'criterion', index: 0 } }, 3),
+        request('draftComment', { url: 'https://github.com/example-org/example-repo/pull/8', finding: { kind: 'claim', index: 0 } }, 4),
+        request('draftComment', { url: PR_7_URL, finding: { kind: 'story', index: 0 } }, 5),
+        request('draftComment', { url: PR_7_URL, finding: { kind: 'claim', index: -1 } }, 6),
+        request('draftComment', { url: PR_7_URL, finding: { kind: 'claim', index: 0 }, agent: { agent: 'nope' } }, 7),
+      ],
+      state.fetch,
+    );
+
+    expect(answer(3)).toMatchObject({ error: { code: ENGINE_FAILED_CODE, message: expect.stringContaining(`this engine has no finding criterion 0 of ${PR_7_URL} to draft from`) } });
+    expect(answer(4)).toMatchObject({ error: { code: ENGINE_FAILED_CODE } });
+    expect(answer(5)).toMatchObject({ error: { code: JSON_RPC_INVALID_PARAMS } });
+    expect(answer(6)).toMatchObject({ error: { code: JSON_RPC_INVALID_PARAMS } });
+    expect(answer(7)).toMatchObject({ error: { code: JSON_RPC_INVALID_PARAMS, message: expect.stringContaining('draftComment: the agent choice names an agent the engine cannot drive') } });
   });
 
   it('refuses a fetch of a claim it never reviewed, and malformed fetch params', async () => {

@@ -108,6 +108,8 @@ describe('findingBody', () => {
         '- src/retry\\.py:6 — for attempt in range\\(5\\):',
         '',
         'Claim made in docstring · src/retry\\.py:3–4.',
+        '',
+        `[Draft comment](command:second-look.draftComment?${encodeURIComponent('[{"kind":"claim","index":0}]')}) — you edit the draft, then add it to the pending review or discard it.`,
       ].join('\n'),
     );
     expect(findingBody(comment!)).toContain('Needs the source of requests, which the companion does not have.');
@@ -245,13 +247,24 @@ describe('findingBody', () => {
     expect(body).toContain(escapeMarkdown(noLibraryFetch));
   });
 
-  it('trusts only the fetch and the open-evidence commands in a finding', () => {
+  it('trusts only the fetch, the open-evidence and the draft commands in a finding', () => {
     stub.reset();
     new FindingThreads().show(offeredResult());
 
     const body = controller().threads[1]!.comments[0]!.body as StubMarkdownString & { isTrusted?: unknown };
     expect(body.value).toContain('command:second-look.fetchLibrary');
-    expect(body.isTrusted).toEqual({ enabledCommands: ['second-look.fetchLibrary', 'second-look.openLibraryEvidence'] });
+    expect(body.isTrusted).toEqual({ enabledCommands: ['second-look.fetchLibrary', 'second-look.openLibraryEvidence', 'second-look.draftComment'] });
+  });
+
+  it('offers a draft comment from each finding, naming the claim by its index in the claims', () => {
+    stub.reset();
+    new FindingThreads().show(judgedResult());
+
+    const bodies = controller().threads.map((thread) => (thread.comments[0]!.body as StubMarkdownString).value);
+    expect(bodies).toHaveLength(3);
+    for (const [at, index] of [1, 2, 3].entries()) {
+      expect(bodies[at]).toContain(`[Draft comment](command:second-look.draftComment?${encodeURIComponent(JSON.stringify([{ kind: 'claim', index }]))})`);
+    }
   });
 
   it('escapes every quote and reason, so nothing someone else wrote renders as markup', () => {

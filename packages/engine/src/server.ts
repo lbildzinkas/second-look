@@ -2,13 +2,15 @@ import { join } from 'node:path';
 import { DEFAULT_AGENT_SETTINGS, type AgentAdapter, type AgentSettings } from './agent.js';
 import { AGENT_NAMES, isAgentName, type AgentName } from './agents.js';
 import { pullRequestCacheDir } from './cache.js';
+import { draftComment, draftFinding, isFindingRef } from './draft-comment.js';
 import { parsePullRequestUrl } from './github.js';
 import { pressLibraryFetch } from './library-verdicts.js';
-import type { ReviewResult } from './protocol.js';
+import { FINDING_REF_KINDS, type ReviewResult } from './protocol.js';
 import { reviewPullRequest } from './review.js';
 import { sendReview } from './send.js';
 import type { TestedRanking } from './ranking.js';
 import {
+  DRAFT_COMMENT_METHOD,
   ENGINE_FAILED_CODE,
   ENGINE_PROTOCOL_VERSION,
   FETCH_LIBRARY_METHOD,
@@ -24,6 +26,7 @@ import {
   VERSION_MISMATCH_CODE,
   isRpcRequest,
   redactToken,
+  type DraftCommentParams,
   type FetchLibraryParams,
   type InitializeParams,
   type ReviewAgentChoice,
@@ -103,6 +106,10 @@ export interface RpcServerDeps {
  * reviewer presses it: the engine keeps each pull request's latest review
  * result, so the claim is named by its index there, and answers with that
  * result, the claim judged again against the library's source.
+ * `draftComment` drafts a comment from one finding of that latest
+ * result, only when the reviewer asks for it, and answers with the
+ * checked draft, which the reviewer edits and adds to the pending review
+ * or discards; nothing sends it.
  *
  * With an agent, a review arrives in stages: as soon as the plain result
  * is ready the engine sends it in a {@link REVIEW_STAGE_METHOD}
@@ -161,6 +168,10 @@ export async function runRpcServer(
       running.push(fetchLibrary(value.params, value.id, sink, initialized, deps, reviews));
       continue;
     }
+    if (value.method === DRAFT_COMMENT_METHOD) {
+      running.push(draft(value.params, value.id, sink, initialized, deps, reviews));
+      continue;
+    }
     if (value.method === SEND_REVIEW_METHOD) {
       running.push(send(value.params, value.id, sink, initialized, deps));
       continue;
@@ -170,7 +181,7 @@ export async function runRpcServer(
       failure(
         value.id,
         JSON_RPC_METHOD_NOT_FOUND,
-        `unknown method: ${value.method}; this engine speaks ${INITIALIZE_METHOD}, ${REVIEW_METHOD}, ${FETCH_LIBRARY_METHOD} and ${SEND_REVIEW_METHOD}`,
+        `unknown method: ${value.method}; this engine speaks ${INITIALIZE_METHOD}, ${REVIEW_METHOD}, ${FETCH_LIBRARY_METHOD}, ${DRAFT_COMMENT_METHOD} and ${SEND_REVIEW_METHOD}`,
       ),
     );
   }
@@ -373,6 +384,68 @@ async function fetchLibrary(
     };
     reviews.set(url, updated);
     respond(sink, { jsonrpc: '2.0', id, result: updated });
+  } catch (error) {
+    respond(sink, failure(id, ENGINE_FAILED_CODE, error instanceof Error ? error.message : String(error)));
+  }
+}
+
+/**
+ * Drafts a comment from one finding of the pull request's latest review:
+ * the agent writes it from the finding and its evidence, and the engine
+ * answers with the draft once the plain checks accept it — it cites the
+ * finding's evidence location, names nothing the finding does not hold,
+ * and stays within the length cap. A draft fails with a plain message
+ * when the review is unknown, the finding is none of its findings, or
+ * the agent gives no usable answer. Nothing is sent: the reviewer edits
+ * the draft and adds it to the pending review, or discards it.
+ */
+async function draft(
+  params: unknown,
+  id: number,
+  sink: RpcLineSink,
+  initialized: boolean,
+  deps: RpcServerDeps,
+  reviews: Map<string, ReviewResult>,
+): Promise<void> {
+  if (!initialized) {
+    respond(sink, failure(id, NOT_INITIALIZED_CODE, `the protocol starts with a version handshake: ${INITIALIZE_METHOD} before ${DRAFT_COMMENT_METHOD}`));
+    return;
+  }
+  const { url, finding: ref, agent: choice } = (params ?? {}) as Partial<DraftCommentParams>;
+  if (typeof url !== 'string' || parsePullRequestUrl(url) === null || !isFindingRef(ref)) {
+    respond(
+      sink,
+      failure(
+        id,
+        JSON_RPC_INVALID_PARAMS,
+        `${DRAFT_COMMENT_METHOD} needs params: { "url": string, "finding": { "kind": "${FINDING_REF_KINDS.join('" | "')}", "index": number }, "agent"?: { "agent": "${AGENT_NAMES.join('" | "')}", "model"?: string, "account"?: string } }`,
+      ),
+    );
+    return;
+  }
+  const problem = choice === undefined ? undefined : agentChoiceProblem(choice);
+  if (problem !== undefined) {
+    respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${DRAFT_COMMENT_METHOD}: ${problem}`));
+    return;
+  }
+  const result = reviews.get(url);
+  const finding = result === undefined ? undefined : draftFinding(result, ref);
+  if (result === undefined || finding === undefined || deps.agent === undefined) {
+    respond(sink, failure(id, ENGINE_FAILED_CODE, `this engine has no finding ${ref.kind} ${ref.index} of ${url} to draft from; wait for the review to finish, or review the pull request again`));
+    return;
+  }
+  try {
+    const drafted = await draftComment(finding, {
+      adapter: deps.agent.adapterFor(choice?.agent ?? deps.agent.defaultAgent),
+      settings: agentRunSettings(deps.agent, choice),
+      root: result.copies.head.path,
+    });
+    if (drafted.body === undefined) throw new Error(`no comment was drafted: ${drafted.detail}`);
+    respond(sink, {
+      jsonrpc: '2.0',
+      id,
+      result: { finding: ref, statement: finding.statement, body: drafted.body, promptVersion: drafted.promptVersion, stamp: drafted.stamp },
+    });
   } catch (error) {
     respond(sink, failure(id, ENGINE_FAILED_CODE, error instanceof Error ? error.message : String(error)));
   }

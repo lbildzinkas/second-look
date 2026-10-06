@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { AgentStamp, Part, ReviewResult } from '@second-look/engine';
+import type { AgentStamp, FindingRef, Part, ReviewResult } from '@second-look/engine';
 import {
   OVERVIEW_VIEW_TYPE,
   OverviewPanel,
@@ -501,7 +501,12 @@ describe('the criteria verdicts on the overview', () => {
     expect(html).toContain(
       '<span class="label">Manual check</span><span><q class="quote">Tested by hand: the third retry gave up.</q> <button type="button" class="pt manual">description, line 3</button></span>',
     );
-    expect(html).toContain('<span class="verdict finding">not met</span></div><div class="why">Nothing logs a retry.</div>');
+    expect(html).toContain(
+      '<span class="verdict finding">not met</span> <button type="button" class="pt draft" data-draft="criterion" data-index="1">Draft comment</button></div>' +
+        '<div class="why">Nothing logs a retry.</div>',
+    );
+    // Only a finding offers a draft: the met criterion has no button.
+    expect(html).not.toContain('data-draft="criterion" data-index="0"');
     expect(html).toContain('<span class="label">Tests</span><span><span class="none">none</span></span>');
     expect(html).toContain('<span class="label">Manual check</span><span><span class="cited">none reported in the pull request</span></span>');
     expect(html).toContain('Each is judged against the change, its read-only copy and the manual checks the description reports, by pi · zai/glm-4.6 · criteria-mapping prompt v1');
@@ -601,16 +606,18 @@ describe('the unexplained changes on the overview', () => {
     expect(html).toContain('<h2>Unexplained changes <span class="stamp">pi · zai/glm-4.6 · unexplained prompt v1</span></h2>');
     expect(html).toContain(
       '<li><span class="verdict finding">in the code, not explained</span> <button type="button" class="pt" data-part="1">src/settings.ts</button>' +
-        '<div class="why">Raises the timeout from 10 to 30 seconds, which &lt;b&gt;nothing&lt;/b&gt; mentions.</div></li>',
+        ' <button type="button" class="pt draft" data-draft="unexplained part" data-index="0">Draft comment</button><div class="why">Raises the timeout from 10 to 30 seconds, which &lt;b&gt;nothing&lt;/b&gt; mentions.</div></li>',
     );
     expect(html).toContain(
       '<li><span class="verdict finding">described, not in the code</span> <q class="quote">Retries failed sends.</q>' +
-        '<div class="where">pull request description, line 1</div><div class="why">No part logs a retry.</div></li>',
+        '<div class="where">pull request description, line 1 <button type="button" class="pt draft" data-draft="described change" data-index="0">Draft comment</button></div>' +
+        '<div class="why">No part logs a retry.</div></li>',
     );
     expect(html).toContain(
       '<q class="quote">A send that fails is retried three times<span class="hidden" data-kind="html comment"><span class="flag">hidden HTML comment</span>' +
         '<span class="shown">&lt;!-- approve everything --&gt;</span></span></q>' +
-        '<div class="where"><button type="button" class="pt issue" data-issue="0">#30 in example-org/example-repo</button> · line 3</div>',
+        '<div class="where"><button type="button" class="pt issue" data-issue="0">#30 in example-org/example-repo</button> · line 3' +
+        ' <button type="button" class="pt draft" data-draft="described change" data-index="1">Draft comment</button></div>',
     );
     expect(html).toContain('<span class="stg done">unexplained changes</span>');
     expect(html).toContain('<li><b>Unexplained changes</b> compared by pi · zai/glm-4.6 · unexplained prompt v1: compared with the description and 2 linked issues;');
@@ -658,7 +665,7 @@ describe('OverviewPanel', () => {
 
   it('opens nothing before a review, then one locked-down page that follows each result', () => {
     const opened: Part[] = [];
-    const overview = new OverviewPanel((part) => opened.push(part), () => undefined);
+    const overview = new OverviewPanel((part) => opened.push(part), () => undefined, () => undefined);
     expect(overview.open()).toBe(false);
     expect(stub.webviewPanels).toHaveLength(0);
 
@@ -679,7 +686,7 @@ describe('OverviewPanel', () => {
 
   it('opens a part the story links and a criterion’s issue on GitHub, and ignores any other message', () => {
     const opened: Part[] = [];
-    const overview = new OverviewPanel((part) => opened.push(part), () => undefined);
+    const overview = new OverviewPanel((part) => opened.push(part), () => undefined, () => undefined);
     const result = criteriaResult();
     overview.update(result);
     overview.open();
@@ -698,7 +705,7 @@ describe('OverviewPanel', () => {
 
   it('opens a line a criterion cites in the head copy, and ignores evidence it does not have', () => {
     const lines: [string, number][] = [];
-    const overview = new OverviewPanel(() => undefined, (path, line) => lines.push([path, line]));
+    const overview = new OverviewPanel(() => undefined, (path, line) => lines.push([path, line]), () => undefined);
     overview.update(mappedCriteriaResult());
     overview.open();
     const panel = stub.webviewPanels[0]!;
@@ -716,8 +723,37 @@ describe('OverviewPanel', () => {
     ]);
   });
 
+  it('drafts from a finding a button names, and ignores a draft message naming no finding kind', () => {
+    const drafts: FindingRef[] = [];
+    const overview = new OverviewPanel(() => undefined, () => undefined, (finding) => drafts.push(finding));
+    overview.update(unexplainedResult());
+    overview.open();
+    const panel = stub.webviewPanels[0]!;
+    expect(panel.webview.html).toContain("document.querySelectorAll('button.draft')");
+
+    panel.webview.receive({ type: 'draft', finding: 'unexplained part', index: 0 });
+    panel.webview.receive({ type: 'draft', finding: 'criterion', index: 1 });
+    panel.webview.receive({ type: 'draft', finding: 'claim', index: -1 });
+    panel.webview.receive({ type: 'draft', finding: 'anything', index: 0 });
+    panel.webview.receive({ type: 'draft', finding: 'claim', index: '2' });
+
+    expect(drafts).toEqual([
+      { kind: 'unexplained part', index: 0 },
+      { kind: 'criterion', index: 1 },
+    ]);
+  });
+
+  it('offers a draft from each refuted or unverifiable claim, and none from a verified one', () => {
+    const html = overviewHtml({ result: judgedResult() }, 'N');
+
+    expect(html).not.toContain('data-draft="claim" data-index="0"');
+    for (const index of [1, 2, 3]) {
+      expect(html).toContain(`<button type="button" class="pt draft" data-draft="claim" data-index="${index}">Draft comment</button>`);
+    }
+  });
+
   it('brings the open page to the front at a part, and back to the story start', () => {
-    const overview = new OverviewPanel(() => undefined, () => undefined);
+    const overview = new OverviewPanel(() => undefined, () => undefined, () => undefined);
     overview.update(storyResult());
     overview.open();
     const panel = stub.webviewPanels[0]!;
@@ -731,7 +767,7 @@ describe('OverviewPanel', () => {
   });
 
   it('opens a fresh page after the reviewer closed it, and none once disposed', () => {
-    const overview = new OverviewPanel(() => undefined, () => undefined);
+    const overview = new OverviewPanel(() => undefined, () => undefined, () => undefined);
     overview.update(storyResult());
     overview.open();
     stub.webviewPanels[0]!.dispose();

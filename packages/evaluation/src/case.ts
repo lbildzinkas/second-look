@@ -4,6 +4,7 @@ import { pathInCopy } from '@second-look/engine';
 import type {
   Criteria,
   CriterionVerdictKind,
+  DraftFinding,
   NoiseLabel,
   NoiseState,
   PullRequestSummary,
@@ -208,6 +209,11 @@ export interface ExpectedResults {
   unexplained?: ExpectedUnexplained;
   /** The hand-labelled verdicts of the acceptance criteria; absent when the case labels none. */
   criteria?: ExpectedCriterion[];
+  /**
+   * The findings the draft-comment prompt drafts from, each written by
+   * hand as the review would show it; absent when the case drafts none.
+   */
+  drafts?: DraftFinding[];
 }
 
 /** A case loaded from its folder. */
@@ -238,6 +244,7 @@ export async function loadCase(folder: string): Promise<EvaluationCase> {
     ...(recorded.groups ? { groups: recorded.groups } : {}),
     ...(recorded.unexplained ? { unexplained: recorded.unexplained } : {}),
     ...(recorded.criteria ? { criteria: recorded.criteria } : {}),
+    ...(recorded.drafts ? { drafts: recorded.drafts } : {}),
   };
   return { id: record.id, folder, record, expected };
 }

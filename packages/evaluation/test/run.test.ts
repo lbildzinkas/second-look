@@ -11,6 +11,7 @@ import { VERDICTS_INSTRUCTIONS, VERDICTS_PROMPT_VERSION } from '../../engine/src
 import { LIBRARY_VERDICTS_INSTRUCTIONS, LIBRARY_VERDICTS_PROMPT_VERSION } from '../../engine/src/library-verdicts.js';
 import { UNEXPLAINED_INSTRUCTIONS, UNEXPLAINED_PROMPT_VERSION } from '../../engine/src/unexplained.js';
 import { CRITERIA_MAPPING_INSTRUCTIONS, CRITERIA_MAPPING_PROMPT_VERSION } from '../../engine/src/criteria-mapping.js';
+import { DRAFT_COMMENT_INSTRUCTIONS, DRAFT_COMMENT_PROMPT_VERSION } from '../../engine/src/draft-comment.js';
 import { answeringAgent, offeredParts, scriptedAgent } from '../../engine/test/helpers.js';
 import type { AgentAdapter } from '@second-look/engine';
 import { loadCases } from '../src/case.js';
@@ -467,6 +468,47 @@ describe('runEvaluation with the criteria-mapping prompt', () => {
     expect(rowsOf(results.rows, 'fake', 'criteria-accuracy')['planted-typescript']).toBe(0);
     expect(rowsOf(results.rows, 'fake', 'criteria-false-met')['planted-typescript']).toBe(0);
     expect(rowsOf(results.rows, 'fake', 'criteria-code-recall')['planted-typescript']).toBe(0);
+  });
+});
+
+describe('runEvaluation with the draft-comment prompt', () => {
+  /** An agent drafting canary-python's two findings: a good draft from the unverifiable claim, one inventing a fix from the refuted one. */
+  const draftingAgent = (): AgentAdapter =>
+    answeringAgent((request) => {
+      if (request.instructions !== DRAFT_COMMENT_INSTRUCTIONS) return 'not an answer';
+      if (request.prompt.includes('a refuted claim')) return { comment: 'Pass `follow_redirects=True` in `app/client.py` and it works.' };
+      return { comment: 'The docstring at `app/doc_links.py:9` says redirects are followed; can you show where, since that depends on httpx?' };
+    });
+
+  it("scores the agent's own drafts from the case's findings on the plain checks, stamped with who answered", async () => {
+    const { folder, results } = await runVerdicts('canary-python', draftingAgent(), ['draft-comment']);
+
+    // The refuted claim's draft cites nothing the finding offers and adds a fix it does not state, but both stay short.
+    expect(rowsOf(results.rows, 'fake', 'draft-cites-evidence')).toEqual({ 'canary-python': 0.5, [ALL_CASES]: 0.5 });
+    expect(rowsOf(results.rows, 'fake', 'draft-no-new-claim')).toEqual({ 'canary-python': 0.5, [ALL_CASES]: 0.5 });
+    expect(rowsOf(results.rows, 'fake', 'draft-under-cap')).toEqual({ 'canary-python': 1, [ALL_CASES]: 1 });
+    expect(results.rows.find((row) => row.agent === 'fake' && row.case === 'canary-python')).toMatchObject({
+      model: 'fake/model',
+      promptVersions: { 'draft-comment': DRAFT_COMMENT_PROMPT_VERSION },
+    });
+    // The plain pass drafts nothing, so it gives no draft score.
+    expect(rowsOf(results.rows, NO_AGENT, 'draft-cites-evidence')).toEqual({});
+    expect(results.fallbacks).toEqual([]);
+    const trace = readFileSync(join(folder, TRACE_FILE), 'utf8').trim().split('\n').map((line) => JSON.parse(line) as AgentCall);
+    // One call per finding: the run does not retry a draft the checks would refuse.
+    expect(trace).toHaveLength(2);
+    expect(trace[0]).toMatchObject({ case: 'canary-python', prompt: 'draft-comment', promptVersion: DRAFT_COMMENT_PROMPT_VERSION });
+    expect(trace[1]!.input).toContain('- httpx/_client.py:643: follow_redirects: bool = False,');
+  });
+
+  it('records a draft that fell back, which fails every check', async () => {
+    const { results } = await runVerdicts('canary-python', scriptedAgent([]), ['draft-comment']);
+
+    expect(results.fallbacks).toHaveLength(2);
+    expect(results.fallbacks![0]).toEqual({ case: 'canary-python', agent: 'fake', prompt: 'draft-comment', detail: expect.stringMatching(/^the agent gave no usable answer/) });
+    expect(rowsOf(results.rows, 'fake', 'draft-cites-evidence')['canary-python']).toBe(0);
+    expect(rowsOf(results.rows, 'fake', 'draft-no-new-claim')['canary-python']).toBe(0);
+    expect(rowsOf(results.rows, 'fake', 'draft-under-cap')['canary-python']).toBe(0);
   });
 });
 

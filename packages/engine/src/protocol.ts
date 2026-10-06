@@ -141,6 +141,43 @@ export interface SentReview {
   url: string;
 }
 
+/**
+ * A finding the reviewer asks a draft comment from, by its index in the
+ * review result's list that holds it: a refuted or unverifiable claim in
+ * the claims, a part neither the description nor a linked issue explains
+ * in the unexplained changes' parts, a change they describe that the diff
+ * does not contain in their described changes, or a not met or partly met
+ * acceptance criterion in the criteria.
+ */
+export type FindingRef = {
+  kind: 'claim' | 'unexplained part' | 'described change' | 'criterion';
+  index: number;
+};
+
+/** The finding kinds a {@link FindingRef} names. */
+export const FINDING_REF_KINDS: readonly FindingRef['kind'][] = ['claim', 'unexplained part', 'described change', 'criterion'];
+
+/**
+ * A comment the companion drafted from one finding (the glossary's draft
+ * comment). The reviewer edits it and adds it to the pending review, or
+ * discards it; nothing sends it on its own (ADR 0002).
+ */
+export interface DraftComment {
+  /** The finding it was drafted from. */
+  finding: FindingRef;
+  /** What the finding is about, as the engine read it, so a reader can tell it drafted from the finding shown. */
+  statement: string;
+  /**
+   * The draft, checked: it cites one of the finding's evidence locations,
+   * names nothing the finding does not hold, and stays within the length
+   * cap.
+   */
+  body: string;
+  /** The version of the draft-comment prompt. */
+  promptVersion: string;
+  stamp: AgentStamp;
+}
+
 /** The review result the engine produces for one pull request. */
 export interface ReviewResult {
   /** Schema version; compare against {@link REVIEW_RESULT_VERSION}. */

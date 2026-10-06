@@ -158,8 +158,10 @@ export interface StubState {
   visibleTextEditors: unknown[];
   /** The file contents behind `file:` URIs, keyed by path. */
   files: Map<string, Uint8Array>;
-  /** What showInputBox resolves with; undefined reads as dismissed. */
-  inputBoxResult: string | undefined;
+  /** What showInputBox resolves with; undefined reads as dismissed, and a pending promise holds the box open. */
+  inputBoxResult: string | undefined | Promise<string | undefined>;
+  /** The input boxes shown: the title and value each opened with. */
+  inputBoxes: { title?: string; value?: string }[];
   /** What showQuickPick resolves with; undefined reads as dismissed. */
   quickPickResult: unknown;
   /** The quick picks shown: their titles and the items they offered. */
@@ -200,6 +202,7 @@ export const stub: StubState = {
   visibleTextEditors: [],
   files: new Map(),
   inputBoxResult: undefined,
+  inputBoxes: [],
   quickPickResult: undefined,
   quickPicks: [],
   warningMessages: [],
@@ -226,6 +229,7 @@ export const stub: StubState = {
     configurationListeners.clear();
     stub.files = new Map();
     stub.inputBoxResult = undefined;
+    stub.inputBoxes = [];
     stub.quickPickResult = undefined;
     stub.quickPicks = [];
     stub.warningMessages = [];
@@ -492,7 +496,8 @@ export const commands = {
 };
 
 export const window = {
-  showInputBox(): Promise<string | undefined> {
+  showInputBox(options?: { title?: string; value?: string }): Promise<string | undefined> {
+    stub.inputBoxes.push({ title: options?.title, value: options?.value });
     return Promise.resolve(stub.inputBoxResult);
   },
   showQuickPick(items: unknown[], options?: { title?: string }): Promise<unknown> {

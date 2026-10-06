@@ -64,5 +64,34 @@
       "text": "The README's \"Parse a TOML file\" section shows loading a path.",
       "verdict": "not met"
     }
+  ],
+  "drafts": [
+    {
+      "kind": "acceptance criterion not met",
+      "statement": "The README's \"Parse a TOML file\" section shows loading a path.",
+      "madeIn": "issue #250, line 10",
+      "reason": "The change does not touch the README.",
+      "evidence": [],
+      "notes": [],
+      "locations": [
+        "#250"
+      ]
+    },
+    {
+      "kind": "acceptance criterion partly met",
+      "statement": "`load` accepts a path given as `str` or as `bytes`.",
+      "madeIn": "issue #250, line 6",
+      "reason": "load opens a str or os.PathLike path, but a bytes path is not handled and fails when it is read.",
+      "evidence": [
+        {
+          "at": "src/tomli/_parser.py:142",
+          "quote": "if isinstance(__fp, (str, os.PathLike)):"
+        }
+      ],
+      "notes": [],
+      "locations": [
+        "src/tomli/_parser.py:142"
+      ]
+    }
   ]
 }

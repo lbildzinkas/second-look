@@ -3,7 +3,7 @@
   "id": "misstated-python",
   "source": "https://github.com/example-org/example-repo/pull/9405",
   "recordedAt": "2026-10-04T00:00:00.000Z",
-  "prompts": ["verdicts"],
+  "prompts": ["verdicts", "draft-comment"],
   "pullRequest": {
     "url": "https://github.com/example-org/example-repo/pull/9405",
     "number": 9405,

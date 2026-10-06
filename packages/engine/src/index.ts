@@ -46,4 +46,5 @@ export * from './pipeline.js';
 export * from './ci.js';
 export * from './criteria.js';
 export * from './criteria-mapping.js';
+export * from './draft-comment.js';
 export { runCli } from './cli.js';

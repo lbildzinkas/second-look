@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { findingAnchor, isFinding, isUnprovenSource, type Claim, type FetchedLibrary, type LibraryArchive, type ReviewResult } from '@second-look/engine';
 import { changeUri, partFiles } from './change-copies.js';
-import { FETCH_LIBRARY_COMMAND, FINDINGS_CONTROLLER_ID, FINDING_THREAD_CONTEXT, OPEN_LIBRARY_EVIDENCE_COMMAND } from './commands.js';
+import { DRAFT_COMMENT_COMMAND, FETCH_LIBRARY_COMMAND, FINDINGS_CONTROLLER_ID, FINDING_THREAD_CONTEXT, OPEN_LIBRARY_EVIDENCE_COMMAND } from './commands.js';
 import { citedWhere, claimWhere } from './overview.js';
 
 /** Markdown's punctuation, escaped, so text someone else wrote renders exactly as written. */
@@ -45,7 +45,8 @@ function citationLabel(path: string, library: FetchedLibrary): string {
  * companion offers for it, a link the reviewer presses, or the library
  * source the verdict was judged against, each cited file a link that
  * opens it read-only and labelled when it is unproven or decompiled — why the engine dropped the verdict when it did,
- * and where the claim is made. Every quote, reason, name and path came
+ * where the claim is made, and the link that drafts a comment from the
+ * finding. Every quote, reason, name and path came
  * from the pull request, the agent or the package index, so each is
  * escaped; `index` is the claim's index in the result's claims, which the
  * links carry.
@@ -96,6 +97,7 @@ export function findingBody(claim: Claim, index = 0): string {
   }
   if (verdict.recheck !== undefined) lines.push('', `Dropped to unverifiable: ${escapeMarkdown(verdict.recheck)}.`);
   lines.push('', `Claim made in ${escapeMarkdown(claimWhere(claim))}.`);
+  lines.push('', `${commandLink('Draft comment', DRAFT_COMMENT_COMMAND, [{ kind: 'claim', index }])} — you edit the draft, then add it to the pending review or discard it.`);
   return lines.join('\n');
 }
 
@@ -124,8 +126,8 @@ export class FindingThreads implements vscode.Disposable {
       const thread = this.threadFor(result, claim);
       if (thread === undefined) continue;
       const body = new vscode.MarkdownString(findingBody(claim, index));
-      // Only the companion's own links run, and only these two commands.
-      body.isTrusted = { enabledCommands: [FETCH_LIBRARY_COMMAND, OPEN_LIBRARY_EVIDENCE_COMMAND] };
+      // Only the companion's own links run, and only these three commands.
+      body.isTrusted = { enabledCommands: [FETCH_LIBRARY_COMMAND, OPEN_LIBRARY_EVIDENCE_COMMAND, DRAFT_COMMENT_COMMAND] };
       thread.comments = [
         {
           body,

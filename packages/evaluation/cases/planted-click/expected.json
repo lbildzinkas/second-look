@@ -34,5 +34,33 @@
         }
       }
     ]
-  }
+  },
+  "drafts": [
+    {
+      "kind": "unexplained change",
+      "statement": "pause in src/click/termui.py",
+      "madeIn": "the change, in src/click/termui.py",
+      "reason": "Rewrites the terminal check and the default message in pause, which neither the description nor issue #2869 mentions.",
+      "evidence": [],
+      "notes": [
+        "neither the description nor a linked issue explains this part"
+      ],
+      "locations": [
+        "src/click/termui.py"
+      ]
+    },
+    {
+      "kind": "described change the diff does not contain",
+      "statement": "The editing section of `docs/utils.md` gains an example that edits a `pathlib.Path`.",
+      "madeIn": "the pull request's description, line 5",
+      "reason": "The diff does not change docs/utils.md.",
+      "evidence": [],
+      "notes": [
+        "the diff does not contain this change"
+      ],
+      "locations": [
+        "description"
+      ]
+    }
+  ]
 }

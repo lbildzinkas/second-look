@@ -20,5 +20,25 @@
         "evidence": { "file": "src/tomli/_re.py", "line": 83, "source": "the change itself" }
       }
     }
+  ],
+  "drafts": [
+    {
+      "kind": "refuted claim",
+      "statement": "Pads the fractional seconds of a datetime on the right with zeros, so `1979-05-27T07:32:00.5` parses with 500000 microseconds.",
+      "madeIn": "the pull request's description, line 1",
+      "reason": "The changed line pads the fraction on the left with rjust, so `.5` parses as 5 microseconds, not 500000.",
+      "evidence": [
+        {
+          "at": "src/tomli/_re.py:83",
+          "quote": "micros = int(micros_str.rjust(6, \"0\")) if micros_str else 0"
+        }
+      ],
+      "notes": [
+        "evidence source: the change itself"
+      ],
+      "locations": [
+        "src/tomli/_re.py:83"
+      ]
+    }
   ]
 }

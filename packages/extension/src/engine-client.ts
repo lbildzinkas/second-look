@@ -3,19 +3,22 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import {
+  DRAFT_COMMENT_METHOD,
   ENGINE_PROTOCOL_VERSION,
   FETCH_LIBRARY_METHOD,
   INITIALIZE_METHOD,
   REVIEW_METHOD,
   REVIEW_STAGE_METHOD,
   SEND_REVIEW_METHOD,
+  type DraftComment,
+  type FindingRef,
   type InitializeResult,
   type PendingReview,
   type ReviewAgentChoice,
   type ReviewResult,
   type SentReview,
 } from '@second-look/engine';
-import { ProtocolError, SendProtocolError, isReviewResult, isSentReview } from './protocol.js';
+import { DraftProtocolError, ProtocolError, SendProtocolError, isDraftComment, isReviewResult, isSentReview } from './protocol.js';
 
 /**
  * Creates the engine process this client talks to. Tests inject their own
@@ -70,6 +73,9 @@ const REVIEW_TIMEOUT_MS = 120_000;
 
 /** How long one library fetch may take, its download and the agent judging the claim again. */
 const FETCH_LIBRARY_TIMEOUT_MS = 900_000;
+
+/** How long one draft may take: the agent's probe, and its run with its one retry. */
+const DRAFT_COMMENT_TIMEOUT_MS = 720_000;
 
 /** How long one send request may take before the engine is given up on. */
 const SEND_REVIEW_TIMEOUT_MS = 60_000;
@@ -247,6 +253,28 @@ export class EngineClient {
     );
     if (!isReviewResult(result)) {
       throw new ProtocolError();
+    }
+    return result;
+  }
+
+  /**
+   * Drafts a comment from one finding, sent only when the reviewer asks
+   * for it: the engine has the agent the settings picked write a short
+   * draft from the finding of its latest review of the pull request, and
+   * checks it. Resolves with the draft, which nothing sends; rejects with
+   * the engine's plain message, such as a draft the checks refused twice.
+   */
+  async draftComment(url: string, finding: FindingRef, agent?: ReviewAgentChoice): Promise<DraftComment> {
+    if (!this.handshaken) {
+      throw new Error('the engine has not completed its handshake yet');
+    }
+    const result = await this.request(
+      DRAFT_COMMENT_METHOD,
+      { url, finding, ...(agent !== undefined ? { agent } : {}) },
+      DRAFT_COMMENT_TIMEOUT_MS,
+    );
+    if (!isDraftComment(result)) {
+      throw new DraftProtocolError();
     }
     return result;
   }

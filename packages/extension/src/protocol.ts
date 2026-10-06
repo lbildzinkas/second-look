@@ -3,11 +3,13 @@ import {
   CLAIM_SOURCE_ORDER,
   CRITERION_VERDICT_KINDS,
   EVIDENCE_SOURCES,
+  FINDING_REF_KINDS,
   IMPORTANCE_ORDER,
   LIBRARY_ARCHIVES,
   REVIEW_RESULT_VERSION,
   type ChangeKind,
   type DiffLineKind,
+  type DraftComment,
   type EntityChange,
   type EntityKind,
   type FormattingOnlyStatus,
@@ -750,6 +752,34 @@ export class ProtocolError extends Error {
       `the engine's output is not a review result of version ${REVIEW_RESULT_VERSION}`,
     );
     this.name = 'ProtocolError';
+  }
+}
+
+/**
+ * Checks that a value read over the protocol is a draft comment: the
+ * finding it was drafted from, that finding's statement, the draft's
+ * text and who drafted it.
+ */
+export function isDraftComment(value: unknown): value is DraftComment {
+  if (!isRecord(value) || !isRecord(value['finding'])) return false;
+  const { kind, index } = value['finding'];
+  return (
+    isOneOf(kind, FINDING_REF_KINDS) &&
+    isNumber(index) &&
+    Number.isInteger(index) &&
+    index >= 0 &&
+    isString(value['statement']) &&
+    isNonEmptyString(value['body']) &&
+    isString(value['promptVersion']) &&
+    isAgentStamp(value['stamp'])
+  );
+}
+
+/** Error thrown when a draft's answer is not a draft comment. */
+export class DraftProtocolError extends Error {
+  constructor() {
+    super(`the engine's answer is not a draft comment`);
+    this.name = 'DraftProtocolError';
   }
 }
 
