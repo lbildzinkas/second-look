@@ -202,7 +202,7 @@ export async function run(): Promise<void> {
           criteriaHeading?: string;
         };
       });
-    deepStrictEqual(requests.length, 2);
+    deepStrictEqual(requests.length, 3);
     ok(requests[0] && requests[0].method === 'initialize');
     ok(requests[1] && requests[1].method === 'review');
     // The request carries the agent choice and the criteria heading the
@@ -215,6 +215,12 @@ export async function run(): Promise<void> {
       agent: { agent: 'pi', model: '', account: '' },
       criteriaHeading: 'Acceptance criteria',
     });
+    // The review's marks are read from the engine's local store as soon
+    // as the review is under way, so the tree can show what the reviewer
+    // had already marked — the round trip's third and last request, and
+    // nothing else reaches the engine.
+    ok(requests[2] && requests[2].method === 'reviewedMarks');
+    deepStrictEqual(requests[2]?.params, { url: PR_URL });
   } finally {
     delete process.env['SECOND_LOOK_ENGINE_ENTRY'];
     delete process.env['FAKE_ENGINE_RESULT'];
