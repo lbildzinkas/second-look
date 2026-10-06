@@ -39,7 +39,7 @@ describe('runCli review', () => {
     expect(code).toBe(0);
     expect(err.text).toBe('');
     const result = JSON.parse(out.text) as { version: number; parts: unknown[] };
-    expect(result.version).toBe(14);
+    expect(result.version).toBe(15);
     expect(result.parts).toHaveLength(11);
   });
 
@@ -56,7 +56,7 @@ describe('runCli review', () => {
       version: number;
       copies: { head: { path: string } };
     };
-    expect(result.version).toBe(14);
+    expect(result.version).toBe(15);
     expect(result.copies.head.path.startsWith(cacheDir)).toBe(true);
   });
 

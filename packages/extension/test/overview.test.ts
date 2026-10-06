@@ -4,12 +4,24 @@ import {
   OVERVIEW_VIEW_TYPE,
   OverviewPanel,
   claimWhere,
+  criteriaCounts,
   escapeHtml,
   overviewHtml,
   sanitiseUntrusted,
   stampText,
 } from '../src/overview.js';
-import { claimsResult, criteriaResult, fetchedResult, judgedResult, mixedResult, nonDefaultBranchResult, pipelineResult, storyResult, unexplainedResult } from './results.js';
+import {
+  claimsResult,
+  criteriaResult,
+  fetchedResult,
+  judgedResult,
+  mappedCriteriaResult,
+  mixedResult,
+  nonDefaultBranchResult,
+  pipelineResult,
+  storyResult,
+  unexplainedResult,
+} from './results.js';
 import { stub } from './vscode-stub.js';
 
 /** Text spelled in Unicode tag characters, which display as nothing. */
@@ -473,6 +485,100 @@ describe('the acceptance criteria on the overview', () => {
   });
 });
 
+describe('the criteria verdicts on the overview', () => {
+  it('gives each mapped criterion its verdict and reason, its code and tests as buttons that open the line, and the manual checks reported', () => {
+    const html = overviewHtml({ result: mappedCriteriaResult() }, 'N');
+
+    expect(html).toContain('<h2>Acceptance criteria <span class="stamp">1 not met · 1 met</span> <span class="stamp">pi · zai/glm-4.6 · criteria-mapping prompt v1</span></h2>');
+    expect(html).toContain('<span class="verdict">met</span></div><div class="why">The send loop retries three times, and a test proves it.</div>');
+    expect(html).toContain(
+      '<span class="label">Code</span><span><button type="button" class="pt cite" data-criterion="0" data-evidence="code" data-index="0">src/retry.ts:7</button>' +
+        ' <span class="cited">for (let attempt = 0; attempt &lt; 3; attempt++) {</span></span>',
+    );
+    expect(html).toContain(
+      '<span class="label">Tests</span><span><button type="button" class="pt cite" data-criterion="0" data-evidence="tests" data-index="0">test/retry.test.ts:12</button>',
+    );
+    expect(html).toContain(
+      '<span class="label">Manual check</span><span><q class="quote">Tested by hand: the third retry gave up.</q> <span class="cited">description, line 3</span></span>',
+    );
+    expect(html).toContain('<span class="verdict finding">not met</span></div><div class="why">Nothing logs a retry.</div>');
+    expect(html).toContain('<span class="label">Tests</span><span><span class="none">none</span></span>');
+    expect(html).toContain('<span class="label">Manual check</span><span><span class="cited">none reported in the pull request</span></span>');
+    expect(html).toContain('Each is judged against the change, its read-only copy and the manual checks the description reports, by pi · zai/glm-4.6 · criteria-mapping prompt v1');
+    expect(html).toContain('<span class="stg done">criteria mapped</span>');
+    expect(html).toContain('<li><b>Acceptance criteria</b> mapped by pi · zai/glm-4.6 · criteria-mapping prompt v1: every citation was re-read');
+  });
+
+  it("says why a criterion was dropped to can't tell, and why none is checked when the mapping fell back", () => {
+    const shown = mappedCriteriaResult();
+    const [first, second] = shown.criteria!.criteria;
+    const dropped: ReviewResult = {
+      ...shown,
+      criteria: {
+        ...shown.criteria!,
+        criteria: [
+          { ...first!, verdict: { kind: "can't tell", reason: 'It retries.', code: [], tests: [], manualChecks: [], recheck: 'the citation src/retry.ts:9 names a line src/retry.ts does not have' } },
+          second!,
+        ],
+      },
+    };
+    expect(overviewHtml({ result: dropped }, 'N')).toContain(
+      '<div class="why">dropped to can&#39;t tell: the citation src/retry.ts:9 names a line src/retry.ts does not have</div>',
+    );
+
+    const fellBack: ReviewResult = {
+      ...shown,
+      criteria: {
+        ...criteriaResult().criteria!,
+        mapping: { ...shown.criteria!.mapping!, outcome: 'fell back', detail: 'the agent gave no usable answer (timeout: no answer within 300 seconds)' },
+      },
+    };
+    const html = overviewHtml({ result: fellBack }, 'N');
+    expect(html).toContain('None is checked: the agent gave no usable answer (timeout: no answer within 300 seconds).');
+    expect(html).toContain('<span class="stg done">criteria not mapped</span>');
+    expect(html).not.toContain('class="evidence"');
+  });
+
+  it('renders a citation, a reason and a manual check as escaped text, never as markup', () => {
+    const shown = mappedCriteriaResult();
+    const [first, second] = shown.criteria!.criteria;
+    const hostile: ReviewResult = {
+      ...shown,
+      criteria: {
+        ...shown.criteria!,
+        criteria: [
+          {
+            ...first!,
+            verdict: {
+              kind: 'met',
+              reason: REMOTE.split('\n')[0]!,
+              code: [{ path: '<img src=x>.ts', line: 1, quote: REMOTE.split('\n')[2]! }],
+              tests: [],
+              manualChecks: [{ quote: `${REMOTE}\u200B`, line: 1 }],
+            },
+          },
+          second!,
+        ],
+      },
+    };
+
+    const html = overviewHtml({ result: hostile }, 'N');
+
+    expect(loadsOrLinks(html)).toBe(false);
+    expect(html).toContain('&lt;img src=x&gt;.ts:1');
+    expect(html).toContain('<span class="flag">zero-width characters</span>');
+  });
+
+  it('counts the verdicts in the order a reviewer reads them', () => {
+    const shown = { reason: 'r', code: [], tests: [], manualChecks: [] };
+    const criterion = (kind: 'met' | 'not met' | "can't tell" | 'needs manual check') => ({ quote: 'q', issue: 0, line: 1, verdict: { kind, ...shown } });
+    expect(criteriaCounts([criterion('met'), criterion("can't tell"), criterion('met'), criterion('needs manual check'), criterion('not met')])).toBe(
+      "1 not met · 1 needs manual check · 1 can't tell · 2 met",
+    );
+    expect(criteriaCounts(criteriaResult().criteria!.criteria)).toBe('');
+  });
+});
+
 describe('the unexplained changes on the overview', () => {
   it('lists both directions after the criteria: each unexplained part a button with its reason, then each described change quoted from where it is made', () => {
     const html = overviewHtml({ result: unexplainedResult() }, 'N');
@@ -539,7 +645,7 @@ describe('OverviewPanel', () => {
 
   it('opens nothing before a review, then one locked-down page that follows each result', () => {
     const opened: Part[] = [];
-    const overview = new OverviewPanel((part) => opened.push(part));
+    const overview = new OverviewPanel((part) => opened.push(part), () => undefined);
     expect(overview.open()).toBe(false);
     expect(stub.webviewPanels).toHaveLength(0);
 
@@ -560,7 +666,7 @@ describe('OverviewPanel', () => {
 
   it('opens a part the story links and a criterion’s issue on GitHub, and ignores any other message', () => {
     const opened: Part[] = [];
-    const overview = new OverviewPanel((part) => opened.push(part));
+    const overview = new OverviewPanel((part) => opened.push(part), () => undefined);
     const result = criteriaResult();
     overview.update(result);
     overview.open();
@@ -577,8 +683,28 @@ describe('OverviewPanel', () => {
     expect(stub.openedExternals).toEqual(['https://github.com/example-org/example-repo/issues/30']);
   });
 
+  it('opens a line a criterion cites in the head copy, and ignores evidence it does not have', () => {
+    const lines: [string, number][] = [];
+    const overview = new OverviewPanel(() => undefined, (path, line) => lines.push([path, line]));
+    overview.update(mappedCriteriaResult());
+    overview.open();
+    const panel = stub.webviewPanels[0]!;
+
+    panel.webview.receive({ type: 'openEvidence', criterion: 0, evidence: 'tests', index: 0 });
+    panel.webview.receive({ type: 'openEvidence', criterion: 0, evidence: 'code', index: 0 });
+    panel.webview.receive({ type: 'openEvidence', criterion: 0, evidence: 'code', index: 3 });
+    panel.webview.receive({ type: 'openEvidence', criterion: 1, evidence: 'code', index: 0 });
+    panel.webview.receive({ type: 'openEvidence', criterion: 0, evidence: 'manualChecks', index: 0 });
+    panel.webview.receive({ type: 'openEvidence', criterion: '0', evidence: 'code', index: 0 });
+
+    expect(lines).toEqual([
+      ['test/retry.test.ts', 12],
+      ['src/retry.ts', 7],
+    ]);
+  });
+
   it('brings the open page to the front at a part, and back to the story start', () => {
-    const overview = new OverviewPanel(() => undefined);
+    const overview = new OverviewPanel(() => undefined, () => undefined);
     overview.update(storyResult());
     overview.open();
     const panel = stub.webviewPanels[0]!;
@@ -592,7 +718,7 @@ describe('OverviewPanel', () => {
   });
 
   it('opens a fresh page after the reviewer closed it, and none once disposed', () => {
-    const overview = new OverviewPanel(() => undefined);
+    const overview = new OverviewPanel(() => undefined, () => undefined);
     overview.update(storyResult());
     overview.open();
     stub.webviewPanels[0]!.dispose();

@@ -8,6 +8,7 @@ import { ensureCopy } from './cache.js';
 import { readCi } from './ci.js';
 import { findClaims } from './claims.js';
 import { DEFAULT_CRITERIA_HEADING, readCriteria } from './criteria.js';
+import { mapCriteria } from './criteria-mapping.js';
 import { validateCoverage } from './coverage.js';
 import { parseDiff, type ParsedDiff } from './diff.js';
 import { GitHubClient, parsePullRequestUrl } from './github.js';
@@ -48,7 +49,7 @@ export interface ReviewOptions {
   cacheDir: string;
   /** The heading the acceptance criteria checklist sits under in a linked issue; "Acceptance criteria" when absent. */
   criteriaHeading?: string;
-  /** Asks the agent to group and rank the parts, write the story, compare the change with its description and issues, and list the claims and judge them too, after the plain pass; see {@link reviewChange}. */
+  /** Asks the agent to group and rank the parts, write the story, compare the change with its description and issues, list the claims and judge them, and map the acceptance criteria too, after the plain pass; see {@link reviewChange}. */
   agentStage?: AgentStageOptions;
 }
 
@@ -136,9 +137,10 @@ export async function fetchChange(url: string, options: ReviewOptions): Promise<
 
 /**
  * The agent stages, grouping, ranking, the story, the unexplained
- * changes, the claims then their verdicts, when a review asks the agent
- * to group and rank the parts, write the story, compare the change with
- * its description and linked issues, list the claims and judge them too.
+ * changes, the claims then their verdicts, and the criteria mapping, when
+ * a review asks the agent to group and rank the parts, write the story,
+ * compare the change with its description and linked issues, list the
+ * claims and judge them, and map the acceptance criteria to the change too.
  */
 export interface AgentStageOptions {
   adapter: AgentAdapter;
@@ -153,8 +155,10 @@ export interface AgentStageOptions {
   unexplained?: boolean;
   /** Whether the agent lists the claims; true when absent. */
   claims?: boolean;
-  /** Whether the agent judges the claims it listed, last; true when absent. */
+  /** Whether the agent judges the claims it listed; true when absent. */
   verdicts?: boolean;
+  /** Whether the agent maps the acceptance criteria to the change, last; true when absent. */
+  criteria?: boolean;
 }
 
 /** A stage of the review starting, with the result so far. */
@@ -163,7 +167,7 @@ export interface ReviewStage {
   running: string;
   /** The stage ends within this many milliseconds. */
   timeoutMs: number;
-  /** The result so far: the plain pass's, then the grouping, ranking, story, unexplained changes, claims and verdicts stages' in turn. */
+  /** The result so far: the plain pass's, then the grouping, ranking, story, unexplained changes, claims, verdicts and criteria stages' in turn. */
   result: ReviewResult;
 }
 
@@ -193,8 +197,9 @@ function coverageProblems(diff: ParsedDiff, parts: Part[]): string | undefined {
  * writes their story, see {@link storyStage}, while it compares the
  * change with its description and linked issues, see
  * {@link unexplainedStage}, while it lists the claims the change makes,
- * see {@link claimsStage}, and last while it judges them, see
- * {@link verdictsStage}.
+ * see {@link claimsStage}, while it judges them, see
+ * {@link verdictsStage}, and last while it maps the acceptance criteria
+ * to the change, see {@link criteriaStage}.
  */
 export async function reviewChange(
   input: ReviewInput,
@@ -228,9 +233,9 @@ export async function reviewChange(
   const ranked = await groupAndRank(plain, agentStage, input, parsed, files);
   const told = agentStage.story === false ? ranked : await storyStage(ranked, agentStage, input);
   const compared = agentStage.unexplained === false ? told : await unexplainedStage(told, agentStage, input);
-  if (agentStage.claims === false) return compared;
-  const claimed = await claimsStage(compared, agentStage, input);
-  return agentStage.verdicts === false ? claimed : verdictsStage(claimed, agentStage, input);
+  const claimed = agentStage.claims === false ? compared : await claimsStage(compared, agentStage, input);
+  const judged = agentStage.claims === false || agentStage.verdicts === false ? claimed : await verdictsStage(claimed, agentStage, input);
+  return agentStage.criteria === false ? judged : criteriaStage(judged, agentStage, input);
 }
 
 /**
@@ -442,4 +447,34 @@ async function verdictsStage(
   });
   const offered = await offerLibraryFetches(judged.claims, input.copies.head.path);
   return { ...shown, claims: { ...claims, ...judged, claims: offered } };
+}
+
+/**
+ * The criteria stage, last: the agent maps each acceptance criterion read
+ * from the linked issues to the change — met, partly met, not met, can't
+ * tell or needs manual check — citing the code that implements it and the
+ * tests that cover it, which the engine re-reads in the head copy, and
+ * quoting the manual checks the description reports, which the engine
+ * finds there. No criteria, or a change with no parts, need no mapping.
+ */
+async function criteriaStage(
+  shown: ReviewResult,
+  agentStage: AgentStageOptions,
+  input: ReviewInput,
+): Promise<ReviewResult> {
+  const criteria = shown.criteria;
+  if (criteria === undefined || criteria.criteria.length === 0 || shown.parts.length === 0) return shown;
+  const settings = agentStage.settings ?? DEFAULT_AGENT_SETTINGS;
+  agentStage.onStage?.({
+    running: `mapping the acceptance criteria with ${agentStage.adapter.agent}`,
+    timeoutMs: agentStageTimeoutMs(settings),
+    result: shown,
+  });
+  const mapped = await mapCriteria(shown.parts, criteria, {
+    adapter: agentStage.adapter,
+    settings,
+    root: input.copies.head.path,
+    pullRequest: input.pullRequest,
+  });
+  return { ...shown, criteria: { ...criteria, criteria: mapped.criteria, mapping: mapped.mapping } };
 }

@@ -19,7 +19,7 @@ import {
   SUBMIT_REVIEW_COMMAND,
   WHY_THIS_MATTERS_COMMAND,
 } from './commands.js';
-import { CHANGE_SCHEME, ChangeCopiesProvider, libraryUri } from './change-copies.js';
+import { CHANGE_SCHEME, ChangeCopiesProvider, changeUri, libraryUri } from './change-copies.js';
 import { openPartInDiffEditor, openWholeChangeInDiffEditor, PartMarker } from './diff-view.js';
 import {
   anchorOf,
@@ -206,7 +206,10 @@ class ReviewSession {
   /** The Send review page of the review under way, once the reviewer opens it. */
   private page: SendReviewPage | undefined;
   /** The review's overview: the story, the acceptance criteria, the claims, the description and who made each result. */
-  private readonly overview = new OverviewPanel((part) => void this.openPart(part));
+  private readonly overview = new OverviewPanel(
+    (part) => void this.openPart(part),
+    (path, line) => void this.openHeadLine(path, line),
+  );
   /** The review's findings, its refuted and unverifiable claims, as threads on the diff. */
   private readonly findings = new FindingThreads();
 
@@ -434,6 +437,17 @@ class ReviewSession {
     const line = cited.line - 1;
     await vscode.commands.executeCommand('vscode.open', libraryUri(verdict.library, cited.path), {
       selection: new vscode.Range(line, 0, line, 0),
+      preview: true,
+    });
+  }
+
+  /** Opens one line of the read-only head copy, such as the code or a test a criterion's verdict cites. */
+  async openHeadLine(path: string, line: number): Promise<void> {
+    const result = this.result;
+    if (result === undefined) return;
+    const at = line - 1;
+    await vscode.commands.executeCommand('vscode.open', changeUri('head', result.copies.head.commit, path), {
+      selection: new vscode.Range(at, 0, at, 0),
       preview: true,
     });
   }

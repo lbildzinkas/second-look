@@ -1,6 +1,7 @@
 import {
   CHECKED_VERDICT_KINDS,
   CLAIM_SOURCE_ORDER,
+  CRITERION_VERDICT_KINDS,
   EVIDENCE_SOURCES,
   IMPORTANCE_ORDER,
   LIBRARY_ARCHIVES,
@@ -572,24 +573,62 @@ function isLinkedIssue(value: unknown): boolean {
   );
 }
 
-/** One acceptance criterion: quoted from a linked issue's checklist, not checked. */
+/** A manual check the description reports: its quote and the description line it starts on. */
+function isManualCheck(value: unknown): boolean {
+  return isRecord(value) && isNonEmptyString(value['quote']) && isLine(value['line']);
+}
+
+/**
+ * A criterion's verdict: not checked, or mapped with its reason, the code
+ * and tests it cites in the head copy — never a CI log's lines — and the
+ * manual checks the description reports.
+ */
+function isCriterionVerdict(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (value['kind'] === 'not checked') return true;
+  const inHeadCopy = (cited: unknown): boolean => isCitation(cited) && (cited as { ciLog?: true }).ciLog === undefined;
+  return (
+    isOneOf(value['kind'], CRITERION_VERDICT_KINDS) &&
+    isString(value['reason']) &&
+    !/[\r\n]/.test(value['reason']) &&
+    Array.isArray(value['code']) &&
+    value['code'].every(inHeadCopy) &&
+    Array.isArray(value['tests']) &&
+    value['tests'].every(inHeadCopy) &&
+    Array.isArray(value['manualChecks']) &&
+    value['manualChecks'].every(isManualCheck) &&
+    isOptionalString(value['recheck'])
+  );
+}
+
+/** One acceptance criterion: quoted from a linked issue's checklist, with its verdict. */
 function isCriterion(value: unknown, issueCount: number): boolean {
   if (!isRecord(value)) return false;
-  const verdict = value['verdict'];
   return (
     isNonEmptyString(value['quote']) &&
     isNumber(value['issue']) &&
     value['issue'] < issueCount &&
     isLine(value['line']) &&
-    isRecord(verdict) &&
-    verdict['kind'] === 'not checked'
+    isCriterionVerdict(value['verdict'])
+  );
+}
+
+/** The mapping of the criteria to the change: mapped or fallen back, always stamped. */
+function isCriteriaMapping(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isString(value['promptVersion']) &&
+    isOneOf(value['outcome'], ['mapped', 'fell back'] as const) &&
+    isString(value['detail']) &&
+    isAgentStamp(value['stamp'])
   );
 }
 
 /**
  * The acceptance criteria read from the issues the pull request links:
  * read or unreadable, the issues with the heading their checklists were
- * read from under, and the criteria quoted and not checked.
+ * read from under, and the criteria quoted — every one mapped when the
+ * agent mapped them, and every one not checked otherwise.
  */
 function isCriteria(value: unknown): boolean {
   if (!isRecord(value)) return false;
@@ -598,7 +637,12 @@ function isCriteria(value: unknown): boolean {
   }
   if (!Array.isArray(value['issues']) || !value['issues'].every(isLinkedIssue)) return false;
   const issues = value['issues'];
-  return Array.isArray(value['criteria']) && value['criteria'].every((criterion) => isCriterion(criterion, issues.length));
+  const criteria = value['criteria'];
+  if (!Array.isArray(criteria) || !criteria.every((criterion) => isCriterion(criterion, issues.length))) return false;
+  const mapping = value['mapping'];
+  if (mapping !== undefined && !isCriteriaMapping(mapping)) return false;
+  const mapped = isRecord(mapping) && mapping['outcome'] === 'mapped';
+  return criteria.every((criterion) => ((criterion as { verdict: { kind: string } }).verdict.kind !== 'not checked') === mapped);
 }
 
 /** A one-line reason the companion shows. */

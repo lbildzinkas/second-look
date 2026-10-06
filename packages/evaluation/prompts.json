@@ -34,6 +34,11 @@
       "id": "unexplained",
       "version": "1",
       "files": ["packages/engine/src/unexplained.ts"]
+    },
+    {
+      "id": "criteria-mapping",
+      "version": "1",
+      "files": ["packages/engine/src/criteria-mapping.ts"]
     }
   ]
 }

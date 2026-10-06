@@ -69,7 +69,9 @@ shows), the recall and precision of the claims the agent lists against
 the hand lists, the accuracy and false-verified rate of the verdicts the
 agent gives the hand-labelled claims, the recall and precision of the
 unexplained changes the agent finds in each direction against the hand
-labels, and the claim checks over the
+labels, the accuracy, false-met rate and evidence recall of the verdicts
+the agent gives the acceptance criteria against the hand labels, and the
+claim checks over the
 hand-labelled verdicts (found, verdict, evidence, fetch offered), which
 the plain pass fails as expected failures, since it reports no claims;
 the stored baseline records them at those failing values. It reads the cases in
@@ -86,6 +88,8 @@ their plain parts listed by it, the cases tied to the verdicts prompt
 have their hand-labelled claims judged by it, the cases tied to the
 unexplained-changes prompt have their plain parts compared by it with
 their description and recorded linked issues, the cases tied to the
+criteria-mapping prompt have their recorded acceptance criteria mapped by
+it to their plain parts, the cases tied to the
 library verdicts prompt have every library fetch those verdicts offer
 pressed from their recorded downloads and each pressed claim judged again
 in the library's source, scored by the claim checks, and those rows are

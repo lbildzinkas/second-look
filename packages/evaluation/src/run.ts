@@ -2,6 +2,7 @@ import { appendFile, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   CLAIMS_PROMPT_ID,
+  CRITERIA_MAPPING_PROMPT_ID,
   DEFAULT_EFFORT,
   GROUPING_PROMPT_ID,
   LIBRARY_VERDICTS_PROMPT_ID,
@@ -13,6 +14,7 @@ import {
   findClaims,
   findUnexplained,
   judgeClaims,
+  mapCriteria,
   offerLibraryFetches,
   pressLibraryFetch,
   rankWithAgent,
@@ -31,6 +33,7 @@ import type { PressedClaim } from './claims.js';
 import type { PromptRegistry } from './prompts.js';
 import {
   CLAIM_SCORES,
+  CRITERIA_SCORES,
   GROUPING_AGREEMENT,
   RANK_SCORES,
   STORY_SCORES,
@@ -40,6 +43,7 @@ import {
   isClaimCheck,
   scoresOf,
   tallyCase,
+  tallyCriteria,
   tallyFinding,
   tallyJudging,
   tallyStory,
@@ -90,7 +94,7 @@ export interface RunResults {
   rows: ResultRow[];
   /** Cases whose review failed, with the engine's message. */
   failures: { case: string; error: string }[];
-  /** Cases whose agent grouping, ranking, story, unexplained changes, claims or verdicts fell back, with the prompt and why. */
+  /** Cases whose agent grouping, ranking, story, unexplained changes, claims, verdicts or criteria mapping fell back, with the prompt and why. */
   fallbacks?: { case: string; agent: string; prompt?: string; detail: string }[];
   /** How each agent, model and effort's ranking scored against the plain ranking over the same cases. */
   rankings?: RankingComparison[];
@@ -130,7 +134,7 @@ export const GROUPING_SCORES: readonly string[] = ['coverage', GROUPING_AGREEMEN
  */
 export const RANKING_SCORES: readonly string[] = RANK_SCORES;
 
-export { CLAIM_SCORES, STORY_SCORES, UNEXPLAINED_SCORES, VERDICT_SCORES };
+export { CLAIM_SCORES, CRITERIA_SCORES, STORY_SCORES, UNEXPLAINED_SCORES, VERDICT_SCORES };
 
 /**
  * The prompt an agent row's score belongs to: each agent prompt gives its
@@ -144,6 +148,7 @@ export function promptOfScore(row: { name: string; agent: string }): string | un
   if (CLAIM_SCORES.includes(row.name)) return CLAIMS_PROMPT_ID;
   if (VERDICT_SCORES.includes(row.name)) return VERDICTS_PROMPT_ID;
   if (UNEXPLAINED_SCORES.includes(row.name)) return UNEXPLAINED_PROMPT_ID;
+  if (CRITERIA_SCORES.includes(row.name)) return CRITERIA_MAPPING_PROMPT_ID;
   if (isClaimCheck(row.name)) return LIBRARY_VERDICTS_PROMPT_ID;
   return undefined;
 }
@@ -181,8 +186,8 @@ export interface RunOptions {
   now?: Date;
   /**
    * The agent that runs the agent prompts the cases are tied to, the
-   * grouping, ranking, story, claims and verdicts prompts; without one
-   * the run is model-free.
+   * grouping, ranking, story, unexplained-changes, claims, verdicts and
+   * criteria-mapping prompts; without one the run is model-free.
    */
   agent?: { adapter: AgentAdapter; settings?: AgentSettings };
   /** The agent prompts the agent runs, by id; every prompt a case is tied to when absent. */
@@ -244,11 +249,15 @@ export interface Run {
  * {@link VERDICT_SCORES}; and each case tied to the unexplained-changes
  * prompt has its plain parts compared with its description and recorded
  * linked issues by the agent, scored against the hand labels with its
- * {@link UNEXPLAINED_SCORES}. A grouping or ranking fallback scores what the
+ * {@link UNEXPLAINED_SCORES}; and each case tied to the criteria-mapping
+ * prompt has its recorded acceptance criteria mapped by the agent to its
+ * plain parts, head copy and description, scored against the hand
+ * labels with its {@link CRITERIA_SCORES}. A grouping or ranking fallback scores what the
  * reviewer would see, the plain parts; a story fallback fails the
  * story's checks, a claims fallback lists no claim, a verdicts
- * fallback leaves every claim not checked, and an unexplained-changes
- * fallback flags nothing. With `prompts`, the agent runs only those
+ * fallback leaves every claim not checked, an unexplained-changes
+ * fallback flags nothing, and a criteria-mapping fallback leaves every
+ * criterion not checked. With `prompts`, the agent runs only those
  * prompts. A model-free run makes no agent call, so its trace stays
  * empty.
  */
@@ -283,6 +292,7 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
   const claimTallies = new Map<string, { stamp: AgentStamp; tallies: Tally[] }>();
   const verdictTallies = new Map<string, { stamp: AgentStamp; tallies: Tally[] }>();
   const unexplainedTallies = new Map<string, { stamp: AgentStamp; tallies: Tally[] }>();
+  const criteriaTallies = new Map<string, { stamp: AgentStamp; tallies: Tally[] }>();
   const stampKey = (stamp: Stamp): string => JSON.stringify([stamp.agent, stamp.agentVersion, stamp.model, stamp.effort]);
   for (const evaluationCase of options.cases) {
     const input = await caseInput(evaluationCase);
@@ -323,7 +333,7 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
 
     if (runs(GROUPING_PROMPT_ID)) {
       try {
-        // The ranking, story, unexplained-changes, claims and verdicts prompts are scored on their own below, on the plain parts.
+        // The ranking, story, unexplained-changes, claims, verdicts and criteria-mapping prompts are scored on their own below, on the plain parts.
         const result = await reviewChange(input, {
           adapter: adapterFor(GROUPING_PROMPT_ID),
           ...settings,
@@ -331,6 +341,7 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
           story: false,
           unexplained: false,
           claims: false,
+          criteria: false,
         });
         const grouping = result.grouping.agent;
         if (grouping) {
@@ -422,6 +433,31 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
         unexplainedTallies.set(stampKey(stamp), group);
       } catch (error) {
         failedAgent(error, UNEXPLAINED_SCORES);
+      }
+    }
+
+    if (runs(CRITERIA_MAPPING_PROMPT_ID) && parts && parts.length > 0 && evaluationCase.expected.criteria && input.criteria) {
+      try {
+        const { criteria, mapping } = await mapCriteria(parts, input.criteria, {
+          adapter: adapterFor(CRITERIA_MAPPING_PROMPT_ID),
+          ...settings,
+          root: input.copies.head.path,
+          pullRequest: input.pullRequest,
+        });
+        if (mapping.outcome === 'fell back') {
+          results.fallbacks!.push({ case: evaluationCase.id, agent: mapping.stamp.agent, prompt: CRITERIA_MAPPING_PROMPT_ID, detail: mapping.detail });
+        }
+        const criteriaTally: Tally = {
+          ...tallyCase(input.diff, evaluationCase.expected, undefined),
+          criteria: tallyCriteria(evaluationCase.expected.criteria, criteria),
+        };
+        const stamp = stampFor(evaluationCase.record.prompts, mapping.stamp);
+        results.rows.push(...rowsOf(evaluationCase.id, criteriaTally, stamp, CRITERIA_SCORES));
+        const group = criteriaTallies.get(stampKey(stamp)) ?? { stamp: mapping.stamp, tallies: [] };
+        group.tallies.push(criteriaTally);
+        criteriaTallies.set(stampKey(stamp), group);
+      } catch (error) {
+        failedAgent(error, CRITERIA_SCORES);
       }
     }
 
@@ -531,6 +567,9 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
   }
   for (const { stamp, tallies: byAgent } of unexplainedTallies.values()) {
     results.rows.push(...rowsOf(ALL_CASES, addTallies(byAgent), stampFor([UNEXPLAINED_PROMPT_ID], stamp), UNEXPLAINED_SCORES));
+  }
+  for (const { stamp, tallies: byAgent } of criteriaTallies.values()) {
+    results.rows.push(...rowsOf(ALL_CASES, addTallies(byAgent), stampFor([CRITERIA_MAPPING_PROMPT_ID], stamp), CRITERIA_SCORES));
   }
 
   await writeFile(join(folder, 'results.json'), `${JSON.stringify(results, null, 2)}\n`);

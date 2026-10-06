@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { REVIEW_RESULT_VERSION, type NoiseAssessment, type ReviewResult } from '@second-look/engine';
 import { ProtocolError, isReviewResult, parseReviewResult } from '../src/index.js';
-import { REQUESTS_FETCH, claimsResult, criteriaResult, fetchedResult, judgedResult, offeredResult, pipelineResult, unexplainedResult } from './results.js';
+import {
+  REQUESTS_FETCH,
+  claimsResult,
+  criteriaResult,
+  fetchedResult,
+  judgedResult,
+  mappedCriteriaResult,
+  offeredResult,
+  pipelineResult,
+  unexplainedResult,
+} from './results.js';
 
 function sampleResult(): ReviewResult {
   return {
@@ -577,6 +587,47 @@ describe('isReviewResult for the acceptance criteria', () => {
   });
 });
 
+describe('isReviewResult for the criteria verdicts', () => {
+  type Loose = Record<string, unknown> & { criteria: Record<string, unknown> & { criteria: (Record<string, unknown> & { verdict: Record<string, unknown> })[]; mapping?: Record<string, unknown> } };
+  const mapped = (): Loose => JSON.parse(JSON.stringify(mappedCriteriaResult())) as Loose;
+
+  it('accepts criteria mapped with their verdicts and evidence, and criteria a fallen-back mapping left not checked', () => {
+    expect(isReviewResult(mappedCriteriaResult())).toBe(true);
+    const fellBack = JSON.parse(JSON.stringify(criteriaResult())) as Loose;
+    fellBack.criteria.mapping = { ...mapped().criteria.mapping!, outcome: 'fell back', detail: 'the agent gave no usable answer' };
+    expect(isReviewResult(fellBack)).toBe(true);
+    for (const kind of ['partly met', "can't tell", 'needs manual check']) {
+      const value = mapped();
+      value.criteria.criteria[1]!.verdict['kind'] = kind;
+      expect(isReviewResult(value)).toBe(true);
+    }
+  });
+
+  it('rejects a verdict that is malformed, cites a CI log, or does not match the mapping', () => {
+    const changed = (change: (value: Loose) => void): Loose => {
+      const value = mapped();
+      change(value);
+      return value;
+    };
+    const cases: unknown[] = [
+      changed((value) => (value.criteria.criteria[0]!.verdict['kind'] = 'verified')),
+      changed((value) => (value.criteria.criteria[0]!.verdict['reason'] = 'two\nlines')),
+      changed((value) => delete value.criteria.criteria[0]!.verdict['tests']),
+      changed((value) => (value.criteria.criteria[0]!.verdict['code'] = [{ path: 'src/retry.ts', line: 0, quote: 'x' }])),
+      changed((value) => (value.criteria.criteria[0]!.verdict['code'] = [{ path: 'build', line: 1, quote: 'x', ciLog: true }])),
+      changed((value) => (value.criteria.criteria[0]!.verdict['manualChecks'] = [{ quote: '', line: 3 }])),
+      changed((value) => (value.criteria.criteria[0]!.verdict['recheck'] = 3)),
+      changed((value) => (value.criteria.mapping!['outcome'] = 'judged')),
+      changed((value) => delete value.criteria.mapping!['stamp']),
+      // A mapped result leaves no criterion not checked, and an unmapped one checks none.
+      changed((value) => (value.criteria.criteria[1]!.verdict = { kind: 'not checked' })),
+      changed((value) => delete value.criteria['mapping']),
+      changed((value) => (value.criteria.mapping!['outcome'] = 'fell back')),
+    ];
+    for (const value of cases) expect(isReviewResult(value)).toBe(false);
+  });
+});
+
 describe('isReviewResult for the unexplained changes', () => {
   type Loose = Record<string, unknown> & {
     criteria: Record<string, unknown>;
@@ -632,6 +683,6 @@ describe('parseReviewResult', () => {
 
 describe('the versioned protocol is shared with the engine', () => {
   it('uses the same version constant', () => {
-    expect(REVIEW_RESULT_VERSION).toBe(14);
+    expect(REVIEW_RESULT_VERSION).toBe(15);
   });
 });

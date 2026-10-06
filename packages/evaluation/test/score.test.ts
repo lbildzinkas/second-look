@@ -1,9 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { parseDiff } from '@second-look/engine';
-import type { Claim, ClaimVerdict, DescribedChange, LinkedIssue, NoiseAssessment, Part, UnexplainedChanges } from '@second-look/engine';
-import type { ExpectedClaim, ExpectedResults, ExpectedUnexplained } from '../src/case.js';
+import type { AcceptanceCriterion, Claim, ClaimVerdict, DescribedChange, LinkedIssue, NoiseAssessment, Part, UnexplainedChanges } from '@second-look/engine';
+import type { ExpectedClaim, ExpectedCriterion, ExpectedResults, ExpectedUnexplained } from '../src/case.js';
 import type { PressedClaim } from '../src/claims.js';
-import { addTallies, sameClaim, sameDescribed, scoresOf, tallyCase, tallyFinding, tallyJudging, tallyStory, tallyUnexplained, verdictBeforeFetch } from '../src/score.js';
+import {
+  addTallies,
+  sameClaim,
+  sameDescribed,
+  scoresOf,
+  tallyCase,
+  tallyCriteria,
+  tallyFinding,
+  tallyJudging,
+  tallyStory,
+  tallyUnexplained,
+  verdictBeforeFetch,
+} from '../src/score.js';
 
 const DIFF = [
   'diff --git a/package-lock.json b/package-lock.json',
@@ -435,6 +447,60 @@ describe('the verdicts the agent gives', () => {
     expect(tallyJudging([{ wanted: library, got: got('unverifiable') }]).right).toBe(0);
     expect(tallyJudging([{ wanted: library, got: got('unverifiable', 'requests') }]).right).toBe(0);
     expect(tallyJudging([{ wanted: refuted, got: { kind: 'not checked' } }])).toEqual({ labelled: 1, right: 0, notVerified: 1, falseVerified: 0 });
+  });
+});
+
+describe('the criteria verdicts the agent gives', () => {
+  const LABELS: ExpectedCriterion[] = [
+    { text: 'A send  that fails is retried.', verdict: 'met', code: ['app/retry.py'], tests: ['tests/test_retry.py'], manual: [{ text: 'Tested by hand: the third retry gave up.', line: 3 }] },
+    { text: 'Each retry is logged.', verdict: 'partly met', alsoRight: ['not met'], code: ['app/retry.py', 'app/log.py'] },
+    { text: 'Retries take no longer than a second.', verdict: "can't tell" },
+  ];
+
+  const mapped = (kind: 'met' | 'not met' | "can't tell", evidence: Partial<{ code: string[]; tests: string[]; manual: string[] }> = {}): AcceptanceCriterion['verdict'] => ({
+    kind,
+    reason: 'r',
+    code: (evidence.code ?? []).map((path) => ({ path, line: 1, quote: 'x' })),
+    tests: (evidence.tests ?? []).map((path) => ({ path, line: 1, quote: 'x' })),
+    manualChecks: (evidence.manual ?? []).map((quote) => ({ quote, line: 3 })),
+  });
+
+  const criterion = (quote: string, verdict: AcceptanceCriterion['verdict']): AcceptanceCriterion => ({ quote, issue: 0, line: 1, verdict });
+
+  it('counts a verdict the labels accept as right, a met one they do not accept as false, and the labelled evidence the verdicts cite', () => {
+    const tally = tallyCriteria(LABELS, [
+      criterion('A send that fails is retried.', mapped('met', { code: ['app/retry.py'], tests: ['tests/other.py'], manual: ['the third retry gave up.'] })),
+      criterion('Each retry is logged.', mapped('not met', { code: ['app/log.py'] })),
+      criterion('Retries take no longer than a second.', mapped('met', { code: ['app/retry.py'] })),
+    ]);
+
+    expect(tally).toEqual({
+      labelled: 3,
+      right: 2,
+      notMet: 2,
+      falseMet: 1,
+      codeFiles: 3,
+      codeCited: 2,
+      testFiles: 1,
+      testsCited: 0,
+      manualChecks: 1,
+      manualCited: 1,
+    });
+    const scores = byName(scoresOf({ ...tallyCase(DIFF, { noise: {}, importantParts: [], claims: [] }, undefined), criteria: tally }));
+    expect(scores['criteria-accuracy']).toBeCloseTo(2 / 3);
+    expect(scores['criteria-false-met']).toBe(0.5);
+    expect(scores['criteria-code-recall']).toBeCloseTo(2 / 3);
+    expect(scores['criteria-tests-recall']).toBe(0);
+    expect(scores['criteria-manual-recall']).toBe(1);
+  });
+
+  it('counts a criterion left not checked, or not read, as wrong and citing nothing, and the plain pass gives no criteria score', () => {
+    const tally = tallyCriteria(LABELS, [criterion('A send that fails is retried.', { kind: 'not checked' })]);
+    expect(tally).toMatchObject({ labelled: 3, right: 0, falseMet: 0, codeCited: 0, manualCited: 0 });
+    expect(addTallies([{ ...tallyCase(DIFF, { noise: {}, importantParts: [], claims: [] }, undefined), criteria: tally }]).criteria).toEqual(tally);
+
+    const plain = scoresOf(tallyCase(DIFF, { ...EXPECTED, criteria: LABELS }, parts({})));
+    expect(plain.filter((score) => score.name.startsWith('criteria-'))).toEqual([]);
   });
 });
 

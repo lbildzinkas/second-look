@@ -112,9 +112,11 @@ export interface RpcServerDeps {
  * another while the agent compares the change with its description and
  * issues, then the result with the comparison in another while the agent
  * lists the claims, then the result with the claims in another while the
- * agent judges them, and the review's response carries the result with
- * the agent's parts, ranking, story, unexplained changes and judged
- * claims, or the plain parts and ranking with the reason they stayed.
+ * agent judges them, then the result with the verdicts in another while
+ * the agent maps the acceptance criteria, and the review's response
+ * carries the result with the agent's parts, ranking, story, unexplained
+ * changes, judged claims and mapped criteria, or the plain parts and
+ * ranking with the reason they stayed.
  */
 export async function runRpcServer(
   source: RpcLineSource,

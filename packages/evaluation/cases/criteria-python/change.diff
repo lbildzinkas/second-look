@@ -1,0 +1,64 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index c96cd8c..850119b 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,5 +1,10 @@
+ # Changelog
+ 
++## Unreleased
++
++- Added
++  - `load` accepts a path to the TOML file as well as a binary file object
++
+ ## 2.3.0
+ 
+ - Added
+diff --git a/src/tomli/_parser.py b/src/tomli/_parser.py
+index 3038891..4a9d7e3 100644
+--- a/src/tomli/_parser.py
++++ b/src/tomli/_parser.py
+@@ -4,6 +4,7 @@
+ 
+ from __future__ import annotations
+ 
++import os
+ import sys
+ from types import MappingProxyType
+ 
+@@ -134,8 +135,13 @@ class TOMLDecodeError(ValueError):
+         self.colno = colno
+ 
+ 
+-def load(__fp: IO[bytes], *, parse_float: ParseFloat = float) -> dict[str, Any]:
+-    """Parse TOML from a binary file object."""
++def load(
++    __fp: IO[bytes] | str | os.PathLike[str], *, parse_float: ParseFloat = float
++) -> dict[str, Any]:
++    """Parse TOML from a binary file object, or from the file a path names."""
++    if isinstance(__fp, (str, os.PathLike)):
++        with open(__fp, "rb") as f:
++            return load(f, parse_float=parse_float)
+     b = __fp.read()
+     try:
+         s = b.decode()
+diff --git a/tests/test_misc.py b/tests/test_misc.py
+index c2f6bb7..cb51ca6 100644
+--- a/tests/test_misc.py
++++ b/tests/test_misc.py
+@@ -26,6 +26,16 @@ class TestMiscellaneous(unittest.TestCase):
+                 actual = tomllib.load(bin_f)
+         self.assertEqual(actual, expected)
+ 
++    def test_load_path(self):
++        content = "one=1 \n two='two' \n arr=[]"
++        expected = {"one": 1, "two": "two", "arr": []}
++        with tempfile.TemporaryDirectory() as tmp_dir_path:
++            file_path = Path(tmp_dir_path) / "test.toml"
++            file_path.write_text(content)
++
++            actual = tomllib.load(file_path)
++        self.assertEqual(actual, expected)
++
+     def test_incorrect_load(self):
+         content = "one=1"
+         with tempfile.TemporaryDirectory() as tmp_dir_path:

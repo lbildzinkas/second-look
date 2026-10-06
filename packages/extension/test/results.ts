@@ -464,6 +464,42 @@ export function criteriaResult(copies?: CopyPaths): ReviewResult {
   };
 }
 
+/**
+ * The criteria result with the criteria mapped to the change: the retry
+ * criterion met by its code, a test and a manual check the description
+ * reports, the logging one not met, judged by Pi.
+ */
+export function mappedCriteriaResult(copies?: CopyPaths): ReviewResult {
+  const shown = criteriaResult(copies);
+  const [retried, logged] = shown.criteria!.criteria;
+  return {
+    ...shown,
+    pullRequest: { ...shown.pullRequest, description: 'Retries a failed send.\n\nTested by hand: the third retry gave up.' },
+    criteria: {
+      ...shown.criteria!,
+      criteria: [
+        {
+          ...retried!,
+          verdict: {
+            kind: 'met',
+            reason: 'The send loop retries three times, and a test proves it.',
+            code: [{ path: 'src/retry.ts', line: 7, quote: 'for (let attempt = 0; attempt < 3; attempt++) {' }],
+            tests: [{ path: 'test/retry.test.ts', line: 12, quote: 'expect(calls).toBe(3);' }],
+            manualChecks: [{ quote: 'Tested by hand: the third retry gave up.', line: 3 }],
+          },
+        },
+        { ...logged!, verdict: { kind: 'not met', reason: 'Nothing logs a retry.', code: [], tests: [], manualChecks: [] } },
+      ],
+      mapping: {
+        promptVersion: '1',
+        outcome: 'mapped',
+        detail: "every citation was re-read in the head copy and every manual check found in the description; one that did not match made a criterion can't tell",
+        stamp: { agent: 'pi', agentVersion: '0.86.1', model: 'zai/glm-4.6', effort: null, runAt: '2026-10-04T00:00:00.000Z' },
+      },
+    },
+  };
+}
+
 /** The result of a pull request into a non-default branch: no closing references, and the page says so. */
 export function nonDefaultBranchResult(copies?: CopyPaths): ReviewResult {
   const shown = criteriaResult(copies);
