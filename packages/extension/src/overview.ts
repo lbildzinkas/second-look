@@ -686,13 +686,15 @@ export function citedWhere(cited: { path: string; line: number; ciLog?: true }):
 /**
  * A checked verdict's evidence source, reason, citations, the library it
  * needs — with the library fetch offered for it, or the library source it
- * was judged against — and why the engine dropped it, when it did;
+ * was judged against — why the engine dropped it, when it did, and that
+ * the Verify this claim ask judged the claim alone, when it did;
  * nothing for a claim not checked.
  */
 function verdictDetail(claim: Claim): string {
   const { verdict } = claim;
   if (verdict.kind === 'not checked') return '';
   const lines = [`${verdict.source}: ${verdict.reason}`];
+  if (claim.asked === true) lines.push('judged singly by the Verify this claim ask');
   const { library, libraryFetch: offer } = verdict;
   const decompiled = library?.archive === 'decompiled NuGet package';
   for (const cited of verdict.evidence) {
@@ -737,7 +739,12 @@ function claimItem(claim: Claim, index: number, result: ReviewResult): string {
 function verdictsNote(claims: NonNullable<ReviewResult['claims']>): string {
   const judging = claims.judging;
   if (judging === undefined) return 'None is checked yet.';
-  if (judging.outcome === 'fell back') return `None is checked: ${judging.detail}.`;
+  if (judging.outcome === 'fell back') {
+    const asked = claims.claims.filter((claim) => claim.asked === true).length;
+    return asked === 0
+      ? `None is checked: ${judging.detail}.`
+      : `The judging pass fell back (${judging.detail}); the ${asked === 1 ? 'one checked verdict' : `${asked} checked verdicts`} came from the Verify this claim ask.`;
+  }
   return (
     `Each is judged against the change, its read-only copy and any failed check's CI log by ${stampText(judging.stamp, 'verdicts', judging.promptVersion)}; ` +
     'the refuted and unverifiable ones are findings, each a thread on the diff.'

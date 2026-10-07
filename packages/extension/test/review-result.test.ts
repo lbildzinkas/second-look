@@ -414,6 +414,7 @@ describe('isReviewResult for the claims', () => {
       withClaim((claim) => ({ ...claim, location: { kind: 'story', sentence: 2 } }), 3),
       withClaim((claim) => ({ ...claim, part: 7 })),
       withClaim((claim) => ({ ...claim, verdict: { kind: 'verified' } })),
+      withClaim((claim) => ({ ...claim, asked: 'yes' })),
       loose({ ...listed(), outcome: 'fell back' }),
       loose({ ...listed(), outcome: 'guessed' }),
       loose({ ...listed(), stamp: {} }),
@@ -438,6 +439,15 @@ describe('isReviewResult for the verdicts', () => {
     const fellBack = JSON.parse(JSON.stringify(claimsResult())) as Loose;
     fellBack.claims.judging = { ...judged().claims.judging as object, outcome: 'fell back' };
     expect(isReviewResult(fellBack)).toBe(true);
+  });
+
+  it('accepts a claim the verify ask judged singly while the judging fell back, fetched verdict and all, and only once marked', () => {
+    const fellBack = JSON.parse(JSON.stringify(claimsResult())) as Loose;
+    fellBack.claims.judging = { ...judged().claims.judging as object, outcome: 'fell back' };
+    fellBack.claims.claims[2] = { ...(JSON.parse(JSON.stringify(fetchedResult().claims!.claims[2])) as Record<string, unknown>), asked: true };
+    expect(isReviewResult(fellBack)).toBe(true);
+    delete (fellBack.claims.claims[2] as Record<string, unknown>).asked;
+    expect(isReviewResult(fellBack)).toBe(false);
   });
 
   it("rejects a verdict without its source or reason, verified from the model's memory, citing a bad line, or checked before any judging", () => {

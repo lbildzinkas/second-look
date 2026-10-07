@@ -130,6 +130,7 @@ describe('the verify ask', () => {
     const claim: Claim = {
       ...LISTED,
       source: 'reviewer',
+      asked: true,
       verdict: {
         kind: 'refuted',
         source: 'the change itself',
@@ -160,7 +161,7 @@ describe('the verify ask', () => {
 
     const answer = await askAboutPart('verify', { result: reviewed(root), part: 0, adapter: agent, claim: { index: 0 } });
 
-    expect(answer.claim).toMatchObject({ index: 0, claim: { source: 'comment', verdict: { kind: 'unverifiable', needsLibrary: 'httpx', libraryFetch: { library: 'httpx', pinnedVersion: '0.27.2', pinnedBy: 'requirements.txt' } } } });
+    expect(answer.claim).toMatchObject({ index: 0, claim: { source: 'comment', asked: true, verdict: { kind: 'unverifiable', needsLibrary: 'httpx', libraryFetch: { library: 'httpx', pinnedVersion: '0.27.2', pinnedBy: 'requirements.txt' } } } });
     expect(answer.sections.at(-1)).toEqual({
       heading: 'Library fetch',
       text:

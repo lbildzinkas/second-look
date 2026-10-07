@@ -42,7 +42,11 @@ export const REVIEW_RESULT_VERSION = 17 as const;
  * criterion's verdict — met, partly met, not met, can't tell or needs
  * manual check — with the code, the tests and the manual checks that
  * show it, and the criteria's mapping; version 16 added what changed
- * since the reviewer's last look.
+ * since the reviewer's last look; version 17 added the claim a verify
+ * ask judges — text the reviewer selected in the diff, a claim source of
+ * its own, or a claim they picked — marked on the claim as judged by
+ * the ask alone, so its checked verdict stands even when the claims
+ * pass's judging fell back.
  */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
@@ -221,7 +225,8 @@ export interface AskAnswer {
    * The claim a verify ask judged, with its verdict and any library fetch
    * it offers, and its index in the review's claims, where the engine's
    * latest review now holds it: in the picked claim's place, or after the
-   * others for text the reviewer selected.
+   * others for text the reviewer selected. The claim is marked `asked`,
+   * as the review's copy of it is.
    */
   claim?: { index: number; claim: Claim };
 }
@@ -640,7 +645,9 @@ export interface CheckLog {
  * agent listed them and the engine checked them: every claim quoted from
  * its source, located there and attached to a part, in the order of its
  * source's priority. Each starts as not checked, and keeps that verdict
- * until the agent judges it.
+ * until the claims pass judges it — or the Verify this claim ask judges
+ * the claim alone, which marks the claim `asked` and leaves the pass's
+ * own outcome unchanged.
  */
 export interface Claims {
   /** The version of the claims prompt. */
@@ -958,6 +965,12 @@ export interface Claim {
   /** The part the claim is about, by its index in the result's parts. */
   part: number;
   verdict: ClaimVerdict;
+  /**
+   * True when the Verify this claim ask judged this claim alone, so its
+   * checked verdict stands even when the claims pass's judging fell
+   * back; the pass's own outcome stays as it was.
+   */
+  asked?: true;
 }
 
 /**

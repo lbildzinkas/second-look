@@ -10,6 +10,7 @@ import {
   VERSION_MISMATCH_CODE,
 } from '../src/rpc.js';
 import type { AgentName } from '../src/agents.js';
+import type { ScriptedAgent } from './helpers.js';
 import { CLAIMS_INSTRUCTIONS } from '../src/claims.js';
 import { DRAFT_COMMENT_INSTRUCTIONS } from '../src/draft-comment.js';
 import { EXPLAIN_INSTRUCTIONS } from '../src/explain.js';
@@ -650,6 +651,7 @@ describe('runRpcServer fetching a library', () => {
     fetchImpl: typeof fetch,
     library?: string,
     inTurn = false,
+    agent?: ScriptedAgent,
   ): Promise<{ answer: (id: number) => Response; pypiBeforeFetch: number }> {
     const written: string[] = [];
     let index = 0;
@@ -682,7 +684,7 @@ describe('runRpcServer fetching a library', () => {
           answered.get(id as number)!();
         },
       },
-      { cacheDir: libraryCacheDir, fetch: fetchImpl, agent: { adapterFor: () => libraryAgent(library), defaultAgent: 'pi' } },
+      { cacheDir: libraryCacheDir, fetch: fetchImpl, agent: { adapterFor: () => agent ?? libraryAgent(library), defaultAgent: 'pi' } },
     );
     const responses = written.map((line) => JSON.parse(line) as Response);
     return { answer: (id) => responses.find((response) => response.id === id)!, pypiBeforeFetch };
@@ -894,6 +896,54 @@ describe('runRpcServer fetching a library', () => {
     const claims = (answer(4).result as ReviewResult).claims!.claims;
     expect(claims.map((claim) => claim.quote)).toEqual([CLAIM, 'def fresh():']);
     expect(claims[1]!.verdict).toMatchObject({ kind: 'refuted', source: 'library source at the pinned version', library: { library: 'httpx' } });
+  });
+
+  it('marks a claim the verify ask judged alone though the review\u2019s judging fell back, and its pressed fetch lands', async () => {
+    state = transports();
+    let verdictRuns = 0;
+    const agent = answeringAgent((run) => {
+      if (run.instructions === CLAIMS_INSTRUCTIONS) return { claims: [{ source: 'description', quote: CLAIM, file: null, line: null, part: 'p1' }] };
+      if (run.instructions === VERDICTS_INSTRUCTIONS) {
+        verdictRuns += 1;
+        if (verdictRuns <= 2) return {};
+        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: 'It turns on httpx.', evidence: [], library: 'httpx' }] };
+      }
+      if (run.instructions === LIBRARY_VERDICTS_INSTRUCTIONS) {
+        return {
+          verdict: 'refuted',
+          source: 'library source at the pinned version',
+          reason: 'A client follows no redirect by default.',
+          evidence: [{ file: 'httpx/_client.py', line: 2, quote: 'def __init__(self, follow_redirects: bool = False):' }],
+        };
+      }
+      return {};
+    });
+    const { answer } = await serveInTurn(
+      [
+        request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+        request('review', { url: PR_7_URL, token: TOKEN }, 2),
+        request('ask', { url: PR_7_URL, ask: 'verify', part: 0, claim: { index: 0 } }, 3),
+        request('fetchLibrary', { url: PR_7_URL, claim: 0 }, 4),
+      ],
+      state.fetch,
+      undefined,
+      true,
+      agent,
+    );
+
+    // The review listed the claim but its judging fell back, so every claim stayed not checked.
+    const reviewed = answer(2).result as ReviewResult;
+    expect(reviewed.claims!.judging).toMatchObject({ outcome: 'fell back' });
+    expect(reviewed.claims!.claims.every((claim) => claim.verdict.kind === 'not checked')).toBe(true);
+    // The ask judged the claim alone, marked on it.
+    expect(answer(3).result).toMatchObject({
+      claim: { index: 0, claim: { asked: true, verdict: { kind: 'unverifiable', libraryFetch: { library: 'httpx' } } } },
+    });
+    // The pressed fetch answers with the whole review: the pass still fell back, and the fetched verdict lands on the marked claim.
+    expect(answer(4).error).toBeUndefined();
+    const fetched = answer(4).result as ReviewResult;
+    expect(fetched.claims!.judging).toMatchObject({ outcome: 'fell back' });
+    expect(fetched.claims!.claims[0]).toMatchObject({ asked: true, verdict: { kind: 'refuted', source: 'library source at the pinned version', library: { library: 'httpx' } } });
   });
 
   it('refuses a verify ask with no claim or a claim off the part, and a claim on an ask that takes none', async () => {

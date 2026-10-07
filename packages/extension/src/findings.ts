@@ -45,7 +45,8 @@ function citationLabel(path: string, library: FetchedLibrary): string {
  * companion offers for it, a link the reviewer presses, or the library
  * source the verdict was judged against, each cited file a link that
  * opens it read-only and labelled when it is unproven or decompiled — why the engine dropped the verdict when it did,
- * where the claim is made, and the link that drafts a comment from the
+ * where the claim is made, that the Verify this claim ask judged it
+ * alone when it did, and the link that drafts a comment from the
  * finding. Every quote, reason, name and path came
  * from the pull request, the agent or the package index, so each is
  * escaped; `index` is the claim's index in the result's claims, which the
@@ -96,6 +97,7 @@ export function findingBody(claim: Claim, index = 0): string {
     if (verdict.noLibraryFetch !== undefined) lines.push('', escapeMarkdown(verdict.noLibraryFetch));
   }
   if (verdict.recheck !== undefined) lines.push('', `Dropped to unverifiable: ${escapeMarkdown(verdict.recheck)}.`);
+  if (claim.asked === true) lines.push('', 'Judged singly by the **Verify this claim** ask.');
   lines.push('', `Claim made in ${escapeMarkdown(claimWhere(claim))}.`);
   lines.push('', `${commandLink('Draft comment', DRAFT_COMMENT_COMMAND, [{ kind: 'claim', index }])} — you edit the draft, then add it to the pending review or discard it.`);
   return lines.join('\n');

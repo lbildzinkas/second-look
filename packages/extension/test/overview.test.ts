@@ -337,6 +337,23 @@ describe('the verdicts on the overview', () => {
     expect(html).toContain('<span class="stg done">no verdicts</span>');
   });
 
+  it('says a checked verdict came from the verify ask when the judging fell back', () => {
+    const listed = claimsResult().claims!;
+    const fetched = fetchedResult().claims!.claims[2]!;
+    const fellBack: ReviewResult = {
+      ...claimsResult(),
+      claims: {
+        ...listed,
+        judging: { ...judgedResult().claims!.judging!, outcome: 'fell back', detail: 'the agent gave no usable answer' },
+        claims: listed.claims.map((claim, index) => (index === 2 ? { ...claim, asked: true as const, verdict: fetched.verdict } : claim)),
+      },
+    };
+    const html = overviewHtml({ result: fellBack }, 'N');
+    expect(html).toContain('The judging pass fell back (the agent gave no usable answer); the one checked verdict came from the Verify this claim ask.');
+    expect(html).toContain('<div class="why">judged singly by the Verify this claim ask</div>');
+    expect(html).toContain('<span class="verdict finding">refuted</span>');
+  });
+
   it('renders a reason and a citation as escaped text, never as markup', () => {
     const shown = judgedResult();
     const [first, ...rest] = shown.claims!.claims;

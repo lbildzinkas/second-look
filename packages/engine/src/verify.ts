@@ -12,8 +12,10 @@ import type { AskReply } from './asks.js';
  * alone — the verdicts prompt, its citations re-read in the head copy,
  * and the library fetch offer when the claim needs a library's source,
  * which downloads nothing until the reviewer presses it (ADR 0003). The
- * judged claim joins the review's claims, so its verdict shows on the
- * diff like any other, and its fetch is pressed from there.
+ * judged claim joins the review's claims, marked as judged by this ask
+ * so its verdict stands even when the claims pass's judging fell back,
+ * and its verdict shows on the diff like any other, with its fetch
+ * pressed from there.
  */
 
 /** The longest selection the companion verifies as a claim, as on one line. */
@@ -110,7 +112,8 @@ function citedLines(claim: Claim): PartCitation[] {
  * Runs the judging pass on one claim alone, against the change, the head
  * copy and the failed checks' CI logs, then offers its library fetch when
  * it needs one the head copy pins or the agent named: the claim judged,
- * or why it was not, stamped.
+ * marked `asked` so its verdict stands even when the claims pass's
+ * judging fell back, or why it was not, stamped.
  */
 export async function judgeOneClaim(
   parts: readonly Part[],
@@ -121,7 +124,7 @@ export async function judgeOneClaim(
   const { stamp, detail } = judged.judging;
   if (judged.judging.outcome === 'fell back') return { detail, stamp };
   const [offered] = await offerLibraryFetches(judged.claims, options.root);
-  return { claim: offered!, stamp };
+  return { claim: { ...offered!, asked: true }, stamp };
 }
 
 /**
