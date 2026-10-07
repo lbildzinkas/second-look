@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { deflateSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { DOTNET_XREF_MAP, findDocLinks, pythonDocsUrls, pythonImports, sphinxInventoryUrls } from '../src/doc-links.js';
 import {
@@ -26,6 +27,14 @@ function headCopy(files: Record<string, string>): string {
     writeFileSync(join(root, path), text);
   }
   return root;
+}
+
+/** A Sphinx inventory of the given version, as a documentation site serves it, listing each api as a class of its own. */
+function sphinxInventory(version: string, apis: readonly string[]): Buffer {
+  return Buffer.concat([
+    Buffer.from(`# Sphinx inventory version 2\n# Project: many\n# Version: ${version}\n# The remainder of this file is compressed using zlib.\n`),
+    deflateSync(Buffer.from(apis.map((api) => `${api} py:class 1 api.html#$ ${api}`).join('\n'))),
+  ]);
 }
 
 /** A part adding every line of a new file. */
@@ -99,6 +108,26 @@ describe('findDocLinks for Python', () => {
     const links = await findDocLinks([added('app/model.py', MODEL)], { headRoot, fetch: recordedFetch({ 'https://pypi.org/pypi/attrs/23.1.0/json': 404 }).fetch });
     expect(links.links).toEqual([]);
     expect(links.notes).toEqual(['attrs 23.1.0: PyPI has no release attrs 23.1.0']);
+  });
+
+  it('names how many APIs are left out when a change uses more than the cap lists', async () => {
+    const linked = Array.from({ length: 62 }, (_, index) => `many.Api${index}`);
+    const model = ['import many', '', 'def use() -> None:']
+      .concat(linked.map((api) => `    ${api}()`), Array.from({ length: 5 }, (_, index) => `    many.Unmapped${index}()`))
+      .join('\n');
+    const headRoot = headCopy({ 'requirements.txt': 'many==1.0.0\n', 'app/many.py': model });
+    const transport = recordedFetch({
+      'https://pypi.org/pypi/many/1.0.0/json': Buffer.from(JSON.stringify({ info: { project_urls: { Documentation: 'https://many.example.org/' } } })),
+      'https://many.example.org/en/1.0.0/objects.inv': sphinxInventory('1.0', linked),
+    });
+    const links = await findDocLinks([added('app/many.py', model)], { headRoot, fetch: transport.fetch });
+    expect(links.links.map((link) => link.api)).toEqual(linked.slice(0, 60));
+    expect(links.links[0]).toMatchObject({ url: 'https://many.example.org/en/1.0.0/api.html#many.Api0', library: 'many', version: '1.0.0', from: 'inventory' });
+    expect(links.unlinked).toEqual([]);
+    expect(links.notes).toEqual([
+      'many 1.0.0: read the Sphinx inventory at https://many.example.org/en/1.0.0/objects.inv, which documents 1.0',
+      'At most 60 library APIs are listed, so 2 with a link and 5 without one are left out',
+    ]);
   });
 
   it('reads the names a file imports, aliases and parenthesised lists included', () => {
@@ -188,6 +217,40 @@ describe('findDocLinks for C#', () => {
         uses: [{ path: 'src/Reader.cs', line: 11, name: 'RecyclableMemoryStreamManager' }],
       },
     ]);
+  });
+
+  it('takes the one package a using names however often a multi-target lock file and its project file pin it', async () => {
+    const reader = READER.replace('using Microsoft.Extensions.Logging;\n', '').replace(', ILogger logger', '');
+    const lockHash = 'rW2McdPfbGlIqItnDDx0drRXbFXFzR9kZ0rGIlXcT7IQy1XnebOa/cGwFahCbvLZy0kRwPjMRzvnvZzXTvJbPg==';
+    const lockFile = JSON.stringify({
+      version: 1,
+      dependencies: {
+        'net8.0': { 'Microsoft.IO.RecyclableMemoryStream': { type: 'Direct', requested: '[3.0.1, )', resolved: '3.0.1', contentHash: lockHash } },
+        'net9.0': { 'Microsoft.IO.RecyclableMemoryStream': { type: 'Direct', requested: '[3.0.1, )', resolved: '3.0.1', contentHash: lockHash } },
+      },
+    });
+    const project = [
+      '<Project Sdk="Microsoft.NET.Sdk">',
+      '  <PropertyGroup><TargetFrameworks>net8.0;net9.0</TargetFrameworks></PropertyGroup>',
+      '  <ItemGroup>',
+      '    <PackageReference Include="microsoft.io.recyclablememorystream" Version="3.0.1" />',
+      '  </ItemGroup>',
+      '</Project>',
+    ].join('\n');
+    const headRoot = headCopy({ 'src/Reader.cs': reader, 'src/BlobTool.csproj': project, 'src/packages.lock.json': lockFile });
+    const links = await findDocLinks([added('src/Reader.cs', reader)], { headRoot, fetch: recordedFetch({ [DOTNET_XREF_MAP]: recorded('dotnet-xrefmap-excerpt.json.gz') }).fetch });
+    expect(links.links.map((link) => link.api)).toEqual(['System.IO.Stream', 'System.IO.Path.Combine', 'System.IO.Stream.CopyTo']);
+    expect(links.unlinked).toEqual([
+      {
+        api: 'Microsoft.IO.RecyclableMemoryStreamManager',
+        library: 'Microsoft.IO.RecyclableMemoryStream',
+        version: '3.0.1',
+        pinnedBy: 'src/packages.lock.json',
+        ecosystem: 'NuGet',
+        uses: [{ path: 'src/Reader.cs', line: 11, name: 'RecyclableMemoryStreamManager' }],
+      },
+    ]);
+    expect(links.notes).toEqual([`.NET: read the API reference's cross-reference map, ${DOTNET_XREF_MAP}`]);
   });
 
   it('looks for nothing when no project names a target framework and nothing is pinned', async () => {

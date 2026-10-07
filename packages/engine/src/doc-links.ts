@@ -342,10 +342,10 @@ async function dotnetLinks(parts: readonly Part[], headRoot: string, fetchFn: ty
     for (const reference of file.references) {
       if (file.declared.has(reference.chain.split('.')[0]!)) continue;
       if (candidates(file, reference.chain).some((uid) => link(file, uid, reference.use))) continue;
-      // A type the map does not hold, under the one using a pinned package is named within: that package's API, linked by no inventory.
+      // A type the map does not hold, of the one package a using names, pinned however many times: that package's API, linked by no inventory.
       if (!reference.typeLike || reference.chain.includes('.')) continue;
       const holders = file.usings.flatMap((using) => pins.filter((pin) => packageHolds(pin, using) || packageWithin(pin, using)).map((pin) => ({ using, pin })));
-      if (holders.length !== 1) continue;
+      if (new Set(holders.map(({ pin }) => pin.name.toLowerCase())).size !== 1) continue;
       const { using, pin } = holders[0]!;
       add(unlinked, { api: `${using}.${reference.chain}`, library: pin.name, version: pin.version, pinnedBy: pin.pinnedBy, ecosystem: 'NuGet', uses: [] }, reference.use);
     }
@@ -413,6 +413,11 @@ export async function findDocLinks(parts: readonly Part[], options: DocLinksOpti
 
   const shown = links.slice(0, MAX_APIS);
   const rest = unlinked.slice(0, Math.max(0, MAX_APIS - shown.length));
+  const leftOut = [
+    ...(links.length - shown.length > 0 ? [`${links.length - shown.length} with a link`] : []),
+    ...(unlinked.length - rest.length > 0 ? [`${unlinked.length - rest.length} without one`] : []),
+  ];
+  if (leftOut.length > 0) notes.push(`At most ${MAX_APIS} library APIs are listed, so ${leftOut.join(' and ')} are left out`);
   if (options.agent === undefined || rest.length === 0) return { links: shown, unlinked: rest, notes };
   options.onSuggesting?.();
   const suggested = await suggestDocLinks(rest, { ...options.agent, root: options.headRoot });
