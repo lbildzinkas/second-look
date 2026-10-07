@@ -202,6 +202,49 @@ export interface AgentCall {
 /** The trace file in a run folder: one JSON line per agent call. */
 export const TRACE_FILE = 'trace.jsonl';
 
+/** One combination a run tested (issue 3): who answered, when, and how it scored over all the run's cases. */
+export interface TestedCombination {
+  agent: string;
+  agentVersion: string;
+  model: string;
+  effort: string;
+  /** When the run started, as an ISO date. */
+  runDate: string;
+  /** The combination's scores over all the run's cases, each with the prompt it belongs to; a model-free score names none. */
+  scores: { prompt?: string; name: string; value: number; note?: string }[];
+}
+
+/**
+ * Every combination a run's results tested: each agent, version, model
+ * and effort that answered, with the run's date and the scores stamped
+ * with it over all the cases. The plain pass tests no model, and a run
+ * that ended before naming its model leaves its stamp incomplete, so
+ * neither is listed — the same rule the baseline compares by.
+ */
+export function testedCombinations(results: RunResults): TestedCombination[] {
+  const combinations = new Map<string, TestedCombination>();
+  for (const row of results.rows) {
+    if (row.case !== ALL_CASES || row.agent === NO_AGENT || row.model === '') continue;
+    const key = JSON.stringify([row.agent, row.agentVersion, row.model, row.effort]);
+    const prompt = promptOfScore(row);
+    const score = { ...(prompt === undefined ? {} : { prompt }), name: row.name, value: row.value, ...(row.note ? { note: row.note } : {}) };
+    const combination = combinations.get(key);
+    if (combination === undefined) {
+      combinations.set(key, {
+        agent: row.agent,
+        agentVersion: row.agentVersion,
+        model: row.model,
+        effort: row.effort,
+        runDate: row.runDate,
+        scores: [score],
+      });
+    } else {
+      combination.scores.push(score);
+    }
+  }
+  return [...combinations.values()];
+}
+
 /** Appends one agent call to the run's local trace. */
 export async function traceAgentCall(runFolder: string, call: AgentCall): Promise<void> {
   await appendFile(join(runFolder, TRACE_FILE), `${JSON.stringify(call)}\n`);

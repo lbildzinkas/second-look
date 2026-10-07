@@ -31,6 +31,7 @@ export * from './agents.js';
 export * from './probe.js';
 export * from './grouping.js';
 export * from './ranking.js';
+export * from './tested-models.js';
 export * from './story.js';
 export * from './claims.js';
 export * from './unexplained.js';

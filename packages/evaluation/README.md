@@ -118,6 +118,8 @@ Every case is reviewed by the plain pass, stamped `none` for the agent, its vers
 
 For each agent, model and effort, `rankings` in `results.json` sets the agent ranking's `rank-median` and `rank-top-3` beside the plain ranking's over the cases it ranked, and the report prints it as a `RANKING` line: the agent ranking **matches or beats the plain ranking** when neither score is worse, and **falls behind** otherwise. This is the score behind `TESTED_RANKINGS` in `packages/engine/src/ranking.ts`, where the agent ranking is the default: add an agent, model and effort there only from a run that matched or beat the plain ranking, and record the run here.
 
+The report also lists every combination the run tested, one `TESTED` line each: the agent, its version, the model, the effort, the run's date and the scores stamped with that combination over all the cases, each named with the prompt it belongs to. A model-free run prints none, and a run whose agent ended before naming its model leaves its rows out, the same stamp rule the baseline compares by. The current list of every tested combination is published in [docs/tested-models.md](../../docs/tested-models.md) — the `TESTED_MODELS` constant in `packages/engine/src/tested-models.ts`, which the companion's settings warning reads — and this file's Baseline section records the runs behind it.
+
 Coverage is a hard gate: the run exits 1 when any coverage row, plain or agent, is below 100%.
 
 ## Baseline

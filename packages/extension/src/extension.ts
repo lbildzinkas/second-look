@@ -44,7 +44,7 @@ import { DocLinkHovers } from './doc-hover.js';
 import { OverviewPanel, claimWhere } from './overview.js';
 import { partClaims, selectionInPart } from './asked-claim.js';
 import { AgentStatusBar } from './agent-status.js';
-import { readAgentSettings, reviewAgentChoice } from './agent-settings.js';
+import { readAgentSettings, reviewAgentChoice, untestedModelWarning } from './agent-settings.js';
 import {
   ASK_KINDS,
   ASKS,
@@ -1063,6 +1063,9 @@ export function activate(
   const session = new ReviewSession(tree, treeView, copies, marker, comments, deps);
   const agentStatusBar = new AgentStatusBar(deps.env);
   agentStatusBar.refresh();
+  // The untested-combination warning (issue 3): once for the settings the
+  // reviewer arrives with, then whenever they choose an agent or model.
+  warnUntestedModelChoice();
   context.subscriptions.push(
     treeView,
     treeView.onDidChangeCheckboxState((event) => void session.markParts(event.items)),
@@ -1070,6 +1073,14 @@ export function activate(
     comments,
     { dispose: () => session.dispose() },
     agentStatusBar,
+    vscode.workspace.onDidChangeConfiguration((change) => {
+      if (
+        change.affectsConfiguration('second-look.agent') ||
+        change.affectsConfiguration('second-look.agentModel')
+      ) {
+        warnUntestedModelChoice();
+      }
+    }),
     vscode.workspace.registerFileSystemProvider(CHANGE_SCHEME, copies, {
       isCaseSensitive: true,
       isReadonly: new vscode.MarkdownString(
@@ -1119,4 +1130,15 @@ export function activate(
 export function deactivate(): void {
   // Nothing else to do: the engine process was pushed onto the
   // subscriptions when the session was created.
+}
+
+/**
+ * Warns (issue 3) that the settings pick an agent and model the
+ * companion's evaluation never tested, without blocking anything: shown
+ * when the reviewer chooses the combination, and once here for the
+ * settings they arrive with. Quiet when the choice is tested.
+ */
+function warnUntestedModelChoice(): void {
+  const warning = untestedModelWarning(readAgentSettings());
+  if (warning !== undefined) void vscode.window.showWarningMessage(warning);
 }

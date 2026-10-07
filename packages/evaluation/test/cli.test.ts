@@ -16,10 +16,10 @@ import {
 } from '../../engine/test/helpers.js';
 import { hasStamp } from '../src/baseline.js';
 import { loadCase, loadCases } from '../src/case.js';
-import { runCli } from '../src/cli.js';
+import { report, runCli } from '../src/cli.js';
 import { recordCase } from '../src/record.js';
 import { ALL_CASES, NO_AGENT, TRACE_FILE, traceAgentCall } from '../src/run.js';
-import type { RunResults } from '../src/run.js';
+import type { ResultRow, RunResults } from '../src/run.js';
 
 const BASELINE = fileURLToPath(new URL('../baseline.json', import.meta.url));
 const REPOSITORY_CASES = fileURLToPath(new URL('../cases', import.meta.url));
@@ -270,5 +270,49 @@ describe('traceAgentCall', () => {
     await traceAgentCall(scratch, { ...call, durationMs: 13 });
     const lines = readFileSync(join(scratch, TRACE_FILE), 'utf8').trim().split('\n');
     expect(lines.map((line) => JSON.parse(line) as unknown)).toEqual([call, { ...call, durationMs: 13 }]);
+  });
+});
+
+describe('report', () => {
+  /** A row as a run writes it, with the whole stamp. */
+  function row(overrides: Partial<ResultRow>): ResultRow {
+    return {
+      case: ALL_CASES,
+      name: 'coverage',
+      value: 1,
+      better: 'higher',
+      companionVersion: '0.1.0',
+      promptVersions: {},
+      agent: NO_AGENT,
+      agentVersion: NO_AGENT,
+      model: NO_AGENT,
+      effort: NO_AGENT,
+      runDate: '2026-10-07T15:08:38.849Z',
+      ...overrides,
+    };
+  }
+
+  it('lists every tested combination with its agent, version, model, effort, run date and scores', () => {
+    const out = report({
+      rows: [
+        row({ agent: 'pi', agentVersion: '0.86.1', model: 'zai-coding-cn/glm-5.3', effort: 'default' }),
+        row({ case: 'example-7', name: 'rank-top-3', value: 0.9, agent: 'pi', agentVersion: '0.86.1', model: 'zai-coding-cn/glm-5.3', effort: 'default' }),
+      ],
+      failures: [],
+    });
+    expect(out).toContain(
+      'TESTED pi 0.86.1 zai-coding-cn/glm-5.3 default (run 2026-10-07T15:08:38.849Z): grouping: coverage 1',
+    );
+  });
+
+  it('prints one TESTED line per combination, and none for a model-free run', () => {
+    const pi = { agent: 'pi', agentVersion: '0.86.1', model: 'zai-coding-cn/glm-5.3', effort: 'default' };
+    const claude = { agent: 'claude-code', agentVersion: '2.0.0', model: 'sonnet', effort: 'default' };
+    const lines = report({ rows: [row(pi), row(claude)], failures: [] }).trim().split('\n');
+    const tested = lines.filter((line) => line.startsWith('TESTED'));
+    expect(tested).toHaveLength(2);
+    expect(tested[0]).toMatch(/^TESTED pi /);
+    expect(tested[1]).toMatch(/^TESTED claude-code /);
+    expect(report({ rows: [row({ case: 'example-7' })], failures: [] })).not.toContain('TESTED');
   });
 });
