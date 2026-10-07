@@ -1,10 +1,13 @@
 import {
   IMPORTANCE_ORDER,
+  NO_MARKS,
   claimCounts,
   filesOfPart,
   findingCounts,
   isLabelledNoise,
   noiseSinks,
+  partsLeft,
+  reviewedState,
   unexplainedReasons,
   type Comment,
   type FileSlice,
@@ -12,6 +15,8 @@ import {
   type LabelledNoise,
   type Part,
   type Ranking,
+  type ReviewedMarks,
+  type ReviewedState,
   type ReviewResult,
 } from '@second-look/engine';
 import { commentLocation } from './comments.js';
@@ -32,6 +37,8 @@ export interface TreePart {
   findings?: number;
   /** Why neither the description nor a linked issue explains the part; absent when the comparison does not flag it. */
   unexplained?: string;
+  /** Where the part stands against the reviewed marks, which its checkbox shows. */
+  reviewed?: ReviewedState;
   /** The part itself, which clicking opens in the diff editor. */
   part?: Part;
 }
@@ -91,9 +98,11 @@ const SECTION_TOOLTIPS: Record<Importance, string> = {
  * attached to shows their count beside it, and a badge counting its
  * findings once the claims are judged. A part neither the description nor
  * a linked issue explains carries the unexplained badge, its one-line
- * reason in the tooltip.
+ * reason in the tooltip. Every part carries its reviewed state for its
+ * checkbox, and a part whose content changed since the reviewer marked it
+ * says so first.
  */
-export function buildTree(result: ReviewResult): TreeSection[] {
+export function buildTree(result: ReviewResult, marks: ReviewedMarks = NO_MARKS): TreeSection[] {
   const grouped = new Map<Importance, TreePart[]>(
     IMPORTANCE_ORDER.map((importance) => [importance, []]),
   );
@@ -105,7 +114,10 @@ export function buildTree(result: ReviewResult): TreeSection[] {
   const judged = result.claims?.judging?.outcome === 'judged';
   const unexplained = unexplainedReasons(result.unexplained, result.parts.length);
   const withBadges = (node: TreePart, index: number): TreePart =>
-    withUnexplained(withClaims(node, counts[index]!, findings[index]!, judged), unexplained[index]);
+    withReviewed(
+      withUnexplained(withClaims(node, counts[index]!, findings[index]!, judged), unexplained[index]),
+      reviewedState(result.parts[index]!, marks),
+    );
   result.parts.forEach((part, index) => {
     const assessment = part.noise;
     if (assessment && isLabelledNoise(assessment) && noiseSinks(assessment)) {
@@ -243,6 +255,35 @@ function withClaims(node: TreePart, count: number, findings: number, judged: boo
     description: node.description === undefined ? text : `${text} · ${node.description}`,
     tooltip: node.tooltip === undefined ? line : `${node.tooltip}\n${line}`,
   };
+}
+
+/** What a part whose content changed since the reviewer marked it says. */
+export const CHANGED_SINCE_MARKED = 'changed since you marked it';
+
+/**
+ * A part's node with its reviewed state, and, when its content changed
+ * since the reviewer marked it, the note saying so first beside the label
+ * and in the tooltip.
+ */
+function withReviewed(node: TreePart, reviewed: ReviewedState): TreePart {
+  if (reviewed !== 'changed since marked') return { ...node, reviewed };
+  const line = `Unmarked: its content changed since you marked it reviewed.`;
+  return {
+    ...node,
+    reviewed,
+    description: node.description === undefined ? CHANGED_SINCE_MARKED : `${CHANGED_SINCE_MARKED} · ${node.description}`,
+    tooltip: node.tooltip === undefined ? line : `${node.tooltip}\n${line}`,
+  };
+}
+
+/**
+ * The tree view's badge: how many parts are left to review, with its
+ * tooltip; absent once every part is reviewed.
+ */
+export function reviewBadge(result: ReviewResult, marks: ReviewedMarks): { value: number; tooltip: string } | undefined {
+  const left = partsLeft(result.parts, marks);
+  if (left === 0) return undefined;
+  return { value: left, tooltip: `${left} of ${result.parts.length} part${result.parts.length === 1 ? '' : 's'} left to review` };
 }
 
 /** The badge of a part neither the description nor a linked issue explains. */

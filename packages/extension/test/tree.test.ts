@@ -1,18 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import type { AgentGrouping, AgentRanking, FileSlice, Hunk } from '@second-look/engine';
+import { NO_MARKS, applyMark, markedPart, type AgentGrouping, type AgentRanking, type FileSlice, type Hunk, type Part, type ReviewedMarks } from '@second-look/engine';
 import {
   anchorOf,
   buildTree,
+  CHANGED_SINCE_MARKED,
   claimCountText,
   findingBadge,
   findAnchor,
   NOISE,
   NOT_RANKED_YET,
   partsInReadingOrder,
+  reviewBadge,
   reviewStatus,
   UNEXPLAINED_BADGE,
 } from '../src/tree.js';
 import { claimsResult, judgedResult, mixedResult, part, result, unexplainedResult } from './results.js';
+import type { TreePart } from '../src/tree.js';
 
 /** A hunk adding one line at the given place, on both sides. */
 function hunkAt(oldStart: number, newStart: number): Hunk {
@@ -359,5 +362,49 @@ describe('the ranking a tooltip names', () => {
   it('names the plain ranking when the agent ranking fell back', () => {
     const fellBack = { ...mixedResult(), ranking: { by: 'plain' as const, agent: agentRanking({ outcome: 'fell back' }) } };
     expect(buildTree(fellBack)[0]!.parts[0]!.tooltip).toMatch(/\nPlain ranking$/);
+  });
+});
+
+describe('reviewed marks in the tree', () => {
+  const NOW = new Date('2026-10-06T12:00:00Z');
+  const cart = part('web/cart.ts', { name: 'Cart.total in web/cart.ts', hunks: [hunkAt(10, 10)] });
+  const money = part('web/money.ts', { name: 'top-level code in web/money.ts', hunks: [hunkAt(1, 1)] });
+
+  function marked(...parts: Part[]): ReviewedMarks {
+    return parts.reduce((marks, each) => applyMark(marks, markedPart(each), true, NOW), NO_MARKS);
+  }
+
+  function nodes(marks: ReviewedMarks, parts: Part[] = [cart, money]): TreePart[] {
+    return buildTree(result(parts), marks)
+      .flatMap((section) => section.parts)
+      .filter((node): node is TreePart => node.kind !== 'comment');
+  }
+
+  it('gives every part its reviewed state for its checkbox', () => {
+    expect(nodes(NO_MARKS).map((node) => node.reviewed)).toEqual(['not reviewed', 'not reviewed']);
+    expect(nodes(marked(cart)).map((node) => node.reviewed)).toEqual(['reviewed', 'not reviewed']);
+  });
+
+  it('says a part changed since it was marked, beside its label and in its tooltip', () => {
+    const edited = { ...cart, hunks: [{ ...hunkAt(10, 10), lines: [{ kind: 'addition' as const, newLineNumber: 10, text: 'edited' }] }] };
+    const [node, other] = nodes(marked(cart, money), [edited, money]);
+
+    expect(node!.reviewed).toBe('changed since marked');
+    expect(node!.description).toBe(CHANGED_SINCE_MARKED);
+    expect(node!.tooltip).toContain('its content changed since you marked it reviewed');
+    expect(other!.reviewed).toBe('reviewed');
+    expect(other!.description).toBeUndefined();
+  });
+
+  it('leaves a part whose lines only moved reviewed', () => {
+    const moved = { ...cart, hunks: [hunkAt(30, 30)] };
+
+    expect(nodes(marked(cart), [moved, money])[0]!.reviewed).toBe('reviewed');
+  });
+
+  it('counts the parts left to review in the view badge, and shows none once all are reviewed', () => {
+    expect(reviewBadge(result([cart, money]), NO_MARKS)).toEqual({ value: 2, tooltip: '2 of 2 parts left to review' });
+    expect(reviewBadge(result([cart, money]), marked(cart))).toEqual({ value: 1, tooltip: '1 of 2 parts left to review' });
+    expect(reviewBadge(result([cart, money]), marked(cart, money))).toBeUndefined();
   });
 });

@@ -291,7 +291,7 @@ export async function run(): Promise<void> {
       .split('\n')
       .filter((line) => line !== '')
       .map((line) => JSON.parse(line) as EngineRequest);
-    deepStrictEqual(requests.length, 2);
+    deepStrictEqual(requests.length, 3);
     ok(requests[0] && requests[0].method === 'initialize');
     ok(requests[1] && requests[1].method === 'review');
     // The request carries the agent choice and the criteria heading the
@@ -304,6 +304,12 @@ export async function run(): Promise<void> {
       agent: { agent: 'pi', model: '', account: '' },
       criteriaHeading: 'Acceptance criteria',
     });
+    // The review's marks are read from the engine's local store as soon
+    // as the review is under way, so the tree can show what the reviewer
+    // had already marked — the round trip's third and last request, and
+    // nothing else reaches the engine.
+    ok(requests[2] && requests[2].method === 'reviewedMarks');
+    deepStrictEqual(requests[2]?.params, { url: PR_URL });
 
     // Reading a part: clicking it opens the multi-file diff with exactly
     // its files, read-only from the cached copies, scrolled to the part's

@@ -12,10 +12,13 @@
  *
  * After the handshake, {@link REVIEW_METHOD} reviews a pull request,
  * {@link FETCH_LIBRARY_METHOD} presses one finding's library fetch,
- * {@link DRAFT_COMMENT_METHOD} drafts a comment from one finding, and
+ * {@link DRAFT_COMMENT_METHOD} drafts a comment from one finding,
  * {@link SEND_REVIEW_METHOD} sends the pending review to GitHub as one
- * review — the protocol's one write, asked for only when the reviewer
- * presses send (ADR 0002). A review request also carries the reviewer's
+ * review — the protocol's one write of the review, asked for only when the
+ * reviewer presses send (ADR 0002) — {@link REVIEWED_MARKS_METHOD} and
+ * {@link MARK_REVIEWED_METHOD} read and change the reviewed marks in the
+ * pull request's local store, and {@link MARK_VIEWED_METHOD} marks files
+ * "Viewed" on GitHub when the reviewer's opt-in setting mirrors them. A review request also carries the reviewer's
  * agent choice — which installed agent runs the review's agent passes,
  * with which model — and the reviewer's label for the account it bills,
  * so switching the choice in the editor's settings reaches the next
@@ -23,7 +26,8 @@
  */
 
 import type { AgentName } from './agents.js';
-import type { DraftComment, FindingRef, PendingReview, ReviewResult, SentReview } from './protocol.js';
+import type { DraftComment, FindingRef, PendingReview, ReviewedMarks, ReviewResult, SentReview, ViewedFiles } from './protocol.js';
+import type { MarkedPart } from './reviewed-marks.js';
 
 /** Version of the JSON-RPC protocol between the extension and the engine. */
 export const ENGINE_PROTOCOL_VERSION = 1 as const;
@@ -199,6 +203,58 @@ export interface SendReviewParams {
 
 /** The send request's result: the review's link on GitHub. */
 export type SendReviewRpcResult = SentReview;
+
+/** The request that reads a pull request's reviewed marks from its local store. */
+export const REVIEWED_MARKS_METHOD = 'reviewedMarks' as const;
+
+/** One marks request: the pull request whose marks to read. */
+export interface ReviewedMarksParams {
+  /** The pull request's HTML URL. */
+  url: string;
+}
+
+/** The marks request's result: the marks as the store holds them. */
+export type ReviewedMarksRpcResult = ReviewedMarks;
+
+/**
+ * The request that ticks or clears one part's reviewed checkbox in the
+ * pull request's local store, keyed by the part's content hash, which the
+ * engine computes from the part's pieces.
+ */
+export const MARK_REVIEWED_METHOD = 'markReviewed' as const;
+
+/** One mark request: the pull request, the part and whether it is now reviewed. */
+export interface MarkReviewedParams {
+  /** The pull request's HTML URL. */
+  url: string;
+  /** The part: its identity — its name with its files and entity kinds — and the content hashes of its pieces. */
+  part: MarkedPart;
+  /** True to tick the part's checkbox, false to clear it. */
+  reviewed: boolean;
+}
+
+/** The mark request's result: the marks as they now stand. */
+export type MarkReviewedRpcResult = ReviewedMarks;
+
+/**
+ * The request that marks whole files "Viewed" on GitHub, sent only when
+ * the reviewer's opt-in setting mirrors the reviewed marks there, and only
+ * for files whose every part is reviewed. Nothing is unmarked.
+ */
+export const MARK_VIEWED_METHOD = 'markViewed' as const;
+
+/** One mirror request; the token travels with the request, never stored. */
+export interface MarkViewedParams {
+  /** The pull request's HTML URL. */
+  url: string;
+  /** The GitHub token for this one request, from VS Code's GitHub sign-in. */
+  token: string;
+  /** The files to mark, by their paths in the pull request. */
+  paths: string[];
+}
+
+/** The mirror request's result: the files marked. */
+export type MarkViewedRpcResult = ViewedFiles;
 
 /**
  * The notification the engine sends while a review request is still

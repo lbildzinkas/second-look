@@ -29,6 +29,12 @@ export interface StubTreeView {
   selection: unknown[];
   /** The status line the extension shows above the tree. */
   message?: string;
+  /** The badge the extension shows on the view. */
+  badge?: { value: number; tooltip: string };
+  /** The options the view was created with. */
+  options?: Record<string, unknown>;
+  /** Fires the checkbox change the way the editor does when the reviewer ticks or clears parts. */
+  fireCheckboxChange(items: [unknown, number][]): void;
 }
 
 /** A sign-in session VS Code's authentication API returned. */
@@ -268,6 +274,7 @@ export class TreeItem {
   contextValue?: string;
   collapsibleState?: number;
   command?: { command: string; title: string; arguments?: unknown[] };
+  checkboxState?: number;
   constructor(label?: string, collapsibleState?: number) {
     this.label = label;
     this.collapsibleState = collapsibleState;
@@ -279,6 +286,12 @@ export const TreeItemCollapsibleState = {
   None: 0,
   Collapsed: 1,
   Expanded: 2,
+} as const;
+
+/** The checkbox states a tree item shows. */
+export const TreeItemCheckboxState = {
+  Unchecked: 0,
+  Checked: 1,
 } as const;
 
 /** The event emitter the tree provider signals changes with. */
@@ -525,12 +538,25 @@ export const window = {
   },
   createTreeView(id: string, options: { treeDataProvider: unknown }): StubTreeView & StubDisposable {
     const revealed: { element: unknown; options?: unknown }[] = [];
-    const view: StubTreeView & StubDisposable & { reveal(element: unknown, options?: unknown): Promise<void> } = {
+    const checkboxListeners = new Set<(event: { items: [unknown, number][] }) => void>();
+    const view: StubTreeView &
+      StubDisposable & {
+        reveal(element: unknown, options?: unknown): Promise<void>;
+        onDidChangeCheckboxState(listener: (event: { items: [unknown, number][] }) => void): StubDisposable;
+      } = {
       id,
       provider: options.treeDataProvider,
       revealed,
       selection: [],
       message: undefined,
+      options,
+      fireCheckboxChange: (items: [unknown, number][]): void => {
+        for (const listener of checkboxListeners) listener({ items });
+      },
+      onDidChangeCheckboxState: (listener: (event: { items: [unknown, number][] }) => void): StubDisposable => {
+        checkboxListeners.add(listener);
+        return { dispose: () => checkboxListeners.delete(listener) };
+      },
       reveal: (element: unknown, revealOptions?: unknown): Promise<void> => {
         revealed.push({ element, options: revealOptions });
         if ((revealOptions as { select?: boolean } | undefined)?.select) view.selection = [element];

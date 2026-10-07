@@ -178,6 +178,43 @@ export interface DraftComment {
   stamp: AgentStamp;
 }
 
+/**
+ * One reviewed mark: the reviewer ticked a part's checkbox. The local
+ * per-pull-request store keys it by the part's content hash when it was
+ * marked, and it covers the content hashes of the part's pieces — each
+ * hunk, or a file without hunks — so a part whose content changes is
+ * unmarked, and a regrouped part whose every piece was marked stays
+ * reviewed.
+ */
+export interface ReviewedMark {
+  /** The part's content hash when the reviewer marked it: the store's key. */
+  hash: string;
+  /** The part's identity when marked — its name with its files and entity kinds — so a part that changed since can say so. */
+  name: string;
+  /** The content hashes of the pieces the mark covers. */
+  pieces: string[];
+  /** When the reviewer marked it, as an ISO 8601 timestamp. */
+  markedAt: string;
+}
+
+/** The reviewed marks of one pull request, as its local store holds them. */
+export interface ReviewedMarks {
+  marks: ReviewedMark[];
+}
+
+/**
+ * Where a part stands against the reviewed marks: **reviewed** when every
+ * piece of it is marked; **changed since marked** when the reviewer marked
+ * it, or some of it, and its content changed since; **not reviewed**
+ * otherwise.
+ */
+export type ReviewedState = 'reviewed' | 'changed since marked' | 'not reviewed';
+
+/** The files marked "Viewed" on GitHub, by their paths. */
+export interface ViewedFiles {
+  paths: string[];
+}
+
 /** The review result the engine produces for one pull request. */
 export interface ReviewResult {
   /** Schema version; compare against {@link REVIEW_RESULT_VERSION}. */
@@ -1078,6 +1115,12 @@ export interface Part {
   changeKind: ChangeKind;
   /** True when the changed content is binary, so there are no hunks to read. */
   isBinary: boolean;
+  /**
+   * The abbreviated blob ids of the old and new sides, from the diff's
+   * `index` line; kept only for a binary file, whose change no hunk
+   * shows, so its content hash still changes with its content.
+   */
+  blobs?: { old: string; new: string };
   /** File mode on the old side, when the diff reports one. */
   oldMode?: string;
   /** File mode on the new side, when the diff reports one. */

@@ -135,6 +135,26 @@ describe('groupingProblems', () => {
     expect(groupingProblems(items, { parts: [{ name: 'a', hunks: ['h1'] }] })).toEqual([]);
   });
 
+  it('names every part whose name an earlier part already took, even one that differs only in whitespace', () => {
+    const answer: GroupingAnswer = {
+      parts: [
+        { name: 'helpers', hunks: ['h1'] },
+        { name: ' helpers ', hunks: ['h2'] },
+      ],
+    };
+    expect(groupingProblems(items, answer)).toEqual(["part 2's name is used by more than one part"]);
+  });
+
+  it('names a part that takes the name kept for the hunks left out, but not one that leaves none out', () => {
+    const collision: GroupingAnswer = { parts: [{ name: NOT_GROUPED_BY_AGENT, hunks: ['h1'] }] };
+    expect(groupingProblems(items, collision)).toEqual([
+      'a part is named "not grouped by the agent", which is reserved for the hunks left out',
+    ]);
+
+    const everyHunkPlaced: GroupingAnswer = { parts: [{ name: NOT_GROUPED_BY_AGENT, hunks: ['h1', 'h2'] }] };
+    expect(groupingProblems(items, everyHunkPlaced)).toEqual([]);
+  });
+
   it('names every id that was not offered or is placed twice, and every empty part', () => {
     const answer: GroupingAnswer = {
       parts: [
@@ -231,6 +251,25 @@ describe('reviewChange with the agent grouping stage', () => {
       agent: { outcome: 'fell back', leftOut: 0, stamp: { agent: 'fake' } },
     });
     expect(result.grouping.agent!.detail).toMatch(/^the agent gave no usable answer \(invalid-answer: /);
+  });
+
+  it('keeps the plain grouping when two parts share a name, after retrying the answer once', async () => {
+    const input = await pull7Input();
+    const duplicateName = JSON.stringify({
+      parts: [
+        { name: 'cleanup', hunks: [HUNKS.applyDiscount, HUNKS.reformat] },
+        { name: 'cleanup', hunks: [HUNKS.deploy, HUNKS.greeter] },
+      ],
+    });
+    const agent = scriptedAgent([duplicateName, duplicateName]);
+    const plain = await reviewChange(input);
+
+    const result = await reviewChange(input, { story: false, unexplained: false, claims: false, adapter: agent });
+
+    expect(agent.requests).toHaveLength(2);
+    expect(agent.requests[1]!.prompt).toContain("- part 2's name is used by more than one part");
+    expect(result.parts).toEqual(plain.parts);
+    expect(result.grouping).toMatchObject({ by: 'plain', agent: { outcome: 'fell back', leftOut: 0 } });
   });
 
   it('uses an answer corrected on the retry', async () => {

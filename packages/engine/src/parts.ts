@@ -6,7 +6,8 @@ const NAMED_ENTITIES = 3;
 /** The group every hunk outside all entities joins, one per file. */
 const TOP_LEVEL = 'top level';
 
-function entityKey(entity: Entity): string {
+/** An entity's key: its kind with its qualified name, which same-named entities of different kinds never share. */
+export function entityKey(entity: Entity): string {
   return `${entity.kind} ${entity.name}`;
 }
 

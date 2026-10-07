@@ -21,9 +21,11 @@ import {
   type PartOrigin,
   type PartRank,
   type PartRole,
+  type ReviewedMarks,
   type ReviewResult,
   type SentReview,
   type SyntaxCheck,
+  type ViewedFiles,
 } from '@second-look/engine';
 
 /** How the pull request links an issue, as the result names it. */
@@ -241,6 +243,8 @@ function isFileSlice(value: unknown): boolean {
     return false;
   }
   if (typeof value['isBinary'] !== 'boolean') return false;
+  const blobs = value['blobs'];
+  if (blobs !== undefined && !(isRecord(blobs) && isString(blobs['old']) && isString(blobs['new']))) return false;
   if (
     typeof value['oldMissingFinalNewline'] !== 'boolean' ||
     typeof value['newMissingFinalNewline'] !== 'boolean'
@@ -803,6 +807,40 @@ export function isSentReview(value: unknown): value is SentReview {
     typeof (value as { url?: unknown }).url === 'string' &&
     (value as { url: string }).url.length > 0
   );
+}
+
+/** Error thrown when a marks answer is not the reviewed marks. */
+export class MarksProtocolError extends Error {
+  constructor() {
+    super(`the engine's answer is not the pull request's reviewed marks`);
+    this.name = 'MarksProtocolError';
+  }
+}
+
+const SHA256 = /^[0-9a-f]{64}$/;
+
+/**
+ * Checks that a value read over the protocol is the reviewed marks: each
+ * mark keyed by a content hash, with the part's name, its pieces' hashes
+ * and when it was marked.
+ */
+export function isReviewedMarks(value: unknown): value is ReviewedMarks {
+  if (!isRecord(value) || !Array.isArray(value['marks'])) return false;
+  return value['marks'].every(
+    (mark) =>
+      isRecord(mark) &&
+      isString(mark['hash']) &&
+      SHA256.test(mark['hash']) &&
+      isString(mark['name']) &&
+      isString(mark['markedAt']) &&
+      Array.isArray(mark['pieces']) &&
+      mark['pieces'].every((piece) => isString(piece) && SHA256.test(piece)),
+  );
+}
+
+/** Checks that a value read over the protocol lists the files marked "Viewed" on GitHub. */
+export function isViewedFiles(value: unknown): value is ViewedFiles {
+  return isRecord(value) && Array.isArray(value['paths']) && value['paths'].every(isString);
 }
 
 /**

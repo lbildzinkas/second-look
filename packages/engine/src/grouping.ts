@@ -172,18 +172,22 @@ export function groupingPrompt(
 
 /**
  * Checks an answer against the offered changes: every part needs a name
- * and at least one hunk, and every id must be one that was offered, named
- * once. Returns the problems; an empty list means the answer is usable.
- * Ids the answer leaves out are not a problem here: the coverage rule
- * collects them.
+ * and at least one hunk, no two parts share a name — including the one
+ * the part of left-out hunks takes, since the reviewed marks key on it —
+ * and every id must be one that was offered, named once. Returns the
+ * problems; an empty list means the answer is usable. Ids the answer
+ * leaves out are not a problem here: the coverage rule collects them.
  */
 export function groupingProblems(items: readonly GroupingItem[], answer: GroupingAnswer): string[] {
   const offered = new Set(items.map((item) => item.id));
   const placed = new Set<string>();
+  const names = new Set<string>();
   const problems: string[] = [];
   answer.parts.forEach((part, index) => {
     const name = part.name.replace(/\s+/g, ' ').trim();
     if (name === '') problems.push(`part ${index + 1} has no name`);
+    else if (names.has(name)) problems.push(`part ${index + 1}'s name is used by more than one part`);
+    else names.add(name);
     if (name.length > MAX_NAME_LENGTH) problems.push(`part ${index + 1}'s name is over ${MAX_NAME_LENGTH} characters`);
     if (part.hunks.length === 0) problems.push(`part ${index + 1} has no hunks`);
     for (const id of part.hunks) {
@@ -192,6 +196,9 @@ export function groupingProblems(items: readonly GroupingItem[], answer: Groupin
       placed.add(id);
     }
   });
+  if (names.has(NOT_GROUPED_BY_AGENT) && items.some((item) => !placed.has(item.id))) {
+    problems.push(`a part is named ${JSON.stringify(NOT_GROUPED_BY_AGENT)}, which is reserved for the hunks left out`);
+  }
   return problems;
 }
 
@@ -249,10 +256,11 @@ export interface AgentGroupingResult {
 
 /**
  * Asks the agent to group the files' hunks into parts, and checks its
- * answer. An answer that misses the schema or names an id that was not
- * offered, or one id twice, is retried once and then reported, and the
- * plain grouping stays; the hunks a valid answer leaves out go to a part
- * marked {@link NOT_GROUPED_BY_AGENT}. Sinking noise keeps its plain parts.
+ * answer. An answer that misses the schema, names an id that was not
+ * offered or one id twice, or names two parts alike, is retried once and
+ * then reported, and the plain grouping stays; the hunks a valid answer
+ * leaves out go to a part marked {@link NOT_GROUPED_BY_AGENT}. Sinking
+ * noise keeps its plain parts.
  */
 export async function groupWithAgent(
   files: readonly Part[],

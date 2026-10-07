@@ -15,6 +15,8 @@ interface CurrentFile {
   newHeaderPath?: string;
   /** True while skipping the base85 payload of a `GIT binary patch`. */
   inBinaryPatch: boolean;
+  /** The blob ids the `index` line names, kept on the part only when it is binary. */
+  blobs?: { old: string; new: string };
 }
 
 const DIFF_GIT = /^diff --git (.*)$/;
@@ -22,6 +24,7 @@ const OLD_MODE = /^old mode (\d+)$/;
 const NEW_MODE = /^new mode (\d+)$/;
 const DELETED_FILE_MODE = /^deleted file mode (\d+)$/;
 const NEW_FILE_MODE = /^new file mode (\d+)$/;
+const INDEX = /^index ([0-9a-f]+)\.\.([0-9a-f]+)(?: \d+)?$/;
 const RENAME_FROM = /^rename from (.+)$/;
 const RENAME_TO = /^rename to (.+)$/;
 const COPY_FROM = /^copy from (.+)$/;
@@ -306,7 +309,9 @@ export function parseDiff(diff: string): ParsedDiff {
     }
 
     if (/^(similarity|dissimilarity) index /.test(line) || line.startsWith('index ')) {
-      // Carried in the diff but not needed by any part field yet.
+      // Only a binary file needs its blob ids: no hunk shows its change.
+      match = INDEX.exec(line);
+      if (match) current.blobs = { old: match[1]!, new: match[2]! };
       hunk = undefined;
       lastDiffLine = undefined;
       continue;
@@ -482,6 +487,7 @@ function syntaxNotYetRun(): PartSyntax {
 /** Applies the header paths to a finished file, in precedence order. */
 function finishFile(current: CurrentFile): void {
   const { part } = current;
+  if (part.isBinary && current.blobs !== undefined) part.blobs = current.blobs;
   if (current.newHeaderPath !== undefined) {
     part.path = current.newHeaderPath;
   } else if (part.changeKind === 'deletion' && current.oldHeaderPath !== undefined) {

@@ -28,6 +28,7 @@ import {
   anchorOf,
   buildTree,
   findAnchor,
+  reviewBadge,
   reviewStatus,
   pendingReviewSection,
   type TreeComment,
@@ -40,7 +41,20 @@ import { isSubmitKind, SendReviewPage } from './send-page.js';
 import { OverviewPanel } from './overview.js';
 import { AgentStatusBar } from './agent-status.js';
 import { readAgentSettings, reviewAgentChoice } from './agent-settings.js';
-import { draftFinding, isFindingRef, type LibraryFetchOffer, type Part, type PendingReview, type ReviewResult } from '@second-look/engine';
+import {
+  NO_MARKS,
+  draftFinding,
+  filesOfPart,
+  isFindingRef,
+  markedPart,
+  parsePullRequestUrl,
+  wholeFilesReviewed,
+  type LibraryFetchOffer,
+  type Part,
+  type PendingReview,
+  type ReviewedMarks,
+  type ReviewResult,
+} from '@second-look/engine';
 
 export {
   ADD_COMMENT_COMMAND,
@@ -122,7 +136,7 @@ function carriedPart(arg: unknown): Part | undefined {
  * The side-bar tree: importance groups in order with the reason beside
  * each part and the signals in its tooltip, the noise last, and the
  * pending review gathering above them all. Clicking a part opens it in
- * the diff editor.
+ * the diff editor, and its checkbox marks it reviewed.
  */
 class ReviewTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   private readonly change = new vscode.EventEmitter<void>();
@@ -156,6 +170,8 @@ class ReviewTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     item.contextValue = node.kind;
     if (node.kind !== 'comment' && node.part !== undefined) {
       item.id = `part:${JSON.stringify(anchorOf(node.part))}`;
+      item.checkboxState =
+        node.reviewed === 'reviewed' ? vscode.TreeItemCheckboxState.Checked : vscode.TreeItemCheckboxState.Unchecked;
       item.command = {
         command: OPEN_PART_COMMAND,
         title: 'Open part in the diff editor',
@@ -199,6 +215,12 @@ class ReviewTreeProvider implements vscode.TreeDataProvider<TreeNode> {
  * overview opens with its first result, without taking the focus from the
  * tree, and follows every stage, as do the findings — the refuted and
  * unverifiable claims — shown as the companion's own threads on the diff.
+ *
+ * Each part's checkbox marks it reviewed in the engine's local store for
+ * the pull request, which outlives the editor; the tree view's badge
+ * counts the parts left, and a part whose content changed since it was
+ * marked is unmarked and says so. With the opt-in mirror setting on, a
+ * file whose every part is reviewed is marked "Viewed" on GitHub too.
  */
 class ReviewSession {
   private readonly tree: ReviewTreeProvider;
@@ -224,6 +246,10 @@ class ReviewSession {
   );
   /** The review's findings, its refuted and unverifiable claims, as threads on the diff. */
   private readonly findings = new FindingThreads();
+  /** The reviewed marks the engine's local store holds, with the pull request they belong to. */
+  private stored: { url: string; marks: ReviewedMarks } | undefined;
+  /** The files of parts marked while the review still runs, mirrored to GitHub once it finishes. */
+  private readonly mirrorWaiting = new Set<string>();
 
   constructor(
     tree: ReviewTreeProvider,
@@ -278,22 +304,34 @@ class ReviewSession {
     const review = ++this.reviews;
     const current = (): boolean => review === this.reviews;
     let shown = false;
+    // The marks are read while the engine reviews, and the review finishes
+    // only once they are in.
+    let marksRead: Promise<void> = Promise.resolve();
     this.running = true;
     this.treeView.message = undefined;
     try {
       const result = await vscode.window.withProgress(
         { location: { viewId: REVIEW_TREE_VIEW }, title: 'Reading the pull request…' },
         () =>
-          this.engineReview(url.trim(), accessToken, (stage) => {
-            if (!current()) return;
-            void this.show(stage.result, shown, stage.running);
-            shown = true;
-            this.treeView.message = reviewStatus(stage.result, stage.running);
-          }),
+          this.engineReview(
+            url.trim(),
+            accessToken,
+            (stage) => {
+              if (!current()) return;
+              void this.show(stage.result, shown, stage.running);
+              shown = true;
+              this.treeView.message = reviewStatus(stage.result, stage.running);
+            },
+            (engine) => (marksRead = this.readMarks(engine, review, url.trim())),
+          ),
       );
       if (!current()) return;
       await this.show(result, shown);
       this.treeView.message = reviewStatus(result);
+      await marksRead;
+      if (!current()) return;
+      this.running = false;
+      await this.mirrorViewed();
     } catch (error) {
       if (!current()) return;
       this.treeView.message = undefined;
@@ -301,6 +339,7 @@ class ReviewSession {
         error instanceof Error ? error.message : String(error),
       );
     } finally {
+      await marksRead;
       if (current()) this.running = false;
     }
   }
@@ -334,8 +373,9 @@ class ReviewSession {
       this.page?.dispose();
       this.page = undefined;
       this.comments.setReview(result);
+      this.mirrorWaiting.clear();
     }
-    this.tree.setSections(this.sections());
+    this.render();
     this.overview.update(result, running);
     this.findings.show(result);
     if (!update) {
@@ -360,14 +400,121 @@ class ReviewSession {
     const pending = this.comments.pending();
     return [
       ...(pending.length > 0 ? [pendingReviewSection(pending)] : []),
-      ...buildTree(this.result),
+      ...buildTree(this.result, this.marks()),
     ];
   }
 
-  /** Rebuilds the tree's sections after the pending review changed. */
+  /** Shows the tree's sections and the badge counting the parts left to review. */
+  private render(): void {
+    this.tree.setSections(this.sections());
+    this.treeView.badge = this.result === undefined ? undefined : reviewBadge(this.result, this.marks());
+  }
+
+  /** The reviewed marks of the pull request shown; none until the store's are read. */
+  private marks(): ReviewedMarks {
+    const shown = this.result === undefined ? null : parsePullRequestUrl(this.result.pullRequest.url);
+    const stored = this.stored === undefined ? null : parsePullRequestUrl(this.stored.url);
+    const same =
+      shown !== null &&
+      stored !== null &&
+      shown.owner === stored.owner &&
+      shown.repo === stored.repo &&
+      shown.number === stored.number;
+    return same ? this.stored!.marks : NO_MARKS;
+  }
+
+  /** Rebuilds the tree's sections after the pending review or the marks changed. */
   private refreshTree(): void {
     if (this.result !== undefined) {
-      this.tree.setSections(this.sections());
+      this.render();
+    }
+  }
+
+  /**
+   * Reads the pull request's reviewed marks from the engine's local store,
+   * for the review that asked; a failure only warns, and the parts show
+   * unmarked.
+   */
+  private async readMarks(engine: EngineClient, review: number, url: string): Promise<void> {
+    try {
+      const marks = await engine.reviewedMarks(url);
+      if (review !== this.reviews) return;
+      this.stored = { url, marks };
+      this.refreshTree();
+    } catch (error) {
+      if (review !== this.reviews) return;
+      vscode.window.showWarningMessage(
+        `The reviewed marks could not be read: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  /**
+   * Ticks or clears the reviewed checkboxes the reviewer changed, one part
+   * at a time, in the engine's local store, then shows the marks as they
+   * now stand and mirrors the whole files they complete when the setting
+   * asks for it. A review started meanwhile keeps its own marks.
+   */
+  async markParts(changes: readonly (readonly [TreeNode, vscode.TreeItemCheckboxState])[]): Promise<void> {
+    const url = this.url;
+    if (url === undefined) return;
+    const review = this.reviews;
+    try {
+      const engine = await this.readyEngine();
+      for (const [node, state] of changes) {
+        if (isSection(node) || node.kind === 'comment' || node.part === undefined) continue;
+        const reviewed = state === vscode.TreeItemCheckboxState.Checked;
+        const marks = await engine.markReviewed(url, markedPart(node.part), reviewed);
+        if (review !== this.reviews) return;
+        this.stored = { url, marks };
+        if (reviewed) for (const file of filesOfPart(node.part)) this.mirrorWaiting.add(file.path);
+      }
+    } catch (error) {
+      if (review === this.reviews) {
+        vscode.window.showErrorMessage(
+          `The reviewed mark was not saved: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    if (review !== this.reviews) return;
+    this.refreshTree();
+    await this.mirrorViewed();
+  }
+
+  /**
+   * Marks "Viewed" on GitHub the files of the parts just marked whose
+   * every part is now reviewed — only with the opt-in mirror setting on,
+   * off by default because the GitHub Pull Requests extension syncs the
+   * same field, and only once the review finished, so the engine checks
+   * every file against the parts it holds. A file only partly reviewed is
+   * never marked, and nothing is unmarked.
+   */
+  private async mirrorViewed(): Promise<void> {
+    if (!vscode.workspace.getConfiguration('second-look').get<boolean>('mirrorViewedToGitHub', false)) {
+      this.mirrorWaiting.clear();
+      return;
+    }
+    if (this.running || this.result === undefined || this.url === undefined) return;
+    const paths = wholeFilesReviewed(this.result.parts, this.marks(), [...this.mirrorWaiting]);
+    this.mirrorWaiting.clear();
+    if (paths.length === 0) return;
+    const url = this.url;
+    let session: vscode.AuthenticationSession | undefined;
+    try {
+      session = await vscode.authentication.getSession('github', ['repo'], { createIfNone: false });
+    } catch {
+      session = undefined;
+    }
+    if (!session) {
+      vscode.window.showWarningMessage('Sign in to GitHub to mark reviewed files "Viewed" there.');
+      return;
+    }
+    try {
+      await (await this.readyEngine()).markViewed(url, session.accessToken, paths);
+    } catch (error) {
+      vscode.window.showErrorMessage(
+        `The reviewed files were not marked "Viewed" on GitHub: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -693,10 +840,15 @@ class ReviewSession {
     return engine.sendReview(url, token, review);
   }
 
+  /**
+   * Sends the review request, then hands the engine over for the request
+   * that reads the pull request's reviewed marks, so they arrive alongside.
+   */
   private async engineReview(
     url: string,
     token: string,
     onStage: (stage: ReviewStageUpdate) => void,
+    onSent: (engine: EngineClient) => void,
   ): Promise<ReviewResult> {
     const engine = await this.readyEngine();
     // The heading the acceptance criteria checklist sits under travels
@@ -707,7 +859,9 @@ class ReviewSession {
       .getConfiguration('second-look')
       .get<string>('criteriaHeading', '')
       .trim();
-    return engine.review(url, token, reviewAgentChoice(readAgentSettings()), onStage, heading);
+    const reviewed = engine.review(url, token, reviewAgentChoice(readAgentSettings()), onStage, heading);
+    onSent(engine);
+    return reviewed;
   }
 
   /**
@@ -751,11 +905,13 @@ class ReviewSession {
  * the commands that open the review's overview — at the story's start, or
  * at one part as its "why this matters" — the commands that draft a
  * comment from a finding and add the draft to the pending review or
- * discard it, and the status bar entry that
- * shows the agent and model in use.
+ * discard it, the parts' reviewed checkboxes, and the status bar entry
+ * that shows the agent and model in use.
  * Nothing here runs anything from the workspace — the engine is started
  * from the companion's own install, reads GitHub, and writes only the
- * one review the reviewer sends.
+ * one review the reviewer sends — and, only with the opt-in mirror
+ * setting on, the "Viewed" mark of each file whose every part they
+ * reviewed.
  *
  * Returns the review tree's data provider, so a test running in a real
  * editor can read the tree the command filled.
@@ -767,6 +923,8 @@ export function activate(
   const tree = new ReviewTreeProvider();
   const treeView = vscode.window.createTreeView(REVIEW_TREE_VIEW, {
     treeDataProvider: tree,
+    // A part's checkbox is its own: a section has none to tick it with.
+    manageCheckboxStateManually: true,
   });
   const copies = new ChangeCopiesProvider();
   const marker = new PartMarker();
@@ -776,6 +934,7 @@ export function activate(
   agentStatusBar.refresh();
   context.subscriptions.push(
     treeView,
+    treeView.onDidChangeCheckboxState((event) => void session.markParts(event.items)),
     marker,
     comments,
     { dispose: () => session.dispose() },
