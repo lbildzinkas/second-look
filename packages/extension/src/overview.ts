@@ -867,7 +867,7 @@ function docLinkItem(link: DocLink, index: number): string {
  * linked to its documentation at the pinned version — every link read
  * from a published inventory first, then the agent's suggestions, each
  * flagged as suggested and not checked — then the APIs no link was found
- * for, and what was read for each library.
+ * for, and the notes on what was read and what the cap left out.
  */
 function docsSection(state: OverviewState): string {
   const docs = state.result.docLinks;

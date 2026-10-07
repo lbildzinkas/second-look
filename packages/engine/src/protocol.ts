@@ -414,7 +414,7 @@ export interface DocLinks {
   links: DocLink[];
   /** The library APIs no link was found for. */
   unlinked: LibraryApi[];
-  /** One plain line for each library or language: which inventory was read, or why none was. */
+  /** One plain line for each library or language — which inventory was read, or why none was — and, when the cap of listed APIs is reached, one naming how many it left out. */
   notes: string[];
   /** The agent's suggestions; absent when no agent was asked. */
   suggestions?: DocSuggestions;
