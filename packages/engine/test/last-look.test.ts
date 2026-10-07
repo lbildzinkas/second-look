@@ -122,7 +122,7 @@ function pullRequestNow(): PullRequestSummary {
 }
 
 /** Opens the review now: compares with the last look and records this one. */
-async function openReview(reviews: unknown[] = [], fetch: typeof fetch = gitHubOf(repository, reviews)): Promise<{ since: SinceLastLook | undefined; parts: Part[] }> {
+async function openReview(reviews: unknown[] = [], fetch: typeof globalThis.fetch = gitHubOf(repository, reviews)): Promise<{ since: SinceLastLook | undefined; parts: Part[] }> {
   const pullRequest = pullRequestNow();
   const diff = repository.compare(pullRequest.baseCommit, pullRequest.headSha)!;
   const client = new GitHubClient({ token: 'test-token', fetch });
