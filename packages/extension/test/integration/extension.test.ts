@@ -834,7 +834,7 @@ describe('the overview', () => {
     expect(stub.quickPicks).toHaveLength(1);
     expect(stub.quickPicks[0]!.title).toBe('Verify this claim');
     expect((stub.quickPicks[0]!.items as { index: number }[]).map((item) => item.index)).toEqual([0, 1, 2]);
-    expect(lastAsk('verify-pick.log')).toEqual({ url: PR_URL, ask: 'verify', part: 0, claim: { index: 2 } });
+    expect(lastAsk('verify-pick.log')).toEqual({ url: PR_URL, ask: 'verify', part: 0, claim: { index: 2 }, agent: { agent: 'pi', model: '', account: '' } });
     const html = overview().webview.html;
     expect(html).toContain('<li class="answer focus"><div class="where"><b>Verify this claim</b> · ');
     // The review shown now holds the judged claim, as the engine's latest review does.
@@ -859,6 +859,7 @@ describe('the overview', () => {
       ask: 'verify',
       part: 0,
       claim: { selection: { path: 'src/retry.py', line: 9, endLine: 9, text: 'Never retries a 4xx.' } },
+      agent: { agent: 'pi', model: '', account: '' },
     });
   });
 
