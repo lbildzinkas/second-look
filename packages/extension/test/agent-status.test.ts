@@ -8,8 +8,10 @@ import {
   agentStatusBarText,
   readAgentSettings,
   reviewAgentChoice,
+  untestedModelWarning,
   type AgentSettings,
 } from '../src/agent-settings.js';
+import type { TestedModel } from '@second-look/engine';
 
 const CLAUDE_CODE: AgentSettings = { agent: 'claude-code', model: 'sonnet', account: 'Claude Max (work)' };
 
@@ -78,6 +80,42 @@ describe('agentStatusBarText', () => {
   });
 });
 
+describe('untestedModelWarning', () => {
+  const TESTED: readonly TestedModel[] = [
+    { agent: 'pi', agentVersion: '0.86.1', model: 'zai-coding-cn/glm-5.3', effort: 'default', runDate: '2026-10-07T15:08:38.849Z', scores: { coverage: 1 } },
+  ];
+
+  it('stays quiet for a tested agent and model', () => {
+    expect(untestedModelWarning({ agent: 'pi', model: 'zai-coding-cn/glm-5.3', account: '' }, TESTED)).toBeUndefined();
+  });
+
+  it('stays quiet for an agent with a tested model when no model is chosen: only the run’s stamp tells which runs', () => {
+    expect(untestedModelWarning({ agent: 'pi', model: '', account: '' }, TESTED)).toBeUndefined();
+  });
+
+  it('warns for a model the evaluation never tested, naming the tested ones and blocking nothing', () => {
+    const warning = untestedModelWarning({ agent: 'pi', model: 'anthropic/claude-sonnet-5', account: '' }, TESTED);
+    expect(warning).toContain('Pi with anthropic/claude-sonnet-5 has not been tested');
+    expect(warning).toContain('tested with zai-coding-cn/glm-5.3');
+    expect(warning).toContain('Reviews still run');
+    expect(warning).toContain('docs/tested-models.md');
+  });
+
+  it('warns for an agent with no tested model, whatever model runs', () => {
+    const none = untestedModelWarning({ agent: 'claude-code', model: '', account: '' }, TESTED);
+    expect(none).toContain('Claude Code has not been tested with any model');
+    expect(none).toContain('Reviews still run');
+    const named = untestedModelWarning({ agent: 'claude-code', model: 'sonnet', account: '' }, TESTED);
+    expect(named).toContain('Claude Code with sonnet has not been tested');
+    expect(named).toContain('Reviews still run');
+  });
+
+  it('reads the published list by default, which today tests Pi alone', () => {
+    expect(untestedModelWarning({ agent: 'pi', model: 'zai-coding-cn/glm-5.3', account: '' })).toBeUndefined();
+    expect(untestedModelWarning({ agent: 'claude-code', model: '', account: '' })).toContain('Claude Code');
+  });
+});
+
 describe('AgentStatusBar', () => {
   beforeEach(() => stub.reset());
 
@@ -121,5 +159,41 @@ describe('AgentStatusBar', () => {
     // The key is inherited, but Pi is the agent, so no warning shows for it.
     expect(item!.text).toBe('Second Look: Pi · default model');
     expect(item!.tooltip).not.toContain('names the login it used');
+  });
+
+  it('carries the untested-combination warning in its tooltip, beside any API-key one', () => {
+    stub.configuration = { 'second-look.agent': 'claude-code' };
+    const bar = new AgentStatusBar({ ANTHROPIC_API_KEY: 'sk-ant-inherited' });
+    bar.refresh();
+    const [item] = stub.statusBarItems;
+    expect(item!.tooltip).toContain('overrides the Claude subscription');
+    expect(item!.tooltip).toContain('has not been tested with any model');
+    bar.dispose();
+  });
+});
+
+describe('the untested-combination warning', () => {
+  beforeEach(() => stub.reset());
+
+  it('shows once at activation for the settings the reviewer arrives with', () => {
+    stub.configuration = { 'second-look.agent': 'claude-code' };
+    activate(stubContext() as never, {});
+    expect(stub.warningMessages).toHaveLength(1);
+    expect(stub.warningMessages[0]).toContain('Claude Code has not been tested with any model');
+  });
+
+  it('shows when the reviewer chooses an untested agent or model, and not again for the tested one', () => {
+    activate(stubContext() as never, {});
+    expect(stub.warningMessages).toEqual([]);
+
+    stub.configuration = { 'second-look.agentModel': 'anthropic/claude-sonnet-5' };
+    stub.fireConfigurationChange();
+    expect(stub.warningMessages).toHaveLength(1);
+    expect(stub.warningMessages[0]).toContain('Pi with anthropic/claude-sonnet-5 has not been tested');
+
+    stub.warningMessages = [];
+    stub.configuration = { 'second-look.agentModel': 'zai-coding-cn/glm-5.3' };
+    stub.fireConfigurationChange();
+    expect(stub.warningMessages).toEqual([]);
   });
 });

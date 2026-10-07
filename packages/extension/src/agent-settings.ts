@@ -1,9 +1,12 @@
 import * as vscode from 'vscode';
 import {
   API_KEY_VARIABLE,
+  TESTED_MODELS,
   isAgentName,
+  isTestedModel,
   type AgentName,
   type ReviewAgentChoice,
+  type TestedModel,
 } from '@second-look/engine';
 
 /**
@@ -12,7 +15,9 @@ import {
  * subscription it bills. They are documented in their descriptions in the
  * extension's manifest, the status bar shows what they choose, and every
  * review request carries them so the engine runs its agent passes with
- * them and stamps the account label on their results.
+ * them and stamps the account label on their results. Choosing a
+ * combination the evaluation never tested shows the warning below
+ * (issue 3), which blocks nothing.
  */
 
 /** The agent settings, read from the `second-look` section. */
@@ -71,4 +76,36 @@ export function agentStatusBarText(settings: AgentSettings): string {
   const model = settings.model === '' ? 'default model' : settings.model;
   const parts = settings.account === '' ? [agent, model] : [agent, model, settings.account];
   return `Second Look: ${parts.join(' · ')}`;
+}
+
+/** Where the current list of tested combinations is published, as the warning names it. */
+const TESTED_MODELS_PAGE = "the repository's docs/tested-models.md";
+
+/**
+ * The warning (issue 3) that the settings pick an agent and model the
+ * companion's evaluation never tested: prompts behave differently on
+ * each model, so results from an untested combination say little about
+ * the tested ones. Non-blocking — every review still runs, stamped with
+ * who answered — and quiet when the choice is tested. With no model
+ * chosen the agent's own default runs, and only the run's stamp tells
+ * which, so an agent with a tested model stays quiet while one with
+ * none warns whatever model runs.
+ */
+export function untestedModelWarning(
+  settings: AgentSettings,
+  tested: readonly TestedModel[] = TESTED_MODELS,
+): string | undefined {
+  const name = settings.agent === 'claude-code' ? 'Claude Code' : 'Pi';
+  const tried = tested.filter((entry) => entry.agent === settings.agent);
+  const tail =
+    `Reviews still run and every result is stamped with who answered. The tested combinations ` +
+    `are published in ${TESTED_MODELS_PAGE}.`;
+  if (settings.model === '') {
+    if (tried.length > 0) return undefined;
+    return `${name} has not been tested with any model, so its results say little about the tested combinations. ${tail}`;
+  }
+  if (isTestedModel(tested, settings.agent, settings.model)) return undefined;
+  const models = [...new Set(tried.map((entry) => entry.model))].join(', ');
+  const known = tried.length === 0 ? '' : `; it has been tested with ${models}`;
+  return `${name} with ${settings.model} has not been tested by the companion's evaluation${known}. ${tail}`;
 }

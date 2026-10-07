@@ -19,7 +19,7 @@ import { answeringAgent, offeredParts, scriptedAgent } from '../../engine/test/h
 import type { AgentAdapter } from '@second-look/engine';
 import { loadCases } from '../src/case.js';
 import { loadRegistry } from '../src/prompts.js';
-import { ALL_CASES, NO_AGENT, TRACE_FILE, belowFullCoverage, runEvaluation } from '../src/run.js';
+import { ALL_CASES, NO_AGENT, TRACE_FILE, belowFullCoverage, runEvaluation, testedCombinations } from '../src/run.js';
 import type { AgentCall, ResultRow } from '../src/run.js';
 
 const PACKAGE = fileURLToPath(new URL('..', import.meta.url));
@@ -772,5 +772,58 @@ describe('belowFullCoverage', () => {
       { case: 'c', name: 'grouping-agreement', value: 0.5, agent: 'pi' },
     ] as ResultRow[];
     expect(belowFullCoverage(rows).map((row) => row.case)).toEqual(['b']);
+  });
+});
+
+describe('testedCombinations', () => {
+  it("lists each combination the run tested, with its version, effort, run date and scores by prompt", async () => {
+    const { results } = await run([], labellingAgent());
+
+    expect(testedCombinations(results)).toEqual([
+      {
+        agent: 'fake',
+        agentVersion: '1.2.3',
+        model: 'fake/model',
+        effort: 'default',
+        runDate: '2026-10-02T00:00:00.000Z',
+        scores: [
+          { prompt: 'grouping', name: 'coverage', value: 1 },
+          { prompt: 'grouping', name: 'grouping-agreement', value: 1 },
+          { prompt: 'ranking', name: 'rank-median', value: 1.5 },
+          { prompt: 'ranking', name: 'rank-top-3', value: 1 },
+        ],
+      },
+    ]);
+  });
+
+  it('lists nothing for a model-free run, whose plain pass tests no model', async () => {
+    const all = await loadCases([join(PACKAGE, 'cases')]);
+    const cases = all.filter((each) => each.id === 'example-7' || each.id === 'example-42');
+    const { results } = await runEvaluation({
+      cases,
+      registry: await loadRegistry(join(PACKAGE, 'prompts.json')),
+      companionVersion: '0.1.0',
+      runsFolder: runs,
+      now: new Date('2026-10-02T00:00:00.000Z'),
+    });
+    expect(testedCombinations(results)).toEqual([]);
+  });
+
+  it('leaves out a run whose agent ended before naming its model, the stamp rule the baseline compares by', async () => {
+    const labelled = labellingAgent();
+    const unnamed: AgentAdapter = {
+      agent: labelled.agent,
+      probe: labelled.probe,
+      run: async (request) => {
+        const outcome = await labelled.run(request);
+        return { ...outcome, stamp: { ...outcome.stamp, model: null } };
+      },
+    };
+    const { results } = await run([], unnamed);
+
+    // The grouping succeeded but its stamp never named a model, so the
+    // combination is incomplete and never listed.
+    expect(results.rows.some((row) => row.agent === 'fake' && row.model === '')).toBe(true);
+    expect(testedCombinations(results)).toEqual([]);
   });
 });

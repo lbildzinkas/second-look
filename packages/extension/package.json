@@ -303,12 +303,12 @@
             "claude-code"
           ],
           "default": "pi",
-          "description": "The installed coding agent the companion drives for every agent pass of a review: Pi or Claude Code. The choice travels with each review request, so switching it and re-running a review needs no engine restart and stamps every agent-produced result with the new agent: the grouping pass always runs on it, and the ranking pass runs on it only where the agent, model and effort have an evaluation whose ranking matched or beat the plain one — each result's ranking says which ranking is shown and why. The status bar shows the agent in use. An agent that is missing, or a version too old for the companion's lockdown, is never run: the engine's agent probe reports what is missing."
+          "description": "The installed coding agent the companion drives for every agent pass of a review: Pi or Claude Code. The choice travels with each review request, so switching it and re-running a review needs no engine restart and stamps every agent-produced result with the new agent: the grouping pass always runs on it, and the ranking pass runs on it only where the agent, model and effort have an evaluation whose ranking matched or beat the plain one — each result's ranking says which ranking is shown and why. The status bar shows the agent in use, and choosing a combination the evaluation never tested shows a non-blocking warning. An agent that is missing, or a version too old for the companion's lockdown, is never run: the engine's agent probe reports what is missing."
         },
         "second-look.agentModel": {
           "type": "string",
           "default": "",
-          "description": "The model the selected agent runs for every agent pass of a review, in the agent's own naming: for example `anthropic/claude-sonnet-5` for Pi or `sonnet` for Claude Code. Empty uses the agent's own default model. The model is stamped on every agent-produced result, and the status bar shows the model in use."
+          "description": "The model the selected agent runs for every agent pass of a review, in the agent's own naming: for example `anthropic/claude-sonnet-5` for Pi or `sonnet` for Claude Code. Empty uses the agent's own default model. The model is stamped on every agent-produced result, and the status bar shows the model in use. Choosing an agent and model the companion's evaluation never tested shows a non-blocking warning naming the tested combinations; the current list is published as docs/tested-models.md in the repository."
         },
         "second-look.agentAccount": {
           "type": "string",

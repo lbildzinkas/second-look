@@ -3,6 +3,7 @@ import {
   apiKeyOverrideWarning,
   agentStatusBarText,
   readAgentSettings,
+  untestedModelWarning,
   type AgentSettings,
 } from './agent-settings.js';
 
@@ -10,10 +11,11 @@ import {
  * The status bar entry for the agent in use: the agent and model the
  * settings choose, the account or subscription when labelled, and — for
  * Claude Code started with an inherited Anthropic API key — the warning
- * that the key silently overrides the subscription. Every result the
- * companion shows is stamped with the same agent, version, model, login
- * and account label by the engine, so what the reviewer reads here is
- * what answered.
+ * that the key silently overrides the subscription, with the warning for
+ * a combination the evaluation never tested in its tooltip. Every result
+ * the companion shows is stamped with the same agent, version, model,
+ * login and account label by the engine, so what the reviewer reads here
+ * is what answered.
  */
 export class AgentStatusBar {
   private readonly item: vscode.StatusBarItem;
@@ -34,7 +36,7 @@ export class AgentStatusBar {
     const warning = apiKeyOverrideWarning(settings, this.env);
     const text = agentStatusBarText(settings);
     this.item.text = warning === undefined ? text : `$(warning) ${text}`;
-    this.item.tooltip = tooltip(settings, warning);
+    this.item.tooltip = tooltip(settings, [warning, untestedModelWarning(settings)]);
     this.item.backgroundColor =
       warning === undefined ? undefined : new vscode.ThemeColor('statusBarItem.warningBackground');
     this.item.show();
@@ -46,8 +48,8 @@ export class AgentStatusBar {
   }
 }
 
-/** The tooltip: what the entry shows, the lockdown behind it, and any warning. */
-function tooltip(settings: AgentSettings, warning: string | undefined): string {
+/** The tooltip: what the entry shows, the lockdown behind it, and any warnings. */
+function tooltip(settings: AgentSettings, warnings: readonly (string | undefined)[]): string {
   const lines = [
     agentStatusBarText(settings),
     '',
@@ -59,8 +61,8 @@ function tooltip(settings: AgentSettings, warning: string | undefined): string {
   if (settings.agent === 'claude-code') {
     lines.push("Each run's stamp also names the login it used.");
   }
-  if (warning !== undefined) {
-    lines.push('', warning);
+  for (const warning of warnings) {
+    if (warning !== undefined) lines.push('', warning);
   }
   return lines.join('\n');
 }

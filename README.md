@@ -4,6 +4,7 @@ Second Look is a VS Code companion for human pull request review: it ranks the c
 
 - [CONTEXT.md](CONTEXT.md) — the project glossary: the shared words and what they mean.
 - [docs/adr/](docs/adr/) — the numbered decision records behind the design.
+- [docs/tested-models.md](docs/tested-models.md) — the current list of the agent, model and effort combinations the companion's evaluation has been tested with, and how each scored.
 
 ## Repository layout
 
@@ -175,7 +176,7 @@ Claude Code runs under its own lockdown, built from the flags it offers (`packag
 
 A Claude Code version whose help lacks any of these flags is never run. Each run's stamp reports which login it used — the stored subscription sign-in, an OAuth token or cloud credentials from the environment — and warns when an inherited `ANTHROPIC_API_KEY` silently overrides the subscription. The key itself is never read, printed or copied: only its presence is checked. Anthropic's terms are unclear on third-party tools driving a reviewer's own Claude Code (ADR 0004).
 
-The VS Code settings pick the agent, the model and a label for the account or subscription it bills; the status bar shows them, and warns about an inherited API key when Claude Code is the agent. Every result is stamped, so the reviewer can always tell which agent and model said what.
+The VS Code settings pick the agent, the model and a label for the account or subscription it bills; the status bar shows them, and warns about an inherited API key when Claude Code is the agent. Choosing an agent and model the evaluation never tested shows a clear, non-blocking warning, since prompts behave differently on each model; the current list of tested combinations is published in [docs/tested-models.md](docs/tested-models.md). Every result is stamped, so the reviewer can always tell which agent and model said what.
 
 Pull request text reaches the agent inside a marked untrusted block, with Unicode tag characters, zero-width characters and bidirectional controls stripped. HTML comments, which GitHub hides from the reviewer, are kept but delimited. Each answer is checked against its schema. An invalid answer is retried once, then reported as a failure, never guessed. Every result is stamped with the agent, its version, the model, the effort, the run date, the tokens and cost when the agent reports them, and the reviewer's account label when the settings gave one. Runs have a timeout and a concurrency limit, and a run that times out keeps what it wrote.
 

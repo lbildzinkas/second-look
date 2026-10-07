@@ -22,7 +22,7 @@ import {
 } from './prompts.js';
 import { recordCase } from './record.js';
 import { seedCase } from './seed.js';
-import { NO_AGENT, belowFullCoverage, runEvaluation } from './run.js';
+import { NO_AGENT, belowFullCoverage, runEvaluation, testedCombinations } from './run.js';
 import type { ResultRow, RunResults } from './run.js';
 
 const USAGE = `second-look-eval — the evaluation of the Second Look engine
@@ -110,7 +110,11 @@ pressed from their recorded downloads and each pressed claim judged again
 in the library's source, scored by the claim checks, and those rows are
 stamped with the agent and model that answered; the report says whether each agent, model and
 effort's ranking matches or beats the plain ranking over the cases it
-ranked. Each run writes its stamped results and the trace
+ranked, and lists every combination it tested — one TESTED line each,
+with the agent's version, the run's date and the scores stamped with it
+over all the cases; the same listing, for every tested combination, is
+published in docs/tested-models.md. Each run writes its stamped
+results and the trace
 of every agent call to its own folder under --runs (default: the
 engine's cache folder). Coverage is a hard gate: the run exits 1 when any
 coverage is below 100%. With --baseline it compares the stamped rows and
@@ -327,13 +331,21 @@ function format(value: number): string {
   return String(Math.round(value * 10_000) / 10_000);
 }
 
-/** The run's scores, one line per row, then any case the engine failed. */
-function report(results: RunResults): string {
+/** The run's scores, one line per row, every combination it tested, then any case the engine failed. */
+export function report(results: RunResults): string {
   const lines = results.rows.map((row) => {
     const note = row.note ? `  (${row.note})` : '';
     const agent = row.agent === NO_AGENT ? '' : `  [${row.agent} ${row.agentVersion} ${row.model || 'unknown model'}]`;
     return `${row.case}  ${row.name}  ${format(row.value)}${agent}${note}`;
   });
+  for (const tested of testedCombinations(results)) {
+    const scores = tested.scores
+      .map((score) => `${score.prompt === undefined ? '' : `${score.prompt}: `}${score.name} ${format(score.value)}${score.note ? ` (${score.note})` : ''}`)
+      .join(', ');
+    lines.push(
+      `TESTED ${tested.agent} ${tested.agentVersion} ${tested.model} ${tested.effort} (run ${tested.runDate}): ${scores}`,
+    );
+  }
   for (const failure of results.failures) {
     lines.push(`FAILED ${failure.case}: ${failure.error}`);
   }
