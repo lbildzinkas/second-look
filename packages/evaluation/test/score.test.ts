@@ -11,11 +11,13 @@ import {
   tallyCase,
   tallyCriteria,
   tallyDrafts,
+  tallyCover,
   tallyExplanations,
   tallyFinding,
   tallyJudging,
   tallyStory,
   tallyUnexplained,
+  tallyVerifications,
   verdictBeforeFetch,
 } from '../src/score.js';
 
@@ -610,5 +612,45 @@ describe('the unexplained changes the agent finds', () => {
 
     const plain = scoresOf(tallyCase(DIFF, { ...EXPECTED, unexplained: EXPECTED_UNEXPLAINED }, parts({})));
     expect(plain.filter((score) => score.name.includes('unexplained') || score.name.startsWith('described'))).toEqual([]);
+  });
+});
+
+describe('the verify and cover scores', () => {
+  const base = () => tallyCase(DIFF, { noise: {}, importantParts: [], claims: [] }, undefined);
+  const scored = (tally: ReturnType<typeof base>, prefix: string) =>
+    Object.fromEntries(scoresOf(tally).filter((score) => score.name.startsWith(prefix)).map((score) => [score.name, score.value]));
+  const selection = { path: 'src/cart.ts', line: 1, endLine: 1, text: 'total' };
+  const offer = { library: 'httpx', pinnedVersion: '0.27.2', pinnedBy: 'requirements.txt', reason: 'r' };
+
+  it('scores a verdict right only when it names the library the selection needs, and counts the fetch offered for it', () => {
+    const tally = tallyVerifications([
+      { wanted: { ...selection, verdict: 'unverifiable', library: 'httpx' }, got: { kind: 'unverifiable', source: "the model's memory", reason: 'r', evidence: [], needsLibrary: 'HTTPX', libraryFetch: offer } },
+      { wanted: { ...selection, verdict: 'unverifiable', library: 'httpx' }, got: { kind: 'unverifiable', source: "the model's memory", reason: 'r', evidence: [] } },
+      { wanted: { ...selection, verdict: 'refuted' }, got: { kind: 'verified', source: 'the change itself', reason: 'r', evidence: [] } },
+      { wanted: { ...selection, verdict: 'verified' }, got: undefined },
+    ]);
+
+    expect(scored({ ...base(), verifications: tally }, 'verify-')).toEqual({ 'verify-accuracy': 0.25, 'verify-false-verified': 1 / 3, 'verify-fetch-offered': 0.5 });
+  });
+
+  it('scores none found only on the parts nothing covers, and matches a manual check either way round', () => {
+    const manual = { text: 'Tried it by hand: the total showed 2.', line: 3 };
+    const tally = tallyCover([
+      {
+        wanted: { part: 'total', tests: ['test/cart.test.ts'], manual: [manual] },
+        checks: { tests: [{ path: 'test/cart.test.ts', line: 4, quote: 'q' }, { path: 'src/cart.ts', line: 1, quote: 'q' }], manualChecks: [{ quote: 'the total showed 2.', line: 3 }], refused: [] },
+      },
+      { wanted: { part: 'other', tests: [], manual: [] }, checks: { tests: [], manualChecks: [], refused: ['the citation test/x.ts:9 names a file the head copy does not have'] } },
+      { wanted: { part: 'third', tests: [], manual: [] }, checks: undefined },
+    ]);
+
+    expect(scored({ ...base(), covers: tally }, 'cover-')).toEqual({
+      'cover-cites-checked': 1 / 3,
+      'cover-tests-recall': 1,
+      'cover-tests-precision': 0.5,
+      'cover-manual-recall': 1,
+      'cover-none-found': 0.5,
+    });
+    expect(scored(base(), 'cover-')).toEqual({});
   });
 });

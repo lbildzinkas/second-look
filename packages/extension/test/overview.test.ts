@@ -816,6 +816,30 @@ describe('OverviewPanel', () => {
     expect(html).toContain("document.querySelector('.answer.focus')");
   });
 
+  it("stamps a verify answer with the judging pass's prompt, and shows a cover answer that found none as an answer", () => {
+    const result = storyResult();
+    const part = result.parts[0]!;
+    const stamp = explained(result).stamp;
+    const verified: AskAnswer = {
+      ask: 'verify',
+      part: 0,
+      partName: part.name ?? part.path,
+      sections: [{ heading: 'Verdict', text: 'refuted, from the change itself: `total` counts items, not their prices.' }],
+      cited: [{ path: 'web/cart.ts', side: 'head', line: 3, quote: 'return items.length;' }],
+      promptVersion: '5',
+      stamp,
+    };
+    const none: AskAnswer = { ...verified, ask: 'cover', sections: [{ heading: 'None found', text: 'No test calls `total`; I searched `test`.' }], cited: [], promptVersion: '1' };
+
+    const html = overviewHtml({ result, answers: [none, verified] }, 'N');
+
+    expect(html).toContain('every line it cites is one the part shows or the engine re-read in the head copy.');
+    expect(html).toContain('<b>Verify this claim</b> · ');
+    expect(html).toContain('<span class="stamp">pi · zai/glm · verdicts prompt v5</span>');
+    expect(html).toContain('<b>What covers this?</b> · ');
+    expect(html).toContain('<div class="why"><b>None found</b> No test calls <code>total</code>; I searched <code>test</code>.</div>');
+  });
+
   it("keeps the answers across the review's updates, newest first, until a new review clears them", () => {
     const overview = new OverviewPanel(() => undefined, () => undefined, () => undefined);
     const result = storyResult();

@@ -162,6 +162,8 @@ export interface StubState {
   configuration: Record<string, unknown>;
   /** The editors currently visible; tests set these and fire the change. */
   visibleTextEditors: unknown[];
+  /** The editor that has focus, with its document and selection; none unless a test sets one. */
+  activeTextEditor: unknown;
   /** The file contents behind `file:` URIs, keyed by path. */
   files: Map<string, Uint8Array>;
   /** What showInputBox resolves with; undefined reads as dismissed, and a pending promise holds the box open. */
@@ -206,6 +208,7 @@ export const stub: StubState = {
   webviewPanels: [],
   configuration: {},
   visibleTextEditors: [],
+  activeTextEditor: undefined,
   files: new Map(),
   inputBoxResult: undefined,
   inputBoxes: [],
@@ -231,6 +234,7 @@ export const stub: StubState = {
     stub.webviewPanels = [];
     stub.configuration = {};
     stub.visibleTextEditors = [];
+    stub.activeTextEditor = undefined;
     visibleEditorListeners.clear();
     configurationListeners.clear();
     stub.files = new Map();
@@ -509,6 +513,9 @@ export const commands = {
 };
 
 export const window = {
+  get activeTextEditor(): unknown {
+    return stub.activeTextEditor;
+  },
   showInputBox(options?: { title?: string; value?: string }): Promise<string | undefined> {
     stub.inputBoxes.push({ title: options?.title, value: options?.value });
     return Promise.resolve(stub.inputBoxResult);

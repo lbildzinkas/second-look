@@ -216,5 +216,17 @@
     ],
     "described": []
   },
-  "explain": ["HTTPParser.wait_ready, HTTPParser in src/httpx/_parsers.py", "HTTPServer.wait in src/httpx/_server.py"]
+  "explain": ["HTTPParser.wait_ready, HTTPParser in src/httpx/_parsers.py", "HTTPServer.wait in src/httpx/_server.py"],
+  "cover": [
+    {
+      "part": "HTTPParser.wait_ready, HTTPParser in src/httpx/_parsers.py",
+      "tests": [],
+      "manual": []
+    },
+    {
+      "part": "HTTPServer.wait in src/httpx/_server.py",
+      "tests": [],
+      "manual": []
+    }
+  ]
 }

@@ -40,7 +40,8 @@ import {
 import { draftTarget, ReviewComments } from './comments.js';
 import { escapeMarkdown, FindingThreads } from './findings.js';
 import { isSubmitKind, SendReviewPage } from './send-page.js';
-import { OverviewPanel } from './overview.js';
+import { OverviewPanel, claimWhere } from './overview.js';
+import { partClaims, selectionInPart } from './asked-claim.js';
 import { AgentStatusBar } from './agent-status.js';
 import { readAgentSettings, reviewAgentChoice } from './agent-settings.js';
 import {
@@ -53,6 +54,8 @@ import {
   markedPart,
   parsePullRequestUrl,
   wholeFilesReviewed,
+  withVerifiedClaim,
+  type AskedClaim,
   type AskKind,
   type CommentSide,
   type LibraryFetchOffer,
@@ -735,7 +738,10 @@ class ReviewSession {
    * about the part of its latest review, checked before it arrives, and
    * the overview shows the answer with its stamp. The tree passes its
    * element, so the part is read out of whatever the argument carries,
-   * and found in the result shown by where it starts.
+   * and found in the result shown by where it starts. Verify this claim
+   * checks the text selected on the head side of the part's diff, or else
+   * the claim the reviewer picks, and its judged claim joins the review
+   * shown, as a finding with any library fetch it offers.
    */
   async ask(kind: AskKind, arg?: unknown): Promise<void> {
     const part = carriedPart(arg);
@@ -747,10 +753,12 @@ class ReviewSession {
     }
     const review = this.reviews;
     const asked = this.result.parts[index]!;
+    const claim = ASKS[kind].takesClaim ? await this.claimToVerify(this.result, index) : undefined;
+    if (ASKS[kind].takesClaim && claim === undefined) return;
     try {
       const answer = await vscode.window.withProgress(
         { location: { viewId: REVIEW_TREE_VIEW }, title: `${ASKS[kind].title}: asking the agent…` },
-        async () => (await this.readyEngine()).ask(this.url!, kind, index, reviewAgentChoice(readAgentSettings())),
+        async () => (await this.readyEngine()).ask(this.url!, kind, index, reviewAgentChoice(readAgentSettings()), claim),
       );
       // A review started meanwhile replaces this one, asks and all.
       if (review !== this.reviews || this.result === undefined) return;
@@ -758,10 +766,43 @@ class ReviewSession {
         vscode.window.showWarningMessage('The review changed while the agent answered; ask again.');
         return;
       }
+      if (answer.claim !== undefined) {
+        const updated = withVerifiedClaim(this.result, answer.claim);
+        if (updated === undefined) {
+          vscode.window.showWarningMessage('The review changed while the claim was judged; ask again.');
+          return;
+        }
+        await this.show(updated, true);
+      }
       this.overview.answer(answer);
     } catch (error) {
       vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
     }
+  }
+
+  /**
+   * The claim a verify ask checks: the text the reviewer selected on the
+   * head side of the part's diff, or else the one of the part's claims
+   * they pick. Undefined, having said why, when there is neither or the
+   * reviewer dismissed the pick.
+   */
+  private async claimToVerify(result: ReviewResult, part: number): Promise<AskedClaim | undefined> {
+    const editor = vscode.window.activeTextEditor;
+    const selected =
+      editor === undefined || editor.selection.isEmpty
+        ? undefined
+        : selectionInPart(result, part, { uri: editor.document.uri, start: editor.selection.start, end: editor.selection.end, text: editor.document.getText(editor.selection) });
+    if (selected !== undefined) return { selection: selected };
+    const claims = partClaims(result, part);
+    if (claims.length === 0) {
+      vscode.window.showInformationMessage("Select the text to verify on the head side of this part's diff, then ask again.");
+      return undefined;
+    }
+    const picked = await vscode.window.showQuickPick(
+      claims.map(({ index, claim }) => ({ label: claim.quote, description: claimWhere(claim), detail: claim.verdict.kind, index })),
+      { title: 'Verify this claim', placeHolder: "Pick a claim, or select text on the head side of the part's diff" },
+    );
+    return picked === undefined ? undefined : { index: picked.index };
   }
 
   /** Opens the review's overview at the story's start. */

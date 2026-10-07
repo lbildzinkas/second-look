@@ -11,7 +11,7 @@ import type { AgentStamp } from './agent.js';
 import type { AskKind } from './asks.js';
 
 /** Version of the review result schema. */
-export const REVIEW_RESULT_VERSION = 16 as const;
+export const REVIEW_RESULT_VERSION = 17 as const;
 
 /**
  * Version 2 added the head commit's SHA and each part's noise assessment;
@@ -181,10 +181,10 @@ export interface DraftComment {
 }
 
 /**
- * One line of a part an ask's answer cites: the file, by its path on the
- * new side, the side the line sits on, its number there and its quote.
- * The engine keeps only a citation whose line the part shows, with the
- * quote on it.
+ * One line an ask's answer cites: the file, by its path on the new side,
+ * the side the line sits on, its number there and its quote. The engine
+ * keeps only a citation it checked: a line the part shows, with the quote
+ * on it, or a line it re-read in the head copy.
  */
 export interface PartCitation {
   path: string;
@@ -217,7 +217,32 @@ export interface AskAnswer {
   /** The version of the ask's prompt. */
   promptVersion: string;
   stamp: AgentStamp;
+  /**
+   * The claim a verify ask judged, with its verdict and any library fetch
+   * it offers, and its index in the review's claims, where the engine's
+   * latest review now holds it: in the picked claim's place, or after the
+   * others for text the reviewer selected.
+   */
+  claim?: { index: number; claim: Claim };
 }
+
+/**
+ * Text the reviewer selected on the head side of a part's diff, to verify
+ * as a claim: the file, by its path on the new side, the head-side lines
+ * the selection starts and ends on, and the text as selected.
+ */
+export interface ReviewerSelection {
+  path: string;
+  line: number;
+  endLine: number;
+  text: string;
+}
+
+/**
+ * The claim a verify ask checks: one of the review's claims, by its index
+ * there, or text the reviewer selected in the part's diff.
+ */
+export type AskedClaim = { index: number } | { selection: ReviewerSelection };
 
 /**
  * One reviewed mark: the reviewer ticked a part's checkbox. The local
@@ -656,12 +681,13 @@ export interface ClaimJudging {
 /**
  * Where a claim is made, in priority order: a finding of a fresh pipeline
  * report, the pull request's description, a docstring or a comment the
- * change adds, or the companion's own agent, in the story it wrote.
+ * change adds, the companion's own agent, in the story it wrote, or text
+ * the reviewer selected in the diff and asked to verify.
  */
-export type ClaimSource = 'pipeline' | 'description' | 'docstring' | 'comment' | 'agent';
+export type ClaimSource = 'pipeline' | 'description' | 'docstring' | 'comment' | 'agent' | 'reviewer';
 
 /** The claim sources in priority order, the order the claims are listed in. */
-export const CLAIM_SOURCE_ORDER: readonly ClaimSource[] = ['pipeline', 'description', 'docstring', 'comment', 'agent'];
+export const CLAIM_SOURCE_ORDER: readonly ClaimSource[] = ['pipeline', 'description', 'docstring', 'comment', 'agent', 'reviewer'];
 
 /** Where in its source a claim's quote sits. */
 export type ClaimLocation =
@@ -672,7 +698,7 @@ export type ClaimLocation =
       line: number;
     }
   | {
-      /** In lines the change adds to a file. */
+      /** In lines the change adds to a file, or, for the reviewer's selection, head-side lines the diff shows. */
       kind: 'file';
       /** The file, by its path on the new side. */
       path: string;

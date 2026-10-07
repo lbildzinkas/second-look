@@ -116,6 +116,16 @@
         "command": "second-look.ask.explain",
         "title": "Explain this part",
         "category": "Second Look"
+      },
+      {
+        "command": "second-look.ask.verify",
+        "title": "Verify this claim",
+        "category": "Second Look"
+      },
+      {
+        "command": "second-look.ask.cover",
+        "title": "What covers this?",
+        "category": "Second Look"
       }
     ],
     "menus": {
@@ -187,6 +197,14 @@
         {
           "command": "second-look.ask.explain",
           "when": "false"
+        },
+        {
+          "command": "second-look.ask.verify",
+          "when": "false"
+        },
+        {
+          "command": "second-look.ask.cover",
+          "when": "false"
         }
       ],
       "comments/commentThread/context": [
@@ -242,6 +260,26 @@
         },
         {
           "command": "second-look.ask.explain",
+          "when": "view == second-look.reviewTree && viewItem == noise",
+          "group": "asks"
+        },
+        {
+          "command": "second-look.ask.verify",
+          "when": "view == second-look.reviewTree && viewItem == part",
+          "group": "asks"
+        },
+        {
+          "command": "second-look.ask.verify",
+          "when": "view == second-look.reviewTree && viewItem == noise",
+          "group": "asks"
+        },
+        {
+          "command": "second-look.ask.cover",
+          "when": "view == second-look.reviewTree && viewItem == part",
+          "group": "asks"
+        },
+        {
+          "command": "second-look.ask.cover",
           "when": "view == second-look.reviewTree && viewItem == noise",
           "group": "asks"
         }

@@ -43,7 +43,7 @@ import { UNTRUSTED_INPUT_RULE, untrustedBlock } from './untrusted.js';
 export const VERDICTS_PROMPT_ID = 'verdicts';
 
 /** The verdicts prompt's version. */
-export const VERDICTS_PROMPT_VERSION = '4';
+export const VERDICTS_PROMPT_VERSION = '5';
 
 /** The evidence sources the agent can cite: the change, or its own memory, and a CI log when one is shown. */
 function answerSources(withLogs: boolean): readonly EvidenceSource[] {
@@ -212,6 +212,7 @@ export function claimPlace(claim: Claim): string {
   if (location.kind === 'story') return `the story the companion's agent wrote, sentence ${location.sentence + 1}`;
   if (location.kind === 'pipeline') return 'a finding of the pipeline report in the description';
   const lines = location.endLine > location.line ? `lines ${location.line}-${location.endLine}` : `line ${location.line}`;
+  if (claim.source === 'reviewer') return `text the reviewer selected in the diff of ${JSON.stringify(location.path)}, ${lines}, and asked to verify`;
   return `a ${claim.source} the change adds to ${JSON.stringify(location.path)}, ${lines}`;
 }
 

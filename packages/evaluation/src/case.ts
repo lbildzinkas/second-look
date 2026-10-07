@@ -183,6 +183,39 @@ export interface ExpectedCriterion {
   manual?: ExpectedManualCheck[];
 }
 
+/**
+ * Text a reviewer selects on the head side of a part's diff and asks to
+ * verify, with the verdict the judging pass deserves for it from the
+ * change alone.
+ */
+export interface ExpectedSelection {
+  /** The file, by its path on the new side. */
+  path: string;
+  /** The 1-based head-side lines the selection starts and ends on. */
+  line: number;
+  endLine: number;
+  /** The text as selected. */
+  text: string;
+  /** The verdict it deserves before any library fetch: unverifiable when it needs a library's source. */
+  verdict: Verdict;
+  /** The library whose source it needs, which the verdict must name and a fetch be offered for; absent when the change settles it. */
+  library?: string;
+}
+
+/**
+ * What covers one part, as a reviewer expects the "what covers this?"
+ * ask to find it: the test files whose lines exercise it and the manual
+ * checks the description reports for it, both empty when none covers it.
+ */
+export interface ExpectedCover {
+  /** The part, by its name as the engine prints it, or else by its path (the first part holding that file). */
+  part: string;
+  /** The test files, in the change or the head copy, whose lines exercise it. */
+  tests: string[];
+  /** The manual checks the description reports for it. */
+  manual: ExpectedManualCheck[];
+}
+
 /** A case's `expected.json`, written by hand. */
 export interface ExpectedResults {
   /**
@@ -220,6 +253,10 @@ export interface ExpectedResults {
    * absent when the case explains none.
    */
   explain?: string[];
+  /** The selections the verify ask checks; absent when the case verifies none. */
+  verify?: ExpectedSelection[];
+  /** What covers each labelled part, for the cover prompt; absent when the case labels none. */
+  cover?: ExpectedCover[];
 }
 
 /** A case loaded from its folder. */
@@ -252,6 +289,8 @@ export async function loadCase(folder: string): Promise<EvaluationCase> {
     ...(recorded.criteria ? { criteria: recorded.criteria } : {}),
     ...(recorded.drafts ? { drafts: recorded.drafts } : {}),
     ...(recorded.explain ? { explain: recorded.explain } : {}),
+    ...(recorded.verify ? { verify: recorded.verify } : {}),
+    ...(recorded.cover ? { cover: recorded.cover } : {}),
   };
   return { id: record.id, folder, record, expected };
 }

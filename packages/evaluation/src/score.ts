@@ -5,6 +5,7 @@ import type {
   ClaimVerdict,
   DescribedChange,
   DraftChecks,
+  CoverChecks,
   ExplainChecks,
   FileSlice,
   LinkedIssue,
@@ -13,7 +14,17 @@ import type {
   StoryChecks,
   UnexplainedChanges,
 } from '@second-look/engine';
-import type { ExpectedClaim, ExpectedCriterion, ExpectedDescribed, ExpectedNoise, ExpectedResults, ExpectedUnexplained, Verdict } from './case.js';
+import type {
+  ExpectedClaim,
+  ExpectedCover,
+  ExpectedCriterion,
+  ExpectedDescribed,
+  ExpectedNoise,
+  ExpectedResults,
+  ExpectedSelection,
+  ExpectedUnexplained,
+  Verdict,
+} from './case.js';
 import type { LibraryFetchOffer, PressedClaim } from './claims.js';
 
 /** How many leading parts count as the top of the ranking. */
@@ -85,6 +96,30 @@ export const DRAFT_SCORES: readonly string[] = ['draft-cites-evidence', 'draft-n
  * show.
  */
 export const EXPLAIN_SCORES: readonly string[] = ['explain-cites-part', 'explain-names-in-change'];
+
+/**
+ * The scores of the verify ask on the hand-labelled selections: the
+ * share given the verdict they deserve from the change alone, the share
+ * of those that do not deserve verified that it verified anyway, and the
+ * share of those that need a library's source offered its fetch.
+ */
+export const VERIFY_SCORES: readonly string[] = ['verify-accuracy', 'verify-false-verified', 'verify-fetch-offered'];
+
+/**
+ * The scores of what the agent says covers the labelled parts: the share
+ * of answers whose every test line re-reads in the head copy and every
+ * manual check is in the description; the share of the labelled test
+ * files cited, and of the cited test files a label names; the share of
+ * the labelled manual checks quoted; and the share of the parts nothing
+ * covers that it answered none found for.
+ */
+export const COVER_SCORES: readonly string[] = [
+  'cover-cites-checked',
+  'cover-tests-recall',
+  'cover-tests-precision',
+  'cover-manual-recall',
+  'cover-none-found',
+];
 
 /** One score of a run, with the direction in which it improves. */
 export interface Score {
@@ -160,6 +195,109 @@ export interface Tally {
   drafts: DraftTally;
   /** The counts behind the plain checks of the explanations the agent gave. */
   explanations: ExplainTally;
+  /** The counts behind the verdicts the verify ask gave the labelled selections. */
+  verifications: VerifyTally;
+  /** The counts behind what the agent said covers the labelled parts. */
+  covers: CoverTally;
+}
+
+/**
+ * The counts behind the verify ask's verdicts: the labelled selections
+ * and those given the verdict they deserve, those that do not deserve
+ * verified and those verified anyway, and those that need a library and
+ * those offered its fetch.
+ */
+export interface VerifyTally {
+  labelled: number;
+  right: number;
+  notVerified: number;
+  falseVerified: number;
+  needLibrary: number;
+  offered: number;
+}
+
+function noVerifications(): VerifyTally {
+  return { labelled: 0, right: 0, notVerified: 0, falseVerified: 0, needLibrary: 0, offered: 0 };
+}
+
+/**
+ * Tallies the verify ask's verdicts against the labelled selections:
+ * right when the kind matches and, for a selection that needs a library's
+ * source, the verdict names that library; offered when such a verdict
+ * offers that library's fetch. A selection the ask gave no verdict, its
+ * judging having fallen back, is right about nothing.
+ */
+export function tallyVerifications(judged: readonly { wanted: ExpectedSelection; got: ClaimVerdict | undefined }[]): VerifyTally {
+  const tally = noVerifications();
+  for (const { wanted, got } of judged) {
+    const verdict = got === undefined || got.kind === 'not checked' ? undefined : got;
+    const named = (library: string | undefined): boolean => wanted.library !== undefined && library?.toLowerCase() === wanted.library.toLowerCase();
+    tally.labelled++;
+    if (verdict?.kind === wanted.verdict && (wanted.library === undefined || named(verdict.needsLibrary))) tally.right++;
+    if (wanted.verdict !== 'verified') {
+      tally.notVerified++;
+      if (verdict?.kind === 'verified') tally.falseVerified++;
+    }
+    if (wanted.library === undefined) continue;
+    tally.needLibrary++;
+    if (named(verdict?.libraryFetch?.library)) tally.offered++;
+  }
+  return tally;
+}
+
+/**
+ * The counts behind what covers the labelled parts: the parts asked
+ * about and the answers whose every citation was checked, the labelled
+ * test files and those cited, the cited test files and those a label
+ * names, the labelled manual checks and those quoted, and the parts
+ * nothing covers and those answered none found.
+ */
+export interface CoverTally {
+  parts: number;
+  checked: number;
+  testFiles: number;
+  testsCited: number;
+  citedFiles: number;
+  citedLabelled: number;
+  manualChecks: number;
+  manualCited: number;
+  uncovered: number;
+  noneFound: number;
+}
+
+function noCovers(): CoverTally {
+  return { parts: 0, checked: 0, testFiles: 0, testsCited: 0, citedFiles: 0, citedLabelled: 0, manualChecks: 0, manualCited: 0, uncovered: 0, noneFound: 0 };
+}
+
+/**
+ * Tallies what the agent said covers each labelled part, from its
+ * answer's checks: a test file cited when a line of it re-read in the
+ * head copy; a labelled manual check quoted when a quote found in the
+ * description holds its text or is held by it; none found when no test
+ * line and no manual check survived. A part the agent gave no answer for
+ * fails every check, none found included.
+ */
+export function tallyCover(answers: readonly { wanted: ExpectedCover; checks: CoverChecks | undefined }[]): CoverTally {
+  const tally = noCovers();
+  for (const { wanted, checks } of answers) {
+    tally.parts++;
+    tally.testFiles += wanted.tests.length;
+    tally.manualChecks += wanted.manual.length;
+    const uncovered = wanted.tests.length === 0 && wanted.manual.length === 0;
+    if (uncovered) tally.uncovered++;
+    if (checks === undefined) continue;
+    if (checks.refused.length === 0) tally.checked++;
+    const cited = new Set(checks.tests.map((each) => each.path));
+    tally.testsCited += wanted.tests.filter((file) => cited.has(file)).length;
+    tally.citedFiles += cited.size;
+    tally.citedLabelled += [...cited].filter((file) => wanted.tests.includes(file)).length;
+    for (const check of wanted.manual) {
+      const text = matchText(check.text);
+      if (checks.manualChecks.some((each) => matchText(each.quote).includes(text) || text.includes(matchText(each.quote)))) tally.manualCited++;
+    }
+    if (uncovered && cited.size === 0 && checks.manualChecks.length === 0) tally.noneFound++;
+  }
+  return tally;
 }
 
 /**
@@ -616,6 +754,8 @@ export function tallyCase(
     criteria: noCriteria(),
     drafts: noDrafts(),
     explanations: noExplanations(),
+    verifications: noVerifications(),
+    covers: noCovers(),
   };
   if (!parts) return tally;
 
@@ -727,6 +867,8 @@ export function addTallies(tallies: readonly Tally[]): Tally {
     criteria: noCriteria(),
     drafts: noDrafts(),
     explanations: noExplanations(),
+    verifications: noVerifications(),
+    covers: noCovers(),
   };
   for (const tally of tallies) {
     total.changedLines += tally.changedLines;
@@ -741,6 +883,8 @@ export function addTallies(tallies: readonly Tally[]): Tally {
     for (const key of Object.keys(total.criteria) as (keyof CriteriaTally)[]) total.criteria[key] += tally.criteria[key];
     for (const key of Object.keys(total.drafts) as (keyof DraftTally)[]) total.drafts[key] += tally.drafts[key];
     for (const key of Object.keys(total.explanations) as (keyof ExplainTally)[]) total.explanations[key] += tally.explanations[key];
+    for (const key of Object.keys(total.verifications) as (keyof VerifyTally)[]) total.verifications[key] += tally.verifications[key];
+    for (const key of Object.keys(total.covers) as (keyof CoverTally)[]) total.covers[key] += tally.covers[key];
     for (const [name, counts] of tally.noise) {
       const sum = total.noise.get(name) ?? { expected: 0, predicted: 0, matched: 0 };
       sum.expected += counts.expected;
@@ -783,7 +927,8 @@ function median(values: readonly number[]): number {
  * in each direction, the accuracy, false-met rate and evidence recall
  * of the verdicts it gave the acceptance criteria, and the plain checks
  * of the drafts it wrote from findings and of the explanations it gave
- * of parts. A score with nothing to
+ * of parts, the verify ask's verdicts on the labelled selections, and
+ * what it said covers the labelled parts. A score with nothing to
  * count is left out rather than given a value it did not earn.
  */
 export function scoresOf(tally: Tally): Score[] {
@@ -846,6 +991,19 @@ export function scoresOf(tally: Tally): Score[] {
   scores.push(
     ...ratio('explain-cites-part', explanations.citesPart, explanations.parts),
     ...ratio('explain-names-in-change', explanations.namesInChange, explanations.parts),
+  );
+  const { verifications, covers } = tally;
+  scores.push(
+    ...ratio('verify-accuracy', verifications.right, verifications.labelled),
+    ...(verifications.notVerified > 0
+      ? [{ name: 'verify-false-verified', value: verifications.falseVerified / verifications.notVerified, better: 'lower' as const }]
+      : []),
+    ...ratio('verify-fetch-offered', verifications.offered, verifications.needLibrary),
+    ...ratio('cover-cites-checked', covers.checked, covers.parts),
+    ...ratio('cover-tests-recall', covers.testsCited, covers.testFiles),
+    ...ratio('cover-tests-precision', covers.citedLabelled, covers.citedFiles),
+    ...ratio('cover-manual-recall', covers.manualCited, covers.manualChecks),
+    ...ratio('cover-none-found', covers.noneFound, covers.uncovered),
   );
   return scores;
 }

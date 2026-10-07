@@ -28,7 +28,7 @@
 
 import type { AgentName } from './agents.js';
 import type { AskKind } from './asks.js';
-import type { AskAnswer, DraftComment, FindingRef, PendingReview, ReviewedMarks, ReviewResult, SentReview, ViewedFiles } from './protocol.js';
+import type { AskAnswer, AskedClaim, DraftComment, FindingRef, PendingReview, ReviewedMarks, ReviewResult, SentReview, ViewedFiles } from './protocol.js';
 import type { MarkedPart } from './reviewed-marks.js';
 
 /** Version of the JSON-RPC protocol between the extension and the engine. */
@@ -200,11 +200,13 @@ export interface AskParams {
   ask: AskKind;
   /** The part, by its index in the review result's parts. */
   part: number;
+  /** The claim to verify, for an ask that takes one: one of the part's claims, or the reviewer's selection in its diff. */
+  claim?: AskedClaim;
   /** The agent, model and account that answer; see {@link ReviewAgentChoice}. */
   agent?: ReviewAgentChoice;
 }
 
-/** The ask request's result: the checked answer. */
+/** The ask request's result: the checked answer; a verify ask's judged claim is in the engine's latest review too. */
 export type AskRpcResult = AskAnswer;
 
 /** The request that sends the pending review to GitHub as one review. */

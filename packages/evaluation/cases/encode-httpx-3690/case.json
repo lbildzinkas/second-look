@@ -10,7 +10,8 @@
     "claims",
     "verdicts",
     "unexplained",
-    "explain"
+    "explain",
+    "cover"
   ],
   "pullRequest": {
     "url": "https://github.com/encode/httpx/pull/3690",

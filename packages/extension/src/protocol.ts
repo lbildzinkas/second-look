@@ -807,10 +807,17 @@ export class DraftProtocolError extends Error {
   }
 }
 
+/** A verify ask's judged claim: its index in the review's claims, and the claim, about the part asked about. */
+function isVerifiedClaim(value: unknown, part: number): boolean {
+  if (!isRecord(value)) return false;
+  const { index, claim } = value;
+  return isNumber(index) && Number.isInteger(index) && index >= 0 && isClaim(claim, part + 1, Number.MAX_SAFE_INTEGER) && isRecord(claim) && claim['part'] === part;
+}
+
 /**
  * Checks that a value read over the protocol is the answer to an ask:
- * the ask and the part it is about, its sections, the lines of the part
- * it cites, and who answered.
+ * the ask and the part it is about, its sections, the lines it cites,
+ * who answered, and any claim a verify ask judged.
  */
 export function isAskAnswer(value: unknown): value is AskAnswer {
   if (!isRecord(value)) return false;
@@ -836,7 +843,8 @@ export function isAskAnswer(value: unknown): value is AskAnswer {
         isString(each['quote']),
     ) &&
     isString(value['promptVersion']) &&
-    isAgentStamp(value['stamp'])
+    isAgentStamp(value['stamp']) &&
+    (value['claim'] === undefined || isVerifiedClaim(value['claim'], part))
   );
 }
 

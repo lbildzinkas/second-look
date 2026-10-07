@@ -129,6 +129,8 @@ async function reviewWithFakeEngine(options: FakeEngineOptions): Promise<StubTre
     ADD_DRAFT_COMMAND,
     DISCARD_DRAFT_COMMAND,
     askCommand('explain'),
+    askCommand('verify'),
+    askCommand('cover'),
   ]);
 
   stub.inputBoxResult = PR_URL;
@@ -250,6 +252,8 @@ describe('activating the companion', () => {
       ADD_DRAFT_COMMAND,
       DISCARD_DRAFT_COMMAND,
       askCommand('explain'),
+      askCommand('verify'),
+      askCommand('cover'),
     ]);
     expect(stub.treeViews.map((view) => view.id)).toEqual([REVIEW_TREE_VIEW]);
     expect(stub.fileSystemProviders.map((entry) => entry.scheme)).toEqual(['second-look-change']);
@@ -788,6 +792,74 @@ describe('the overview', () => {
     overview().webview.receive({ type: 'openCited', answer: 0, index: 0 });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(stub.executedCommands.at(-1)).toEqual({ id: 'vscode.open', args: [base('src/retry.py'), { selection: new Range(4, 0, 4, 0), preview: true }] });
+  });
+
+  /** A verify answer about claimsResult's first part: its comment's claim refuted, at its index in the review's claims. */
+  function verifiedAnswer(result: ReturnType<typeof claimsResult>) {
+    const part = result.parts[0]!;
+    const claim = {
+      ...result.claims!.claims[2]!,
+      verdict: { kind: 'refuted', source: 'the change itself', reason: 'A 404 is retried like any other status.', evidence: [{ path: 'src/retry.py', line: 5, quote: 'if response.status >= 400:' }] },
+    };
+    return {
+      ask: 'verify',
+      part: 0,
+      partName: part.name ?? part.path,
+      sections: [{ heading: 'Verdict', text: 'refuted, from the change itself: A 404 is retried like any other status.' }],
+      cited: [{ path: 'src/retry.py', side: 'head', line: 5, quote: 'if response.status >= 400:' }],
+      promptVersion: '5',
+      stamp: { agent: 'pi', agentVersion: '0.86.1', model: 'zai/glm-4.6', effort: null, runAt: '2026-10-07T00:00:00.000Z' },
+      claim: { index: 2, claim },
+    };
+  }
+
+  /** The params of the last ask the fake engine received. */
+  function lastAsk(logName: string): unknown {
+    return readFileSync(join(workDir, logName), 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { method: string; params: unknown })
+      .filter((request) => request.method === 'ask')
+      .at(-1)!.params;
+  }
+
+  it("verifies a claim the reviewer picks from the part's claims, and shows its new verdict in the review as well as the answer", async () => {
+    const result = claimsResult();
+    const asked = result.parts[0]!;
+    const view = await reviewWithFakeEngine({ result, askResult: verifiedAnswer(result), logName: 'verify-pick.log' });
+    stub.quickPickResult = { label: 'Never retries a 4xx.', index: 2 };
+
+    await registeredCommands().get(askCommand('verify'))!(partNode(view, asked.name ?? asked.path));
+
+    expect(stub.quickPicks).toHaveLength(1);
+    expect(stub.quickPicks[0]!.title).toBe('Verify this claim');
+    expect((stub.quickPicks[0]!.items as { index: number }[]).map((item) => item.index)).toEqual([0, 1, 2]);
+    expect(lastAsk('verify-pick.log')).toEqual({ url: PR_URL, ask: 'verify', part: 0, claim: { index: 2 } });
+    const html = overview().webview.html;
+    expect(html).toContain('<li class="answer focus"><div class="where"><b>Verify this claim</b> · ');
+    // The review shown now holds the judged claim, as the engine's latest review does.
+    expect(html).toContain('<div class="why">the change itself: A 404 is retried like any other status.</div>');
+    expect(html).toContain('<span class="verdict finding">refuted</span>');
+  });
+
+  it("verifies the text selected on the head side of the part's diff, with no claim to pick", async () => {
+    const result = claimsResult();
+    const asked = result.parts[0]!;
+    const view = await reviewWithFakeEngine({ result, askResult: verifiedAnswer(result), logName: 'verify-selection.log' });
+    stub.activeTextEditor = {
+      document: { uri: head('src/retry.py'), getText: () => 'Never retries a 4xx.' },
+      selection: { isEmpty: false, start: { line: 8, character: 6 }, end: { line: 8, character: 26 } },
+    };
+
+    await registeredCommands().get(askCommand('verify'))!(partNode(view, asked.name ?? asked.path));
+
+    expect(stub.quickPicks).toEqual([]);
+    expect(lastAsk('verify-selection.log')).toEqual({
+      url: PR_URL,
+      ask: 'verify',
+      part: 0,
+      claim: { selection: { path: 'src/retry.py', line: 9, endLine: 9, text: 'Never retries a 4xx.' } },
+    });
   });
 
   it("opens a part the story links in the diff editor", async () => {

@@ -222,8 +222,8 @@ describe('explainPart', () => {
 
 describe('asks', () => {
   it('defines every ask in one registry, explain first, each tied to its prompt', () => {
-    expect(ASK_KINDS).toEqual(['explain']);
-    expect(ASKS.explain).toMatchObject({ title: 'Explain this part', promptId: EXPLAIN_PROMPT_ID });
+    expect(ASK_KINDS).toEqual(['explain', 'verify', 'cover']);
+    expect(ASKS.explain).toMatchObject({ title: 'Explain this part', promptId: EXPLAIN_PROMPT_ID, takesClaim: false });
     expect(isAskKind('explain')).toBe(true);
     expect(isAskKind('chat')).toBe(false);
   });

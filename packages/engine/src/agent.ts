@@ -191,9 +191,10 @@ export interface AgentTask {
   schema: JsonSchema;
   /**
    * Checks a schema-valid answer further, such as that every id it names
-   * was offered; returns the problems, which count like schema problems.
+   * was offered, or that every line it cites is in the copy; returns the
+   * problems, which count like schema problems.
    */
-  check?: (answer: unknown) => string[];
+  check?: (answer: unknown) => string[] | Promise<string[]>;
 }
 
 /** Why a task produced no answer. */
@@ -298,7 +299,7 @@ async function runTask(
     }
     const parsed = parseAnswer(outcome.text);
     problems = 'error' in parsed ? [parsed.error] : validateJson(parsed.value, task.schema);
-    if ('value' in parsed && problems.length === 0 && task.check) problems = task.check(parsed.value);
+    if ('value' in parsed && problems.length === 0 && task.check) problems = await task.check(parsed.value);
     if ('value' in parsed && problems.length === 0) {
       return { ok: true, answer: parsed.value, attempts: attempt, stamp: current };
     }

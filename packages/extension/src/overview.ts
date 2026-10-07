@@ -444,13 +444,14 @@ function answerItem(answer: AskAnswer, index: number, state: OverviewState): str
 /**
  * The asks section, at the top of the page once the reviewer has asked
  * about a part: each answer, newest first, with its stamp. Every cited
- * line is one the engine checked the part shows. The agent's text is
+ * line is one the engine checked: a line the part shows, or one it
+ * re-read in the head copy. The agent's text is
  * escaped, its names in backticks set as code.
  */
 function asksSection(state: OverviewState): string {
   const answers = state.answers ?? [];
   if (answers.length === 0) return '';
-  const note = '<p class="note">Each answers one ask about one part, checked before it is shown: every line it cites is one the part shows.</p>';
+  const note = '<p class="note">Each answers one ask about one part, checked before it is shown: every line it cites is one the part shows or the engine re-read in the head copy.</p>';
   return `<section id="asks"><h2>Asks</h2>${note}<ol class="claims">${answers.map((answer, index) => answerItem(answer, index, state)).join('')}</ol></section>`;
 }
 
@@ -654,6 +655,7 @@ const CLAIM_SOURCES: Record<ClaimSource, string> = {
   docstring: 'docstring',
   comment: 'comment',
   agent: "the companion's story",
+  reviewer: 'your selection',
 };
 
 /** Where a claim is made, in words: its source and its place there. */

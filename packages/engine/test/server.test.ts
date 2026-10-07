@@ -16,7 +16,7 @@ import { EXPLAIN_INSTRUCTIONS } from '../src/explain.js';
 import { UNEXPLAINED_INSTRUCTIONS } from '../src/unexplained.js';
 import { GROUPING_INSTRUCTIONS } from '../src/grouping.js';
 import { LIBRARY_VERDICTS_INSTRUCTIONS } from '../src/library-verdicts.js';
-import { VERDICTS_INSTRUCTIONS } from '../src/verdicts.js';
+import { VERDICTS_INSTRUCTIONS, VERDICTS_PROMPT_VERSION } from '../src/verdicts.js';
 import { DEFAULT_EFFORT } from '../src/ranking.js';
 import { runRpcServer, type RpcAgentDeps } from '../src/server.js';
 import { markedPart } from '../src/reviewed-marks.js';
@@ -147,7 +147,7 @@ describe('runRpcServer', () => {
 
     expect(responses[0]!.result).toEqual({ protocolVersion: ENGINE_PROTOCOL_VERSION });
     const first = responses[1]!.result as { version: number; parts: unknown[] };
-    expect(first.version).toBe(16);
+    expect(first.version).toBe(17);
     expect(first.parts).toHaveLength(11);
     const second = responses[2]!.result as { parts: unknown[] };
     expect(second.parts).toHaveLength(11);
@@ -358,7 +358,7 @@ describe('runRpcServer with an agent', () => {
         id: 2,
         running: 'grouping related hunks with fake',
         timeoutMs: 660_000,
-        result: { version: 16, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
+        result: { version: 17, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
       },
     });
     // The fake agent has no tested ranking, so the story stage follows the grouping.
@@ -640,12 +640,25 @@ describe('runRpcServer fetching a library', () => {
     });
   }
 
-  /** Serves the lines, holding each fetch request back until the review before it is answered. */
-  async function serveInTurn(lines: string[], fetchImpl: typeof fetch, library?: string): Promise<{ answer: (id: number) => Response; pypiBeforeFetch: number }> {
+  /**
+   * Serves the lines, holding each fetch request back until the review
+   * before it is answered; in turn, every request after the review waits
+   * for the answer to the one before it.
+   */
+  async function serveInTurn(
+    lines: string[],
+    fetchImpl: typeof fetch,
+    library?: string,
+    inTurn = false,
+  ): Promise<{ answer: (id: number) => Response; pypiBeforeFetch: number }> {
     const written: string[] = [];
     let index = 0;
-    let reviewed: () => void = () => undefined;
-    const answeredReview = new Promise<void>((resolve) => (reviewed = resolve));
+    const answered = new Map<number, () => void>();
+    const answers = new Map<number, Promise<void>>();
+    const answeredBy = (id: number): Promise<void> => {
+      if (!answers.has(id)) answers.set(id, new Promise<void>((resolve) => answered.set(id, resolve)));
+      return answers.get(id)!;
+    };
     let pypiBeforeFetch = -1;
     const { pypi } = state;
     await runRpcServer(
@@ -654,7 +667,8 @@ describe('runRpcServer fetching a library', () => {
           const line = lines[index++];
           if (line === undefined) return null;
           if (line.includes('"fetchLibrary"') || line.includes('"draftComment"') || line.includes('"method":"ask"')) {
-            await answeredReview;
+            await answeredBy(2);
+            if (inTurn) await answeredBy((JSON.parse(line) as { id: number }).id - 1);
             if (pypiBeforeFetch < 0) pypiBeforeFetch = pypi.requests.length;
           }
           return line;
@@ -663,7 +677,9 @@ describe('runRpcServer fetching a library', () => {
       {
         writeLine: (line) => {
           written.push(line);
-          if ((JSON.parse(line) as Response).id === 2) reviewed();
+          const { id } = JSON.parse(line) as Response;
+          answeredBy(id as number);
+          answered.get(id as number)!();
         },
       },
       { cacheDir: libraryCacheDir, fetch: fetchImpl, agent: { adapterFor: () => libraryAgent(library), defaultAgent: 'pi' } },
@@ -702,7 +718,7 @@ describe('runRpcServer fetching a library', () => {
     });
     expect(pypiBeforeFetch).toBe(0);
     expect(answer(3).result).toMatchObject({
-      version: 16,
+      version: 17,
       claims: {
         claims: [
           {
@@ -755,7 +771,7 @@ describe('runRpcServer fetching a library', () => {
 
     expect(answer(3).error).toBeUndefined();
     expect(answer(3).result).toMatchObject({
-      version: 16,
+      version: 17,
       claims: {
         claims: [
           {
@@ -843,6 +859,59 @@ describe('runRpcServer fetching a library', () => {
     });
     // An ask reads nothing from PyPI and writes nothing to GitHub.
     expect(state.pypi.requests).toEqual([]);
+  });
+
+  it("verifies the reviewer's selection with the judging pass, keeps the judged claim in its latest review, and presses its library fetch from there", async () => {
+    state = transports();
+    const selection = { path: 'app/fresh.py', line: 1, endLine: 1, text: 'def fresh():' };
+    const { answer } = await serveInTurn(
+      [
+        request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+        request('review', { url: PR_7_URL, token: TOKEN }, 2),
+        request('ask', { url: PR_7_URL, ask: 'verify', part: 0, claim: { selection } }, 3),
+        request('fetchLibrary', { url: PR_7_URL, claim: 1 }, 4),
+      ],
+      state.fetch,
+      undefined,
+      true,
+    );
+
+    expect(answer(3).error).toBeUndefined();
+    expect(answer(3).result).toMatchObject({
+      ask: 'verify',
+      part: 0,
+      sections: [
+        { heading: 'Claim', text: expect.stringContaining('text the reviewer selected in the diff of "app/fresh.py", line 1') },
+        { heading: 'Verdict', text: 'unverifiable, from the change itself: It turns on httpx.' },
+        { heading: 'Library fetch', text: expect.stringContaining('the source of httpx 0.27.2, as requirements.txt pins it') },
+      ],
+      cited: [],
+      promptVersion: VERDICTS_PROMPT_VERSION,
+      claim: { index: 1, claim: { quote: 'def fresh():', source: 'reviewer', verdict: { kind: 'unverifiable', libraryFetch: { library: 'httpx' } } } },
+    });
+    // Pressed from the review the engine keeps, the new claim's fetch judges it in the library.
+    expect(answer(4).error).toBeUndefined();
+    const claims = (answer(4).result as ReviewResult).claims!.claims;
+    expect(claims.map((claim) => claim.quote)).toEqual([CLAIM, 'def fresh():']);
+    expect(claims[1]!.verdict).toMatchObject({ kind: 'refuted', source: 'library source at the pinned version', library: { library: 'httpx' } });
+  });
+
+  it('refuses a verify ask with no claim or a claim off the part, and a claim on an ask that takes none', async () => {
+    state = transports();
+    const { answer } = await serveInTurn(
+      [
+        request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+        request('review', { url: PR_7_URL, token: TOKEN }, 2),
+        request('ask', { url: PR_7_URL, ask: 'verify', part: 0 }, 3),
+        request('ask', { url: PR_7_URL, ask: 'explain', part: 0, claim: { index: 0 } }, 4),
+        request('ask', { url: PR_7_URL, ask: 'verify', part: 0, claim: { selection: { path: 'app/fresh.py', line: 1, endLine: 1, text: 'def stale():' } } }, 5),
+      ],
+      state.fetch,
+    );
+
+    expect(answer(3)).toMatchObject({ error: { code: JSON_RPC_INVALID_PARAMS, message: expect.stringContaining('with the claim for "verify" only') } });
+    expect(answer(4)).toMatchObject({ error: { code: JSON_RPC_INVALID_PARAMS } });
+    expect(answer(5)).toMatchObject({ error: { code: ENGINE_FAILED_CODE, message: 'the selection is not on lines 1-1 of app/fresh.py in the head copy' } });
   });
 
   it('refuses an ask about a part it never reviewed, an ask it does not know, and malformed ask params', async () => {
