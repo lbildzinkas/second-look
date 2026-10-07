@@ -5,6 +5,7 @@ Second Look is a VS Code companion for human pull request review: it ranks the c
 - [CONTEXT.md](CONTEXT.md) — the project glossary: the shared words and what they mean.
 - [docs/adr/](docs/adr/) — the numbered decision records behind the design.
 - [docs/tested-models.md](docs/tested-models.md) — the current list of the agent, model and effort combinations the companion's evaluation has been tested with, and how each scored.
+- [docs/agent-safety.md](docs/agent-safety.md) — what each agent the companion drives can read, what it is denied and how each limit is enforced, what the companion fetches itself, and the known gaps.
 
 ## Repository layout
 
@@ -154,7 +155,7 @@ Then, with an agent, the APIs no inventory linked go to the agent, which suggest
 
 ## Probing the reviewer's coding agent
 
-The engine does its model work through the coding agent the reviewer already has installed and signed in, never through a model API of its own (ADR 0004). One adapter interface, documented in `packages/engine/src/agent.ts`, runs an agent non-interactively with the companion's own prompt and a JSON schema for the answer. It first probes the installed version for what it supports. Two adapters exist: Pi and Claude Code, chosen by name (`--agent pi` or `--agent claude-code`; the VS Code settings offer the same names).
+The engine does its model work through the coding agent the reviewer already has installed and signed in, never through a model API of its own (ADR 0004). One adapter interface, documented in `packages/engine/src/agent.ts`, runs an agent non-interactively with the companion's own prompt and a JSON schema for the answer. It first probes the installed version for what it supports. Two adapters exist: Pi and Claude Code, chosen by name (`--agent pi` or `--agent claude-code`; the VS Code settings offer the same names). Codex is not supported yet. [docs/agent-safety.md](docs/agent-safety.md) lists what each agent can read, what it is denied and how each limit is enforced, and the known gaps.
 
 Every Pi run is locked down. Pi has no sandbox of its own, so the strongest mechanism it offers is used:
 
