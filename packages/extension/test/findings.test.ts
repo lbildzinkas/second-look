@@ -142,6 +142,15 @@ describe('findingBody', () => {
     expect(body).not.toContain('command:second-look.fetchLibrary');
   });
 
+  it('says when the Verify this claim ask judged the claim alone', () => {
+    const fetched = fetchedResult().claims!.claims[2]!;
+
+    const body = findingBody({ ...fetched, asked: true }, 2);
+
+    expect(body).toContain('Judged singly by the **Verify this claim** ask.');
+    expect(findingBody(fetched, 2)).not.toContain('Verify this claim');
+  });
+
   it("names a NuGet package's checked SHA-512, and labels each citation of an unproven file", () => {
     const claim = fetchedResult().claims!.claims[2]!;
     const verdict = claim.verdict as Exclude<typeof claim.verdict, { kind: 'not checked' }>;

@@ -2,6 +2,7 @@ import { appendFile, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   CLAIMS_PROMPT_ID,
+  COVER_PROMPT_ID,
   CRITERIA_MAPPING_PROMPT_ID,
   DEFAULT_EFFORT,
   DRAFT_COMMENT_PROMPT_ID,
@@ -13,13 +14,16 @@ import {
   UNEXPLAINED_PROMPT_ID,
   VERDICTS_PROMPT_ID,
   changeText,
+  copyReader,
   draftChecks,
   draftComment,
   explainChecks,
   explainPart,
   findClaims,
+  findCoverage,
   findUnexplained,
   judgeClaims,
+  judgeOneClaim,
   mapCriteria,
   offerLibraryFetches,
   pressLibraryFetch,
@@ -27,18 +31,20 @@ import {
   removeCopy,
   rankingItems,
   reviewChange,
+  selectedClaim,
   storyChecks,
   storyItems,
   writeStory,
 } from '@second-look/engine';
-import type { AgentAdapter, AgentSettings, AgentStamp, Claim, DraftChecks, ExplainChecks, Part } from '@second-look/engine';
+import type { AgentAdapter, AgentSettings, AgentStamp, Claim, ClaimVerdict, CoverChecks, DraftChecks, ExplainChecks, Part } from '@second-look/engine';
 import { caseInput, recordedFetch } from './case.js';
-import type { EvaluationCase } from './case.js';
+import type { EvaluationCase, ExpectedCover, ExpectedSelection } from './case.js';
 import { labelledClaims, reportClaims, reportedClaims } from './claims.js';
 import type { PressedClaim } from './claims.js';
 import type { PromptRegistry } from './prompts.js';
 import {
   CLAIM_SCORES,
+  COVER_SCORES,
   CRITERIA_SCORES,
   DRAFT_SCORES,
   EXPLAIN_SCORES,
@@ -47,11 +53,13 @@ import {
   STORY_SCORES,
   UNEXPLAINED_SCORES,
   VERDICT_SCORES,
+  VERIFY_SCORES,
   addTallies,
   isClaimCheck,
   labelledPart,
   scoresOf,
   tallyCase,
+  tallyCover,
   tallyCriteria,
   tallyDrafts,
   tallyExplanations,
@@ -59,6 +67,7 @@ import {
   tallyJudging,
   tallyStory,
   tallyUnexplained,
+  tallyVerifications,
 } from './score.js';
 import type { Score, Tally } from './score.js';
 
@@ -145,7 +154,7 @@ export const GROUPING_SCORES: readonly string[] = ['coverage', GROUPING_AGREEMEN
  */
 export const RANKING_SCORES: readonly string[] = RANK_SCORES;
 
-export { CLAIM_SCORES, CRITERIA_SCORES, DRAFT_SCORES, EXPLAIN_SCORES, STORY_SCORES, UNEXPLAINED_SCORES, VERDICT_SCORES };
+export { CLAIM_SCORES, COVER_SCORES, CRITERIA_SCORES, DRAFT_SCORES, EXPLAIN_SCORES, STORY_SCORES, UNEXPLAINED_SCORES, VERDICT_SCORES, VERIFY_SCORES };
 
 /**
  * The prompt an agent row's score belongs to: each agent prompt gives its
@@ -162,6 +171,9 @@ export function promptOfScore(row: { name: string; agent: string }): string | un
   if (CRITERIA_SCORES.includes(row.name)) return CRITERIA_MAPPING_PROMPT_ID;
   if (DRAFT_SCORES.includes(row.name)) return DRAFT_COMMENT_PROMPT_ID;
   if (EXPLAIN_SCORES.includes(row.name)) return EXPLAIN_PROMPT_ID;
+  // The verify ask runs the judging pass, so its scores are the verdicts prompt's.
+  if (VERIFY_SCORES.includes(row.name)) return VERDICTS_PROMPT_ID;
+  if (COVER_SCORES.includes(row.name)) return COVER_PROMPT_ID;
   if (isClaimCheck(row.name)) return LIBRARY_VERDICTS_PROMPT_ID;
   return undefined;
 }
@@ -317,6 +329,8 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
   const criteriaTallies = new Map<string, { stamp: AgentStamp; tallies: Tally[] }>();
   const draftTallies = new Map<string, { stamp: AgentStamp; tallies: Tally[] }>();
   const explainTallies = new Map<string, { stamp: AgentStamp; tallies: Tally[] }>();
+  const verifyTallies = new Map<string, { stamp: AgentStamp; tallies: Tally[] }>();
+  const coverTallies = new Map<string, { stamp: AgentStamp; tallies: Tally[] }>();
   const stampKey = (stamp: Stamp): string => JSON.stringify([stamp.agent, stamp.agentVersion, stamp.model, stamp.effort]);
   for (const evaluationCase of options.cases) {
     const input = await caseInput(evaluationCase);
@@ -547,6 +561,38 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
       }
     }
 
+    const covered = evaluationCase.expected.cover ?? [];
+    if (runs(COVER_PROMPT_ID) && parts && covered.length > 0) {
+      try {
+        const answers: { wanted: ExpectedCover; checks: CoverChecks | undefined }[] = [];
+        let stamp: AgentStamp | undefined;
+        for (const wanted of covered) {
+          const index = labelledPart(parts, wanted.part);
+          if (index < 0) throw new Error(`the cover prompt's case names a part the review does not give: ${wanted.part}`);
+          const found = await findCoverage(parts, index, {
+            adapter: adapterFor(COVER_PROMPT_ID),
+            ...settings,
+            root: input.copies.head.path,
+            pullRequest: input.pullRequest,
+            plainChecks: false,
+          });
+          stamp = found.stamp;
+          if (found.checks === undefined) {
+            results.fallbacks!.push({ case: evaluationCase.id, agent: found.stamp.agent, prompt: COVER_PROMPT_ID, detail: found.detail });
+          }
+          answers.push({ wanted, checks: found.checks });
+        }
+        const coverTally: Tally = { ...tallyCase(input.diff, evaluationCase.expected, undefined), covers: tallyCover(answers) };
+        const rowStamp = stampFor(evaluationCase.record.prompts, stamp);
+        results.rows.push(...rowsOf(evaluationCase.id, coverTally, rowStamp, COVER_SCORES));
+        const group = coverTallies.get(stampKey(rowStamp)) ?? { stamp: stamp!, tallies: [] };
+        group.tallies.push(coverTally);
+        coverTallies.set(stampKey(rowStamp), group);
+      } catch (error) {
+        failedAgent(error, COVER_SCORES);
+      }
+    }
+
     const judgesVerdicts = runs(VERDICTS_PROMPT_ID);
     const pressesFetches = runs(LIBRARY_VERDICTS_PROMPT_ID);
     if ((judgesVerdicts || pressesFetches) && parts && parts.length > 0) {
@@ -576,6 +622,34 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
         }
       } catch (error) {
         failedAgent(error, judgesVerdicts ? VERDICT_SCORES : claimChecksOf(input.diff, evaluationCase));
+      }
+
+      // The evaluation stands in for the reviewer of the verify ask: each
+      // labelled selection is judged alone, as the ask judges it.
+      const selections = evaluationCase.expected.verify ?? [];
+      if (judgesVerdicts && selections.length > 0) {
+        try {
+          const read = copyReader(input.copies.head.path);
+          const judgedSelections: { wanted: ExpectedSelection; got: ClaimVerdict | undefined }[] = [];
+          let stamp: AgentStamp | undefined;
+          for (const wanted of selections) {
+            const claim = await claimOfSelection(parts, wanted, read);
+            const verified = await judgeOneClaim(parts, claim, { adapter: adapterFor(VERDICTS_PROMPT_ID), ...settings, root: input.copies.head.path });
+            stamp = verified.stamp;
+            if ('detail' in verified) {
+              results.fallbacks!.push({ case: evaluationCase.id, agent: verified.stamp.agent, prompt: VERDICTS_PROMPT_ID, detail: verified.detail });
+            }
+            judgedSelections.push({ wanted, got: 'claim' in verified ? verified.claim.verdict : undefined });
+          }
+          const verifyTally: Tally = { ...tallyCase(input.diff, evaluationCase.expected, undefined), verifications: tallyVerifications(judgedSelections) };
+          const rowStamp = stampFor(evaluationCase.record.prompts, stamp);
+          results.rows.push(...rowsOf(evaluationCase.id, verifyTally, rowStamp, VERIFY_SCORES));
+          const group = verifyTallies.get(stampKey(rowStamp)) ?? { stamp: stamp!, tallies: [] };
+          group.tallies.push(verifyTally);
+          verifyTallies.set(stampKey(rowStamp), group);
+        } catch (error) {
+          failedAgent(error, VERIFY_SCORES);
+        }
       }
 
       // The evaluation stands in for the reviewer: it presses every fetch
@@ -663,6 +737,12 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
   for (const { stamp, tallies: byAgent } of explainTallies.values()) {
     results.rows.push(...rowsOf(ALL_CASES, addTallies(byAgent), stampFor([EXPLAIN_PROMPT_ID], stamp), EXPLAIN_SCORES));
   }
+  for (const { stamp, tallies: byAgent } of verifyTallies.values()) {
+    results.rows.push(...rowsOf(ALL_CASES, addTallies(byAgent), stampFor([VERDICTS_PROMPT_ID], stamp), VERIFY_SCORES));
+  }
+  for (const { stamp, tallies: byAgent } of coverTallies.values()) {
+    results.rows.push(...rowsOf(ALL_CASES, addTallies(byAgent), stampFor([COVER_PROMPT_ID], stamp), COVER_SCORES));
+  }
 
   await writeFile(join(folder, 'results.json'), `${JSON.stringify(results, null, 2)}\n`);
   return { folder, results };
@@ -738,4 +818,19 @@ export function belowFullCoverage(rows: readonly ResultRow[]): ResultRow[] {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * A labelled selection as the verify ask reads it: a claim about the
+ * first part whose diff shows it on the head side, its text on those
+ * lines of the head copy. Throws when no part shows it.
+ */
+async function claimOfSelection(parts: readonly Part[], wanted: ExpectedSelection, read: ReturnType<typeof copyReader>): Promise<Claim> {
+  const problems: string[] = [];
+  for (let index = 0; index < parts.length; index++) {
+    const claim = await selectedClaim(parts, index, wanted, read);
+    if (typeof claim !== 'string') return claim;
+    problems.push(claim);
+  }
+  throw new Error(`the verify case's selection at ${wanted.path}:${wanted.line} is in no part: ${[...new Set(problems)].join('; ')}`);
 }

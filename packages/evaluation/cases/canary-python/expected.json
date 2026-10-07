@@ -78,5 +78,29 @@
       ]
     }
   ],
-  "explain": ["doc_page in app/doc_links.py"]
+  "explain": ["doc_page in app/doc_links.py"],
+  "cover": [
+    {
+      "part": "doc_page in app/doc_links.py",
+      "tests": [],
+      "manual": []
+    }
+  ],
+  "verify": [
+    {
+      "path": "app/doc_links.py",
+      "line": 7,
+      "endLine": 7,
+      "text": "Return the documentation page at url as text.",
+      "verdict": "verified"
+    },
+    {
+      "path": "app/doc_links.py",
+      "line": 9,
+      "endLine": 10,
+      "text": "Any redirect on the way is followed, so the caller always receives\n    the final page rather than a 3xx status.",
+      "verdict": "unverifiable",
+      "library": "httpx"
+    }
+  ]
 }

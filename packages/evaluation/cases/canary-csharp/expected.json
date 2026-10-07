@@ -38,5 +38,15 @@
     }
   ],
   "groups": [["src/BlobReader.cs#1"]],
-  "explain": ["BlobReader, BlobReader.Read in src/BlobReader.cs"]
+  "explain": ["BlobReader, BlobReader.Read in src/BlobReader.cs"],
+  "verify": [
+    {
+      "path": "src/BlobReader.cs",
+      "line": 11,
+      "endLine": 12,
+      "text": "The buffer GetBuffer returns is sized to the bytes written,\n    /// so its Length is the blob's length.",
+      "verdict": "unverifiable",
+      "library": "Microsoft.IO.RecyclableMemoryStream"
+    }
+  ]
 }

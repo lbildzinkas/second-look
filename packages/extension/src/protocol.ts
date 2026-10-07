@@ -466,7 +466,7 @@ function isClaimJudging(value: unknown): boolean {
   );
 }
 
-/** One claim: its quote, source and location, the part it is attached to, and its verdict. */
+/** One claim: its quote, source and location, the part it is attached to, its verdict, and its mark when the verify ask judged it alone. */
 function isClaim(value: unknown, partCount: number, sentenceCount: number): boolean {
   if (!isRecord(value)) return false;
   return (
@@ -478,14 +478,16 @@ function isClaim(value: unknown, partCount: number, sentenceCount: number): bool
     isClaimLocation(value['location'], sentenceCount) &&
     isNumber(value['part']) &&
     value['part'] < partCount &&
-    isClaimVerdict(value['verdict'])
+    isClaimVerdict(value['verdict']) &&
+    (value['asked'] === undefined || value['asked'] === true)
   );
 }
 
 /**
  * The claims of the result's parts: listed, or fallen back with only the
- * pipeline's, always stamped; a claim carries a checked verdict only once
- * the claims were judged.
+ * pipeline's and any the verify ask judged, always stamped; a claim
+ * carries a checked verdict only once the claims were judged, or once
+ * the Verify this claim ask judged it alone, which marks the claim.
  */
 function isClaims(value: unknown, partCount: number, sentenceCount: number): boolean {
   if (!isRecord(value)) return false;
@@ -502,9 +504,11 @@ function isClaims(value: unknown, partCount: number, sentenceCount: number): boo
   ) {
     return false;
   }
-  if (value['outcome'] === 'fell back' && !claims.every((claim) => isRecord(claim) && claim['source'] === 'pipeline')) return false;
+  if (value['outcome'] === 'fell back' && !claims.every((claim) => isRecord(claim) && (claim['source'] === 'pipeline' || claim['asked'] === true))) return false;
   return claims.every(
-    (claim) => isClaim(claim, partCount, sentenceCount) && (judged || (claim as { verdict: { kind: unknown } }).verdict.kind === 'not checked'),
+    (claim) =>
+      isClaim(claim, partCount, sentenceCount) &&
+      (judged || (claim as { verdict: { kind: unknown }; asked?: unknown }).verdict.kind === 'not checked' || (claim as { asked?: unknown }).asked === true),
   );
 }
 
@@ -807,10 +811,17 @@ export class DraftProtocolError extends Error {
   }
 }
 
+/** A verify ask's judged claim: its index in the review's claims, and the claim, about the part asked about. */
+function isVerifiedClaim(value: unknown, part: number): boolean {
+  if (!isRecord(value)) return false;
+  const { index, claim } = value;
+  return isNumber(index) && Number.isInteger(index) && index >= 0 && isClaim(claim, part + 1, Number.MAX_SAFE_INTEGER) && isRecord(claim) && claim['part'] === part;
+}
+
 /**
  * Checks that a value read over the protocol is the answer to an ask:
- * the ask and the part it is about, its sections, the lines of the part
- * it cites, and who answered.
+ * the ask and the part it is about, its sections, the lines it cites,
+ * who answered, and any claim a verify ask judged.
  */
 export function isAskAnswer(value: unknown): value is AskAnswer {
   if (!isRecord(value)) return false;
@@ -836,7 +847,8 @@ export function isAskAnswer(value: unknown): value is AskAnswer {
         isString(each['quote']),
     ) &&
     isString(value['promptVersion']) &&
-    isAgentStamp(value['stamp'])
+    isAgentStamp(value['stamp']) &&
+    (value['claim'] === undefined || isVerifiedClaim(value['claim'], part))
   );
 }
 

@@ -337,6 +337,77 @@ describe('the verdicts on the overview', () => {
     expect(html).toContain('<span class="stg done">no verdicts</span>');
   });
 
+  it('says a checked verdict came from the verify ask when the judging fell back', () => {
+    const listed = claimsResult().claims!;
+    const fetched = fetchedResult().claims!.claims[2]!;
+    const fellBack: ReviewResult = {
+      ...claimsResult(),
+      claims: {
+        ...listed,
+        judging: { ...judgedResult().claims!.judging!, outcome: 'fell back', detail: 'the agent gave no usable answer' },
+        claims: listed.claims.map((claim, index) => (index === 2 ? { ...claim, asked: true as const, verdict: fetched.verdict } : claim)),
+      },
+    };
+    const html = overviewHtml({ result: fellBack }, 'N');
+    expect(html).toContain('The judging pass fell back (the agent gave no usable answer); the one checked verdict came from the Verify this claim ask.');
+    expect(html).toContain('<div class="why">judged singly by the Verify this claim ask</div>');
+    expect(html).toContain('<span class="verdict finding">refuted</span>');
+  });
+
+  it('attributes an asked claim\u2019s verdict to the ask in a judged listing too', () => {
+    const shown = judgedResult();
+    const asked = {
+      quote: 'Never retries a 4xx.',
+      source: 'reviewer' as const,
+      location: { kind: 'file' as const, path: 'src/retry.py', line: 9, endLine: 9 },
+      part: 0,
+      asked: true as const,
+      verdict: {
+        kind: 'refuted' as const,
+        source: 'the change itself' as const,
+        reason: 'A 404 is retried like any other status.',
+        evidence: [{ path: 'src/retry.py', line: 5, quote: 'if response.status >= 400:' }],
+      },
+    };
+    const judged: ReviewResult = { ...shown, claims: { ...shown.claims!, claims: [...shown.claims!.claims, asked] } };
+
+    const html = overviewHtml({ result: judged }, 'N');
+
+    expect(html).toContain(
+      ', save the one checked verdict that came from the Verify this claim ask; the refuted and unverifiable ones are findings, each a thread on the diff.',
+    );
+    expect(html).toContain('<div class="why">judged singly by the Verify this claim ask</div>');
+    expect(overviewHtml({ result: shown }, 'N')).not.toContain('save the one checked verdict');
+  });
+
+  it('notes a verify-ask claim in a listing that fell back, and when the verdicts pass never ran', () => {
+    const asked = {
+      quote: 'Never retries a 4xx.',
+      source: 'reviewer' as const,
+      location: { kind: 'file' as const, path: 'src/retry.py', line: 9, endLine: 9 },
+      part: 0,
+      asked: true as const,
+      verdict: {
+        kind: 'refuted' as const,
+        source: 'the change itself' as const,
+        reason: 'A 404 is retried like any other status.',
+        evidence: [{ path: 'src/retry.py', line: 5, quote: 'if response.status >= 400:' }],
+      },
+    };
+    const pipeline = { ...pipelineResult().claims!.claims[0]!, verdict: { kind: 'not checked' as const } };
+    const fellBack: ReviewResult = {
+      ...claimsResult(),
+      claims: { ...claimsResult().claims!, outcome: 'fell back', detail: 'the agent gave no usable answer', claims: [pipeline, asked] },
+    };
+    const fellBackHtml = overviewHtml({ result: fellBack }, 'N');
+    expect(fellBackHtml).toContain("Only the pipeline's claims are listed, with any the reviewer asked to verify: the agent gave no usable answer.");
+    expect(fellBackHtml).toContain('The verdicts pass did not run; the one checked verdict came from the Verify this claim ask.');
+    const unjudged: ReviewResult = { ...claimsResult(), claims: { ...claimsResult().claims!, claims: [asked] } };
+    const unjudgedHtml = overviewHtml({ result: unjudged }, 'N');
+    expect(unjudgedHtml).toContain('The verdicts pass did not run; the one checked verdict came from the Verify this claim ask.');
+    expect(unjudgedHtml).not.toContain('None is checked yet');
+  });
+
   it('renders a reason and a citation as escaped text, never as markup', () => {
     const shown = judgedResult();
     const [first, ...rest] = shown.claims!.claims;
@@ -814,6 +885,30 @@ describe('OverviewPanel', () => {
     expect(html).toContain('<button type="button" class="pt asked" data-answer="0" data-index="0">web/cart.ts:2 (base)</button> <span class="cited">return 1;</span>');
     expect(html).toContain('<button type="button" class="pt asked" data-answer="0" data-index="1">web/cart.ts:3</button>');
     expect(html).toContain("document.querySelector('.answer.focus')");
+  });
+
+  it("stamps a verify answer with the judging pass's prompt, and shows a cover answer that found none as an answer", () => {
+    const result = storyResult();
+    const part = result.parts[0]!;
+    const stamp = explained(result).stamp;
+    const verified: AskAnswer = {
+      ask: 'verify',
+      part: 0,
+      partName: part.name ?? part.path,
+      sections: [{ heading: 'Verdict', text: 'refuted, from the change itself: `total` counts items, not their prices.' }],
+      cited: [{ path: 'web/cart.ts', side: 'head', line: 3, quote: 'return items.length;' }],
+      promptVersion: '5',
+      stamp,
+    };
+    const none: AskAnswer = { ...verified, ask: 'cover', sections: [{ heading: 'None found', text: 'No test calls `total`; I searched `test`.' }], cited: [], promptVersion: '1' };
+
+    const html = overviewHtml({ result, answers: [none, verified] }, 'N');
+
+    expect(html).toContain('every line it cites is one the part shows or the engine re-read in the head copy.');
+    expect(html).toContain('<b>Verify this claim</b> · ');
+    expect(html).toContain('<span class="stamp">pi · zai/glm · verdicts prompt v5</span>');
+    expect(html).toContain('<b>What covers this?</b> · ');
+    expect(html).toContain('<div class="why"><b>None found</b> No test calls <code>total</code>; I searched <code>test</code>.</div>');
   });
 
   it("keeps the answers across the review's updates, newest first, until a new review clears them", () => {

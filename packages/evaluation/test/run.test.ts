@@ -13,6 +13,7 @@ import { UNEXPLAINED_INSTRUCTIONS, UNEXPLAINED_PROMPT_VERSION } from '../../engi
 import { CRITERIA_MAPPING_INSTRUCTIONS, CRITERIA_MAPPING_PROMPT_VERSION } from '../../engine/src/criteria-mapping.js';
 import { DRAFT_COMMENT_INSTRUCTIONS, DRAFT_COMMENT_PROMPT_VERSION } from '../../engine/src/draft-comment.js';
 import { EXPLAIN_INSTRUCTIONS, EXPLAIN_PROMPT_VERSION } from '../../engine/src/explain.js';
+import { COVER_INSTRUCTIONS, COVER_PROMPT_VERSION } from '../../engine/src/cover.js';
 import { answeringAgent, offeredParts, scriptedAgent } from '../../engine/test/helpers.js';
 import type { AgentAdapter } from '@second-look/engine';
 import { loadCases } from '../src/case.js';
@@ -566,6 +567,105 @@ describe('runEvaluation with the explain prompt', () => {
     expect(results.fallbacks![0]).toEqual({ case: 'encode-httpx-3690', agent: 'fake', prompt: 'explain', detail: expect.stringMatching(/^the agent gave no usable answer/) });
     expect(rowsOf(results.rows, 'fake', 'explain-cites-part')['encode-httpx-3690']).toBe(0);
     expect(rowsOf(results.rows, 'fake', 'explain-names-in-change')['encode-httpx-3690']).toBe(0);
+  });
+});
+
+describe('runEvaluation with the verify ask', () => {
+  const REDIRECT = 'Any redirect on the way is followed';
+
+  /**
+   * An agent judging canary-python: every hand-labelled claim unverifiable
+   * from memory, and each selection the verify ask sends alone — the
+   * return verified by the changed line, and the redirect claim as given.
+   */
+  function verifyingAgent(redirect: 'unverifiable' | 'verified'): AgentAdapter {
+    const returned = { file: 'app/doc_links.py', line: 14, quote: 'return response.text' };
+    return answeringAgent((request) => {
+      if (request.instructions !== VERDICTS_INSTRUCTIONS) return 'not an answer';
+      const ids = [...request.prompt.matchAll(/^\[(c\d+)\] made in/gm)].map((match) => match[1]!);
+      if (!request.prompt.includes('text the reviewer selected')) {
+        return { verdicts: ids.map((id) => ({ id, verdict: 'unverifiable', source: "the model's memory", reason: 'r', evidence: [], library: null })) };
+      }
+      // The part's diff shows the docstring too, so the claim is read from its own block.
+      const claim = /source="claim c1">\n(.*)\n/.exec(request.prompt)![1]!;
+      if (!claim.startsWith(REDIRECT)) return { verdicts: [{ id: 'c1', verdict: 'verified', source: 'the change itself', reason: 'r', evidence: [returned], library: null }] };
+      if (redirect === 'verified') return { verdicts: [{ id: 'c1', verdict: 'verified', source: 'the change itself', reason: 'r', evidence: [returned], library: null }] };
+      return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: "the model's memory", reason: 'It turns on httpx.', evidence: [], library: 'httpx' }] };
+    });
+  }
+
+  it('judges each labelled selection alone, as the ask does, and scores its verdict and the library fetch it offers', async () => {
+    const { folder, results } = await runVerdicts('canary-python', verifyingAgent('unverifiable'));
+
+    expect(rowsOf(results.rows, 'fake', 'verify-accuracy')).toEqual({ 'canary-python': 1, [ALL_CASES]: 1 });
+    expect(rowsOf(results.rows, 'fake', 'verify-false-verified')).toEqual({ 'canary-python': 0, [ALL_CASES]: 0 });
+    expect(rowsOf(results.rows, 'fake', 'verify-fetch-offered')).toEqual({ 'canary-python': 1, [ALL_CASES]: 1 });
+    expect(results.rows.find((row) => row.name === 'verify-accuracy' && row.case === 'canary-python')).toMatchObject({ promptVersions: { verdicts: VERDICTS_PROMPT_VERSION } });
+    // The plain pass verifies nothing, so it gives no verify score.
+    expect(rowsOf(results.rows, NO_AGENT, 'verify-accuracy')).toEqual({});
+    const trace = readFileSync(join(folder, TRACE_FILE), 'utf8').trim().split('\n').map((line) => JSON.parse(line) as AgentCall);
+    // The labelled claims in one call, then one call per selection.
+    expect(trace).toHaveLength(3);
+    expect(trace[2]).toMatchObject({ case: 'canary-python', prompt: 'verdicts' });
+    expect(trace[2]!.input).toContain('[c1] made in text the reviewer selected in the diff of "app/doc_links.py", lines 9-10, and asked to verify');
+  });
+
+  it('counts a library claim the ask verified as false-verified, offering no fetch', async () => {
+    const { results } = await runVerdicts('canary-python', verifyingAgent('verified'));
+
+    expect(rowsOf(results.rows, 'fake', 'verify-accuracy')['canary-python']).toBe(0.5);
+    expect(rowsOf(results.rows, 'fake', 'verify-false-verified')['canary-python']).toBe(1);
+    expect(rowsOf(results.rows, 'fake', 'verify-fetch-offered')['canary-python']).toBe(0);
+  });
+});
+
+describe('runEvaluation with the cover prompt', () => {
+  const MANUAL = 'Checked by hand in VS Code on a pull request whose linked issue ticks two of its four criteria: those two show a ✓ beside their quotes, and the other two show none.';
+
+  /** An agent naming, for criteria-typescript's labelled parts, the test that exercises each and the description's manual check of the ✓. */
+  const coveringAgent = (): AgentAdapter =>
+    answeringAgent((request) => {
+      if (request.instructions !== COVER_INSTRUCTIONS) return 'not an answer';
+      if (request.prompt.includes('name: isTicked, criteriaOf in packages/engine/src/criteria.ts')) {
+        const tests = [{ file: 'packages/engine/test/criteria.test.ts', line: 30, quote: "it('reads a ticked checkbox as ticked, and an empty one as not', () => {" }];
+        return { tests, manual: [], summary: 'A test reads a ticked checkbox.' };
+      }
+      const tests = [{ file: 'packages/extension/test/overview.test.ts', line: 403, quote: "it('lists each criterion between the story and the claims" }];
+      return { tests, manual: [MANUAL], summary: 'An overview test renders the criteria, and the ✓ was checked by hand.' };
+    });
+
+  it("scores what the agent says covers the labelled parts against the hand labels, stamped with who answered", async () => {
+    const { folder, results } = await runVerdicts('criteria-typescript', coveringAgent(), ['cover']);
+
+    for (const name of ['cover-cites-checked', 'cover-tests-recall', 'cover-tests-precision', 'cover-manual-recall']) {
+      expect(rowsOf(results.rows, 'fake', name)).toEqual({ 'criteria-typescript': 1, [ALL_CASES]: 1 });
+    }
+    // Something covers every labelled part here, so none found is not scored.
+    expect(rowsOf(results.rows, 'fake', 'cover-none-found')).toEqual({});
+    expect(results.rows.find((row) => row.agent === 'fake' && row.case === 'criteria-typescript')).toMatchObject({ promptVersions: { cover: COVER_PROMPT_VERSION } });
+    const trace = readFileSync(join(folder, TRACE_FILE), 'utf8').trim().split('\n').map((line) => JSON.parse(line) as AgentCall);
+    expect(trace).toHaveLength(2);
+    expect(trace[0]).toMatchObject({ case: 'criteria-typescript', prompt: 'cover', promptVersion: COVER_PROMPT_VERSION });
+  });
+
+  it('scores none found right where nothing covers the part, and a line cited as a test where nothing does as no test the labels name', async () => {
+    const none = await runVerdicts('canary-python', answeringAgent(() => ({ tests: [], manual: [], summary: 'No test calls `doc_page`.' })), ['cover']);
+    expect(rowsOf(none.results.rows, 'fake', 'cover-none-found')).toEqual({ 'canary-python': 1, [ALL_CASES]: 1 });
+    expect(rowsOf(none.results.rows, 'fake', 'cover-tests-precision')).toEqual({});
+
+    const cited = { tests: [{ file: 'app/doc_links.py', line: 14, quote: 'return response.text' }], manual: [], summary: '`doc_page` is its own test.' };
+    const wrong = await runVerdicts('canary-python', answeringAgent(() => cited), ['cover']);
+    expect(rowsOf(wrong.results.rows, 'fake', 'cover-none-found')['canary-python']).toBe(0);
+    expect(rowsOf(wrong.results.rows, 'fake', 'cover-tests-precision')['canary-python']).toBe(0);
+    expect(rowsOf(wrong.results.rows, 'fake', 'cover-cites-checked')['canary-python']).toBe(1);
+  });
+
+  it('records an answer that fell back, which fails every check, none found included', async () => {
+    const { results } = await runVerdicts('canary-python', scriptedAgent([]), ['cover']);
+
+    expect(results.fallbacks).toEqual([{ case: 'canary-python', agent: 'fake', prompt: 'cover', detail: expect.stringMatching(/^the agent gave no usable answer/) }]);
+    expect(rowsOf(results.rows, 'fake', 'cover-none-found')['canary-python']).toBe(0);
+    expect(rowsOf(results.rows, 'fake', 'cover-cites-checked')['canary-python']).toBe(0);
   });
 });
 

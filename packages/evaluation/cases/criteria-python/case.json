@@ -6,7 +6,8 @@
   "prompts": [
     "criteria-mapping",
     "draft-comment",
-    "explain"
+    "explain",
+    "cover"
   ],
   "pullRequest": {
     "url": "https://github.com/example-org/example-repo/pull/7359",

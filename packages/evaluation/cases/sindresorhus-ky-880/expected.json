@@ -77,5 +77,24 @@
       }
     ]
   },
-  "explain": ["deepMergeInternal in source/utils/merge.ts"]
+  "explain": ["deepMergeInternal in source/utils/merge.ts"],
+  "cover": [
+    {
+      "part": "deepMergeInternal in source/utils/merge.ts",
+      "tests": [
+        "test/main.ts",
+        "test/memory-leak.ts"
+      ],
+      "manual": []
+    }
+  ],
+  "verify": [
+    {
+      "path": "source/utils/merge.ts",
+      "line": 232,
+      "endLine": 232,
+      "text": "// Special handling for AbortSignal instances at the root options level",
+      "verdict": "verified"
+    }
+  ]
 }

@@ -246,6 +246,36 @@ describe('claim counts in the tree', () => {
     expect(mustReview!.parts[0]!.description).toBe('1 claim · New code the send path now runs on every delivery.');
     expect(mustReview!.parts[0]!.tooltip).toContain('1 claim, all verified; the overview lists them');
   });
+
+  it('badges a claim the verify ask judged when the pass did not judge, and says where its verdict came from', () => {
+    const shown = claimsResult();
+    const asked = {
+      ...shown.claims!.claims[0]!,
+      asked: true as const,
+      verdict: { kind: 'refuted' as const, source: 'the change itself' as const, reason: 'The loop runs five times.', evidence: [] },
+    };
+    const unjudged = { ...shown, claims: { ...shown.claims!, claims: [asked, ...shown.claims!.claims.slice(1)] } };
+
+    const [mustReview] = buildTree(unjudged);
+
+    expect(mustReview!.parts[0]).toMatchObject({
+      claims: 3,
+      findings: 1,
+      description: '⚠ 1 finding · 3 claims · New code the send path now runs on every delivery.',
+    });
+    expect(mustReview!.parts[0]!.tooltip).toContain(
+      '3 claims, 1 checked by the Verify this claim ask, 1 refuted or unverifiable, each a thread on the diff, the verdicts pass did not run; the overview lists them',
+    );
+
+    const fellBack = {
+      ...unjudged,
+      claims: { ...unjudged.claims!, judging: { promptVersion: '1', outcome: 'fell back' as const, detail: 'the agent gave no usable answer', stamp: unjudged.claims!.stamp } },
+    };
+    const [fell] = buildTree(fellBack);
+    expect(fell!.parts[0]!.tooltip).toContain(
+      '3 claims, 1 checked by the Verify this claim ask, 1 refuted or unverifiable, each a thread on the diff, the judging pass fell back; the overview lists them',
+    );
+  });
 });
 
 describe('unexplained parts in the tree', () => {

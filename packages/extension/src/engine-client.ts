@@ -15,6 +15,7 @@ import {
   REVIEW_STAGE_METHOD,
   SEND_REVIEW_METHOD,
   type AskAnswer,
+  type AskedClaim,
   type AskKind,
   type DraftComment,
   type FindingRef,
@@ -312,15 +313,17 @@ export class EngineClient {
   /**
    * Asks one ask about one part, sent only when the reviewer makes it:
    * the engine has the agent the settings picked answer about the part of
-   * its latest review of the pull request, and checks the answer.
+   * its latest review of the pull request, and checks the answer; a
+   * verify ask carries the claim the reviewer picked or selected.
    * Resolves with the answer; rejects with the engine's plain message,
    * such as an answer the checks refused twice.
    */
-  async ask(url: string, ask: AskKind, part: number, agent?: ReviewAgentChoice): Promise<AskAnswer> {
+  async ask(url: string, ask: AskKind, part: number, agent?: ReviewAgentChoice, claim?: AskedClaim): Promise<AskAnswer> {
     if (!this.handshaken) {
       throw new Error('the engine has not completed its handshake yet');
     }
-    const result = await this.request(ASK_METHOD, { url, ask, part, ...(agent !== undefined ? { agent } : {}) }, ASK_TIMEOUT_MS);
+    const params = { url, ask, part, ...(claim !== undefined ? { claim } : {}), ...(agent !== undefined ? { agent } : {}) };
+    const result = await this.request(ASK_METHOD, params, ASK_TIMEOUT_MS);
     if (!isAskAnswer(result)) {
       throw new AskProtocolError();
     }

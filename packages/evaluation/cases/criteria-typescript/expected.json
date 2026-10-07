@@ -70,5 +70,26 @@
       "text": "The overview counts the ticked criteria beside its heading, such as `2 of 4 ticked`.",
       "verdict": "not met"
     }
+  ],
+  "cover": [
+    {
+      "part": "isTicked, criteriaOf in packages/engine/src/criteria.ts",
+      "tests": [
+        "packages/engine/test/criteria.test.ts"
+      ],
+      "manual": []
+    },
+    {
+      "part": "criterionItem in packages/extension/src/overview.ts",
+      "tests": [
+        "packages/extension/test/overview.test.ts"
+      ],
+      "manual": [
+        {
+          "text": "Checked by hand in VS Code on a pull request whose linked issue ticks two of its four criteria: those two show a ✓ beside their quotes, and the other two show none.",
+          "line": 5
+        }
+      ]
+    }
   ]
 }

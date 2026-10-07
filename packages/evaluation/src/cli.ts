@@ -75,7 +75,10 @@ plain checks of the comments the agent drafts from hand-written findings
 (cites an evidence location, adds no claim the finding lacks, stays within
 the length cap), the plain checks of the explanations the agent gives of
 the labelled parts (cites only lines the part shows, names only what the
-change shows), and the claim checks over the
+change shows), the verdicts the verify ask gives the hand-labelled
+selections (accuracy, false-verified rate, fetch offered), what the agent
+says covers the labelled parts (citations checked, test recall and
+precision, manual-check recall, none found), and the claim checks over the
 hand-labelled verdicts (found, verdict, evidence, fetch offered), which
 the plain pass fails as expected failures, since it reports no claims;
 the stored baseline records them at those failing values. It reads the cases in
@@ -89,13 +92,15 @@ cases tied to the ranking prompt have their plain parts ranked by it, the
 cases tied to the story prompt have the story of their plain parts
 written by it, the cases tied to the claims prompt have the claims of
 their plain parts listed by it, the cases tied to the verdicts prompt
-have their hand-labelled claims judged by it, the cases tied to the
+have their hand-labelled claims judged by it and each hand-labelled
+selection judged alone, as the verify ask judges it, the cases tied to the
 unexplained-changes prompt have their plain parts compared by it with
 their description and recorded linked issues, the cases tied to the
 criteria-mapping prompt have their recorded acceptance criteria mapped by
 it to their plain parts, the cases tied to the draft-comment prompt have
 a comment drafted by it from each hand-written finding, the cases tied to the
 explain prompt have each labelled part explained by it, the cases tied to the
+cover prompt have each labelled part asked what covers it, the cases tied to the
 library verdicts prompt have every library fetch those verdicts offer
 pressed from their recorded downloads and each pressed claim judged again
 in the library's source, scored by the claim checks, and those rows are

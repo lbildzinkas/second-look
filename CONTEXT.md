@@ -39,7 +39,7 @@ _Avoid_: Boilerplate, trivial change
 ### Checking claims
 
 **Claim**:
-A statement about how the code or a library behaves, made by the pipeline, the PR description, a docstring or comment in the change, or the companion's own agent.
+A statement about how the code or a library behaves, made by the pipeline, the PR description, a docstring or comment in the change, the companion's own agent, or the reviewer's selection in the diff.
 _Avoid_: Assertion
 
 **Verdict**:

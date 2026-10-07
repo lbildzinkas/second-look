@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { DEFAULT_AGENT_SETTINGS, type AgentAdapter, type AgentSettings } from './agent.js';
 import { AGENT_NAMES, isAgentName, type AgentName } from './agents.js';
-import { ASK_KINDS, askAboutPart, isAskKind } from './asks.js';
+import { ASK_KINDS, ASKS, askAboutPart, isAskKind } from './asks.js';
 import { pullRequestCacheDir } from './cache.js';
 import { draftComment, draftFinding, isFindingRef } from './draft-comment.js';
 import { GitHubClient, parsePullRequestUrl } from './github.js';
@@ -10,6 +10,7 @@ import { FINDING_REF_KINDS, type ReviewResult } from './protocol.js';
 import { reviewPullRequest } from './review.js';
 import { sendReview } from './send.js';
 import { isMarkedPart, readReviewedMarks, saveReviewedMark, wholeFilesReviewed } from './reviewed-marks.js';
+import { isAskedClaim, withVerifiedClaim } from './verify.js';
 import type { TestedRanking } from './ranking.js';
 import {
   ASK_METHOD,
@@ -123,7 +124,8 @@ export interface RpcServerDeps {
  * checked draft, which the reviewer edits and adds to the pending review
  * or discards; nothing sends it. `ask` answers one ask about one part of
  * that latest result, only when the reviewer makes it, and answers with
- * the checked answer, which the panel shows. `reviewedMarks` and `markReviewed`
+ * the checked answer, which the panel shows; a verify ask's judged claim
+ * joins that latest result. `reviewedMarks` and `markReviewed`
  * read and change the reviewed marks in the pull request's local store,
  * which outlives the engine, and `markViewed` marks the whole files of
  * the latest review that every mark covers "Viewed" on GitHub, only for
@@ -490,8 +492,10 @@ async function draft(
  * Answers one ask about one part of the pull request's latest review:
  * the agent answers, and the engine answers with it once its checks
  * accept it. An ask fails with a plain message when the review is
- * unknown, the part is none of its parts, or the agent gives no answer
- * the checks accept.
+ * unknown, the part is none of its parts, the claim to verify is none of
+ * the part's, or the agent gives no answer the checks accept. A verify
+ * ask's judged claim joins the latest review, so its finding and any
+ * library fetch it offers are there to press.
  */
 async function ask(
   params: unknown,
@@ -505,14 +509,16 @@ async function ask(
     respond(sink, failure(id, NOT_INITIALIZED_CODE, `the protocol starts with a version handshake: ${INITIALIZE_METHOD} before ${ASK_METHOD}`));
     return;
   }
-  const { url, ask: kind, part, agent: choice } = (params ?? {}) as Partial<AskParams>;
-  if (typeof url !== 'string' || parsePullRequestUrl(url) === null || !isAskKind(kind) || typeof part !== 'number' || !Number.isInteger(part) || part < 0) {
+  const { url, ask: kind, part, claim, agent: choice } = (params ?? {}) as Partial<AskParams>;
+  const claimFits = isAskKind(kind) && (ASKS[kind].takesClaim ? isAskedClaim(claim) : claim === undefined);
+  if (typeof url !== 'string' || parsePullRequestUrl(url) === null || !isAskKind(kind) || typeof part !== 'number' || !Number.isInteger(part) || part < 0 || !claimFits) {
+    const takers = ASK_KINDS.filter((each) => ASKS[each].takesClaim).join('" | "');
     respond(
       sink,
       failure(
         id,
         JSON_RPC_INVALID_PARAMS,
-        `${ASK_METHOD} needs params: { "url": string, "ask": "${ASK_KINDS.join('" | "')}", "part": number, "agent"?: { "agent": "${AGENT_NAMES.join('" | "')}", "model"?: string, "account"?: string } }`,
+        `${ASK_METHOD} needs params: { "url": string, "ask": "${ASK_KINDS.join('" | "')}", "part": number, "claim"?: { "index": number } | { "selection": { "path": string, "line": number, "endLine": number, "text": string } }, "agent"?: { "agent": "${AGENT_NAMES.join('" | "')}", "model"?: string, "account"?: string } }, with the claim for "${takers}" only`,
       ),
     );
     return;
@@ -533,7 +539,16 @@ async function ask(
       part,
       adapter: deps.agent.adapterFor(choice?.agent ?? deps.agent.defaultAgent),
       settings: agentRunSettings(deps.agent, choice),
+      ...(claim ? { claim } : {}),
     });
+    if (answer.claim !== undefined) {
+      // A verified claim joins the latest review, where its library fetch
+      // is pressed; a fetch or a new review that landed meanwhile wins.
+      const latest = reviews.get(url);
+      const updated = latest === undefined ? undefined : withVerifiedClaim(latest, answer.claim);
+      if (updated === undefined) throw new Error('the review changed while the claim was judged; ask again');
+      reviews.set(url, updated);
+    }
     respond(sink, { jsonrpc: '2.0', id, result: answer });
   } catch (error) {
     respond(sink, failure(id, ENGINE_FAILED_CODE, error instanceof Error ? error.message : String(error)));

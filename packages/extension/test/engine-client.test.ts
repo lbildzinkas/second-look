@@ -110,7 +110,7 @@ describe('EngineClient against a fake engine', () => {
     await client.initialize();
     const result = await client.review(PR_URL, TOKEN);
 
-    expect(result.version).toBe(16);
+    expect(result.version).toBe(17);
     expect(result.parts).toHaveLength(7);
 
     const requests = loggedRequests('round-trip.log') as {
@@ -219,6 +219,39 @@ describe('EngineClient against a fake engine', () => {
     // An ask carries no token: nothing of it reaches GitHub.
     expect(request.params).toEqual({ url: PR_URL, ask: 'explain', part: 0, agent: { agent: 'pi', model: 'pi/model' } });
     client.dispose();
+  });
+
+  it('sends the claim a verify ask checks, and reads back the claim it judged, refusing one about another part', async () => {
+    const claim = {
+      quote: 'Retries three times.',
+      source: 'reviewer',
+      location: { kind: 'file', path: 'app/retry.py', line: 2, endLine: 2 },
+      part: 0,
+      verdict: { kind: 'refuted', source: 'the change itself', reason: 'It retries five times.', evidence: [{ path: 'app/retry.py', line: 4, quote: 'retry(send, 5)' }] },
+    };
+    const answer = {
+      ask: 'verify',
+      part: 0,
+      partName: 'send_with_retry in app/retry.py',
+      sections: [{ heading: 'Verdict', text: 'refuted, from the change itself: It retries five times.' }],
+      cited: [{ path: 'app/retry.py', side: 'head', line: 4, quote: 'retry(send, 5)' }],
+      promptVersion: '5',
+      stamp: { agent: 'pi', agentVersion: '0.86.1', model: 'pi/model', effort: null, runAt: '2026-10-07T00:00:00.000Z' },
+      claim: { index: 3, claim },
+    };
+    const selection = { path: 'app/retry.py', line: 2, endLine: 2, text: '# Retries three times.' };
+    const client = new EngineClient(() => fakeEngine({ askResult: answer, logName: 'verify.log' }));
+
+    await client.initialize();
+    expect(await client.ask(PR_URL, 'verify', 0, undefined, { selection })).toEqual(answer);
+    const request = loggedRequests('verify.log').find((each) => (each as { method: string }).method === 'ask') as { params: unknown };
+    expect(request.params).toEqual({ url: PR_URL, ask: 'verify', part: 0, claim: { selection } });
+    client.dispose();
+
+    const other = new EngineClient(() => fakeEngine({ askResult: { ...answer, claim: { index: 3, claim: { ...claim, part: 1 } } } }));
+    await other.initialize();
+    await expect(other.ask(PR_URL, 'verify', 0, undefined, { index: 3 })).rejects.toThrow("the engine's answer is not the answer to an ask");
+    other.dispose();
   });
 
   it("reads an ask's failure as the engine's plain message, and refuses an answer that is no answer to an ask", async () => {
@@ -457,7 +490,7 @@ describe('EngineClient against a fake engine', () => {
       await timedOut;
 
       await client.initialize();
-      expect(await client.review(PR_URL, TOKEN)).toMatchObject({ version: 16 });
+      expect(await client.review(PR_URL, TOKEN)).toMatchObject({ version: 17 });
       expect(spawns).toBe(2);
       client.dispose();
     } finally {
@@ -488,7 +521,7 @@ describe('EngineClient against a fake engine', () => {
     const stages: ReviewStageUpdate[] = [];
 
     await client.initialize();
-    expect(await client.review(PR_URL, TOKEN, undefined, (stage) => stages.push(stage))).toMatchObject({ version: 16 });
+    expect(await client.review(PR_URL, TOKEN, undefined, (stage) => stages.push(stage))).toMatchObject({ version: 17 });
     expect(stages).toEqual([]);
     client.dispose();
   });

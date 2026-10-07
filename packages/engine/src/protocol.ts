@@ -11,7 +11,7 @@ import type { AgentStamp } from './agent.js';
 import type { AskKind } from './asks.js';
 
 /** Version of the review result schema. */
-export const REVIEW_RESULT_VERSION = 16 as const;
+export const REVIEW_RESULT_VERSION = 17 as const;
 
 /**
  * Version 2 added the head commit's SHA and each part's noise assessment;
@@ -42,7 +42,11 @@ export const REVIEW_RESULT_VERSION = 16 as const;
  * criterion's verdict — met, partly met, not met, can't tell or needs
  * manual check — with the code, the tests and the manual checks that
  * show it, and the criteria's mapping; version 16 added what changed
- * since the reviewer's last look.
+ * since the reviewer's last look; version 17 added the claim a verify
+ * ask judges — text the reviewer selected in the diff, a claim source of
+ * its own, or a claim they picked — marked on the claim as judged by
+ * the ask alone, so its checked verdict stands even when the claims
+ * pass's judging fell back.
  */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
@@ -181,10 +185,10 @@ export interface DraftComment {
 }
 
 /**
- * One line of a part an ask's answer cites: the file, by its path on the
- * new side, the side the line sits on, its number there and its quote.
- * The engine keeps only a citation whose line the part shows, with the
- * quote on it.
+ * One line an ask's answer cites: the file, by its path on the new side,
+ * the side the line sits on, its number there and its quote. The engine
+ * keeps only a citation it checked: a line the part shows, with the quote
+ * on it, or a line it re-read in the head copy.
  */
 export interface PartCitation {
   path: string;
@@ -217,7 +221,33 @@ export interface AskAnswer {
   /** The version of the ask's prompt. */
   promptVersion: string;
   stamp: AgentStamp;
+  /**
+   * The claim a verify ask judged, with its verdict and any library fetch
+   * it offers, and its index in the review's claims, where the engine's
+   * latest review now holds it: in the picked claim's place, or after the
+   * others for text the reviewer selected. The claim is marked `asked`,
+   * as the review's copy of it is.
+   */
+  claim?: { index: number; claim: Claim };
 }
+
+/**
+ * Text the reviewer selected on the head side of a part's diff, to verify
+ * as a claim: the file, by its path on the new side, the head-side lines
+ * the selection starts and ends on, and the text as selected.
+ */
+export interface ReviewerSelection {
+  path: string;
+  line: number;
+  endLine: number;
+  text: string;
+}
+
+/**
+ * The claim a verify ask checks: one of the review's claims, by its index
+ * there, or text the reviewer selected in the part's diff.
+ */
+export type AskedClaim = { index: number } | { selection: ReviewerSelection };
 
 /**
  * One reviewed mark: the reviewer ticked a part's checkbox. The local
@@ -615,7 +645,9 @@ export interface CheckLog {
  * agent listed them and the engine checked them: every claim quoted from
  * its source, located there and attached to a part, in the order of its
  * source's priority. Each starts as not checked, and keeps that verdict
- * until the agent judges it.
+ * until the claims pass judges it — or the Verify this claim ask judges
+ * the claim alone, which marks the claim `asked` and leaves the pass's
+ * own outcome unchanged.
  */
 export interface Claims {
   /** The version of the claims prompt. */
@@ -623,13 +655,13 @@ export interface Claims {
   /**
    * `listed` when the claims are shown, none being a valid list;
    * `fell back` when the agent's answer was missing or failed the
-   * checks, so no claim is listed.
+   * checks, so no claim of the agent's is listed.
    */
   outcome: 'listed' | 'fell back';
   /** One plain line: how the claims were checked, or why there are none. */
   detail: string;
   stamp: AgentStamp;
-  /** The claims, in their sources' priority order; empty when the pass fell back. */
+  /** The claims, in their sources' priority order; a listing that fell back holds only the pipeline's, and a claim the Verify this claim ask judged joins them. */
   claims: Claim[];
   /** What came of asking the agent to judge the claims; absent until it was asked. */
   judging?: ClaimJudging;
@@ -656,12 +688,13 @@ export interface ClaimJudging {
 /**
  * Where a claim is made, in priority order: a finding of a fresh pipeline
  * report, the pull request's description, a docstring or a comment the
- * change adds, or the companion's own agent, in the story it wrote.
+ * change adds, the companion's own agent, in the story it wrote, or text
+ * the reviewer selected in the diff and asked to verify.
  */
-export type ClaimSource = 'pipeline' | 'description' | 'docstring' | 'comment' | 'agent';
+export type ClaimSource = 'pipeline' | 'description' | 'docstring' | 'comment' | 'agent' | 'reviewer';
 
 /** The claim sources in priority order, the order the claims are listed in. */
-export const CLAIM_SOURCE_ORDER: readonly ClaimSource[] = ['pipeline', 'description', 'docstring', 'comment', 'agent'];
+export const CLAIM_SOURCE_ORDER: readonly ClaimSource[] = ['pipeline', 'description', 'docstring', 'comment', 'agent', 'reviewer'];
 
 /** Where in its source a claim's quote sits. */
 export type ClaimLocation =
@@ -672,7 +705,7 @@ export type ClaimLocation =
       line: number;
     }
   | {
-      /** In lines the change adds to a file. */
+      /** In lines the change adds to a file, or, for the reviewer's selection, head-side lines the diff shows. */
       kind: 'file';
       /** The file, by its path on the new side. */
       path: string;
@@ -932,6 +965,12 @@ export interface Claim {
   /** The part the claim is about, by its index in the result's parts. */
   part: number;
   verdict: ClaimVerdict;
+  /**
+   * True when the Verify this claim ask judged this claim alone, so its
+   * checked verdict stands even when the claims pass's judging fell
+   * back; the pass's own outcome stays as it was.
+   */
+  asked?: true;
 }
 
 /**

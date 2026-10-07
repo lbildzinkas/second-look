@@ -22,7 +22,7 @@
     },
     {
       "id": "verdicts",
-      "version": "4",
+      "version": "5",
       "files": ["packages/engine/src/verdicts.ts"]
     },
     {
@@ -49,6 +49,11 @@
       "id": "explain",
       "version": "1",
       "files": ["packages/engine/src/explain.ts"]
+    },
+    {
+      "id": "cover",
+      "version": "1",
+      "files": ["packages/engine/src/cover.ts"]
     }
   ]
 }

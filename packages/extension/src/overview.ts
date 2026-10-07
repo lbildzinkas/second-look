@@ -444,13 +444,14 @@ function answerItem(answer: AskAnswer, index: number, state: OverviewState): str
 /**
  * The asks section, at the top of the page once the reviewer has asked
  * about a part: each answer, newest first, with its stamp. Every cited
- * line is one the engine checked the part shows. The agent's text is
+ * line is one the engine checked: a line the part shows, or one it
+ * re-read in the head copy. The agent's text is
  * escaped, its names in backticks set as code.
  */
 function asksSection(state: OverviewState): string {
   const answers = state.answers ?? [];
   if (answers.length === 0) return '';
-  const note = '<p class="note">Each answers one ask about one part, checked before it is shown: every line it cites is one the part shows.</p>';
+  const note = '<p class="note">Each answers one ask about one part, checked before it is shown: every line it cites is one the part shows or the engine re-read in the head copy.</p>';
   return `<section id="asks"><h2>Asks</h2>${note}<ol class="claims">${answers.map((answer, index) => answerItem(answer, index, state)).join('')}</ol></section>`;
 }
 
@@ -654,6 +655,7 @@ const CLAIM_SOURCES: Record<ClaimSource, string> = {
   docstring: 'docstring',
   comment: 'comment',
   agent: "the companion's story",
+  reviewer: 'your selection',
 };
 
 /** Where a claim is made, in words: its source and its place there. */
@@ -684,13 +686,15 @@ export function citedWhere(cited: { path: string; line: number; ciLog?: true }):
 /**
  * A checked verdict's evidence source, reason, citations, the library it
  * needs — with the library fetch offered for it, or the library source it
- * was judged against — and why the engine dropped it, when it did;
+ * was judged against — why the engine dropped it, when it did, and that
+ * the Verify this claim ask judged the claim alone, when it did;
  * nothing for a claim not checked.
  */
 function verdictDetail(claim: Claim): string {
   const { verdict } = claim;
   if (verdict.kind === 'not checked') return '';
   const lines = [`${verdict.source}: ${verdict.reason}`];
+  if (claim.asked === true) lines.push('judged singly by the Verify this claim ask');
   const { library, libraryFetch: offer } = verdict;
   const decompiled = library?.archive === 'decompiled NuGet package';
   for (const cited of verdict.evidence) {
@@ -733,12 +737,15 @@ function claimItem(claim: Claim, index: number, result: ReviewResult): string {
 
 /** What the claims section says of their verdicts: judged, why none was, or that none is yet. */
 function verdictsNote(claims: NonNullable<ReviewResult['claims']>): string {
+  const asked = claims.claims.filter((claim) => claim.asked === true).length;
+  const counted = asked === 1 ? 'one checked verdict' : `${asked} checked verdicts`;
   const judging = claims.judging;
-  if (judging === undefined) return 'None is checked yet.';
-  if (judging.outcome === 'fell back') return `None is checked: ${judging.detail}.`;
+  if (judging === undefined) return asked === 0 ? 'None is checked yet.' : `The verdicts pass did not run; the ${counted} came from the Verify this claim ask.`;
+  if (judging.outcome === 'fell back') return asked === 0 ? `None is checked: ${judging.detail}.` : `The judging pass fell back (${judging.detail}); the ${counted} came from the Verify this claim ask.`;
   return (
-    `Each is judged against the change, its read-only copy and any failed check's CI log by ${stampText(judging.stamp, 'verdicts', judging.promptVersion)}; ` +
-    'the refuted and unverifiable ones are findings, each a thread on the diff.'
+    `Each is judged against the change, its read-only copy and any failed check's CI log by ${stampText(judging.stamp, 'verdicts', judging.promptVersion)}` +
+    (asked === 0 ? '' : `, save the ${counted} that came from the Verify this claim ask`) +
+    '; the refuted and unverifiable ones are findings, each a thread on the diff.'
   );
 }
 
@@ -756,7 +763,11 @@ function claimsSection(state: OverviewState): string {
   const note =
     '<p class="note">Statements about how code or a library behaves, from a fresh pipeline report, the description, the docstrings and comments ' +
     `the change adds, and the story, in that order. ${escapeHtml(verdictsNote(claims))}</p>`;
-  const fellBack = claims.outcome === 'fell back' ? `<p class="note">Only the pipeline's claims are listed: ${escapeHtml(claims.detail)}.</p>` : '';
+  const askedListed = claims.claims.some((claim) => claim.asked === true);
+  const fellBack =
+    claims.outcome === 'fell back'
+      ? `<p class="note">Only the pipeline's claims are listed${askedListed ? ', with any the reviewer asked to verify' : ''}: ${escapeHtml(claims.detail)}.</p>`
+      : '';
   return `<h2>Claims ${stamp}</h2>${fellBack}${note}<ol class="claims">${claims.claims.map((claim, index) => claimItem(claim, index, result)).join('')}</ol>`;
 }
 
