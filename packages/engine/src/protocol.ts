@@ -655,13 +655,13 @@ export interface Claims {
   /**
    * `listed` when the claims are shown, none being a valid list;
    * `fell back` when the agent's answer was missing or failed the
-   * checks, so no claim is listed.
+   * checks, so no claim of the agent's is listed.
    */
   outcome: 'listed' | 'fell back';
   /** One plain line: how the claims were checked, or why there are none. */
   detail: string;
   stamp: AgentStamp;
-  /** The claims, in their sources' priority order; empty when the pass fell back. */
+  /** The claims, in their sources' priority order; a listing that fell back holds only the pipeline's, and a claim the Verify this claim ask judged joins them. */
   claims: Claim[];
   /** What came of asking the agent to judge the claims; absent until it was asked. */
   judging?: ClaimJudging;

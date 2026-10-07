@@ -737,14 +737,11 @@ function claimItem(claim: Claim, index: number, result: ReviewResult): string {
 
 /** What the claims section says of their verdicts: judged, why none was, or that none is yet. */
 function verdictsNote(claims: NonNullable<ReviewResult['claims']>): string {
+  const asked = claims.claims.filter((claim) => claim.asked === true).length;
+  const fromAsk = asked === 0 ? '' : `; the ${asked === 1 ? 'one checked verdict' : `${asked} checked verdicts`} came from the Verify this claim ask`;
   const judging = claims.judging;
-  if (judging === undefined) return 'None is checked yet.';
-  if (judging.outcome === 'fell back') {
-    const asked = claims.claims.filter((claim) => claim.asked === true).length;
-    return asked === 0
-      ? `None is checked: ${judging.detail}.`
-      : `The judging pass fell back (${judging.detail}); the ${asked === 1 ? 'one checked verdict' : `${asked} checked verdicts`} came from the Verify this claim ask.`;
-  }
+  if (judging === undefined) return asked === 0 ? 'None is checked yet.' : `The verdicts pass did not run${fromAsk}.`;
+  if (judging.outcome === 'fell back') return asked === 0 ? `None is checked: ${judging.detail}.` : `The judging pass fell back (${judging.detail})${fromAsk}.`;
   return (
     `Each is judged against the change, its read-only copy and any failed check's CI log by ${stampText(judging.stamp, 'verdicts', judging.promptVersion)}; ` +
     'the refuted and unverifiable ones are findings, each a thread on the diff.'
@@ -765,7 +762,11 @@ function claimsSection(state: OverviewState): string {
   const note =
     '<p class="note">Statements about how code or a library behaves, from a fresh pipeline report, the description, the docstrings and comments ' +
     `the change adds, and the story, in that order. ${escapeHtml(verdictsNote(claims))}</p>`;
-  const fellBack = claims.outcome === 'fell back' ? `<p class="note">Only the pipeline's claims are listed: ${escapeHtml(claims.detail)}.</p>` : '';
+  const askedListed = claims.claims.some((claim) => claim.asked === true);
+  const fellBack =
+    claims.outcome === 'fell back'
+      ? `<p class="note">Only the pipeline's claims are listed${askedListed ? ', with any the reviewer asked to verify' : ''}: ${escapeHtml(claims.detail)}.</p>`
+      : '';
   return `<h2>Claims ${stamp}</h2>${fellBack}${note}<ol class="claims">${claims.claims.map((claim, index) => claimItem(claim, index, result)).join('')}</ol>`;
 }
 

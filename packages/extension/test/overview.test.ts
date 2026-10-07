@@ -354,6 +354,34 @@ describe('the verdicts on the overview', () => {
     expect(html).toContain('<span class="verdict finding">refuted</span>');
   });
 
+  it('notes a verify-ask claim in a listing that fell back, and when the verdicts pass never ran', () => {
+    const asked = {
+      quote: 'Never retries a 4xx.',
+      source: 'reviewer' as const,
+      location: { kind: 'file' as const, path: 'src/retry.py', line: 9, endLine: 9 },
+      part: 0,
+      asked: true as const,
+      verdict: {
+        kind: 'refuted' as const,
+        source: 'the change itself' as const,
+        reason: 'A 404 is retried like any other status.',
+        evidence: [{ path: 'src/retry.py', line: 5, quote: 'if response.status >= 400:' }],
+      },
+    };
+    const pipeline = { ...pipelineResult().claims!.claims[0]!, verdict: { kind: 'not checked' as const } };
+    const fellBack: ReviewResult = {
+      ...claimsResult(),
+      claims: { ...claimsResult().claims!, outcome: 'fell back', detail: 'the agent gave no usable answer', claims: [pipeline, asked] },
+    };
+    const fellBackHtml = overviewHtml({ result: fellBack }, 'N');
+    expect(fellBackHtml).toContain("Only the pipeline's claims are listed, with any the reviewer asked to verify: the agent gave no usable answer.");
+    expect(fellBackHtml).toContain('The verdicts pass did not run; the one checked verdict came from the Verify this claim ask.');
+    const unjudged: ReviewResult = { ...claimsResult(), claims: { ...claimsResult().claims!, claims: [asked] } };
+    const unjudgedHtml = overviewHtml({ result: unjudged }, 'N');
+    expect(unjudgedHtml).toContain('The verdicts pass did not run; the one checked verdict came from the Verify this claim ask.');
+    expect(unjudgedHtml).not.toContain('None is checked yet');
+  });
+
   it('renders a reason and a citation as escaped text, never as markup', () => {
     const shown = judgedResult();
     const [first, ...rest] = shown.claims!.claims;

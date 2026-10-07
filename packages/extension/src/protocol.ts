@@ -485,9 +485,9 @@ function isClaim(value: unknown, partCount: number, sentenceCount: number): bool
 
 /**
  * The claims of the result's parts: listed, or fallen back with only the
- * pipeline's, always stamped; a claim carries a checked verdict only once
- * the claims were judged, or once the Verify this claim ask judged it
- * alone, which marks the claim.
+ * pipeline's and any the verify ask judged, always stamped; a claim
+ * carries a checked verdict only once the claims were judged, or once
+ * the Verify this claim ask judged it alone, which marks the claim.
  */
 function isClaims(value: unknown, partCount: number, sentenceCount: number): boolean {
   if (!isRecord(value)) return false;
@@ -504,7 +504,7 @@ function isClaims(value: unknown, partCount: number, sentenceCount: number): boo
   ) {
     return false;
   }
-  if (value['outcome'] === 'fell back' && !claims.every((claim) => isRecord(claim) && claim['source'] === 'pipeline')) return false;
+  if (value['outcome'] === 'fell back' && !claims.every((claim) => isRecord(claim) && (claim['source'] === 'pipeline' || claim['asked'] === true))) return false;
   return claims.every(
     (claim) =>
       isClaim(claim, partCount, sentenceCount) &&

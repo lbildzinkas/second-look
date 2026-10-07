@@ -396,6 +396,30 @@ describe('isReviewResult for the claims', () => {
     expect(isReviewResult(loose(undefined))).toBe(true);
   });
 
+  it('accepts a fell-back listing holding the pipeline claims and one the verify ask judged, and an unjudged listing with one', () => {
+    const asked: Record<string, unknown> = {
+      quote: 'Never retries a 4xx.',
+      source: 'reviewer',
+      location: { kind: 'file', path: 'src/retry.py', line: 9, endLine: 9 },
+      part: 0,
+      asked: true,
+      verdict: { kind: 'refuted', source: 'the change itself', reason: 'A 404 is retried.', evidence: [{ path: 'src/retry.py', line: 5, quote: 'if response.status >= 400:' }] },
+    };
+    const pipeline: Record<string, unknown> = {
+      quote: 'send gives up after five attempts.',
+      source: 'pipeline',
+      location: { kind: 'pipeline', finding: 0, step: 'Review', path: 'src/retry.py', line: 6 },
+      part: 0,
+      verdict: { kind: 'not checked' },
+    };
+    expect(isReviewResult(loose({ ...listed(), outcome: 'fell back', claims: [pipeline, asked] }))).toBe(true);
+    const fetched = JSON.parse(JSON.stringify(fetchedResult().claims!.claims[2])) as Record<string, unknown>;
+    const fetchedAsked = { ...fetched, source: 'reviewer', location: { kind: 'file', path: 'src/retry.py', line: 9, endLine: 9 }, asked: true };
+    expect(isReviewResult(loose({ ...listed(), outcome: 'fell back', claims: [fetchedAsked] }))).toBe(true);
+    expect(isReviewResult(loose({ ...listed(), claims: [asked] }))).toBe(true);
+    expect(isReviewResult(loose({ ...listed(), outcome: 'fell back', claims: [pipeline, { ...asked, asked: undefined }] }))).toBe(false);
+  });
+
   it('rejects a claim without its quote, source or location, on a part or sentence the result lacks, or already judged', () => {
     const withClaim = (change: (claim: Record<string, unknown>) => Record<string, unknown>, index = 1): Loose => {
       const claims = listed();

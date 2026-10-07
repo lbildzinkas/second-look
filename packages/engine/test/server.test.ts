@@ -946,6 +946,52 @@ describe('runRpcServer fetching a library', () => {
     expect(fetched.claims!.claims[0]).toMatchObject({ asked: true, verdict: { kind: 'refuted', source: 'library source at the pinned version', library: { library: 'httpx' } } });
   });
 
+  it('verifies a selection though the claims listing fell back empty, and presses its fetch from there', async () => {
+    state = transports();
+    const agent = answeringAgent((run) => {
+      if (run.instructions === VERDICTS_INSTRUCTIONS) {
+        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: 'It turns on httpx.', evidence: [], library: 'httpx' }] };
+      }
+      if (run.instructions === LIBRARY_VERDICTS_INSTRUCTIONS) {
+        return {
+          verdict: 'refuted',
+          source: 'library source at the pinned version',
+          reason: 'A client follows no redirect by default.',
+          evidence: [{ file: 'httpx/_client.py', line: 2, quote: 'def __init__(self, follow_redirects: bool = False):' }],
+        };
+      }
+      return {};
+    });
+    const selection = { path: 'app/fresh.py', line: 1, endLine: 1, text: 'def fresh():' };
+    const { answer } = await serveInTurn(
+      [
+        request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+        request('review', { url: PR_7_URL, token: TOKEN }, 2),
+        request('ask', { url: PR_7_URL, ask: 'verify', part: 0, claim: { selection } }, 3),
+        request('fetchLibrary', { url: PR_7_URL, claim: 0 }, 4),
+      ],
+      state.fetch,
+      undefined,
+      true,
+      agent,
+    );
+
+    // The listing fell back and the pipeline report contributes no claim, so none was listed and the verdicts pass never ran.
+    const reviewed = answer(2).result as ReviewResult;
+    expect(reviewed.claims).toMatchObject({ outcome: 'fell back', claims: [] });
+    expect(reviewed.claims!.judging).toBeUndefined();
+    // The ask still judged the selection, which joined the empty listing marked asked.
+    expect(answer(3).result).toMatchObject({
+      claim: { index: 0, claim: { source: 'reviewer', asked: true, verdict: { kind: 'unverifiable', libraryFetch: { library: 'httpx' } } } },
+    });
+    // The pressed fetch answers with the whole review: the listing still fell back, no verdicts pass ran, and the fetched verdict lands on the asked claim.
+    expect(answer(4).error).toBeUndefined();
+    const fetched = answer(4).result as ReviewResult;
+    expect(fetched.claims).toMatchObject({ outcome: 'fell back' });
+    expect(fetched.claims!.judging).toBeUndefined();
+    expect(fetched.claims!.claims[0]).toMatchObject({ source: 'reviewer', asked: true, verdict: { kind: 'refuted', source: 'library source at the pinned version', library: { library: 'httpx' } } });
+  });
+
   it('refuses a verify ask with no claim or a claim off the part, and a claim on an ask that takes none', async () => {
     state = transports();
     const { answer } = await serveInTurn(
