@@ -50,6 +50,12 @@
         "category": "Second Look"
       },
       {
+        "command": "second-look.filterChangedSinceLastLook",
+        "title": "Show only parts changed since your last look, or all parts",
+        "category": "Second Look",
+        "icon": "$(filter)"
+      },
+      {
         "command": "second-look.submitReview",
         "title": "Submit review…",
         "category": "Second Look"
@@ -109,6 +115,11 @@
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "second-look.filterChangedSinceLastLook",
+          "when": "view == second-look.reviewTree",
+          "group": "navigation"
+        },
         {
           "command": "second-look.openAllParts",
           "when": "view == second-look.reviewTree",

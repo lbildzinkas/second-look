@@ -718,6 +718,23 @@ function isChangeCopy(value: unknown): boolean {
 }
 
 /**
+ * Checks what changed since the reviewer's last look: the commit it was
+ * at, where the look comes from, when it was, whether the changes were
+ * compared, and the hashes of the pieces that changed.
+ */
+function isSinceLastLook(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isNonEmptyString(value['commit']) &&
+    isOneOf(value['from'], ['local record', 'github review'] as const) &&
+    isString(value['at']) &&
+    isOneOf(value['outcome'], ['compared', 'commit gone'] as const) &&
+    Array.isArray(value['changed']) &&
+    value['changed'].every((piece) => isString(piece) && SHA256.test(piece))
+  );
+}
+
+/**
  * Checks that a value read over the protocol is a review result of the
  * version this extension understands. The engine and the extension share
  * the protocol types, so this guard only proves what JSON cannot: that the
@@ -739,6 +756,7 @@ export function isReviewResult(value: unknown): value is ReviewResult {
   if (!isPipelineReport(value['pipeline'])) return false;
   if (value['ci'] !== undefined && !isCiResults(value['ci'])) return false;
   if (value['criteria'] !== undefined && !isCriteria(value['criteria'])) return false;
+  if (value['sinceLastLook'] !== undefined && !isSinceLastLook(value['sinceLastLook'])) return false;
   const parts = value['parts'];
   if (!Array.isArray(parts) || !parts.every(isPart)) return false;
   const story = value['story'];

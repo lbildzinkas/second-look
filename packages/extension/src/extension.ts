@@ -13,6 +13,7 @@ import {
   DISCARD_DRAFT_COMMAND,
   DRAFT_COMMENT_COMMAND,
   FETCH_LIBRARY_COMMAND,
+  FILTER_CHANGED_COMMAND,
   OPEN_ALL_PARTS_COMMAND,
   OPEN_LIBRARY_EVIDENCE_COMMAND,
   OPEN_OVERVIEW_COMMAND,
@@ -29,7 +30,7 @@ import {
   buildTree,
   findAnchor,
   reviewBadge,
-  reviewStatus,
+  treeMessage,
   pendingReviewSection,
   type TreeComment,
   type TreePart,
@@ -64,6 +65,7 @@ export {
   DISCARD_DRAFT_COMMAND,
   DRAFT_COMMENT_COMMAND,
   FETCH_LIBRARY_COMMAND,
+  FILTER_CHANGED_COMMAND,
   OPEN_ALL_PARTS_COMMAND,
   OPEN_LIBRARY_EVIDENCE_COMMAND,
   OPEN_OVERVIEW_COMMAND,
@@ -221,6 +223,10 @@ class ReviewTreeProvider implements vscode.TreeDataProvider<TreeNode> {
  * counts the parts left, and a part whose content changed since it was
  * marked is unmarked and says so. With the opt-in mirror setting on, a
  * file whose every part is reviewed is marked "Viewed" on GitHub too.
+ *
+ * The line above the tree says which commit the reviewer's last look was
+ * at and how many parts changed since, each flagged in the tree, and the
+ * filter shows only those parts.
  */
 class ReviewSession {
   private readonly tree: ReviewTreeProvider;
@@ -250,6 +256,10 @@ class ReviewSession {
   private stored: { url: string; marks: ReviewedMarks } | undefined;
   /** The files of parts marked while the review still runs, mirrored to GitHub once it finishes. */
   private readonly mirrorWaiting = new Set<string>();
+  /** True while the tree shows only the parts changed since the reviewer's last look. */
+  private onlyChanged = false;
+  /** The stage the review is still running, in words, for the line above the tree. */
+  private stage: string | undefined;
 
   constructor(
     tree: ReviewTreeProvider,
@@ -318,22 +328,23 @@ class ReviewSession {
             accessToken,
             (stage) => {
               if (!current()) return;
+              this.stage = stage.running;
               void this.show(stage.result, shown, stage.running);
               shown = true;
-              this.treeView.message = reviewStatus(stage.result, stage.running);
             },
             (engine) => (marksRead = this.readMarks(engine, review, url.trim())),
           ),
       );
       if (!current()) return;
+      this.stage = undefined;
       await this.show(result, shown);
-      this.treeView.message = reviewStatus(result);
       await marksRead;
       if (!current()) return;
       this.running = false;
       await this.mirrorViewed();
     } catch (error) {
       if (!current()) return;
+      this.stage = undefined;
       this.treeView.message = undefined;
       vscode.window.showErrorMessage(
         error instanceof Error ? error.message : String(error),
@@ -400,14 +411,37 @@ class ReviewSession {
     const pending = this.comments.pending();
     return [
       ...(pending.length > 0 ? [pendingReviewSection(pending)] : []),
-      ...buildTree(this.result, this.marks()),
+      ...buildTree(this.result, this.marks(), { onlyChangedSinceLastLook: this.onlyChanged }),
     ];
   }
 
-  /** Shows the tree's sections and the badge counting the parts left to review. */
+  /**
+   * Shows the tree's sections, the line above them — what changed since
+   * the last look and the stage still running — and the badge counting
+   * the parts left to review.
+   */
   private render(): void {
     this.tree.setSections(this.sections());
-    this.treeView.badge = this.result === undefined ? undefined : reviewBadge(this.result, this.marks());
+    if (this.result === undefined) return;
+    this.treeView.message = treeMessage(this.result, this.stage, { onlyChangedSinceLastLook: this.onlyChanged });
+    this.treeView.badge = reviewBadge(this.result, this.marks());
+  }
+
+  /**
+   * Toggles the tree between every part and only the parts changed since
+   * the reviewer's last look; a first look has nothing to filter.
+   */
+  filterChanged(): void {
+    if (this.result === undefined) {
+      vscode.window.showWarningMessage('Review a pull request first, then filter its parts.');
+      return;
+    }
+    if (this.result.sinceLastLook === undefined) {
+      vscode.window.showInformationMessage('This is your first look at this pull request, so no part changed since.');
+      return;
+    }
+    this.onlyChanged = !this.onlyChanged;
+    this.render();
   }
 
   /** The reviewed marks of the pull request shown; none until the store's are read. */
@@ -952,6 +986,7 @@ export function activate(
       part === undefined ? undefined : session.openPart(part),
     ),
     vscode.commands.registerCommand(OPEN_ALL_PARTS_COMMAND, () => session.openAllParts()),
+    vscode.commands.registerCommand(FILTER_CHANGED_COMMAND, () => session.filterChanged()),
     vscode.commands.registerCommand(SUBMIT_REVIEW_COMMAND, (submit?: unknown, body?: unknown) =>
       session.submitReview(submit, body),
     ),

@@ -225,6 +225,47 @@ export class GitHubClient {
   }
 
   /**
+   * Fetches the diff a head commit makes against its merge base with a
+   * base commit, the way the pull request's own diff is taken; null when
+   * GitHub no longer has either commit, such as one a force-push left
+   * behind.
+   */
+  async getChangeDiff(ref: PullRequestRef, base: string, head: string): Promise<string | null> {
+    let response;
+    try {
+      response = await this.octokit.repos.compareCommitsWithBasehead({
+        owner: ref.owner,
+        repo: ref.repo,
+        basehead: `${base}...${head}`,
+        mediaType: { format: 'diff' },
+      });
+    } catch (error) {
+      if (isNotFound(error) || (error as { status?: unknown }).status === 422) return null;
+      throw error;
+    }
+    return diffText(response.data);
+  }
+
+  /**
+   * The commit and time of the signed-in reviewer's last submitted review
+   * of the pull request; null when they have submitted none. A pending
+   * review is not submitted, so it never counts.
+   */
+  async getLastReviewedCommit(ref: PullRequestRef): Promise<{ commit: string; at: string } | null> {
+    const { data: user } = await this.octokit.users.getAuthenticated();
+    const reviews = await this.octokit.paginate(this.octokit.pulls.listReviews, {
+      owner: ref.owner,
+      repo: ref.repo,
+      pull_number: ref.number,
+      per_page: 100,
+    });
+    const last = reviews
+      .filter((review) => review.user?.login === user.login && review.state !== 'PENDING' && review.commit_id && review.submitted_at)
+      .at(-1);
+    return last === undefined ? null : { commit: last.commit_id!, at: last.submitted_at! };
+  }
+
+  /**
    * Streams the gzipped tarball of one commit. The archive is downloaded,
    * never checked out, and the body is handed over unparsed so a large
    * repository is never held in memory whole.
@@ -255,14 +296,7 @@ export class GitHubClient {
       pull_number: ref.number,
       mediaType: { format: 'diff' },
     });
-    // The diff media type is not JSON; the client hands over raw bytes.
-    if (typeof response.data === 'string') {
-      return response.data;
-    }
-    if (response.data instanceof ArrayBuffer) {
-      return new TextDecoder().decode(response.data);
-    }
-    return String(response.data);
+    return diffText(response.data);
   }
 
   /**
@@ -491,6 +525,13 @@ export interface CheckRunListing {
   annotations: number;
   /** The app that ran it, such as `github-actions`; null when GitHub names none. */
   app: string | null;
+}
+
+/** A diff as text: the diff media type is not JSON, so the client hands over raw bytes. */
+function diffText(data: unknown): string {
+  if (typeof data === 'string') return data;
+  if (data instanceof ArrayBuffer) return new TextDecoder().decode(data);
+  return String(data);
 }
 
 /** True when the error is the endpoint's plain 404. */

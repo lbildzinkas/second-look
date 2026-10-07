@@ -19,6 +19,7 @@ import { VERDICTS_INSTRUCTIONS } from '../src/verdicts.js';
 import { DEFAULT_EFFORT } from '../src/ranking.js';
 import { runRpcServer, type RpcAgentDeps } from '../src/server.js';
 import { markedPart } from '../src/reviewed-marks.js';
+import { readLooks, recordLook } from '../src/last-look.js';
 import type { ReviewResult } from '../src/protocol.js';
 import { removeCopy } from '../src/cache.js';
 import {
@@ -145,18 +146,19 @@ describe('runRpcServer', () => {
 
     expect(responses[0]!.result).toEqual({ protocolVersion: ENGINE_PROTOCOL_VERSION });
     const first = responses[1]!.result as { version: number; parts: unknown[] };
-    expect(first.version).toBe(15);
+    expect(first.version).toBe(16);
     expect(first.parts).toHaveLength(11);
     const second = responses[2]!.result as { parts: unknown[] };
     expect(second.parts).toHaveLength(11);
     // Each review asks GitHub for what it needs — the pull request twice
     // (metadata, diff), the attributes, the merge base, the linked issues,
-    // the check runs, and on the first run the two commit archives —
+    // the check runs, the reviewer and their reviews, for want of an
+    // earlier look, and on the first run the two commit archives —
     // always with the token its own request carried; the second review at
     // the same commits reuses the archives.
     const authorizations = transport.requests.map((request) => request.authorization);
-    expect(authorizations.slice(0, 8)).toEqual(Array<string>(8).fill(`token ${TOKEN}`));
-    expect(authorizations.slice(8)).toEqual(Array<string>(6).fill('token ghp_another-token'));
+    expect(authorizations.slice(0, 10)).toEqual(Array<string>(10).fill(`token ${TOKEN}`));
+    expect(authorizations.slice(10)).toEqual(Array<string>(8).fill('token ghp_another-token'));
   });
 
   it('answers a failed review with the plain message, with the token redacted', async () => {    const leakingFetch: typeof fetch = async (input, init) => {
@@ -355,7 +357,7 @@ describe('runRpcServer with an agent', () => {
         id: 2,
         running: 'grouping related hunks with fake',
         timeoutMs: 660_000,
-        result: { version: 15, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
+        result: { version: 16, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
       },
     });
     // The fake agent has no tested ranking, so the story stage follows the grouping.
@@ -694,7 +696,7 @@ describe('runRpcServer fetching a library', () => {
     });
     expect(pypiBeforeFetch).toBe(0);
     expect(answer(3).result).toMatchObject({
-      version: 15,
+      version: 16,
       claims: {
         claims: [
           {
@@ -747,7 +749,7 @@ describe('runRpcServer fetching a library', () => {
 
     expect(answer(3).error).toBeUndefined();
     expect(answer(3).result).toMatchObject({
-      version: 15,
+      version: 16,
       claims: {
         claims: [
           {
@@ -879,6 +881,19 @@ describe('runRpcServer keeping reviewed marks', () => {
   }
 
   const initialize = request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION });
+
+  it('says what changed since the last look with each review, and records this one', async () => {
+    const store = temporaryCacheDir();
+    const gone = 'abcdef0123456789abcdef0123456789abcdef01';
+    await recordLook(store, { owner: 'example-org', repo: 'example-repo', number: 42 }, { commit: gone, at: '2026-10-01T09:00:00.000Z' });
+    const answers = await serveInOrder([initialize, request('review', { url: PR_URL, token: TOKEN }, 2)], { fetch: fixtureFetch().fetch, cacheDir: store });
+
+    const result = answers[1]!.result as ReviewResult;
+    expect(result.sinceLastLook).toEqual({ commit: gone, from: 'local record', at: '2026-10-01T09:00:00.000Z', outcome: 'commit gone', changed: [] });
+    const looks = await readLooks(store, { owner: 'example-org', repo: 'example-repo', number: 42 });
+    expect(looks).toEqual({ version: 1, last: { commit: result.pullRequest.headSha, at: expect.any(String) }, before: { commit: gone, at: '2026-10-01T09:00:00.000Z' } });
+    await removeCopy(store);
+  });
 
   it('keeps a mark in the pull request’s local store, which a new engine reads back', async () => {
     const store = temporaryCacheDir();

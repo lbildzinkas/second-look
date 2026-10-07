@@ -23,6 +23,7 @@ import {
   type ReviewResult,
   type Story,
 } from '@second-look/engine';
+import { sinceLastLookLine } from './tree.js';
 
 /** The view type of the overview's one webview panel. */
 export const OVERVIEW_VIEW_TYPE = 'second-look.overview' as const;
@@ -295,6 +296,12 @@ function metaLine(result: ReviewResult): string {
 }
 
 /** A chip for each stage done, and one for the stage still running. */
+/** The line under the meta saying which commit the reviewer's last look was at and what changed since; nothing on a first look. */
+function sinceLine(result: ReviewResult): string {
+  const line = sinceLastLookLine(result);
+  return line === undefined ? '' : `<div class="meta since">${escapeHtml(line)}</div>`;
+}
+
 function stageChips(state: OverviewState): string {
   const { result } = state;
   const chips: { text: string; done: boolean }[] = [
@@ -931,6 +938,7 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
 <main>
   <h1>${escapeHtml(result.pullRequest.title)}</h1>
   <div class="meta">${metaLine(result)}</div>
+  ${sinceLine(result)}
   <div class="stages">${stageChips(state)}</div>
   <section id="story">${storySection(state)}</section>
   <section id="criteria">${criteriaSection(state)}</section>
