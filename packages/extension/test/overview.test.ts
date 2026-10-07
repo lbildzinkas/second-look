@@ -354,6 +354,32 @@ describe('the verdicts on the overview', () => {
     expect(html).toContain('<span class="verdict finding">refuted</span>');
   });
 
+  it('attributes an asked claim\u2019s verdict to the ask in a judged listing too', () => {
+    const shown = judgedResult();
+    const asked = {
+      quote: 'Never retries a 4xx.',
+      source: 'reviewer' as const,
+      location: { kind: 'file' as const, path: 'src/retry.py', line: 9, endLine: 9 },
+      part: 0,
+      asked: true as const,
+      verdict: {
+        kind: 'refuted' as const,
+        source: 'the change itself' as const,
+        reason: 'A 404 is retried like any other status.',
+        evidence: [{ path: 'src/retry.py', line: 5, quote: 'if response.status >= 400:' }],
+      },
+    };
+    const judged: ReviewResult = { ...shown, claims: { ...shown.claims!, claims: [...shown.claims!.claims, asked] } };
+
+    const html = overviewHtml({ result: judged }, 'N');
+
+    expect(html).toContain(
+      ', save the one checked verdict that came from the Verify this claim ask; the refuted and unverifiable ones are findings, each a thread on the diff.',
+    );
+    expect(html).toContain('<div class="why">judged singly by the Verify this claim ask</div>');
+    expect(overviewHtml({ result: shown }, 'N')).not.toContain('save the one checked verdict');
+  });
+
   it('notes a verify-ask claim in a listing that fell back, and when the verdicts pass never ran', () => {
     const asked = {
       quote: 'Never retries a 4xx.',

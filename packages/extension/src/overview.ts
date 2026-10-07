@@ -738,13 +738,14 @@ function claimItem(claim: Claim, index: number, result: ReviewResult): string {
 /** What the claims section says of their verdicts: judged, why none was, or that none is yet. */
 function verdictsNote(claims: NonNullable<ReviewResult['claims']>): string {
   const asked = claims.claims.filter((claim) => claim.asked === true).length;
-  const fromAsk = asked === 0 ? '' : `; the ${asked === 1 ? 'one checked verdict' : `${asked} checked verdicts`} came from the Verify this claim ask`;
+  const counted = asked === 1 ? 'one checked verdict' : `${asked} checked verdicts`;
   const judging = claims.judging;
-  if (judging === undefined) return asked === 0 ? 'None is checked yet.' : `The verdicts pass did not run${fromAsk}.`;
-  if (judging.outcome === 'fell back') return asked === 0 ? `None is checked: ${judging.detail}.` : `The judging pass fell back (${judging.detail})${fromAsk}.`;
+  if (judging === undefined) return asked === 0 ? 'None is checked yet.' : `The verdicts pass did not run; the ${counted} came from the Verify this claim ask.`;
+  if (judging.outcome === 'fell back') return asked === 0 ? `None is checked: ${judging.detail}.` : `The judging pass fell back (${judging.detail}); the ${counted} came from the Verify this claim ask.`;
   return (
-    `Each is judged against the change, its read-only copy and any failed check's CI log by ${stampText(judging.stamp, 'verdicts', judging.promptVersion)}; ` +
-    'the refuted and unverifiable ones are findings, each a thread on the diff.'
+    `Each is judged against the change, its read-only copy and any failed check's CI log by ${stampText(judging.stamp, 'verdicts', judging.promptVersion)}` +
+    (asked === 0 ? '' : `, save the ${counted} that came from the Verify this claim ask`) +
+    '; the refuted and unverifiable ones are findings, each a thread on the diff.'
   );
 }
 
