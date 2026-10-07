@@ -102,9 +102,9 @@ export function changePieces(part: Part): string[] {
   return pieceHashes(part, changedLines, false);
 }
 
-/** Whether a part changed since the reviewer's last look: every part did when the commit is gone. */
+/** Whether a part changed since the reviewer's last look: every part did when the changes could not be compared. */
 export function changedSinceLastLook(part: Part, since: SinceLastLook): boolean {
-  if (since.outcome === 'commit gone') return true;
+  if (since.outcome === 'not compared') return true;
   const changed = new Set(since.changed);
   return changePieces(part).some((piece) => changed.has(piece));
 }
@@ -129,8 +129,10 @@ export interface LastLookOptions {
  * there is nothing to compare. The change at that commit is taken
  * against its merge base with the base now — the way the pull request's
  * own diff is — so after a rebase or a force-push the two changes are
- * compared themselves, and upstream commits mix in nothing. When GitHub
- * no longer has that commit, every part counts as changed.
+ * compared themselves, and upstream commits mix in nothing. When the
+ * change at that commit cannot be fetched — its commit gone from
+ * GitHub, or sharing no history with the head — every part counts as
+ * changed.
  */
 export async function lookSinceLastLook(options: LastLookOptions): Promise<SinceLastLook | undefined> {
   const { client, cacheDir, ref, pullRequest } = options;
@@ -149,7 +151,7 @@ async function compareWith(last: Look, from: SinceLastLook['from'], options: Las
   const look = { commit: last.commit, from, at: last.at };
   if (last.commit === pullRequest.headSha) return { ...look, outcome: 'compared', changed: [] };
   const before = await client.getChangeDiff(ref, pullRequest.baseCommit, last.commit);
-  if (before === null) return { ...look, outcome: 'commit gone', changed: [] };
+  if (before === null) return { ...look, outcome: 'not compared', changed: [] };
   const held = new Set(parseDiff(before).files.flatMap(changePieces));
   const now = parseDiff(options.diff).files.flatMap(changePieces);
   return { ...look, outcome: 'compared', changed: [...new Set(now.filter((piece) => !held.has(piece)))] };

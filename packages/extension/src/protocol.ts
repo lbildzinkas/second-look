@@ -728,7 +728,7 @@ function isSinceLastLook(value: unknown): boolean {
     isNonEmptyString(value['commit']) &&
     isOneOf(value['from'], ['local record', 'github review'] as const) &&
     isString(value['at']) &&
-    isOneOf(value['outcome'], ['compared', 'commit gone'] as const) &&
+    isOneOf(value['outcome'], ['compared', 'not compared'] as const) &&
     Array.isArray(value['changed']) &&
     value['changed'].every((piece) => isString(piece) && SHA256.test(piece))
   );

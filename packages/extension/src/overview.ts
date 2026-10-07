@@ -295,13 +295,13 @@ function metaLine(result: ReviewResult): string {
     .join(' · ');
 }
 
-/** A chip for each stage done, and one for the stage still running. */
 /** The line under the meta saying which commit the reviewer's last look was at and what changed since; nothing on a first look. */
 function sinceLine(result: ReviewResult): string {
   const line = sinceLastLookLine(result);
   return line === undefined ? '' : `<div class="meta since">${escapeHtml(line)}</div>`;
 }
 
+/** A chip for each stage done, and one for the stage still running. */
 function stageChips(state: OverviewState): string {
   const { result } = state;
   const chips: { text: string; done: boolean }[] = [

@@ -119,10 +119,10 @@ describe('overviewHtml', () => {
 
   it('says under where it comes from which commit the last look was at, and nothing on a first look', () => {
     const review = storyResult();
-    const looked = { ...review, sinceLastLook: { commit: 'abcdef0123456789abcdef0123456789abcdef01', from: 'local record' as const, at: '2026-10-01T09:00:00.000Z', outcome: 'commit gone' as const, changed: [] } };
+    const looked = { ...review, sinceLastLook: { commit: 'abcdef0123456789abcdef0123456789abcdef01', from: 'local record' as const, at: '2026-10-01T09:00:00.000Z', outcome: 'not compared' as const, changed: [] } };
     const html = overviewHtml({ result: looked }, 'NONCE');
     const meta = html.indexOf('<div class="meta">');
-    const since = html.indexOf('<div class="meta since">The commit of your last look, abcdef0 on 2026-10-01, is no longer on GitHub: every part counts as changed.</div>');
+    const since = html.indexOf('<div class="meta since">The change could not be compared with your last look at abcdef0 on 2026-10-01, because that commit is gone or no longer related: every part counts as changed.</div>');
 
     expect(since).toBeGreaterThan(meta);
     expect(overviewHtml({ result: review }, 'NONCE')).not.toContain('class="meta since"');

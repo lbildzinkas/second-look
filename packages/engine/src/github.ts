@@ -227,8 +227,8 @@ export class GitHubClient {
   /**
    * Fetches the diff a head commit makes against its merge base with a
    * base commit, the way the pull request's own diff is taken; null when
-   * GitHub no longer has either commit, such as one a force-push left
-   * behind.
+   * GitHub cannot serve the comparison: it no longer has either commit,
+   * such as one a force-push left behind, or the two share no history.
    */
   async getChangeDiff(ref: PullRequestRef, base: string, head: string): Promise<string | null> {
     let response;

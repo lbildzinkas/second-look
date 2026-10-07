@@ -889,7 +889,7 @@ describe('runRpcServer keeping reviewed marks', () => {
     const answers = await serveInOrder([initialize, request('review', { url: PR_URL, token: TOKEN }, 2)], { fetch: fixtureFetch().fetch, cacheDir: store });
 
     const result = answers[1]!.result as ReviewResult;
-    expect(result.sinceLastLook).toEqual({ commit: gone, from: 'local record', at: '2026-10-01T09:00:00.000Z', outcome: 'commit gone', changed: [] });
+    expect(result.sinceLastLook).toEqual({ commit: gone, from: 'local record', at: '2026-10-01T09:00:00.000Z', outcome: 'not compared', changed: [] });
     const looks = await readLooks(store, { owner: 'example-org', repo: 'example-repo', number: 42 });
     expect(looks).toEqual({ version: 1, last: { commit: result.pullRequest.headSha, at: expect.any(String) }, before: { commit: gone, at: '2026-10-01T09:00:00.000Z' } });
     await removeCopy(store);

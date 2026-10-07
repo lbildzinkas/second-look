@@ -122,10 +122,10 @@ function pullRequestNow(): PullRequestSummary {
 }
 
 /** Opens the review now: compares with the last look and records this one. */
-async function openReview(reviews: unknown[] = []): Promise<{ since: SinceLastLook | undefined; parts: Part[] }> {
+async function openReview(reviews: unknown[] = [], fetch: typeof fetch = gitHubOf(repository, reviews)): Promise<{ since: SinceLastLook | undefined; parts: Part[] }> {
   const pullRequest = pullRequestNow();
   const diff = repository.compare(pullRequest.baseCommit, pullRequest.headSha)!;
-  const client = new GitHubClient({ token: 'test-token', fetch: gitHubOf(repository, reviews) });
+  const client = new GitHubClient({ token: 'test-token', fetch });
   const since = await lookSinceLastLook({ client, cacheDir, ref: REF, pullRequest, diff, now: NOW });
   // One part per hunk, so each edit shows on its own.
   const parts = parseDiff(diff).files.flatMap((file) => (file.hunks.length === 0 ? [file] : file.hunks.map((hunk) => ({ ...file, hunks: [hunk] }))));
@@ -197,7 +197,7 @@ describe('since your last look', () => {
     expect(flagged(parts, since!)).toEqual(['app.txt:27']);
   });
 
-  it('says the old commit is gone and counts every part as changed', async () => {
+  it('counts every part as changed when GitHub no longer has the old commit', async () => {
     startPullRequest();
     const looked = await lookNow();
     writeFileSync(join(repository.dir, 'app.txt'), edited({ 5: 'five', 30: 'thirty, edited' }));
@@ -207,7 +207,28 @@ describe('since your last look', () => {
     repository.git('gc', '--quiet', '--prune=now');
     expect(repository.compare(repository.sha('master'), looked)).toBeNull();
     const { since, parts } = await openReview();
-    expect(since).toEqual({ commit: looked, from: 'local record', at: THEN.toISOString(), outcome: 'commit gone', changed: [] });
+    expect(since).toEqual({ commit: looked, from: 'local record', at: THEN.toISOString(), outcome: 'not compared', changed: [] });
+    expect(flagged(parts, since!)).toEqual(['app.txt:2', 'app.txt:27']);
+  });
+
+  it('counts every part as changed when the compare answers 422, as for commits sharing no history', async () => {
+    startPullRequest();
+    const looked = await lookNow();
+    writeFileSync(join(repository.dir, 'app.txt'), edited({ 5: 'five', 30: 'thirty, edited' }));
+    repository.git('commit', '--quiet', '--no-verify', '--all', '--amend', '--no-edit');
+    // GitHub answers 422 rather than 404 when both commits exist but
+    // share no history, such as after the base branch switched to an
+    // unrelated one: the old commit is still there.
+    expect(repository.compare(repository.sha('master'), looked)).not.toBeNull();
+    const unrelated: typeof fetch = async (input, init) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (new RegExp(`^${API}/compare/`).test(url)) {
+        return Response.json({ message: 'Validation Failed' }, { status: 422 });
+      }
+      return gitHubOf(repository)(input, init);
+    };
+    const { since, parts } = await openReview([], unrelated);
+    expect(since).toEqual({ commit: looked, from: 'local record', at: THEN.toISOString(), outcome: 'not compared', changed: [] });
     expect(flagged(parts, since!)).toEqual(['app.txt:2', 'app.txt:27']);
   });
 

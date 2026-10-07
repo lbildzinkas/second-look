@@ -300,8 +300,8 @@ export const CHANGED_SINCE_LAST_LOOK = 'changed since your last look';
  */
 function withLastLook(node: TreePart, since: SinceLastLook, reviewed: ReviewedState): TreePart {
   const line =
-    since.outcome === 'commit gone'
-      ? `Counts as changed: GitHub no longer has ${shortCommit(since.commit)}, the commit of your last look.`
+    since.outcome === 'not compared'
+      ? `Counts as changed: the change could not be compared with your last look at ${shortCommit(since.commit)}, because that commit is gone or no longer related.`
       : `Changed since your last look at ${shortCommit(since.commit)}.`;
   const description =
     reviewed === 'changed since marked'
@@ -325,16 +325,16 @@ function shortCommit(commit: string): string {
 /**
  * What changed since the reviewer's last look, in one line: the commit
  * the look was at, where it comes from and on which day, and how many
- * parts changed — or that GitHub no longer has that commit, so every part
- * counts as changed. Absent on the first look.
+ * parts changed — or that the change could not be compared, so every
+ * part counts as changed. Absent on the first look.
  */
 export function sinceLastLookLine(result: ReviewResult): string | undefined {
   const since = result.sinceLastLook;
   if (since === undefined) return undefined;
   const look = since.from === 'github review' ? 'your last GitHub review' : 'your last look';
   const where = `${shortCommit(since.commit)} on ${since.at.slice(0, 10)}`;
-  if (since.outcome === 'commit gone') {
-    return `The commit of ${look}, ${where}, is no longer on GitHub: every part counts as changed.`;
+  if (since.outcome === 'not compared') {
+    return `The change could not be compared with ${look} at ${where}, because that commit is gone or no longer related: every part counts as changed.`;
   }
   const changed = result.parts.filter((part) => changedSinceLastLook(part, since)).length;
   const total = result.parts.length;

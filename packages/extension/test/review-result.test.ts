@@ -675,9 +675,9 @@ describe('isReviewResult for what changed since the last look', () => {
     sinceLastLook: { commit: 'abcdef0123456789abcdef0123456789abcdef01', from: 'local record', at: '2026-10-01T09:00:00.000Z', outcome: 'compared', changed: [PIECE], ...since },
   });
 
-  it('accepts a compared look, one whose commit is gone, one from a GitHub review, and a result without one', () => {
+  it('accepts a compared look, one that could not be compared, one from a GitHub review, and a result without one', () => {
     expect(isReviewResult(looked({}))).toBe(true);
-    expect(isReviewResult(looked({ outcome: 'commit gone', changed: [] }))).toBe(true);
+    expect(isReviewResult(looked({ outcome: 'not compared', changed: [] }))).toBe(true);
     expect(isReviewResult(looked({ from: 'github review' }))).toBe(true);
     expect(isReviewResult(sampleResult())).toBe(true);
   });

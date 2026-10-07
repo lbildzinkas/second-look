@@ -42,6 +42,7 @@ import {
 
 const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.meta.url));
 const PR_URL = 'https://github.com/example-org/example-repo/pull/42';
+const OTHER_PR_URL = 'https://github.com/example-org/example-repo/pull/43';
 const TOKEN = 'ghp_test-token-do-not-print';
 
 const workDir = mkdtempSync(join(tmpdir(), 'second-look-extension-'));
@@ -52,6 +53,8 @@ afterAll(() => {
 
 interface FakeEngineOptions {
   result?: unknown;
+  /** Results the engine answers a review with, by the pull request URL asked about. */
+  resultsByUrl?: Record<string, unknown>;
   error?: string;
   sendError?: string;
   logName: string;
@@ -73,6 +76,9 @@ function fakeEngine(options: FakeEngineOptions): ChildProcessWithoutNullStreams 
       ...process.env,
       ...(options.result !== undefined
         ? { FAKE_ENGINE_RESULT: JSON.stringify(options.result) }
+        : {}),
+      ...(options.resultsByUrl !== undefined
+        ? { FAKE_ENGINE_RESULTS_BY_URL: JSON.stringify(options.resultsByUrl) }
         : {}),
       ...(options.error !== undefined ? { FAKE_ENGINE_ERROR: options.error } : {}),
       ...(options.stage !== undefined ? { FAKE_ENGINE_STAGE: JSON.stringify(options.stage) } : {}),
@@ -1595,5 +1601,37 @@ describe('since your last look', () => {
     await registeredCommands().get(FILTER_CHANGED_COMMAND)!();
     expect(partLabels(view)).toHaveLength(7);
     expect(stub.informationMessages).toContain('This is your first look at this pull request, so no part changed since.');
+  });
+
+  it('keeps the only-changed filter across re-reviews of one pull request and clears it for another', async () => {
+    const shown = mixedResult();
+    const sinceLastLook = {
+      commit: 'abcdef0123456789abcdef0123456789abcdef01',
+      from: 'local record',
+      at: '2026-10-01T09:00:00.000Z',
+      outcome: 'compared',
+      changed: changePieces(shown.parts[0]!),
+    };
+    const otherPullRequest = { ...shown, pullRequest: { ...shown.pullRequest, url: OTHER_PR_URL, number: 43 } };
+    const view = await reviewWithFakeEngine({
+      result: { ...shown, sinceLastLook },
+      resultsByUrl: { [OTHER_PR_URL]: { ...otherPullRequest, sinceLastLook } },
+      logName: 'filter-reset.log',
+    });
+
+    await registeredCommands().get(FILTER_CHANGED_COMMAND)!();
+    expect(partLabels(view)).toEqual(['src/retry.py']);
+
+    // Reviewing the same pull request again keeps the filter the reviewer chose.
+    stub.inputBoxResult = PR_URL;
+    await registeredCommands().get(REVIEW_COMMAND)!() as Promise<void>;
+    expect(partLabels(view)).toEqual(['src/retry.py']);
+    expect(view.message).toBe('Since your last look at abcdef0 on 2026-10-01: 1 of 7 parts changed. Showing only those.');
+
+    // Another pull request's review starts unfiltered.
+    stub.inputBoxResult = OTHER_PR_URL;
+    await registeredCommands().get(REVIEW_COMMAND)!() as Promise<void>;
+    expect(partLabels(view)).toHaveLength(7);
+    expect(view.message).toBe('Since your last look at abcdef0 on 2026-10-01: 1 of 7 parts changed.');
   });
 });

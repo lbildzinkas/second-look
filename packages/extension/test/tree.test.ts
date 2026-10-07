@@ -447,12 +447,12 @@ describe('since your last look in the tree', () => {
     expect(nodes(result([cart, money]), { onlyChangedSinceLastLook: true })).toHaveLength(2);
   });
 
-  it('counts every part as changed when the commit of the last look is gone', () => {
-    const gone = since({ outcome: 'commit gone', changed: [] });
+  it('counts every part as changed when the change could not be compared with the last look', () => {
+    const notCompared = since({ outcome: 'not compared', changed: [] });
 
-    expect(nodes(gone, { onlyChangedSinceLastLook: true }).map((node) => node.changedSinceLastLook)).toEqual([true, true]);
-    expect(nodes(gone)[0]!.tooltip).toBe('Counts as changed: GitHub no longer has abcdef0, the commit of your last look.');
-    expect(sinceLastLookLine(gone)).toBe('The commit of your last look, abcdef0 on 2026-10-01, is no longer on GitHub: every part counts as changed.');
+    expect(nodes(notCompared, { onlyChangedSinceLastLook: true }).map((node) => node.changedSinceLastLook)).toEqual([true, true]);
+    expect(nodes(notCompared)[0]!.tooltip).toBe('Counts as changed: the change could not be compared with your last look at abcdef0, because that commit is gone or no longer related.');
+    expect(sinceLastLookLine(notCompared)).toBe('The change could not be compared with your last look at abcdef0 on 2026-10-01, because that commit is gone or no longer related: every part counts as changed.');
   });
 
   it('says which commit the last look was at, where it comes from, and how many parts changed', () => {

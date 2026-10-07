@@ -233,11 +233,12 @@ export interface SinceLastLook {
   at: string;
   /**
    * **compared** when the change at that commit was compared with this
-   * one; **commit gone** when GitHub no longer has that commit, so every
-   * part counts as changed.
+   * one; **not compared** when it could not be — that commit gone from
+   * GitHub, or no longer related to the head — so every part counts as
+   * changed.
    */
-  outcome: 'compared' | 'commit gone';
-  /** The content hashes of this change's pieces — each hunk's changed lines, or a file without hunks — the change at the last look did not hold; empty when the commit is gone. */
+  outcome: 'compared' | 'not compared';
+  /** The content hashes of this change's pieces — each hunk's changed lines, or a file without hunks — the change at the last look did not hold; empty when the changes could not be compared. */
   changed: string[];
 }
 

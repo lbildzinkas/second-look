@@ -373,6 +373,7 @@ class ReviewSession {
         ? anchorOf(selected.part)
         : undefined;
     this.result = result;
+    const previous = this.url;
     this.url = result.pullRequest.url;
     this.copies.setCopies(result.copies);
     this.copies.setLibraries(result);
@@ -385,6 +386,7 @@ class ReviewSession {
       this.page = undefined;
       this.comments.setReview(result);
       this.mirrorWaiting.clear();
+      if (previous !== result.pullRequest.url) this.onlyChanged = false;
     }
     this.render();
     this.overview.update(result, running);

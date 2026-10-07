@@ -4,6 +4,8 @@
 // environment:
 //
 //   FAKE_ENGINE_RESULT            JSON review result to return for review
+//   FAKE_ENGINE_RESULTS_BY_URL     JSON { url: review result } to answer review by
+//                                  the requested URL, falling back to FAKE_ENGINE_RESULT
 //   FAKE_ENGINE_ERROR             answer review with this plain error message
 //   FAKE_ENGINE_SEND_RESULT       JSON sent review to return for sendReview
 //   FAKE_ENGINE_SEND_ERROR        answer sendReview with this plain error message
@@ -35,6 +37,9 @@ import { appendFileSync } from 'node:fs';
 const protocolVersion = Number(process.env.FAKE_ENGINE_PROTOCOL_VERSION ?? '1');
 const reviewResult = process.env.FAKE_ENGINE_RESULT
   ? JSON.parse(process.env.FAKE_ENGINE_RESULT)
+  : null;
+const resultsByUrl = process.env.FAKE_ENGINE_RESULTS_BY_URL
+  ? JSON.parse(process.env.FAKE_ENGINE_RESULTS_BY_URL)
   : null;
 const reviewError = process.env.FAKE_ENGINE_ERROR;
 const sendResult = process.env.FAKE_ENGINE_SEND_RESULT
@@ -111,7 +116,7 @@ function handle(line) {
       send({ jsonrpc: '2.0', method: 'review/stage', params: { id: request.id, ...stage } });
       if (stageOnly) return;
     }
-    const answer = () => send({ jsonrpc: '2.0', id: request.id, result: reviewResult });
+    const answer = () => send({ jsonrpc: '2.0', id: request.id, result: resultsByUrl?.[request.params.url] ?? reviewResult });
     if (answerDelayMs > 0) setTimeout(answer, answerDelayMs);
     else answer();
     return;
