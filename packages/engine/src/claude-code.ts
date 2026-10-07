@@ -218,7 +218,7 @@ export function claudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}): Agent
       usable: true,
       lockdown: [
         `tool allowlist: ${CLAUDE_READ_TOOLS.join(', ')} (no shell, no network, no edits)`,
-        'file tools confined to the read-only copy by Claude Code itself',
+        'outside-folder denial rests on Claude Code itself and failed in a live run with some models — check it with the probe',
         'user-level settings only: project and local settings, and the context in the copy, stay out',
         'no MCP servers: every MCP configuration is ignored',
         'no session file written; permission prompts denied, never asked',
