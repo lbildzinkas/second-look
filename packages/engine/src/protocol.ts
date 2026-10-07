@@ -10,7 +10,7 @@
 import type { AgentStamp } from './agent.js';
 
 /** Version of the review result schema. */
-export const REVIEW_RESULT_VERSION = 15 as const;
+export const REVIEW_RESULT_VERSION = 16 as const;
 
 /**
  * Version 2 added the head commit's SHA and each part's noise assessment;
@@ -40,7 +40,8 @@ export const REVIEW_RESULT_VERSION = 15 as const;
  * that the diff does not contain; version 15 added each acceptance
  * criterion's verdict — met, partly met, not met, can't tell or needs
  * manual check — with the code, the tests and the manual checks that
- * show it, and the criteria's mapping.
+ * show it, and the criteria's mapping; version 16 added what changed
+ * since the reviewer's last look.
  */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
@@ -215,6 +216,32 @@ export interface ViewedFiles {
   paths: string[];
 }
 
+/**
+ * What changed since the reviewer's last look: the head commit they last
+ * opened a review at, or, with no local record of one, the commit of
+ * their last submitted GitHub review, and the pieces of this change the
+ * change at that commit did not hold. The two changes are compared
+ * themselves, each against its own merge base, so a rebase or a
+ * force-push mixes in nothing from upstream.
+ */
+export interface SinceLastLook {
+  /** The head commit at the last look. */
+  commit: string;
+  /** Where the last look comes from: the local record of the reviews opened, or the reviewer's last submitted GitHub review. */
+  from: 'local record' | 'github review';
+  /** When the last look was, as an ISO 8601 timestamp. */
+  at: string;
+  /**
+   * **compared** when the change at that commit was compared with this
+   * one; **not compared** when it could not be — that commit gone from
+   * GitHub, or no longer related to the head — so every part counts as
+   * changed.
+   */
+  outcome: 'compared' | 'not compared';
+  /** The content hashes of this change's pieces — each hunk's changed lines, or a file without hunks — the change at the last look did not hold; empty when the changes could not be compared. */
+  changed: string[];
+}
+
 /** The review result the engine produces for one pull request. */
 export interface ReviewResult {
   /** Schema version; compare against {@link REVIEW_RESULT_VERSION}. */
@@ -255,6 +282,8 @@ export interface ReviewResult {
   pipeline: PipelineReport;
   /** The CI the companion read at the head commit; absent when the review read none, such as an offline replay. */
   ci?: CiResults;
+  /** What changed since the reviewer's last look; absent on their first look, or when the review was not opened by them, such as an offline replay. */
+  sinceLastLook?: SinceLastLook;
 }
 
 /**

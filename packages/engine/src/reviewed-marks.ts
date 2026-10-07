@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { pullRequestCacheDir } from './cache.js';
 import type { PullRequestRef } from './github.js';
 import { entityKey, filesOfPart } from './parts.js';
-import type { FileSlice, Hunk, Part, ReviewedMark, ReviewedMarks, ReviewedState } from './protocol.js';
+import type { DiffLine, FileSlice, Hunk, Part, ReviewedMark, ReviewedMarks, ReviewedState } from './protocol.js';
 
 /** The file in a pull request's cache folder that holds its reviewed marks. */
 export const REVIEWED_MARKS_FILE = 'reviewed-marks.json';
@@ -23,10 +23,16 @@ function fileIdentity(file: FileSlice): unknown[] {
   return [file.path, file.previousPath ?? null, file.changeKind, file.oldMode ?? null, file.newMode ?? null];
 }
 
+const LINE_PREFIX = { context: ' ', addition: '+', deletion: '-' } as const;
+
+/** One diff line as a piece's content holds it: its kind and text, without its numbers. */
+export function lineContent(line: DiffLine): string {
+  return `${LINE_PREFIX[line.kind]}${line.text}${line.endsWithoutNewline ? '\n\\' : ''}`;
+}
+
 /** A hunk's content without its line numbers, so an edit elsewhere in the file leaves it alone. */
 function hunkContent(hunk: Hunk): string[] {
-  const prefix = { context: ' ', addition: '+', deletion: '-' } as const;
-  return hunk.lines.map((line) => `${prefix[line.kind]}${line.text}${line.endsWithoutNewline ? '\n\\' : ''}`);
+  return hunk.lines.map(lineContent);
 }
 
 /**
@@ -37,6 +43,16 @@ function hunkContent(hunk: Hunk): string[] {
  * file are told apart by how many came before.
  */
 export function partPieces(part: Part): string[] {
+  return pieceHashes(part, hunkContent);
+}
+
+/**
+ * The content hashes of a part's pieces, each hunk's content read by the
+ * given function: one per hunk, and one per file without hunks. Identical
+ * hunks of one file are told apart by how many came before, unless
+ * `apart` is false.
+ */
+export function pieceHashes(part: Part, hunkLines: (hunk: Hunk) => string[], apart = true): string[] {
   return filesOfPart(part).flatMap((file) => {
     const identity = fileIdentity(file);
     if (file.hunks.length === 0) {
@@ -44,7 +60,8 @@ export function partPieces(part: Part): string[] {
     }
     const seen = new Map<string, number>();
     return file.hunks.map((hunk) => {
-      const content = JSON.stringify([...identity, hunkContent(hunk)]);
+      const content = JSON.stringify([...identity, hunkLines(hunk)]);
+      if (!apart) return sha256(content);
       const occurrence = seen.get(content) ?? 0;
       seen.set(content, occurrence + 1);
       return sha256(`${content}#${occurrence}`);

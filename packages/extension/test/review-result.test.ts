@@ -668,6 +668,33 @@ describe('isReviewResult for the unexplained changes', () => {
   });
 });
 
+describe('isReviewResult for what changed since the last look', () => {
+  const PIECE = 'a'.repeat(64);
+  const looked = (since: Record<string, unknown>): Record<string, unknown> => ({
+    ...(JSON.parse(JSON.stringify(sampleResult())) as Record<string, unknown>),
+    sinceLastLook: { commit: 'abcdef0123456789abcdef0123456789abcdef01', from: 'local record', at: '2026-10-01T09:00:00.000Z', outcome: 'compared', changed: [PIECE], ...since },
+  });
+
+  it('accepts a compared look, one that could not be compared, one from a GitHub review, and a result without one', () => {
+    expect(isReviewResult(looked({}))).toBe(true);
+    expect(isReviewResult(looked({ outcome: 'not compared', changed: [] }))).toBe(true);
+    expect(isReviewResult(looked({ from: 'github review' }))).toBe(true);
+    expect(isReviewResult(sampleResult())).toBe(true);
+  });
+
+  it('rejects a look without its commit or time, from elsewhere, with another outcome, or with a changed piece that is no hash', () => {
+    const cases = [
+      looked({ commit: '' }),
+      looked({ at: undefined }),
+      looked({ from: 'somewhere' }),
+      looked({ outcome: 'unchanged' }),
+      looked({ changed: ['not a hash'] }),
+      looked({ changed: undefined }),
+    ];
+    for (const value of cases) expect(isReviewResult(value)).toBe(false);
+  });
+});
+
 describe('parseReviewResult', () => {
   it('reads the JSON the engine printed', () => {
     const result = parseReviewResult(JSON.stringify(sampleResult()));
@@ -683,6 +710,6 @@ describe('parseReviewResult', () => {
 
 describe('the versioned protocol is shared with the engine', () => {
   it('uses the same version constant', () => {
-    expect(REVIEW_RESULT_VERSION).toBe(15);
+    expect(REVIEW_RESULT_VERSION).toBe(16);
   });
 });

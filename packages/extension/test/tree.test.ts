@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { NO_MARKS, applyMark, markedPart, type AgentGrouping, type AgentRanking, type FileSlice, type Hunk, type Part, type ReviewedMarks } from '@second-look/engine';
+import { NO_MARKS, applyMark, changePieces, markedPart, type AgentGrouping, type AgentRanking, type FileSlice, type Hunk, type Part, type ReviewedMarks, type ReviewResult, type SinceLastLook } from '@second-look/engine';
 import {
   anchorOf,
   buildTree,
+  CHANGED_SINCE_LAST_LOOK,
   CHANGED_SINCE_MARKED,
   claimCountText,
   findingBadge,
@@ -12,10 +13,12 @@ import {
   partsInReadingOrder,
   reviewBadge,
   reviewStatus,
+  sinceLastLookLine,
+  treeMessage,
   UNEXPLAINED_BADGE,
 } from '../src/tree.js';
 import { claimsResult, judgedResult, mixedResult, part, result, unexplainedResult } from './results.js';
-import type { TreePart } from '../src/tree.js';
+import type { TreeFilter, TreePart } from '../src/tree.js';
 
 /** A hunk adding one line at the given place, on both sides. */
 function hunkAt(oldStart: number, newStart: number): Hunk {
@@ -406,5 +409,73 @@ describe('reviewed marks in the tree', () => {
     expect(reviewBadge(result([cart, money]), NO_MARKS)).toEqual({ value: 2, tooltip: '2 of 2 parts left to review' });
     expect(reviewBadge(result([cart, money]), marked(cart))).toEqual({ value: 1, tooltip: '1 of 2 parts left to review' });
     expect(reviewBadge(result([cart, money]), marked(cart, money))).toBeUndefined();
+  });
+});
+
+describe('since your last look in the tree', () => {
+  const LOOKED = 'abcdef0123456789abcdef0123456789abcdef01';
+  const cart = part('web/cart.ts', { name: 'Cart.total in web/cart.ts', hunks: [hunkAt(10, 10)] });
+  const money = part('web/money.ts', { name: 'top-level code in web/money.ts', hunks: [hunkAt(1, 1)] });
+
+  /** The review with cart changed since a look at the given commit, from where it was recorded. */
+  function since(overrides: Partial<SinceLastLook> = {}): ReviewResult {
+    return {
+      ...result([cart, money]),
+      sinceLastLook: { commit: LOOKED, from: 'local record', at: '2026-10-01T09:00:00.000Z', outcome: 'compared', changed: changePieces(cart), ...overrides },
+    };
+  }
+
+  function nodes(review: ReviewResult, filter: TreeFilter = {}, marks: ReviewedMarks = NO_MARKS): TreePart[] {
+    return buildTree(review, marks, filter)
+      .flatMap((section) => section.parts)
+      .filter((node): node is TreePart => node.kind !== 'comment');
+  }
+
+  it('flags the parts changed since the last look, beside the label and in the tooltip with its commit', () => {
+    const [changed, same] = nodes(since());
+
+    expect(changed!.changedSinceLastLook).toBe(true);
+    expect(changed!.description).toBe(CHANGED_SINCE_LAST_LOOK);
+    expect(changed!.tooltip).toBe('Changed since your last look at abcdef0.');
+    expect(same!.changedSinceLastLook).toBeUndefined();
+    expect(same!.description).toBeUndefined();
+  });
+
+  it('shows only the changed parts when filtered, and every part without a last look', () => {
+    expect(nodes(since(), { onlyChangedSinceLastLook: true }).map((node) => node.label)).toEqual(['Cart.total in web/cart.ts']);
+    expect(nodes(since({ changed: [] }), { onlyChangedSinceLastLook: true })).toEqual([]);
+    expect(nodes(result([cart, money]), { onlyChangedSinceLastLook: true })).toHaveLength(2);
+  });
+
+  it('counts every part as changed when the change could not be compared with the last look', () => {
+    const notCompared = since({ outcome: 'not compared', changed: [] });
+
+    expect(nodes(notCompared, { onlyChangedSinceLastLook: true }).map((node) => node.changedSinceLastLook)).toEqual([true, true]);
+    expect(nodes(notCompared)[0]!.tooltip).toBe('Counts as changed: the change could not be compared with your last look at abcdef0, because that commit is gone or no longer related.');
+    expect(sinceLastLookLine(notCompared)).toBe('The change could not be compared with your last look at abcdef0 on 2026-10-01, because that commit is gone or no longer related: every part counts as changed.');
+  });
+
+  it('says which commit the last look was at, where it comes from, and how many parts changed', () => {
+    expect(sinceLastLookLine(result([cart, money]))).toBeUndefined();
+    expect(sinceLastLookLine(since())).toBe('Since your last look at abcdef0 on 2026-10-01: 1 of 2 parts changed.');
+    expect(sinceLastLookLine(since({ from: 'github review' }))).toBe('Since your last GitHub review at abcdef0 on 2026-10-01: 1 of 2 parts changed.');
+  });
+
+  it('puts the last look above the review status, saying when the filter is on', () => {
+    expect(treeMessage(result([cart, money]))).toBeUndefined();
+    expect(treeMessage(since(), 'ranking the parts with pi', { onlyChangedSinceLastLook: true })).toBe(
+      'Since your last look at abcdef0 on 2026-10-01: 1 of 2 parts changed. Showing only those. Plain parts shown; ranking the parts with pi…',
+    );
+  });
+
+  it('says only once that a part changed when it also changed since it was marked', () => {
+    const marks = applyMark(NO_MARKS, markedPart(cart), true, new Date('2026-10-01T09:00:00Z'));
+    const edited = { ...cart, hunks: [{ ...hunkAt(10, 10), lines: [{ kind: 'addition' as const, newLineNumber: 10, text: 'edited' }] }] };
+    const review = { ...since({ changed: changePieces(edited) }), parts: [edited, money] };
+    const [node] = nodes(review, {}, marks);
+
+    expect(node!.description).toBe(CHANGED_SINCE_MARKED);
+    expect(node!.changedSinceLastLook).toBe(true);
+    expect(node!.tooltip).toContain('Changed since your last look at abcdef0.');
   });
 });

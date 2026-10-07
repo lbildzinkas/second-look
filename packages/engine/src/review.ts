@@ -13,13 +13,14 @@ import { validateCoverage } from './coverage.js';
 import { parseDiff, type ParsedDiff } from './diff.js';
 import { GitHubClient, parsePullRequestUrl } from './github.js';
 import { groupingItems, groupWithAgent } from './grouping.js';
+import { lookSinceLastLook } from './last-look.js';
 import { offerLibraryFetches } from './library-fetch.js';
 import { confirmLockfileNoise } from './lockfile.js';
 import { applyNoiseRules } from './noise.js';
 import { groupParts } from './parts.js';
 import { pipelineClaims, readPipelineReport } from './pipeline.js';
 import { REVIEW_RESULT_VERSION } from './protocol.js';
-import type { ChangeCopies, CiResults, Criteria, Part, PullRequestSummary, ReviewResult } from './protocol.js';
+import type { ChangeCopies, CiResults, Criteria, Part, PullRequestSummary, ReviewResult, SinceLastLook } from './protocol.js';
 import { rankParts } from './rank.js';
 import {
   RANKING_PROMPT_VERSION,
@@ -51,6 +52,8 @@ export interface ReviewOptions {
   criteriaHeading?: string;
   /** Asks the agent to group and rank the parts, write the story, compare the change with its description and issues, list the claims and judge them, and map the acceptance criteria too, after the plain pass; see {@link reviewChange}. */
   agentStage?: AgentStageOptions;
+  /** True when the reviewer opened this review: it is compared with their last look, then recorded as the latest; see {@link lookSinceLastLook}. */
+  lastLook?: boolean;
 }
 
 /**
@@ -71,6 +74,8 @@ export interface ReviewInput {
   ci?: CiResults;
   /** The acceptance criteria of the linked issues; absent when none were read, such as an offline replay. */
   criteria?: Criteria;
+  /** What changed since the reviewer's last look; absent on their first look, or when none was asked for. */
+  sinceLastLook?: SinceLastLook;
 }
 
 /**
@@ -96,7 +101,8 @@ export async function reviewPullRequest(
  * checkout), read-only copies of the base and head versions, the CI at
  * the head commit — each failed job's log trimmed to its failing step —
  * and the acceptance criteria of the issues the pull request links,
- * quoted from the checklist under the configured heading.
+ * quoted from the checklist under the configured heading; and, when the
+ * reviewer opened the review, what changed since their last look.
  */
 export async function fetchChange(url: string, options: ReviewOptions): Promise<ReviewInput> {
   const ref = parsePullRequestUrl(url);
@@ -126,13 +132,14 @@ export async function fetchChange(url: string, options: ReviewOptions): Promise<
       download: (wanted) => client.downloadTarball(ref, wanted),
     });
   const heading = options.criteriaHeading?.trim();
-  const [base, head, ci, criteria] = await Promise.all([
+  const [base, head, ci, criteria, sinceLastLook] = await Promise.all([
     copy(mergeBase),
     copy(pullRequest.headSha),
     readCi(client, ref, pullRequest.headSha, mergeCommit),
     readCriteria(client, ref, pullRequest.base, heading === undefined || heading === '' ? DEFAULT_CRITERIA_HEADING : heading),
+    options.lastLook ? lookSinceLastLook({ client, cacheDir: options.cacheDir, ref, pullRequest, diff }) : undefined,
   ]);
-  return { pullRequest, diff, gitAttributes, copies: { base, head }, ci, criteria };
+  return { pullRequest, diff, gitAttributes, copies: { base, head }, ci, criteria, ...(sinceLastLook ? { sinceLastLook } : {}) };
 }
 
 /**
@@ -228,6 +235,7 @@ export async function reviewChange(
     ...(input.criteria ? { criteria: input.criteria } : {}),
     pipeline: readPipelineReport(input.pullRequest.description, input.pullRequest.headSha),
     ...(input.ci ? { ci: input.ci } : {}),
+    ...(input.sinceLastLook ? { sinceLastLook: input.sinceLastLook } : {}),
   };
   if (!agentStage) return plain;
   const ranked = await groupAndRank(plain, agentStage, input, parsed, files);

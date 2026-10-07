@@ -13,6 +13,7 @@ import {
   DISCARD_DRAFT_COMMAND,
   DRAFT_COMMENT_COMMAND,
   FETCH_LIBRARY_COMMAND,
+  FILTER_CHANGED_COMMAND,
   OPEN_ALL_PARTS_COMMAND,
   OPEN_LIBRARY_EVIDENCE_COMMAND,
   OPEN_OVERVIEW_COMMAND,
@@ -27,7 +28,7 @@ import { changeUri, libraryUri } from '../../src/change-copies.js';
 import { escapeMarkdown } from '../../src/findings.js';
 import { SEND_REVIEW_VIEW_TYPE } from '../../src/send-page.js';
 import { claimsResult, criteriaResult, fetchedResult, judgedResult, mixedResult, offeredResult, storyResult, unexplainedResult } from '../results.js';
-import { markedPart } from '@second-look/engine';
+import { changePieces, markedPart } from '@second-look/engine';
 import { OVERVIEW_VIEW_TYPE } from '../../src/overview.js';
 import {
   Range,
@@ -41,6 +42,7 @@ import {
 
 const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.meta.url));
 const PR_URL = 'https://github.com/example-org/example-repo/pull/42';
+const OTHER_PR_URL = 'https://github.com/example-org/example-repo/pull/43';
 const TOKEN = 'ghp_test-token-do-not-print';
 
 const workDir = mkdtempSync(join(tmpdir(), 'second-look-extension-'));
@@ -51,6 +53,8 @@ afterAll(() => {
 
 interface FakeEngineOptions {
   result?: unknown;
+  /** Results the engine answers a review with, by the pull request URL asked about. */
+  resultsByUrl?: Record<string, unknown>;
   error?: string;
   sendError?: string;
   logName: string;
@@ -72,6 +76,9 @@ function fakeEngine(options: FakeEngineOptions): ChildProcessWithoutNullStreams 
       ...process.env,
       ...(options.result !== undefined
         ? { FAKE_ENGINE_RESULT: JSON.stringify(options.result) }
+        : {}),
+      ...(options.resultsByUrl !== undefined
+        ? { FAKE_ENGINE_RESULTS_BY_URL: JSON.stringify(options.resultsByUrl) }
         : {}),
       ...(options.error !== undefined ? { FAKE_ENGINE_ERROR: options.error } : {}),
       ...(options.stage !== undefined ? { FAKE_ENGINE_STAGE: JSON.stringify(options.stage) } : {}),
@@ -105,6 +112,7 @@ async function reviewWithFakeEngine(options: FakeEngineOptions): Promise<StubTre
     REVIEW_COMMAND,
     OPEN_PART_COMMAND,
     OPEN_ALL_PARTS_COMMAND,
+    FILTER_CHANGED_COMMAND,
     SUBMIT_REVIEW_COMMAND,
     ADD_COMMENT_COMMAND,
     COMMENT_ON_PART_COMMAND,
@@ -224,6 +232,7 @@ describe('activating the companion', () => {
       REVIEW_COMMAND,
       OPEN_PART_COMMAND,
       OPEN_ALL_PARTS_COMMAND,
+      FILTER_CHANGED_COMMAND,
       SUBMIT_REVIEW_COMMAND,
       ADD_COMMENT_COMMAND,
       COMMENT_ON_PART_COMMAND,
@@ -1555,5 +1564,74 @@ describe('reviewed marks', () => {
     await until('the mark to be cleared', () => view.badge?.value === 7);
     expect(loggedRequests('mirror.log').filter((request) => request.method === 'markViewed')).toHaveLength(1);
     expect(stub.errorMessages).toEqual([]);
+  });
+});
+
+describe('since your last look', () => {
+  /** The labels of the tree's parts, as the view renders them. */
+  function partLabels(view: StubTreeView): string[] {
+    return renderedTree(view)
+      .filter((node) => node.contextValue === 'part' || node.contextValue === 'noise')
+      .map((node) => node.label);
+  }
+
+  it('says which commit the last look was at, flags the changed part, and filters the tree to it and back', async () => {
+    const shown = mixedResult();
+    const result = {
+      ...shown,
+      sinceLastLook: { commit: 'abcdef0123456789abcdef0123456789abcdef01', from: 'local record', at: '2026-10-01T09:00:00.000Z', outcome: 'compared', changed: changePieces(shown.parts[0]!) },
+    };
+    const view = await reviewWithFakeEngine({ result, logName: 'since.log' });
+
+    expect(view.message).toBe('Since your last look at abcdef0 on 2026-10-01: 1 of 7 parts changed.');
+    expect(renderedTree(view).find((node) => node.label === 'src/retry.py')?.description).toContain('changed since your last look');
+    expect(partLabels(view)).toHaveLength(7);
+
+    await registeredCommands().get(FILTER_CHANGED_COMMAND)!();
+    expect(partLabels(view)).toEqual(['src/retry.py']);
+    expect(view.message).toBe('Since your last look at abcdef0 on 2026-10-01: 1 of 7 parts changed. Showing only those.');
+
+    await registeredCommands().get(FILTER_CHANGED_COMMAND)!();
+    expect(partLabels(view)).toHaveLength(7);
+  });
+
+  it('has nothing to filter on a first look', async () => {
+    const view = await reviewWithFakeEngine({ result: mixedResult(), logName: 'first-look.log' });
+
+    await registeredCommands().get(FILTER_CHANGED_COMMAND)!();
+    expect(partLabels(view)).toHaveLength(7);
+    expect(stub.informationMessages).toContain('This is your first look at this pull request, so no part changed since.');
+  });
+
+  it('keeps the only-changed filter across re-reviews of one pull request and clears it for another', async () => {
+    const shown = mixedResult();
+    const sinceLastLook = {
+      commit: 'abcdef0123456789abcdef0123456789abcdef01',
+      from: 'local record',
+      at: '2026-10-01T09:00:00.000Z',
+      outcome: 'compared',
+      changed: changePieces(shown.parts[0]!),
+    };
+    const otherPullRequest = { ...shown, pullRequest: { ...shown.pullRequest, url: OTHER_PR_URL, number: 43 } };
+    const view = await reviewWithFakeEngine({
+      result: { ...shown, sinceLastLook },
+      resultsByUrl: { [OTHER_PR_URL]: { ...otherPullRequest, sinceLastLook } },
+      logName: 'filter-reset.log',
+    });
+
+    await registeredCommands().get(FILTER_CHANGED_COMMAND)!();
+    expect(partLabels(view)).toEqual(['src/retry.py']);
+
+    // Reviewing the same pull request again keeps the filter the reviewer chose.
+    stub.inputBoxResult = PR_URL;
+    await registeredCommands().get(REVIEW_COMMAND)!() as Promise<void>;
+    expect(partLabels(view)).toEqual(['src/retry.py']);
+    expect(view.message).toBe('Since your last look at abcdef0 on 2026-10-01: 1 of 7 parts changed. Showing only those.');
+
+    // Another pull request's review starts unfiltered.
+    stub.inputBoxResult = OTHER_PR_URL;
+    await registeredCommands().get(REVIEW_COMMAND)!() as Promise<void>;
+    expect(partLabels(view)).toHaveLength(7);
+    expect(view.message).toBe('Since your last look at abcdef0 on 2026-10-01: 1 of 7 parts changed.');
   });
 });

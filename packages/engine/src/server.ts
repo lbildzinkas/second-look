@@ -104,7 +104,9 @@ export interface RpcServerDeps {
  * is refused with a plain message. `review` then carries the pull request
  * URL, the GitHub token and — when the client's settings chose one — the
  * agent, model and account that run the review's agent passes; a request
- * without a choice runs the engine's serve-time default. `sendReview`
+ * without a choice runs the engine's serve-time default. Each review
+ * compares the change with the reviewer's last look and records this one
+ * in the pull request's local store. `sendReview`
  * carries the pending review the companion gathered — the protocol's one
  * write — submitted as one GitHub review when the reviewer presses send.
  * The token arrives with each request, is used only for that request's
@@ -323,6 +325,7 @@ async function review(
     const result = await reviewPullRequest(url, {
       token,
       cacheDir: deps.cacheDir,
+      lastLook: true,
       ...(criteriaHeading !== undefined ? { criteriaHeading } : {}),
       ...(deps.fetch ? { fetch: deps.fetch } : {}),
       ...(deps.agent

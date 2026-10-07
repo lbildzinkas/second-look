@@ -1,6 +1,7 @@
 import {
   IMPORTANCE_ORDER,
   NO_MARKS,
+  changedSinceLastLook,
   claimCounts,
   filesOfPart,
   findingCounts,
@@ -18,6 +19,7 @@ import {
   type ReviewedMarks,
   type ReviewedState,
   type ReviewResult,
+  type SinceLastLook,
 } from '@second-look/engine';
 import { commentLocation } from './comments.js';
 
@@ -39,6 +41,8 @@ export interface TreePart {
   unexplained?: string;
   /** Where the part stands against the reviewed marks, which its checkbox shows. */
   reviewed?: ReviewedState;
+  /** True when the part changed since the reviewer's last look. */
+  changedSinceLastLook?: true;
   /** The part itself, which clicking opens in the diff editor. */
   part?: Part;
 }
@@ -61,6 +65,12 @@ export interface TreeSection {
   /** What the section means, shown on hover. */
   tooltip: string;
   parts: (TreePart | TreeComment)[];
+}
+
+/** Which parts the tree shows. */
+export interface TreeFilter {
+  /** Only the parts that changed since the reviewer's last look, when the result knows of one. */
+  onlyChangedSinceLastLook?: boolean;
 }
 
 /** The title of the section for parts that arrive without a rank. */
@@ -100,9 +110,10 @@ const SECTION_TOOLTIPS: Record<Importance, string> = {
  * a linked issue explains carries the unexplained badge, its one-line
  * reason in the tooltip. Every part carries its reviewed state for its
  * checkbox, and a part whose content changed since the reviewer marked it
- * says so first.
+ * says so first. A part that changed since the reviewer's last look says
+ * so too, and the filter shows only those parts.
  */
-export function buildTree(result: ReviewResult, marks: ReviewedMarks = NO_MARKS): TreeSection[] {
+export function buildTree(result: ReviewResult, marks: ReviewedMarks = NO_MARKS, filter: TreeFilter = {}): TreeSection[] {
   const grouped = new Map<Importance, TreePart[]>(
     IMPORTANCE_ORDER.map((importance) => [importance, []]),
   );
@@ -113,12 +124,15 @@ export function buildTree(result: ReviewResult, marks: ReviewedMarks = NO_MARKS)
   const findings = findingCounts(result.claims, result.parts.length);
   const judged = result.claims?.judging?.outcome === 'judged';
   const unexplained = unexplainedReasons(result.unexplained, result.parts.length);
-  const withBadges = (node: TreePart, index: number): TreePart =>
-    withReviewed(
-      withUnexplained(withClaims(node, counts[index]!, findings[index]!, judged), unexplained[index]),
-      reviewedState(result.parts[index]!, marks),
-    );
+  const since = result.sinceLastLook;
+  const changed = result.parts.map((part) => since !== undefined && changedSinceLastLook(part, since));
+  const withBadges = (node: TreePart, index: number): TreePart => {
+    const reviewed = reviewedState(result.parts[index]!, marks);
+    const badged = withUnexplained(withClaims(node, counts[index]!, findings[index]!, judged), unexplained[index]);
+    return withReviewed(changed[index] ? withLastLook(badged, since!, reviewed) : badged, reviewed);
+  };
   result.parts.forEach((part, index) => {
+    if (filter.onlyChangedSinceLastLook && since !== undefined && !changed[index]) return;
     const assessment = part.noise;
     if (assessment && isLabelledNoise(assessment) && noiseSinks(assessment)) {
       noise.push(withBadges(noisePart(part, assessment), index));
@@ -274,6 +288,69 @@ function withReviewed(node: TreePart, reviewed: ReviewedState): TreePart {
     description: node.description === undefined ? CHANGED_SINCE_MARKED : `${CHANGED_SINCE_MARKED} · ${node.description}`,
     tooltip: node.tooltip === undefined ? line : `${node.tooltip}\n${line}`,
   };
+}
+
+/** What a part that changed since the reviewer's last look says. */
+export const CHANGED_SINCE_LAST_LOOK = 'changed since your last look';
+
+/**
+ * A part's node flagged as changed since the reviewer's last look: the
+ * note beside the label — unless it already says it changed since it
+ * was marked — and in the tooltip, with the commit the look was at.
+ */
+function withLastLook(node: TreePart, since: SinceLastLook, reviewed: ReviewedState): TreePart {
+  const line =
+    since.outcome === 'not compared'
+      ? `Counts as changed: the change could not be compared with your last look at ${shortCommit(since.commit)}, because that commit is gone or no longer related.`
+      : `Changed since your last look at ${shortCommit(since.commit)}.`;
+  const description =
+    reviewed === 'changed since marked'
+      ? node.description
+      : node.description === undefined
+        ? CHANGED_SINCE_LAST_LOOK
+        : `${CHANGED_SINCE_LAST_LOOK} · ${node.description}`;
+  return {
+    ...node,
+    changedSinceLastLook: true,
+    ...(description === undefined ? {} : { description }),
+    tooltip: node.tooltip === undefined ? line : `${node.tooltip}\n${line}`,
+  };
+}
+
+/** A commit as the reviewer reads it: its first seven characters. */
+function shortCommit(commit: string): string {
+  return commit.slice(0, 7);
+}
+
+/**
+ * What changed since the reviewer's last look, in one line: the commit
+ * the look was at, where it comes from and on which day, and how many
+ * parts changed — or that the change could not be compared, so every
+ * part counts as changed. Absent on the first look.
+ */
+export function sinceLastLookLine(result: ReviewResult): string | undefined {
+  const since = result.sinceLastLook;
+  if (since === undefined) return undefined;
+  const look = since.from === 'github review' ? 'your last GitHub review' : 'your last look';
+  const where = `${shortCommit(since.commit)} on ${since.at.slice(0, 10)}`;
+  if (since.outcome === 'not compared') {
+    return `The change could not be compared with ${look} at ${where}, because that commit is gone or no longer related: every part counts as changed.`;
+  }
+  const changed = result.parts.filter((part) => changedSinceLastLook(part, since)).length;
+  const total = result.parts.length;
+  return `Since ${look} at ${where}: ${changed} of ${total} part${total === 1 ? '' : 's'} changed.`;
+}
+
+/**
+ * The line above the tree: what changed since the reviewer's last look,
+ * saying when the filter shows only those parts, then the review's
+ * status; see {@link reviewStatus}.
+ */
+export function treeMessage(result: ReviewResult, running?: string, filter: TreeFilter = {}): string | undefined {
+  const since = sinceLastLookLine(result);
+  const shown = since !== undefined && filter.onlyChangedSinceLastLook ? `${since} Showing only those.` : since;
+  const lines = [shown, reviewStatus(result, running)].filter((line) => line !== undefined);
+  return lines.length === 0 ? undefined : lines.join(' ');
 }
 
 /**

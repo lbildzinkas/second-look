@@ -7,6 +7,9 @@ export const REVIEW_TREE_VIEW = 'second-look.reviewTree' as const;
 /** Opens one part's files in the multi-file diff editor. */
 export const OPEN_PART_COMMAND = 'second-look.openPart' as const;
 
+/** Toggles the tree between every part and only the parts changed since the reviewer's last look. */
+export const FILTER_CHANGED_COMMAND = 'second-look.filterChangedSinceLastLook' as const;
+
 /** Opens the whole change in the multi-file diff editor, in ranked order. */
 export const OPEN_ALL_PARTS_COMMAND = 'second-look.openAllParts' as const;
 

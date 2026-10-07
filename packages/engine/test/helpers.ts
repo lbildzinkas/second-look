@@ -251,8 +251,9 @@ function recordedBody(init: RequestInit | undefined): unknown {
  * stored at the head commit, the merge base from the compare endpoint,
  * the linked issues from the one GraphQL query the review makes, archives
  * of both versions, the check runs at the head commit with their
- * annotations and the failed job's log when the fixture records CI, and
- * one submitted review for a send. Any
+ * annotations and the failed job's log when the fixture records CI, the
+ * signed-in reviewer with no review submitted yet, a 404 for the change
+ * at any earlier commit, and one submitted review for a send. Any
  * other URL throws, so a test can never touch the live network by
  * accident.
  */
@@ -301,6 +302,9 @@ export function fixtureFetch(pull: PullFixture = pull42()): FixtureTransport {
       const body = pull.issues === undefined ? NO_LINKED_ISSUES : JSON.parse(fixtureText(pull.issues));
       return Response.json(body);
     }
+    // The reviewer has submitted no review, so a first look compares with nothing.
+    if (url === 'https://api.github.com/user') return Response.json({ login: 'reviewer' });
+    if (url === `${API}/pulls/${pull.number}/reviews?per_page=100`) return Response.json([]);
     if (url === `${API}/pulls/${pull.number}/reviews`) {
       if ((init?.method ?? 'GET') !== 'POST') {
         throw new Error(`unexpected ${init?.method ?? 'GET'} to ${url}: sending is one POST`);
@@ -333,6 +337,10 @@ export function fixtureFetch(pull: PullFixture = pull42()): FixtureTransport {
     }
     if (url === `${API}/compare/${meta.base.sha}...${pull.headSha}?per_page=1`) {
       return Response.json({ merge_base_commit: { sha: pull.mergeBase } });
+    }
+    // The change at any earlier commit: GitHub no longer has it.
+    if (new RegExp(`^${API}/compare/[0-9a-f]+\\.\\.\\.[0-9a-f]+$`).test(url)) {
+      return Response.json({ message: 'Not Found' }, { status: 404 });
     }
     const tarballMatch = /\/tarball\/([0-9a-f]+)$/.exec(url);
     if (url.startsWith(`${API}/tarball/`) && tarballMatch) {
