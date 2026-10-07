@@ -740,6 +740,64 @@ function isSinceLastLook(value: unknown): boolean {
   );
 }
 
+/** A library API the change uses: its name, its library as pinned, and the head-side lines that use it. */
+function isLibraryApi(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isNonEmptyString(value['api']) &&
+    isNonEmptyString(value['library']) &&
+    isNonEmptyString(value['version']) &&
+    isNonEmptyString(value['pinnedBy']) &&
+    isOneOf(value['ecosystem'], ['PyPI', 'NuGet', '.NET'] as const) &&
+    Array.isArray(value['uses']) &&
+    value['uses'].every((use) => isRecord(use) && isNonEmptyString(use['path']) && isLine(use['line']) && isNonEmptyString(use['name']))
+  );
+}
+
+/** An https address, the only kind a documentation link may open. */
+function isHttpsUrl(value: unknown): boolean {
+  if (!isString(value)) return false;
+  try {
+    return new URL(value).protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The documentation links: each an API with an https page, an inventory's
+ * naming the inventory it came from, every inventory link before any the
+ * agent suggested, and a suggestion only when the agent's suggestions are
+ * there to stamp it.
+ */
+function isDocLinks(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const { links, unlinked, notes, suggestions } = value;
+  if (!Array.isArray(links) || !Array.isArray(unlinked) || !unlinked.every(isLibraryApi) || !Array.isArray(notes) || !notes.every(isString)) return false;
+  if (
+    suggestions !== undefined &&
+    !(
+      isRecord(suggestions) &&
+      isString(suggestions['promptVersion']) &&
+      isOneOf(suggestions['outcome'], ['suggested', 'fell back'] as const) &&
+      isString(suggestions['detail']) &&
+      isAgentStamp(suggestions['stamp'])
+    )
+  ) {
+    return false;
+  }
+  const valid = links.every((link) => {
+    if (!isLibraryApi(link)) return false;
+    const { url, from, inventory } = link as Record<string, unknown>;
+    return isHttpsUrl(url) && (from === 'inventory' ? isHttpsUrl(inventory) : from === 'agent' && inventory === undefined);
+  });
+  if (!valid) return false;
+  const kinds = links.map((link) => (link as { from: string }).from);
+  const firstSuggested = kinds.indexOf('agent');
+  if (firstSuggested >= 0 && (kinds.slice(firstSuggested).includes('inventory') || !isRecord(suggestions) || suggestions['outcome'] !== 'suggested')) return false;
+  return true;
+}
+
 /**
  * Checks that a value read over the protocol is a review result of the
  * version this extension understands. The engine and the extension share
@@ -763,6 +821,7 @@ export function isReviewResult(value: unknown): value is ReviewResult {
   if (value['ci'] !== undefined && !isCiResults(value['ci'])) return false;
   if (value['criteria'] !== undefined && !isCriteria(value['criteria'])) return false;
   if (value['sinceLastLook'] !== undefined && !isSinceLastLook(value['sinceLastLook'])) return false;
+  if (value['docLinks'] !== undefined && !isDocLinks(value['docLinks'])) return false;
   const parts = value['parts'];
   if (!Array.isArray(parts) || !parts.every(isPart)) return false;
   const story = value['story'];

@@ -52,25 +52,26 @@ async function pinFiles(root: string): Promise<string[]> {
   return [...found.filter(isLock).sort(byPath), ...found.filter((path) => !isLock(path)).sort(byPath)];
 }
 
-/** The pin of one package in a packages.lock.json: the version it resolved and the SHA-512 it records. */
-function lockPin(text: string, wanted: string, pinnedBy: string): NuGetPin | undefined {
+/** The pins of a packages.lock.json: each package's resolved version and the SHA-512 it records. */
+function lockPins(text: string, pinnedBy: string): NuGetPin[] {
   let root: unknown;
   try {
     root = JSON.parse(text);
   } catch {
-    return undefined;
+    return [];
   }
   const frameworks = (root as { dependencies?: unknown } | null)?.dependencies;
-  if (typeof frameworks !== 'object' || frameworks === null) return undefined;
+  if (typeof frameworks !== 'object' || frameworks === null) return [];
+  const pins: NuGetPin[] = [];
   for (const packages of Object.values(frameworks)) {
     if (typeof packages !== 'object' || packages === null) continue;
     for (const [name, entry] of Object.entries(packages as Record<string, unknown>)) {
       const { resolved, contentHash, type } = (entry ?? {}) as { resolved?: unknown; contentHash?: unknown; type?: unknown };
-      if (name.toLowerCase() !== wanted || type === 'Project' || typeof resolved !== 'string' || typeof contentHash !== 'string') continue;
-      return { ecosystem: 'NuGet', name, version: resolved, pinnedBy, contentHash };
+      if (type === 'Project' || typeof resolved !== 'string' || typeof contentHash !== 'string') continue;
+      pins.push({ ecosystem: 'NuGet', name, version: resolved, pinnedBy, contentHash });
     }
   }
-  return undefined;
+  return pins;
 }
 
 /** One XML attribute's value from an element's attribute text. */
@@ -78,17 +79,32 @@ function attribute(attributes: string, name: string): string | undefined {
   return new RegExp(`(?:^|\\s)${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, 'i').exec(attributes)?.slice(1).find((value) => value !== undefined);
 }
 
-/** The exact pin of one package in a project file or Directory.Packages.props: a reference with an exact version. */
-function projectPin(text: string, wanted: string, pinnedBy: string): NuGetPin | undefined {
+/** The exact pins of a project file or Directory.Packages.props: each reference with an exact version. */
+function projectPins(text: string, pinnedBy: string): NuGetPin[] {
   const references = text.replace(/<!--[\s\S]*?-->/g, '').matchAll(/<(PackageReference|PackageVersion)\b([^>]*?)(?:\/>|>([\s\S]*?)<\/\1\s*>)/gi);
+  const pins: NuGetPin[] = [];
   for (const [, , attributes = '', body = ''] of references) {
     const name = attribute(attributes, 'Include') ?? attribute(attributes, 'Update');
-    if (name?.trim().toLowerCase() !== wanted) continue;
+    if (name === undefined) continue;
     const declared = attribute(attributes, 'VersionOverride') ?? attribute(attributes, 'Version') ?? /<Version>([^<]*)<\/Version>/i.exec(body)?.[1];
     const version = declared === undefined ? undefined : EXACT_VERSION.exec(declared)?.[1];
-    if (version !== undefined) return { ecosystem: 'NuGet', name: name.trim(), version, pinnedBy };
+    if (version !== undefined) pins.push({ ecosystem: 'NuGet', name: name.trim(), version, pinnedBy });
   }
-  return undefined;
+  return pins;
+}
+
+/**
+ * Every package the head copy pins, in the order a pin is trusted: each
+ * packages.lock.json's resolved packages, then each project file's or
+ * Directory.Packages.props's references at one exact version.
+ */
+export async function nugetPins(headRoot: string): Promise<NuGetPin[]> {
+  const pins: NuGetPin[] = [];
+  for (const path of await pinFiles(headRoot)) {
+    const text = await readFile(join(headRoot, ...path.split('/')), 'utf8').catch(() => '');
+    pins.push(...(path.toLowerCase().endsWith('packages.lock.json') ? lockPins(text, path) : projectPins(text, path)));
+  }
+  return pins;
 }
 
 /**
@@ -99,12 +115,7 @@ function projectPin(text: string, wanted: string, pinnedBy: string): NuGetPin | 
 export async function findNuGetPin(headRoot: string, library: string): Promise<NuGetPin | undefined> {
   const wanted = library.trim().toLowerCase();
   if (!SAFE_ID.test(wanted)) return undefined;
-  for (const path of await pinFiles(headRoot)) {
-    const text = await readFile(join(headRoot, ...path.split('/')), 'utf8').catch(() => '');
-    const pin = path.toLowerCase().endsWith('packages.lock.json') ? lockPin(text, wanted, path) : projectPin(text, wanted, path);
-    if (pin) return pin;
-  }
-  return undefined;
+  return (await nugetPins(headRoot)).find((pin) => pin.name.toLowerCase() === wanted);
 }
 
 /** The largest package, symbol package or source file a fetch downloads; far above any real one. */

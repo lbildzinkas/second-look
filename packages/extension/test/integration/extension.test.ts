@@ -24,14 +24,15 @@ import {
   WHY_THIS_MATTERS_COMMAND,
   activate,
 } from '../../src/extension.js';
-import { changeUri, libraryUri } from '../../src/change-copies.js';
+import { CHANGE_SCHEME, changeUri, libraryUri } from '../../src/change-copies.js';
 import { askCommand } from '../../src/commands.js';
 import { escapeMarkdown } from '../../src/findings.js';
 import { SEND_REVIEW_VIEW_TYPE } from '../../src/send-page.js';
-import { claimsResult, criteriaResult, fetchedResult, judgedResult, mixedResult, offeredResult, storyResult, unexplainedResult } from '../results.js';
+import { claimsResult, criteriaResult, docLinksResult, fetchedResult, judgedResult, mixedResult, offeredResult, storyResult, unexplainedResult } from '../results.js';
 import { changePieces, markedPart } from '@second-look/engine';
 import { OVERVIEW_VIEW_TYPE } from '../../src/overview.js';
 import {
+  Position,
   Range,
   TreeItemCheckboxState,
   stub,
@@ -351,6 +352,23 @@ describe('the review command, end to end against a fake engine', () => {
       method: 'review',
       params: { url: PR_URL, token: TOKEN },
     });
+  });
+
+  it("answers a hover on a library name on the head side of a part with the review's documentation links", async () => {
+    const result = docLinksResult();
+    await reviewWithFakeEngine({ result, logName: 'doc-links.log' });
+    const hovers = stub.hoverProviders.filter((entry) => entry.selector.scheme === CHANGE_SCHEME);
+    expect(hovers).toHaveLength(1);
+    const provider = hovers[0]!.provider as vscode.HoverProvider;
+    const document = {
+      uri: changeUri('head', result.copies.head.commit, 'src/retry.py'),
+      getWordRangeAtPosition: () => new Range(4, 19, 4, 24),
+      getText: () => 'retry',
+    } as unknown as vscode.TextDocument;
+    const hover = provider.provideHover(document, new Position(4, 22) as unknown as vscode.Position, {} as vscode.CancellationToken) as unknown as { contents: { value: string } };
+    expect(hover.contents.value).toBe(
+      '[tenacity\\.retry](https://tenacity.readthedocs.io/en/8.2.3/api.html#tenacity.retry): documentation of tenacity 8\\.2\\.3, from its published inventory',
+    );
   });
 
   it('carries the agent, model and account the settings choose with the review request', async () => {

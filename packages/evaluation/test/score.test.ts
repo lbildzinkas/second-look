@@ -12,6 +12,7 @@ import {
   tallyCriteria,
   tallyDrafts,
   tallyCover,
+  tallyDocLinks,
   tallyExplanations,
   tallyFinding,
   tallyJudging,
@@ -652,5 +653,25 @@ describe('the verify and cover scores', () => {
       'cover-none-found': 0.5,
     });
     expect(scored(base(), 'cover-')).toEqual({});
+  });
+
+  it("scores a suggested link on a labelled site, compared without its scheme or case, and the share of links the engine's checks accept", () => {
+    const api = { api: 'httpx.Client', library: 'httpx', version: '0.27.2', pinnedBy: 'requirements.txt', ecosystem: 'PyPI' as const, uses: [] };
+    const labels = [
+      { api: 'httpx.Client', sites: ['www.python-httpx.org/'] },
+      { api: 'httpx.Response', sites: ['GitHub.com/encode/httpx/'] },
+      { api: 'httpx.Timeout', sites: ['www.python-httpx.org/'] },
+    ];
+    const tally = tallyDocLinks(labels, [api, api, api], {
+      links: [
+        { api: 'a1', url: 'https://WWW.python-httpx.org/api/#client' },
+        { api: 'a2', url: 'https://github.com/Encode/httpx/blob/0.27.2/httpx/_models.py' },
+        { api: 'a3', url: 'http://www.python-httpx.org/advanced/timeouts/' },
+        { api: 'a4', url: 'https://www.python-httpx.org/' },
+      ],
+    });
+    expect(scored({ ...base(), docs: tally }, 'doc-links-')).toEqual({ 'doc-links-on-site': 2 / 3, 'doc-links-checked': 0.5 });
+    expect(scored({ ...base(), docs: tallyDocLinks(labels.slice(0, 1), [api], undefined) }, 'doc-links-')).toEqual({ 'doc-links-on-site': 0 });
+    expect(scored(base(), 'doc-links-')).toEqual({});
   });
 });

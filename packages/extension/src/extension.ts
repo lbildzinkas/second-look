@@ -40,6 +40,7 @@ import {
 import { draftTarget, ReviewComments } from './comments.js';
 import { escapeMarkdown, FindingThreads } from './findings.js';
 import { isSubmitKind, SendReviewPage } from './send-page.js';
+import { DocLinkHovers } from './doc-hover.js';
 import { OverviewPanel, claimWhere } from './overview.js';
 import { partClaims, selectionInPart } from './asked-claim.js';
 import { AgentStatusBar } from './agent-status.js';
@@ -284,6 +285,11 @@ class ReviewSession {
     this.comments = comments;
     this.spawnEngine = deps.spawnEngine;
     this.comments.onDidChange(() => this.refreshTree());
+  }
+
+  /** The review result shown, which the documentation hovers read. */
+  get shown(): ReviewResult | undefined {
+    return this.result;
   }
 
   async reviewPullRequest(urlArg?: string): Promise<void> {
@@ -1070,6 +1076,7 @@ export function activate(
         'The base and head copies are read-only; nothing from the pull request is written.',
       ),
     }),
+    vscode.languages.registerHoverProvider({ scheme: CHANGE_SCHEME }, new DocLinkHovers(() => session.shown)),
     vscode.commands.registerCommand(REVIEW_COMMAND, (url?: string) =>
       session.reviewPullRequest(url),
     ),

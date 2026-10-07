@@ -16,6 +16,7 @@ import {
   type CheckRun,
   type Claim,
   type CommentSide,
+  type DocLink,
   type ClaimSource,
   type CriterionVerdictKind,
   type DescribedChange,
@@ -73,13 +74,19 @@ export type OverviewMessage =
       answer: number;
       /** The cited line, by its index in that answer's citations. */
       index: number;
+    }
+  | {
+      type: 'openDoc';
+      /** The documentation link, by its index in the result's links. */
+      target: number;
     };
 
 
 /** Reads a page message out of what the webview delivered, if it is one. */
 function overviewMessage(value: unknown): OverviewMessage | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
-  const { type, part, issue, criterion, evidence, index, finding, answer } = value as Record<string, unknown>;
+  const { type, part, issue, criterion, evidence, index, finding, answer, doc } = value as Record<string, unknown>;
+  if (type === 'openDoc' && Number.isInteger(doc)) return { type, target: doc as number };
   if (type === 'openCited' && Number.isInteger(answer) && Number.isInteger(index)) return { type, answer: answer as number, index: index as number };
   if (type === 'openPart' && Number.isInteger(part)) return { type, target: part as number };
   if (type === 'openIssue' && Number.isInteger(issue)) return { type, target: issue as number };
@@ -103,7 +110,9 @@ function overviewMessage(value: unknown): OverviewMessage | undefined {
  * place a button that jumps to the description, the unexplained
  * changes in both directions, the claims the change makes with where each
  * is made and the part it is attached to, each finding with a button that
- * drafts a comment from it, the pipeline report and whether it is trusted, the checks run on the merge
+ * drafts a comment from it, the documentation links of the library APIs the change uses — the
+ * inventories' links first, then the agent's suggestions, flagged as not checked, each a button that
+ * opens its page in the browser — the pipeline report and whether it is trusted, the checks run on the merge
  * commit with their annotations and failed jobs' trimmed logs, the pull
  * request's description in full with its hidden content shown and flagged,
  * and who made each result.
@@ -223,6 +232,11 @@ export class OverviewPanel implements vscode.Disposable {
     if (message.type === 'openPart') {
       const part = this.state?.result.parts[message.target];
       if (part !== undefined) this.openPart(part);
+      return;
+    }
+    if (message.type === 'openDoc') {
+      const link = this.state?.result.docLinks?.links[message.target];
+      if (link !== undefined && link.url.startsWith('https://')) void vscode.env.openExternal(vscode.Uri.parse(link.url));
       return;
     }
     const issue = this.state?.result.criteria?.issues[message.target];
@@ -356,6 +370,7 @@ function stageChips(state: OverviewState): string {
   if (judging) chips.push({ text: judging.outcome === 'judged' ? 'verdicts' : 'no verdicts', done: true });
   const mapping = result.criteria?.mapping;
   if (mapping) chips.push({ text: mapping.outcome === 'mapped' ? 'criteria mapped' : 'criteria not mapped', done: true });
+  if (result.docLinks) chips.push({ text: 'documentation links', done: true });
   if (state.running !== undefined) chips.push({ text: state.running, done: false });
   return chips
     .map((chip) => `<span class="stg ${chip.done ? 'done' : 'run'}">${escapeHtml(chip.text)}${chip.done ? '' : '…'}</span>`)
@@ -832,6 +847,53 @@ function ciBlock(result: ReviewResult): string {
   return `${head}<ul class="checks">${ci.checks.map(checkItem).join('')}</ul>`;
 }
 
+/** A documentation link: the API, its library as pinned, its page as a button that opens it, and where it came from. */
+function docLinkItem(link: DocLink, index: number): string {
+  const where = link.uses.slice(0, 3).map((use) => `${use.path}:${use.line}`).join(', ');
+  const library = link.ecosystem === '.NET' ? `.NET ${link.version}` : `${link.library} ${link.version}`;
+  const source =
+    link.from === 'inventory'
+      ? `From the published inventory of ${library}, as ${link.pinnedBy} pins it`
+      : `Suggested by the agent from what it knows, for ${library} as ${link.pinnedBy} pins it; not checked`;
+  const flag = link.from === 'agent' ? '<span class="flag">suggested</span>' : '';
+  return (
+    `<li>${flag}<code>${escapeHtml(link.api)}</code> <button type="button" class="pt doc" data-doc="${index}">${escapeHtml(link.url)}</button>` +
+    `<div class="where">${escapeHtml(`${source} · used at ${where}`)}</div></li>`
+  );
+}
+
+/**
+ * The documentation section: the library APIs the change uses, each
+ * linked to its documentation at the pinned version — every link read
+ * from a published inventory first, then the agent's suggestions, each
+ * flagged as suggested and not checked — then the APIs no link was found
+ * for, and the notes on what was read and what the cap left out.
+ */
+function docsSection(state: OverviewState): string {
+  const docs = state.result.docLinks;
+  if (docs === undefined) {
+    const why = state.running !== undefined ? 'The documentation links come once the review is done.' : 'No documentation links were looked for in this review.';
+    return `<h2>Documentation</h2><p class="note">${why}</p>`;
+  }
+  const suggestions = docs.suggestions;
+  const stamp = suggestions === undefined ? '' : ` ${stampChip(stampText(suggestions.stamp, 'doc-links', suggestions.promptVersion))}`;
+  const read = docs.links.flatMap((link, index) => (link.from === 'inventory' ? [docLinkItem(link, index)] : []));
+  const suggested = docs.links.flatMap((link, index) => (link.from === 'agent' ? [docLinkItem(link, index)] : []));
+  const none = docs.links.length === 0 && docs.unlinked.length === 0 ? '<p class="note">The change uses no pinned library API the companion links.</p>' : '';
+  const readList = read.length === 0 ? '' : `<ol class="claims">${read.join('')}</ol>`;
+  const fellBack = suggestions?.outcome === 'fell back' ? `<p class="note">No suggestions: ${escapeHtml(suggestions.detail)}.</p>` : '';
+  const suggestedList =
+    suggested.length === 0
+      ? ''
+      : `<p class="note">Suggested by the agent for the APIs no inventory linked. Nothing checked these pages: open them knowing that.</p><ol class="claims">${suggested.join('')}</ol>`;
+  const unlinked =
+    docs.unlinked.length === 0
+      ? ''
+      : `<p class="note">No documentation link found for ${docs.unlinked.map((api) => `<code>${escapeHtml(api.api)}</code> (${escapeHtml(`${api.library} ${api.version}`)})`).join(', ')}.</p>`;
+  const notes = docs.notes.map((note) => `<p class="note">${escapeHtml(note)}.</p>`).join('');
+  return `<h2>Documentation${stamp}</h2>${none}${readList}${fellBack}${suggestedList}${unlinked}${notes}`;
+}
+
 /** The pipeline and CI section: the no-mistakes report and whether it is trusted, then the checks. */
 function pipelineSection(result: ReviewResult): string {
   return `<h2>Pipeline and CI</h2>${pipelineBlock(result)}${ciBlock(result)}`;
@@ -911,6 +973,18 @@ function stampsSection(state: OverviewState): string {
         ? `mapped by ${stampText(mapping.stamp, 'criteria-mapping', mapping.promptVersion)}: ${mapping.detail}`
         : `none: ${mapping.detail}`,
     ]);
+  }
+  const docs = result.docLinks;
+  if (docs) {
+    const read = docs.links.filter((link) => link.from === 'inventory').length;
+    const suggestions = docs.suggestions;
+    const suggested =
+      suggestions === undefined
+        ? 'no agent was asked for suggestions'
+        : suggestions.outcome === 'suggested'
+          ? `suggested by ${stampText(suggestions.stamp, 'doc-links', suggestions.promptVersion)}: ${suggestions.detail}`
+          : `no suggestions: ${suggestions.detail}`;
+    rows.push(['Documentation links', `${read} read from published inventories at the pinned version; ${suggested}`]);
   }
   const items = rows.map(([what, how]) => `<li><b>${escapeHtml(what)}</b> ${escapeHtml(how)}</li>`).join('');
   return `<h2>How these results were made</h2><ul class="stamps">${items}</ul>`;
@@ -1037,6 +1111,7 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
   <section id="criteria">${criteriaSection(state)}</section>
   <section id="unexplained">${unexplainedSection(state)}</section>
   <section id="claims">${claimsSection(state)}</section>
+  <section id="docs">${docsSection(state)}</section>
   <section id="pipeline">${pipelineSection(result)}</section>
   <section id="description">${descriptionSection(result)}</section>
   <section id="stamps">${stampsSection(state)}</section>
@@ -1053,6 +1128,11 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
   Array.prototype.forEach.call(document.querySelectorAll('button.issue'), function (button) {
     button.addEventListener('click', function () {
       vscode.postMessage({ type: 'openIssue', issue: Number(button.getAttribute('data-issue')) });
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('button.doc'), function (button) {
+    button.addEventListener('click', function () {
+      vscode.postMessage({ type: 'openDoc', doc: Number(button.getAttribute('data-doc')) });
     });
   });
   Array.prototype.forEach.call(document.querySelectorAll('button.cite'), function (button) {

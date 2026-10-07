@@ -11,7 +11,7 @@ import type { AgentStamp } from './agent.js';
 import type { AskKind } from './asks.js';
 
 /** Version of the review result schema. */
-export const REVIEW_RESULT_VERSION = 17 as const;
+export const REVIEW_RESULT_VERSION = 18 as const;
 
 /**
  * Version 2 added the head commit's SHA and each part's noise assessment;
@@ -46,7 +46,9 @@ export const REVIEW_RESULT_VERSION = 17 as const;
  * ask judges — text the reviewer selected in the diff, a claim source of
  * its own, or a claim they picked — marked on the claim as judged by
  * the ask alone, so its checked verdict stands even when the claims
- * pass's judging fell back.
+ * pass's judging fell back; version 18 added the documentation links of
+ * the library APIs the change uses, at the pinned version: from published
+ * inventories first, then the agent's suggestions, labelled as such.
  */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
@@ -354,6 +356,68 @@ export interface ReviewResult {
   ci?: CiResults;
   /** What changed since the reviewer's last look; absent on their first look, or when the review was not opened by them, such as an offline replay. */
   sinceLastLook?: SinceLastLook;
+  /** The documentation links of the library APIs the change uses, at the pinned version; absent when none were looked for, such as an offline replay. */
+  docLinks?: DocLinks;
+}
+
+/** Where a library's documentation is looked for: a Python library on PyPI, a .NET package on nuget.org, or .NET's own APIs. */
+export type DocEcosystem = 'PyPI' | 'NuGet' | '.NET';
+
+/** One place the change uses a library API: a head-side line, and the name as the line writes it. */
+export interface DocUse {
+  path: string;
+  line: number;
+  /** The name a reader hovers on that line, such as `Client` in `httpx.Client`. */
+  name: string;
+}
+
+/** A library API the change uses, with the library as the project pins it. */
+export interface LibraryApi {
+  /** The API's full name as its documentation names it, such as `httpx.Client` or `System.IO.Stream.CopyTo`. */
+  api: string;
+  library: string;
+  /** The pinned version: the package's, or for .NET's own APIs the project's target framework. */
+  version: string;
+  /** The lock or project file that pins it, by its path in the head copy. */
+  pinnedBy: string;
+  ecosystem: DocEcosystem;
+  /** Where the change uses it, in the order the lines come. */
+  uses: DocUse[];
+}
+
+/**
+ * A library API's documentation page: **inventory** when the page comes
+ * from the library's published inventory at the pinned version, so the
+ * engine checked it is documented there; **agent** when the agent
+ * suggested it from memory and nothing checked it.
+ */
+export interface DocLink extends LibraryApi {
+  url: string;
+  from: 'inventory' | 'agent';
+  /** The inventory the link was read from, by its URL; absent for a suggestion. */
+  inventory?: string;
+}
+
+/** The agent's suggestions of documentation pages for the APIs no inventory linked. */
+export interface DocSuggestions {
+  promptVersion: string;
+  /** **suggested** when the checked answer is shown, no suggestion being one; **fell back** when the agent gave no usable answer. */
+  outcome: 'suggested' | 'fell back';
+  /** One plain line: how the answer was checked, or why there is none. */
+  detail: string;
+  stamp: AgentStamp;
+}
+
+/** The documentation links of the library APIs the change uses, at the pinned version. */
+export interface DocLinks {
+  /** Every link read from an inventory first, then every link the agent suggested. */
+  links: DocLink[];
+  /** The library APIs no link was found for. */
+  unlinked: LibraryApi[];
+  /** One plain line for each library or language — which inventory was read, or why none was — and, when the cap of listed APIs is reached, one naming how many it left out. */
+  notes: string[];
+  /** The agent's suggestions; absent when no agent was asked. */
+  suggestions?: DocSuggestions;
 }
 
 /**

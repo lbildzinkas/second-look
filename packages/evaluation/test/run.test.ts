@@ -14,6 +14,7 @@ import { CRITERIA_MAPPING_INSTRUCTIONS, CRITERIA_MAPPING_PROMPT_VERSION } from '
 import { DRAFT_COMMENT_INSTRUCTIONS, DRAFT_COMMENT_PROMPT_VERSION } from '../../engine/src/draft-comment.js';
 import { EXPLAIN_INSTRUCTIONS, EXPLAIN_PROMPT_VERSION } from '../../engine/src/explain.js';
 import { COVER_INSTRUCTIONS, COVER_PROMPT_VERSION } from '../../engine/src/cover.js';
+import { DOC_LINKS_INSTRUCTIONS, DOC_LINKS_PROMPT_VERSION } from '../../engine/src/doc-suggestions.js';
 import { answeringAgent, offeredParts, scriptedAgent } from '../../engine/test/helpers.js';
 import type { AgentAdapter } from '@second-look/engine';
 import { loadCases } from '../src/case.js';
@@ -666,6 +667,46 @@ describe('runEvaluation with the cover prompt', () => {
     expect(results.fallbacks).toEqual([{ case: 'canary-python', agent: 'fake', prompt: 'cover', detail: expect.stringMatching(/^the agent gave no usable answer/) }]);
     expect(rowsOf(results.rows, 'fake', 'cover-none-found')['canary-python']).toBe(0);
     expect(rowsOf(results.rows, 'fake', 'cover-cites-checked')['canary-python']).toBe(0);
+  });
+});
+
+describe('runEvaluation with the doc-links prompt', () => {
+  /** An agent that links each API asked about to the given address. */
+  const linkingAgent = (url: string): AgentAdapter =>
+    answeringAgent((request) => (request.instructions === DOC_LINKS_INSTRUCTIONS ? { links: [{ api: 'a1', url }] } : 'not an answer'));
+
+  it('asks about the labelled APIs no recorded inventory links, and scores the links against the labelled sites, stamped with who answered', async () => {
+    const { folder, results } = await runVerdicts('canary-csharp', linkingAgent('https://github.com/microsoft/Microsoft.IO.RecyclableMemoryStream#usage'), ['doc-links']);
+
+    expect(rowsOf(results.rows, 'fake', 'doc-links-on-site')).toEqual({ 'canary-csharp': 1, [ALL_CASES]: 1 });
+    expect(rowsOf(results.rows, 'fake', 'doc-links-checked')).toEqual({ 'canary-csharp': 1, [ALL_CASES]: 1 });
+    expect(results.rows.find((row) => row.agent === 'fake' && row.case === 'canary-csharp')).toMatchObject({ promptVersions: { 'doc-links': DOC_LINKS_PROMPT_VERSION } });
+    // The plain pass suggests nothing, so it gives no doc-links score.
+    expect(rowsOf(results.rows, NO_AGENT, 'doc-links-on-site')).toEqual({});
+    const trace = readFileSync(join(folder, TRACE_FILE), 'utf8').trim().split('\n').map((line) => JSON.parse(line) as AgentCall);
+    // The recorded map links Stream and CopyTo, so only the package's type is asked about.
+    expect(trace).toHaveLength(1);
+    expect(trace[0]).toMatchObject({ case: 'canary-csharp', prompt: 'doc-links', promptVersion: DOC_LINKS_PROMPT_VERSION });
+    expect(trace[0]!.input).toContain('a1: Microsoft.IO.RecyclableMemoryStreamManager — Microsoft.IO.RecyclableMemoryStream 3.0.1 from NuGet, pinned by src/BlobTool.csproj; used at src/BlobReader.cs:16');
+    expect(trace[0]!.input).not.toContain('a2:');
+  });
+
+  it('scores a link off the labelled sites, or one the checks refuse, as such', async () => {
+    const off = await runVerdicts('canary-python', linkingAgent('https://stackoverflow.com/questions/tagged/httpx'), ['doc-links']);
+    expect(rowsOf(off.results.rows, 'fake', 'doc-links-on-site')['canary-python']).toBe(0);
+    expect(rowsOf(off.results.rows, 'fake', 'doc-links-checked')['canary-python']).toBe(1);
+
+    const refused = await runVerdicts('canary-python', linkingAgent('http://www.python-httpx.org/api/'), ['doc-links']);
+    expect(rowsOf(refused.results.rows, 'fake', 'doc-links-on-site')['canary-python']).toBe(0);
+    expect(rowsOf(refused.results.rows, 'fake', 'doc-links-checked')['canary-python']).toBe(0);
+  });
+
+  it('records an answer that fell back, which links no API', async () => {
+    const { results } = await runVerdicts('canary-python', scriptedAgent([]), ['doc-links']);
+
+    expect(results.fallbacks).toEqual([{ case: 'canary-python', agent: 'fake', prompt: 'doc-links', detail: expect.stringMatching(/^the agent gave no usable answer/) }]);
+    expect(rowsOf(results.rows, 'fake', 'doc-links-on-site')['canary-python']).toBe(0);
+    expect(rowsOf(results.rows, 'fake', 'doc-links-checked')).toEqual({});
   });
 });
 

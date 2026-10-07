@@ -140,10 +140,13 @@ export interface RpcServerDeps {
  * issues, then the result with the comparison in another while the agent
  * lists the claims, then the result with the claims in another while the
  * agent judges them, then the result with the verdicts in another while
- * the agent maps the acceptance criteria, and the review's response
- * carries the result with the agent's parts, ranking, story, unexplained
- * changes, judged claims and mapped criteria, or the plain parts and
- * ranking with the reason they stayed.
+ * the agent maps the acceptance criteria, then, when no inventory linked
+ * some library API the change uses, the result with the mapped criteria
+ * in another while the agent suggests documentation links, and the
+ * review's response carries the result with the agent's parts, ranking,
+ * story, unexplained changes, judged claims, mapped criteria and
+ * documentation links, or the plain parts and ranking with the reason
+ * they stayed.
  */
 export async function runRpcServer(
   source: RpcLineSource,

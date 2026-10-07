@@ -9,6 +9,7 @@ import { readCi } from './ci.js';
 import { findClaims } from './claims.js';
 import { DEFAULT_CRITERIA_HEADING, readCriteria } from './criteria.js';
 import { mapCriteria } from './criteria-mapping.js';
+import { findDocLinks } from './doc-links.js';
 import { validateCoverage } from './coverage.js';
 import { parseDiff, type ParsedDiff } from './diff.js';
 import { GitHubClient, parsePullRequestUrl } from './github.js';
@@ -92,7 +93,33 @@ export async function reviewPullRequest(
   url: string,
   options: ReviewOptions,
 ): Promise<ReviewResult> {
-  return reviewChange(await fetchChange(url, options), options.agentStage);
+  const reviewed = await reviewChange(await fetchChange(url, options), options.agentStage);
+  return docLinksStage(reviewed, options);
+}
+
+/**
+ * The documentation links stage, after the review: the library APIs the
+ * change uses, linked to their documentation at the pinned version from
+ * the libraries' published inventories, which the engine downloads, and
+ * then, with an agent stage, the agent's suggestions for the rest,
+ * labelled as such. A change with no parts uses no library.
+ */
+async function docLinksStage(shown: ReviewResult, options: ReviewOptions): Promise<ReviewResult> {
+  if (shown.parts.length === 0) return shown;
+  const agentStage = options.agentStage;
+  const settings = agentStage?.settings ?? DEFAULT_AGENT_SETTINGS;
+  const docLinks = await findDocLinks(shown.parts, {
+    headRoot: shown.copies.head.path,
+    ...(options.fetch ? { fetch: options.fetch } : {}),
+    ...(agentStage ? { agent: { adapter: agentStage.adapter, settings } } : {}),
+    onSuggesting: () =>
+      agentStage?.onStage?.({
+        running: `suggesting documentation links with ${agentStage.adapter.agent}`,
+        timeoutMs: agentStageTimeoutMs(settings),
+        result: shown,
+      }),
+  });
+  return { ...shown, docLinks };
 }
 
 /**

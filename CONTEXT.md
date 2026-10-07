@@ -54,6 +54,10 @@ _Avoid_: Citation, reference
 A reviewer-started download of one library's source at the version the project pins — or, when nothing pins it, at a repository and tag the agent named — offered by the companion with its reason only when a claim cannot be checked without it. A .NET package with no exact source turns it into an offer to decompile, made only when that version's licence allows it.
 _Avoid_: Dependency sync, auto-fetch, install
 
+**Documentation link**:
+A link from a library API the change uses to its documentation at the version the project pins: read from the library's published inventory, or suggested by the companion's agent and labelled as such, after every inventory link.
+_Avoid_: Doc reference, API link
+
 ### Acting on the review
 
 **Acceptance criterion**:

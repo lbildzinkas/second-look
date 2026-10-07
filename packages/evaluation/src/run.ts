@@ -5,6 +5,7 @@ import {
   COVER_PROMPT_ID,
   CRITERIA_MAPPING_PROMPT_ID,
   DEFAULT_EFFORT,
+  DOC_LINKS_PROMPT_ID,
   DRAFT_COMMENT_PROMPT_ID,
   EXPLAIN_PROMPT_ID,
   GROUPING_PROMPT_ID,
@@ -17,6 +18,7 @@ import {
   copyReader,
   draftChecks,
   draftComment,
+  findDocLinks,
   explainChecks,
   explainPart,
   findClaims,
@@ -34,6 +36,7 @@ import {
   selectedClaim,
   storyChecks,
   storyItems,
+  suggestDocLinks,
   writeStory,
 } from '@second-look/engine';
 import type { AgentAdapter, AgentSettings, AgentStamp, Claim, ClaimVerdict, CoverChecks, DraftChecks, ExplainChecks, Part } from '@second-look/engine';
@@ -46,6 +49,7 @@ import {
   CLAIM_SCORES,
   COVER_SCORES,
   CRITERIA_SCORES,
+  DOC_LINKS_SCORES,
   DRAFT_SCORES,
   EXPLAIN_SCORES,
   GROUPING_AGREEMENT,
@@ -61,6 +65,7 @@ import {
   tallyCase,
   tallyCover,
   tallyCriteria,
+  tallyDocLinks,
   tallyDrafts,
   tallyExplanations,
   tallyFinding,
@@ -154,7 +159,7 @@ export const GROUPING_SCORES: readonly string[] = ['coverage', GROUPING_AGREEMEN
  */
 export const RANKING_SCORES: readonly string[] = RANK_SCORES;
 
-export { CLAIM_SCORES, COVER_SCORES, CRITERIA_SCORES, DRAFT_SCORES, EXPLAIN_SCORES, STORY_SCORES, UNEXPLAINED_SCORES, VERDICT_SCORES, VERIFY_SCORES };
+export { CLAIM_SCORES, COVER_SCORES, CRITERIA_SCORES, DOC_LINKS_SCORES, DRAFT_SCORES, EXPLAIN_SCORES, STORY_SCORES, UNEXPLAINED_SCORES, VERDICT_SCORES, VERIFY_SCORES };
 
 /**
  * The prompt an agent row's score belongs to: each agent prompt gives its
@@ -174,6 +179,7 @@ export function promptOfScore(row: { name: string; agent: string }): string | un
   // The verify ask runs the judging pass, so its scores are the verdicts prompt's.
   if (VERIFY_SCORES.includes(row.name)) return VERDICTS_PROMPT_ID;
   if (COVER_SCORES.includes(row.name)) return COVER_PROMPT_ID;
+  if (DOC_LINKS_SCORES.includes(row.name)) return DOC_LINKS_PROMPT_ID;
   if (isClaimCheck(row.name)) return LIBRARY_VERDICTS_PROMPT_ID;
   return undefined;
 }
@@ -212,7 +218,7 @@ export interface RunOptions {
   /**
    * The agent that runs the agent prompts the cases are tied to, the
    * grouping, ranking, story, unexplained-changes, claims, verdicts,
-   * criteria-mapping, draft-comment and explain prompts; without one the run is
+   * criteria-mapping, draft-comment, explain, cover and doc-links prompts; without one the run is
    * model-free.
    */
   agent?: { adapter: AgentAdapter; settings?: AgentSettings };
@@ -285,7 +291,11 @@ export interface Run {
  * hold to those checks; and each case tied to the explain prompt has
  * each of its labelled parts explained by the agent, scored on the
  * explanation's plain checks with its {@link EXPLAIN_SCORES}, again the
- * agent's own answer. A grouping or ranking fallback scores what the
+ * agent's own answer; and each case tied to the doc-links prompt has
+ * the labelled APIs its plain parts use, which no recorded inventory
+ * links, given documentation links by the agent, scored on the engine's
+ * checks and against the labelled sites with its
+ * {@link DOC_LINKS_SCORES}, the agent's own answer again. A grouping or ranking fallback scores what the
  * reviewer would see, the plain parts; a story fallback fails the
  * story's checks, a claims fallback lists no claim, a verdicts
  * fallback leaves every claim not checked, an unexplained-changes
@@ -331,6 +341,7 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
   const explainTallies = new Map<string, { stamp: AgentStamp; tallies: Tally[] }>();
   const verifyTallies = new Map<string, { stamp: AgentStamp; tallies: Tally[] }>();
   const coverTallies = new Map<string, { stamp: AgentStamp; tallies: Tally[] }>();
+  const docTallies = new Map<string, { stamp: AgentStamp; tallies: Tally[] }>();
   const stampKey = (stamp: Stamp): string => JSON.stringify([stamp.agent, stamp.agentVersion, stamp.model, stamp.effort]);
   for (const evaluationCase of options.cases) {
     const input = await caseInput(evaluationCase);
@@ -593,6 +604,32 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
       }
     }
 
+    const labelledDocs = evaluationCase.expected.docs ?? [];
+    if (runs(DOC_LINKS_PROMPT_ID) && parts && labelledDocs.length > 0) {
+      try {
+        // The inventories are read as the review reads them, served from the case's recorded downloads.
+        const found = await findDocLinks(parts, { headRoot: input.copies.head.path, fetch: recordedFetch(evaluationCase.folder) });
+        const apis = labelledDocs.map((label) => {
+          const api = found.unlinked.find((each) => each.api === label.api);
+          if (api === undefined) throw new Error(`the doc-links prompt's case names an API the review does not leave without a link: ${label.api}`);
+          return api;
+        });
+        const suggested = await suggestDocLinks(apis, { adapter: adapterFor(DOC_LINKS_PROMPT_ID), ...settings, root: input.copies.head.path, plainChecks: false });
+        const { stamp } = suggested.suggestions;
+        if (suggested.suggestions.outcome === 'fell back') {
+          results.fallbacks!.push({ case: evaluationCase.id, agent: stamp.agent, prompt: DOC_LINKS_PROMPT_ID, detail: suggested.suggestions.detail });
+        }
+        const docTally: Tally = { ...tallyCase(input.diff, evaluationCase.expected, undefined), docs: tallyDocLinks(labelledDocs, apis, suggested.answer) };
+        const rowStamp = stampFor(evaluationCase.record.prompts, stamp);
+        results.rows.push(...rowsOf(evaluationCase.id, docTally, rowStamp, DOC_LINKS_SCORES));
+        const group = docTallies.get(stampKey(rowStamp)) ?? { stamp, tallies: [] };
+        group.tallies.push(docTally);
+        docTallies.set(stampKey(rowStamp), group);
+      } catch (error) {
+        failedAgent(error, DOC_LINKS_SCORES);
+      }
+    }
+
     const judgesVerdicts = runs(VERDICTS_PROMPT_ID);
     const pressesFetches = runs(LIBRARY_VERDICTS_PROMPT_ID);
     if ((judgesVerdicts || pressesFetches) && parts && parts.length > 0) {
@@ -742,6 +779,9 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
   }
   for (const { stamp, tallies: byAgent } of coverTallies.values()) {
     results.rows.push(...rowsOf(ALL_CASES, addTallies(byAgent), stampFor([COVER_PROMPT_ID], stamp), COVER_SCORES));
+  }
+  for (const { stamp, tallies: byAgent } of docTallies.values()) {
+    results.rows.push(...rowsOf(ALL_CASES, addTallies(byAgent), stampFor([DOC_LINKS_PROMPT_ID], stamp), DOC_LINKS_SCORES));
   }
 
   await writeFile(join(folder, 'results.json'), `${JSON.stringify(results, null, 2)}\n`);

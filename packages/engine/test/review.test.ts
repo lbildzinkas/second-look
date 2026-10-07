@@ -34,7 +34,7 @@ describe('reviewPullRequest', () => {
     });
 
     expect(result.version).toBe(REVIEW_RESULT_VERSION);
-    expect(result.version).toBe(17);
+    expect(result.version).toBe(18);
     expect(result.pullRequest.number).toBe(42);
     expect(result.pullRequest.description).toHaveLength(8082);
     // The head commit's SHA, where the noise attributes are read.
@@ -66,6 +66,21 @@ describe('reviewPullRequest', () => {
       expect(part.rank?.importance).toBeTruthy();
       expect(part.rank?.reason).toBeTruthy();
     }
+  });
+
+  it('looks for the documentation links of the library APIs the change uses, after the review, with the GitHub reads only', async () => {
+    const transport = fixtureFetch(pull7());
+    const result = await reviewPullRequest(PR_7_URL, { token: 'test-token', fetch: transport.fetch, cacheDir });
+    // Nothing pins a library here, so no inventory is read.
+    expect(result.docLinks).toEqual({
+      links: [],
+      unlinked: [],
+      notes: [
+        '.NET: no project file names a target framework and nothing pins a package, so no .NET API is linked',
+        "Library APIs are linked to their documentation in Python and C# only; the change's .ts files are not read for them",
+      ],
+    });
+    expect(transport.requests.every((request) => request.url.startsWith('https://api.github.com/') || request.url.startsWith('https://codeload.github.com/'))).toBe(true);
   });
 
   it('labels every part, with the fixture pull request exercising each state', async () => {

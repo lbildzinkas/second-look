@@ -158,6 +158,8 @@ export interface StubState {
   commentControllers: StubCommentController[];
   /** The webview panels the extension created, in order. */
   webviewPanels: StubWebviewPanel[];
+  /** The hover providers the extension registered, with the documents each serves. */
+  hoverProviders: { selector: { scheme?: string }; provider: unknown }[];
   /** The configuration values `getConfiguration` reads, keyed by `section.key`. */
   configuration: Record<string, unknown>;
   /** The editors currently visible; tests set these and fire the change. */
@@ -206,6 +208,7 @@ export const stub: StubState = {
   statusBarItems: [],
   commentControllers: [],
   webviewPanels: [],
+  hoverProviders: [],
   configuration: {},
   visibleTextEditors: [],
   activeTextEditor: undefined,
@@ -232,6 +235,7 @@ export const stub: StubState = {
     stub.statusBarItems = [];
     stub.commentControllers = [];
     stub.webviewPanels = [];
+    stub.hoverProviders = [];
     stub.configuration = {};
     stub.visibleTextEditors = [];
     stub.activeTextEditor = undefined;
@@ -725,6 +729,20 @@ export const comments = {
     };
     stub.commentControllers.push(controller);
     return controller;
+  },
+};
+
+/** A hover the extension answers with: its Markdown and the range it covers. */
+export class Hover {
+  constructor(readonly contents: StubMarkdownString, readonly range?: Range) {}
+}
+
+/** The language features' API, as the slice the companion uses. */
+export const languages = {
+  registerHoverProvider(selector: { scheme?: string }, provider: unknown): StubDisposable {
+    const entry = { selector, provider };
+    stub.hoverProviders.push(entry);
+    return { dispose: () => (stub.hoverProviders = stub.hoverProviders.filter((each) => each !== entry)) };
   },
 };
 

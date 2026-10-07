@@ -115,13 +115,23 @@ export type AnyLibraryPin = LibraryPin | NuGetPin | EcosystemPin;
  */
 export async function findLibraryPin(headRoot: string, library: string): Promise<AnyLibraryPin | undefined> {
   const wanted = normalizePackageName(library);
+  const pin = (await pythonPins(headRoot)).find((each) => normalizePackageName(each.name) === wanted && each.hashes.length > 0);
+  return pin ?? (await findNuGetPin(headRoot, library)) ?? findEcosystemPin(headRoot, library);
+}
+
+/**
+ * Every Python library the head copy's lock files at its root pin to one
+ * exact version, hashed or not, in the order they are trusted: uv.lock,
+ * then poetry.lock, then `requirements.txt` before every other
+ * requirements file.
+ */
+export async function pythonPins(headRoot: string): Promise<LibraryPin[]> {
+  const pins: LibraryPin[] = [];
   for (const name of await lockFiles(headRoot)) {
     const text = await readFile(join(headRoot, name), 'utf8').catch(() => '');
-    const pins = name.endsWith('.lock') ? tomlPins(text, name, name as 'uv.lock' | 'poetry.lock') : requirementPins(text, name);
-    const pin = pins.find((each) => normalizePackageName(each.name) === wanted && each.hashes.length > 0);
-    if (pin) return pin;
+    pins.push(...(name.endsWith('.lock') ? tomlPins(text, name, name as 'uv.lock' | 'poetry.lock') : requirementPins(text, name)));
   }
-  return (await findNuGetPin(headRoot, library)) ?? findEcosystemPin(headRoot, library);
+  return pins;
 }
 
 /** The offer for a pin: the library, its pinned version, the file that pins it and why. */

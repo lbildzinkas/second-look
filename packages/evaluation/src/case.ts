@@ -216,6 +216,19 @@ export interface ExpectedCover {
   manual: ExpectedManualCheck[];
 }
 
+/**
+ * A library API the change uses that no published inventory links at the
+ * pinned version, as the doc-links prompt is asked about it: the API, by
+ * its full name as the engine prints it, and the sites a right
+ * suggestion of its documentation lies under, each a host and a path
+ * prefix with no scheme, such as `www.python-httpx.org/` or
+ * `github.com/encode/httpx/`.
+ */
+export interface ExpectedDocLink {
+  api: string;
+  sites: string[];
+}
+
 /** A case's `expected.json`, written by hand. */
 export interface ExpectedResults {
   /**
@@ -257,6 +270,8 @@ export interface ExpectedResults {
   verify?: ExpectedSelection[];
   /** What covers each labelled part, for the cover prompt; absent when the case labels none. */
   cover?: ExpectedCover[];
+  /** The library APIs no inventory links, with where a right suggestion of their documentation lives, for the doc-links prompt; absent when the case labels none. */
+  docs?: ExpectedDocLink[];
 }
 
 /** A case loaded from its folder. */
@@ -291,6 +306,7 @@ export async function loadCase(folder: string): Promise<EvaluationCase> {
     ...(recorded.explain ? { explain: recorded.explain } : {}),
     ...(recorded.verify ? { verify: recorded.verify } : {}),
     ...(recorded.cover ? { cover: recorded.cover } : {}),
+    ...(recorded.docs ? { docs: recorded.docs } : {}),
   };
   return { id: record.id, folder, record, expected };
 }

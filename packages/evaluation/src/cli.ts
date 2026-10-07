@@ -78,7 +78,9 @@ the labelled parts (cites only lines the part shows, names only what the
 change shows), the verdicts the verify ask gives the hand-labelled
 selections (accuracy, false-verified rate, fetch offered), what the agent
 says covers the labelled parts (citations checked, test recall and
-precision, manual-check recall, none found), and the claim checks over the
+precision, manual-check recall, none found), the documentation links the
+agent suggests for the labelled APIs no inventory links (on a labelled
+site, accepted by the engine's checks), and the claim checks over the
 hand-labelled verdicts (found, verdict, evidence, fetch offered), which
 the plain pass fails as expected failures, since it reports no claims;
 the stored baseline records them at those failing values. It reads the cases in
@@ -101,6 +103,8 @@ it to their plain parts, the cases tied to the draft-comment prompt have
 a comment drafted by it from each hand-written finding, the cases tied to the
 explain prompt have each labelled part explained by it, the cases tied to the
 cover prompt have each labelled part asked what covers it, the cases tied to the
+doc-links prompt have each labelled API no recorded inventory links given a
+documentation link by it, the cases tied to the
 library verdicts prompt have every library fetch those verdicts offer
 pressed from their recorded downloads and each pressed claim judged again
 in the library's source, scored by the claim checks, and those rows are

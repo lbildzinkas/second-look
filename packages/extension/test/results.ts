@@ -539,3 +539,43 @@ export function unexplainedResult(copies?: CopyPaths): ReviewResult {
     },
   };
 }
+
+/**
+ * The mixed result with the documentation links of the library APIs the
+ * retry part uses: one read from its library's published inventory, one
+ * the agent suggested, and one no link was found for.
+ */
+export function docLinksResult(copies?: CopyPaths): ReviewResult {
+  const shown = mixedResult(copies);
+  const pinned = { library: 'tenacity', version: '8.2.3', pinnedBy: 'requirements.txt', ecosystem: 'PyPI' as const };
+  return {
+    ...shown,
+    docLinks: {
+      links: [
+        {
+          api: 'tenacity.retry',
+          ...pinned,
+          uses: [{ path: 'src/retry.py', line: 5, name: 'retry' }],
+          url: 'https://tenacity.readthedocs.io/en/8.2.3/api.html#tenacity.retry',
+          from: 'inventory',
+          inventory: 'https://tenacity.readthedocs.io/en/8.2.3/objects.inv',
+        },
+        {
+          api: 'tenacity.Retrying.attempts',
+          ...pinned,
+          uses: [{ path: 'src/retry.py', line: 5, name: 'attempts' }],
+          url: 'https://tenacity.readthedocs.io/en/latest/<b>api</b>.html',
+          from: 'agent',
+        },
+      ],
+      unlinked: [{ api: 'tenacity.TryAgain', ...pinned, uses: [{ path: 'src/retry.py', line: 8, name: 'TryAgain' }] }],
+      notes: ['tenacity 8.2.3: read the Sphinx inventory at https://tenacity.readthedocs.io/en/8.2.3/objects.inv, which documents 8.2.3'],
+      suggestions: {
+        promptVersion: '1',
+        outcome: 'suggested',
+        detail: 'the agent suggested 1 of 2 links from what it knows',
+        stamp: { agent: 'pi', agentVersion: '0.86.1', model: 'zai/glm-4.6', effort: null, runAt: '2026-10-07T00:00:00.000Z' },
+      },
+    },
+  };
+}

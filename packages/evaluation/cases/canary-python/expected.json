@@ -102,5 +102,8 @@
       "verdict": "unverifiable",
       "library": "httpx"
     }
+  ],
+  "docs": [
+    { "api": "httpx.Client", "sites": ["www.python-httpx.org/", "python-httpx.org/", "github.com/encode/httpx/"] }
   ]
 }
