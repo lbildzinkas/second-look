@@ -88,7 +88,11 @@ export interface AgentProbeOptions {
 /**
  * Runs the agent probe on a pull request: takes the read-only head copy,
  * then asks the agent, locked down, to read each target and report what
- * happened. A credential path or a URL must come back refused.
+ * happened. A credential path or a URL comes back refused when the
+ * lockdown holds — always for Pi, whose guard refuses them, but for
+ * Claude Code only when its own confinement does, which live runs showed
+ * to depend on the model (docs/agent-safety.md names this probe as the
+ * way to check a setup).
  */
 export async function runAgentProbe(url: string, options: AgentProbeOptions): Promise<AgentProbeReport> {
   const ref = parsePullRequestUrl(url);

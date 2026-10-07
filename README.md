@@ -170,7 +170,7 @@ A Pi version whose help lacks any of these flags is never run. The agent signs i
 Claude Code runs under its own lockdown, built from the flags it offers (`packages/engine/src/claude-code.ts`):
 
 - Print mode (`--print`) with the answer checked against the task's schema (`--json-schema`), streamed as JSON with partial messages, so a run that times out keeps what it wrote.
-- File-reading tools only (`--tools Read,Grep,Glob`): no shell, no network tools, no edits. Claude Code confines its file tools to the working directory — the read-only copy.
+- File-reading tools only (`--tools Read,Grep,Glob`): no shell, no network tools, no edits. Claude Code is meant to confine its file tools to the working directory — the read-only copy — but that confinement is Claude Code's own, not the companion's, and live runs showed it to depend on the model; [docs/agent-safety.md](docs/agent-safety.md) states what each agent can read and the known gaps.
 - User-level settings only (`--setting-sources user`), so nothing from the pull request configures the agent, and no MCP servers (`--strict-mcp-config`).
 - No session file (`--no-session-persistence`), permission prompts denied rather than asked (`--permission-prompts none`), and the companion's own system prompt. The prompt goes on stdin.
 - The GitHub token variables are removed from the agent's environment, as for Pi.
