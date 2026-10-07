@@ -8,6 +8,7 @@
  */
 
 import type { AgentStamp } from './agent.js';
+import type { AskKind } from './asks.js';
 
 /** Version of the review result schema. */
 export const REVIEW_RESULT_VERSION = 16 as const;
@@ -175,6 +176,45 @@ export interface DraftComment {
    */
   body: string;
   /** The version of the draft-comment prompt. */
+  promptVersion: string;
+  stamp: AgentStamp;
+}
+
+/**
+ * One line of a part an ask's answer cites: the file, by its path on the
+ * new side, the side the line sits on, its number there and its quote.
+ * The engine keeps only a citation whose line the part shows, with the
+ * quote on it.
+ */
+export interface PartCitation {
+  path: string;
+  side: CommentSide;
+  /** The line's 1-based number on that side. */
+  line: number;
+  /** The quote, on one line: runs of white space as one space. */
+  quote: string;
+}
+
+/** One section of an ask's answer: its heading in the companion's words, and the agent's text, which names code in backticks. */
+export interface AskSection {
+  heading: string;
+  text: string;
+}
+
+/**
+ * The answer to an ask (the glossary's ask) about one part, which the
+ * panel shows with its stamp: the answer's sections in reading order,
+ * and the lines of the part they rest on, each checked.
+ */
+export interface AskAnswer {
+  ask: AskKind;
+  /** The part asked about, by its index in the review result's parts. */
+  part: number;
+  /** The part's name, as the engine read it, so a reader can tell the answer is about the part shown. */
+  partName: string;
+  sections: AskSection[];
+  cited: PartCitation[];
+  /** The version of the ask's prompt. */
   promptVersion: string;
   stamp: AgentStamp;
 }

@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { randomUUID } from 'node:crypto';
 import {
+  ASKS,
   CRITERION_VERDICT_KINDS,
   checkFailed,
   hiddenContent,
@@ -11,8 +12,10 @@ import {
   parsePullRequestUrl,
   type AcceptanceCriterion,
   type AgentStamp,
+  type AskAnswer,
   type CheckRun,
   type Claim,
+  type CommentSide,
   type ClaimSource,
   type CriterionVerdictKind,
   type DescribedChange,
@@ -35,6 +38,10 @@ export interface OverviewState {
   running?: string;
   /** The part the story is opened at, by its index in the result's parts. */
   focus?: number;
+  /** The answers to the reviewer's asks about this review's parts, newest first. */
+  answers?: readonly AskAnswer[];
+  /** True when the page is opened at the newest answer. */
+  focusAnswer?: boolean;
 }
 
 /** The evidence of a criterion's verdict that cites lines of the head copy. */
@@ -59,13 +66,21 @@ export type OverviewMessage =
       type: 'draft';
       /** The finding to draft a comment from. */
       finding: FindingRef;
+    }
+  | {
+      type: 'openCited';
+      /** The answer, by its index in the answers shown, newest first. */
+      answer: number;
+      /** The cited line, by its index in that answer's citations. */
+      index: number;
     };
 
 
 /** Reads a page message out of what the webview delivered, if it is one. */
 function overviewMessage(value: unknown): OverviewMessage | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
-  const { type, part, issue, criterion, evidence, index, finding } = value as Record<string, unknown>;
+  const { type, part, issue, criterion, evidence, index, finding, answer } = value as Record<string, unknown>;
+  if (type === 'openCited' && Number.isInteger(answer) && Number.isInteger(index)) return { type, answer: answer as number, index: index as number };
   if (type === 'openPart' && Number.isInteger(part)) return { type, target: part as number };
   if (type === 'openIssue' && Number.isInteger(issue)) return { type, target: issue as number };
   if (type === 'openEvidence' && Number.isInteger(criterion) && (evidence === 'code' || evidence === 'tests') && Number.isInteger(index)) {
@@ -111,13 +126,16 @@ export class OverviewPanel implements vscode.Disposable {
   /** Opens a part the story links or a claim is attached to, in the diff editor. */
   private readonly openPart: (part: Part) => void;
 
-  /** Opens a line a criterion's verdict cites, in the read-only head copy. */
-  private readonly openLine: (path: string, line: number) => void;
+  /** Opens a line a criterion's verdict or an answer cites, in the read-only head or base copy. */
+  private readonly openLine: (path: string, line: number, side: CommentSide) => void;
 
   /** Drafts a comment from a finding the page lists. */
   private readonly draft: (finding: FindingRef) => void;
 
-  constructor(openPart: (part: Part) => void, openLine: (path: string, line: number) => void, draft: (finding: FindingRef) => void) {
+  /** The answers to the reviewer's asks about the review shown, newest first. */
+  private answers: AskAnswer[] = [];
+
+  constructor(openPart: (part: Part) => void, openLine: (path: string, line: number, side: CommentSide) => void, draft: (finding: FindingRef) => void) {
     this.openPart = openPart;
     this.openLine = openLine;
     this.draft = draft;
@@ -133,18 +151,31 @@ export class OverviewPanel implements vscode.Disposable {
     this.render();
   }
 
+  /** Shows the answer to an ask at the top of the page, which opens at it. */
+  answer(answer: AskAnswer): void {
+    this.answers = [answer, ...this.answers];
+    this.open({ answer: true });
+  }
+
+  /** Drops every answer, when a new review replaces the one they were about. */
+  clearAnswers(): void {
+    this.answers = [];
+    this.render();
+  }
+
   /**
-   * Opens the page, or brings it to the front, at the story's start or at
-   * the first sentence that mentions one part. True when there was a
-   * review to show.
+   * Opens the page, or brings it to the front, at the story's start, at
+   * the first sentence that mentions one part, or at the newest answer.
+   * True when there was a review to show.
    */
-  open(options: { focus?: number; preserveFocus?: boolean } = {}): boolean {
+  open(options: { focus?: number; preserveFocus?: boolean; answer?: boolean } = {}): boolean {
     if (this.disposed || this.state === undefined) return false;
     const { result, running } = this.state;
     this.state = {
       result,
       ...(running !== undefined ? { running } : {}),
       ...(options.focus !== undefined ? { focus: options.focus } : {}),
+      ...(options.answer ? { focusAnswer: true } : {}),
     };
     if (this.panel === undefined) {
       const panel = vscode.window.createWebviewPanel(
@@ -168,11 +199,17 @@ export class OverviewPanel implements vscode.Disposable {
   /**
    * The part a story, claim or unexplained-change button names, opened in
    * the diff editor; a linked issue, opened on GitHub; a line a criterion's
-   * verdict cites, opened in the head copy; a finding, drafted from.
+   * verdict cites, opened in the head copy; a line an answer cites,
+   * opened in the copy of its side; a finding, drafted from.
    */
   private handle(value: unknown): void {
     const message = overviewMessage(value);
     if (message === undefined) return;
+    if (message.type === 'openCited') {
+      const cited = this.answers[message.answer]?.cited[message.index];
+      if (cited !== undefined) this.openLine(cited.path, cited.line, cited.side);
+      return;
+    }
     if (message.type === 'draft') {
       this.draft(message.finding);
       return;
@@ -180,7 +217,7 @@ export class OverviewPanel implements vscode.Disposable {
     if (message.type === 'openEvidence') {
       const verdict = this.state?.result.criteria?.criteria[message.criterion]?.verdict;
       const cited = verdict === undefined || verdict.kind === 'not checked' ? undefined : verdict[message.evidence][message.index];
-      if (cited !== undefined) this.openLine(cited.path, cited.line);
+      if (cited !== undefined) this.openLine(cited.path, cited.line, 'head');
       return;
     }
     if (message.type === 'openPart') {
@@ -197,7 +234,7 @@ export class OverviewPanel implements vscode.Disposable {
   private render(): void {
     if (this.panel === undefined || this.state === undefined) return;
     this.panel.title = overviewTitle(this.state.result);
-    this.panel.webview.html = overviewHtml(this.state, randomUUID());
+    this.panel.webview.html = overviewHtml({ ...this.state, answers: this.answers }, randomUUID());
   }
 
   dispose(): void {
@@ -371,6 +408,50 @@ function storySection(state: OverviewState): string {
     return `<h2>Story ${stamp}</h2><p class="note">No story: ${escapeHtml(story.detail)}.</p>`;
   }
   return `<h2>Story ${stamp}</h2>${missing}<div class="story">${storySentences(story, focus)}</div>`;
+}
+
+/** Agent text as the page shows it: escaped, each name it sets in backticks as code. */
+function withCode(text: string): string {
+  return text
+    .split('`')
+    .map((run, index) => (index % 2 === 1 ? `<code>${escapeHtml(run)}</code>` : escapeHtml(run)))
+    .join('');
+}
+
+/** One answer: the ask and the part it is about, with its stamp, its sections, and each line it cites as a button that opens it. */
+function answerItem(answer: AskAnswer, index: number, state: OverviewState): string {
+  const ask = ASKS[answer.ask];
+  const shown = state.result.parts[answer.part];
+  const part =
+    shown !== undefined && (shown.name ?? shown.path) === answer.partName
+      ? `<button type="button" class="pt" data-part="${answer.part}">${escapeHtml(answer.partName)}</button>`
+      : escapeHtml(answer.partName);
+  const sections = answer.sections.map((section) => `<div class="why"><b>${escapeHtml(section.heading)}</b> ${withCode(section.text)}</div>`).join('');
+  const cited = answer.cited
+    .map(
+      (each, at) =>
+        `<button type="button" class="pt asked" data-answer="${index}" data-index="${at}">${escapeHtml(`${each.path}:${each.line}${each.side === 'base' ? ' (base)' : ''}`)}</button>` +
+        ` <span class="cited">${escapeHtml(each.quote)}</span>`,
+    )
+    .join('<br>');
+  const focus = index === 0 && state.focusAnswer === true ? ' focus' : '';
+  return (
+    `<li class="answer${focus}"><div class="where"><b>${escapeHtml(ask.title)}</b> · ${part} ${stampChip(stampText(answer.stamp, ask.promptId, answer.promptVersion))}</div>` +
+    `${sections}<div class="evidence"><span class="label">Cited</span><span>${cited}</span></div></li>`
+  );
+}
+
+/**
+ * The asks section, at the top of the page once the reviewer has asked
+ * about a part: each answer, newest first, with its stamp. Every cited
+ * line is one the engine checked the part shows. The agent's text is
+ * escaped, its names in backticks set as code.
+ */
+function asksSection(state: OverviewState): string {
+  const answers = state.answers ?? [];
+  if (answers.length === 0) return '';
+  const note = '<p class="note">Each answers one ask about one part, checked before it is shown: every line it cites is one the part shows.</p>';
+  return `<section id="asks"><h2>Asks</h2>${note}<ol class="claims">${answers.map((answer, index) => answerItem(answer, index, state)).join('')}</ol></section>`;
 }
 
 /** How the page names each way a pull request links an issue. */
@@ -865,7 +946,7 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
     font-size: 13.5px;
     line-height: 1.55;
   }
-  .sentence.focus { background-color: var(--vscode-editor-findMatchHighlightBackground); }
+  .sentence.focus, .answer.focus { background-color: var(--vscode-editor-findMatchHighlightBackground); }
   .pt {
     font: inherit;
     color: var(--vscode-textLink-foreground);
@@ -940,6 +1021,7 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
   <div class="meta">${metaLine(result)}</div>
   ${sinceLine(result)}
   <div class="stages">${stageChips(state)}</div>
+  ${asksSection(state)}
   <section id="story">${storySection(state)}</section>
   <section id="criteria">${criteriaSection(state)}</section>
   <section id="unexplained">${unexplainedSection(state)}</section>
@@ -972,6 +1054,11 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
       });
     });
   });
+  Array.prototype.forEach.call(document.querySelectorAll('button.asked'), function (button) {
+    button.addEventListener('click', function () {
+      vscode.postMessage({ type: 'openCited', answer: Number(button.getAttribute('data-answer')), index: Number(button.getAttribute('data-index')) });
+    });
+  });
   Array.prototype.forEach.call(document.querySelectorAll('button.draft'), function (button) {
     button.addEventListener('click', function () {
       vscode.postMessage({ type: 'draft', finding: button.getAttribute('data-draft'), index: Number(button.getAttribute('data-index')) });
@@ -985,7 +1072,7 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
       }
     });
   });
-  var focused = document.querySelector('.sentence.focus');
+  var focused = document.querySelector('.answer.focus') || document.querySelector('.sentence.focus');
   if (focused !== null) {
     focused.scrollIntoView({ block: 'center' });
   }

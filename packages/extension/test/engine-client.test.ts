@@ -33,6 +33,8 @@ interface FakeEngineOptions {
   draftResult?: unknown;
   draftError?: string;
   viewedError?: string;
+  askResult?: unknown;
+  askError?: string;
 }
 
 /** Starts the fake engine as a separate process, speaking real stdio. */
@@ -61,6 +63,8 @@ function fakeEngine(options: FakeEngineOptions = {}): ChildProcessWithoutNullStr
       ...(options.draftResult !== undefined ? { FAKE_ENGINE_DRAFT_RESULT: JSON.stringify(options.draftResult) } : {}),
       ...(options.draftError !== undefined ? { FAKE_ENGINE_DRAFT_ERROR: options.draftError } : {}),
       ...(options.viewedError !== undefined ? { FAKE_ENGINE_VIEWED_ERROR: options.viewedError } : {}),
+      ...(options.askResult !== undefined ? { FAKE_ENGINE_ASK_RESULT: JSON.stringify(options.askResult) } : {}),
+      ...(options.askError !== undefined ? { FAKE_ENGINE_ASK_ERROR: options.askError } : {}),
     },
   });
 }
@@ -191,6 +195,42 @@ describe('EngineClient against a fake engine', () => {
     const malformed = new EngineClient(() => fakeEngine({ draftResult: { finding: { kind: 'claim', index: 0 }, statement: 's', body: '' } }));
     await malformed.initialize();
     await expect(malformed.draftComment(PR_URL, { kind: 'claim', index: 0 })).rejects.toThrow("the engine's answer is not a draft comment");
+    malformed.dispose();
+  });
+
+  it('asks about a part, with the agent choice and no token, and returns the answer', async () => {
+    const answer = {
+      ask: 'explain',
+      part: 0,
+      partName: 'send_with_retry in app/retry.py',
+      sections: [
+        { heading: 'What it does', text: '`send_with_retry` retries up to `MAX_ATTEMPTS` times.' },
+        { heading: 'Why it matters to the change', text: 'It is where the new limit takes effect.' },
+      ],
+      cited: [{ path: 'app/retry.py', side: 'base', line: 2, quote: 'return retry(send, 3)' }],
+      promptVersion: '1',
+      stamp: { agent: 'pi', agentVersion: '0.86.1', model: 'pi/model', effort: null, runAt: '2026-10-07T00:00:00.000Z' },
+    };
+    const client = new EngineClient(() => fakeEngine({ askResult: answer, logName: 'ask.log' }));
+
+    await client.initialize();
+    expect(await client.ask(PR_URL, 'explain', 0, { agent: 'pi', model: 'pi/model' })).toEqual(answer);
+    const request = loggedRequests('ask.log').find((each) => (each as { method: string }).method === 'ask') as { params: unknown };
+    // An ask carries no token: nothing of it reaches GitHub.
+    expect(request.params).toEqual({ url: PR_URL, ask: 'explain', part: 0, agent: { agent: 'pi', model: 'pi/model' } });
+    client.dispose();
+  });
+
+  it("reads an ask's failure as the engine's plain message, and refuses an answer that is no answer to an ask", async () => {
+    const message = 'no answer: the agent gave no usable answer';
+    const failing = new EngineClient(() => fakeEngine({ askError: message }));
+    await failing.initialize();
+    await expect(failing.ask(PR_URL, 'explain', 0)).rejects.toThrow(message);
+    failing.dispose();
+
+    const malformed = new EngineClient(() => fakeEngine({ askResult: { ask: 'chat', part: 0, partName: 'p', sections: [], cited: [] } }));
+    await malformed.initialize();
+    await expect(malformed.ask(PR_URL, 'explain', 0)).rejects.toThrow("the engine's answer is not the answer to an ask");
     malformed.dispose();
   });
 

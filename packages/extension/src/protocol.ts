@@ -1,4 +1,5 @@
 import {
+  ASK_KINDS,
   CHECKED_VERDICT_KINDS,
   CLAIM_SOURCE_ORDER,
   CRITERION_VERDICT_KINDS,
@@ -7,6 +8,7 @@ import {
   IMPORTANCE_ORDER,
   LIBRARY_ARCHIVES,
   REVIEW_RESULT_VERSION,
+  type AskAnswer,
   type ChangeKind,
   type DiffLineKind,
   type DraftComment,
@@ -802,6 +804,47 @@ export class DraftProtocolError extends Error {
   constructor() {
     super(`the engine's answer is not a draft comment`);
     this.name = 'DraftProtocolError';
+  }
+}
+
+/**
+ * Checks that a value read over the protocol is the answer to an ask:
+ * the ask and the part it is about, its sections, the lines of the part
+ * it cites, and who answered.
+ */
+export function isAskAnswer(value: unknown): value is AskAnswer {
+  if (!isRecord(value)) return false;
+  const { part, sections, cited } = value;
+  return (
+    isOneOf(value['ask'], ASK_KINDS) &&
+    isNumber(part) &&
+    Number.isInteger(part) &&
+    part >= 0 &&
+    isString(value['partName']) &&
+    Array.isArray(sections) &&
+    sections.length > 0 &&
+    sections.every((section) => isRecord(section) && isString(section['heading']) && isNonEmptyString(section['text'])) &&
+    Array.isArray(cited) &&
+    cited.every(
+      (each) =>
+        isRecord(each) &&
+        isString(each['path']) &&
+        (each['side'] === 'head' || each['side'] === 'base') &&
+        isNumber(each['line']) &&
+        Number.isInteger(each['line']) &&
+        each['line'] >= 1 &&
+        isString(each['quote']),
+    ) &&
+    isString(value['promptVersion']) &&
+    isAgentStamp(value['stamp'])
+  );
+}
+
+/** Error thrown when an ask's answer is not the answer to an ask. */
+export class AskProtocolError extends Error {
+  constructor() {
+    super(`the engine's answer is not the answer to an ask`);
+    this.name = 'AskProtocolError';
   }
 }
 

@@ -47,6 +47,8 @@ export * from './ci.js';
 export * from './criteria.js';
 export * from './criteria-mapping.js';
 export * from './draft-comment.js';
+export * from './explain.js';
+export * from './asks.js';
 export * from './reviewed-marks.js';
 export * from './last-look.js';
 export { runCli } from './cli.js';

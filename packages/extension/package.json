@@ -111,6 +111,11 @@
         "command": "second-look.discardDraft",
         "title": "Discard draft",
         "category": "Second Look"
+      },
+      {
+        "command": "second-look.ask.explain",
+        "title": "Explain this part",
+        "category": "Second Look"
       }
     ],
     "menus": {
@@ -178,6 +183,10 @@
         {
           "command": "second-look.discardDraft",
           "when": "false"
+        },
+        {
+          "command": "second-look.ask.explain",
+          "when": "false"
         }
       ],
       "comments/commentThread/context": [
@@ -225,6 +234,16 @@
           "command": "second-look.whyThisMatters",
           "when": "view == second-look.reviewTree && viewItem == noise",
           "group": "inline"
+        },
+        {
+          "command": "second-look.ask.explain",
+          "when": "view == second-look.reviewTree && viewItem == part",
+          "group": "asks"
+        },
+        {
+          "command": "second-look.ask.explain",
+          "when": "view == second-look.reviewTree && viewItem == noise",
+          "group": "asks"
         }
       ]
     },

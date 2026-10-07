@@ -12,6 +12,7 @@ import { LIBRARY_VERDICTS_INSTRUCTIONS, LIBRARY_VERDICTS_PROMPT_VERSION } from '
 import { UNEXPLAINED_INSTRUCTIONS, UNEXPLAINED_PROMPT_VERSION } from '../../engine/src/unexplained.js';
 import { CRITERIA_MAPPING_INSTRUCTIONS, CRITERIA_MAPPING_PROMPT_VERSION } from '../../engine/src/criteria-mapping.js';
 import { DRAFT_COMMENT_INSTRUCTIONS, DRAFT_COMMENT_PROMPT_VERSION } from '../../engine/src/draft-comment.js';
+import { EXPLAIN_INSTRUCTIONS, EXPLAIN_PROMPT_VERSION } from '../../engine/src/explain.js';
 import { answeringAgent, offeredParts, scriptedAgent } from '../../engine/test/helpers.js';
 import type { AgentAdapter } from '@second-look/engine';
 import { loadCases } from '../src/case.js';
@@ -509,6 +510,62 @@ describe('runEvaluation with the draft-comment prompt', () => {
     expect(rowsOf(results.rows, 'fake', 'draft-cites-evidence')['canary-python']).toBe(0);
     expect(rowsOf(results.rows, 'fake', 'draft-no-new-claim')['canary-python']).toBe(0);
     expect(rowsOf(results.rows, 'fake', 'draft-under-cap')['canary-python']).toBe(0);
+  });
+});
+
+describe('runEvaluation with the explain prompt', () => {
+  /**
+   * An agent explaining encode-httpx-3690's two labelled parts: the
+   * server's wait, citing its removed and kept lines; the parser's
+   * wait_ready, citing a line the part does not show and naming code
+   * the change does not show.
+   */
+  const explainingAgent = (): AgentAdapter =>
+    answeringAgent((request) => {
+      if (request.instructions !== EXPLAIN_INSTRUCTIONS) return 'not an answer';
+      if (request.prompt.includes('name: HTTPServer.wait in src/httpx/_server.py')) {
+        return {
+          does: '`wait` now calls `sleep(1)` in its loop with no `KeyboardInterrupt` handler around it.',
+          matters: 'An interrupt now leaves the loop by raising instead of breaking out of it.',
+          cited: [
+            { file: 'src/httpx/_server.py', side: 'base', line: 107, quote: 'except KeyboardInterrupt:' },
+            { file: 'src/httpx/_server.py', side: 'head', line: 113, quote: 'sleep(1)' },
+          ],
+        };
+      }
+      return {
+        does: '`wait_ready` waits on an `asyncio.Event` until data arrives.',
+        matters: 'The server loop calls it before reading a request.',
+        cited: [{ file: 'src/httpx/_parsers.py', side: 'head', line: 999, quote: 'def wait_ready(self):' }],
+      };
+    });
+
+  it("scores the agent's own explanations of the labelled parts on the plain checks, stamped with who answered", async () => {
+    const { folder, results } = await runVerdicts('encode-httpx-3690', explainingAgent(), ['explain']);
+
+    expect(rowsOf(results.rows, 'fake', 'explain-cites-part')).toEqual({ 'encode-httpx-3690': 0.5, [ALL_CASES]: 0.5 });
+    expect(rowsOf(results.rows, 'fake', 'explain-names-in-change')).toEqual({ 'encode-httpx-3690': 0.5, [ALL_CASES]: 0.5 });
+    expect(results.rows.find((row) => row.agent === 'fake' && row.case === 'encode-httpx-3690')).toMatchObject({
+      model: 'fake/model',
+      promptVersions: { explain: EXPLAIN_PROMPT_VERSION },
+    });
+    // The plain pass explains nothing, so it gives no explain score.
+    expect(rowsOf(results.rows, NO_AGENT, 'explain-cites-part')).toEqual({});
+    expect(results.fallbacks).toEqual([]);
+    const trace = readFileSync(join(folder, TRACE_FILE), 'utf8').trim().split('\n').map((line) => JSON.parse(line) as AgentCall);
+    // One call per part: the run does not retry an explanation the checks would refuse.
+    expect(trace).toHaveLength(2);
+    expect(trace[0]).toMatchObject({ case: 'encode-httpx-3690', prompt: 'explain', promptVersion: EXPLAIN_PROMPT_VERSION });
+    expect(trace[1]!.input).toContain('- base 107:             except KeyboardInterrupt:');
+  });
+
+  it('records an explanation that fell back, which fails every check', async () => {
+    const { results } = await runVerdicts('encode-httpx-3690', scriptedAgent([]), ['explain']);
+
+    expect(results.fallbacks).toHaveLength(2);
+    expect(results.fallbacks![0]).toEqual({ case: 'encode-httpx-3690', agent: 'fake', prompt: 'explain', detail: expect.stringMatching(/^the agent gave no usable answer/) });
+    expect(rowsOf(results.rows, 'fake', 'explain-cites-part')['encode-httpx-3690']).toBe(0);
+    expect(rowsOf(results.rows, 'fake', 'explain-names-in-change')['encode-httpx-3690']).toBe(0);
   });
 });
 

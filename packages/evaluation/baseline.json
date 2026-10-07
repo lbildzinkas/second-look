@@ -12,13 +12,14 @@
         "story": "1",
         "claims": "1",
         "verdicts": "4",
-        "library-verdicts": "3"
+        "library-verdicts": "3",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "canary-csharp",
@@ -32,13 +33,14 @@
         "story": "1",
         "claims": "1",
         "verdicts": "4",
-        "library-verdicts": "3"
+        "library-verdicts": "3",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "canary-csharp",
@@ -52,13 +54,14 @@
         "story": "1",
         "claims": "1",
         "verdicts": "4",
-        "library-verdicts": "3"
+        "library-verdicts": "3",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "canary-csharp",
@@ -73,13 +76,14 @@
         "story": "1",
         "claims": "1",
         "verdicts": "4",
-        "library-verdicts": "3"
+        "library-verdicts": "3",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "canary-csharp",
@@ -94,13 +98,14 @@
         "story": "1",
         "claims": "1",
         "verdicts": "4",
-        "library-verdicts": "3"
+        "library-verdicts": "3",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "canary-csharp",
@@ -115,13 +120,14 @@
         "story": "1",
         "claims": "1",
         "verdicts": "4",
-        "library-verdicts": "3"
+        "library-verdicts": "3",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "canary-csharp",
@@ -136,13 +142,14 @@
         "story": "1",
         "claims": "1",
         "verdicts": "4",
-        "library-verdicts": "3"
+        "library-verdicts": "3",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "canary-python",
@@ -157,13 +164,14 @@
         "claims": "1",
         "verdicts": "4",
         "library-verdicts": "3",
-        "draft-comment": "1"
+        "draft-comment": "1",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "canary-python",
@@ -178,13 +186,14 @@
         "claims": "1",
         "verdicts": "4",
         "library-verdicts": "3",
-        "draft-comment": "1"
+        "draft-comment": "1",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "canary-python",
@@ -199,13 +208,14 @@
         "claims": "1",
         "verdicts": "4",
         "library-verdicts": "3",
-        "draft-comment": "1"
+        "draft-comment": "1",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "canary-python",
@@ -221,13 +231,14 @@
         "claims": "1",
         "verdicts": "4",
         "library-verdicts": "3",
-        "draft-comment": "1"
+        "draft-comment": "1",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "canary-python",
@@ -243,13 +254,14 @@
         "claims": "1",
         "verdicts": "4",
         "library-verdicts": "3",
-        "draft-comment": "1"
+        "draft-comment": "1",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "canary-python",
@@ -265,13 +277,14 @@
         "claims": "1",
         "verdicts": "4",
         "library-verdicts": "3",
-        "draft-comment": "1"
+        "draft-comment": "1",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "canary-python",
@@ -287,13 +300,14 @@
         "claims": "1",
         "verdicts": "4",
         "library-verdicts": "3",
-        "draft-comment": "1"
+        "draft-comment": "1",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "canary-python",
@@ -309,13 +323,14 @@
         "claims": "1",
         "verdicts": "4",
         "library-verdicts": "3",
-        "draft-comment": "1"
+        "draft-comment": "1",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "criteria-python",
@@ -325,13 +340,14 @@
       "companionVersion": "0.1.0",
       "promptVersions": {
         "criteria-mapping": "1",
-        "draft-comment": "1"
+        "draft-comment": "1",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "criteria-python",
@@ -341,13 +357,14 @@
       "companionVersion": "0.1.0",
       "promptVersions": {
         "criteria-mapping": "1",
-        "draft-comment": "1"
+        "draft-comment": "1",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "criteria-python",
@@ -357,13 +374,14 @@
       "companionVersion": "0.1.0",
       "promptVersions": {
         "criteria-mapping": "1",
-        "draft-comment": "1"
+        "draft-comment": "1",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "criteria-typescript",
@@ -378,7 +396,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "criteria-typescript",
@@ -393,7 +411,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "criteria-typescript",
@@ -408,7 +426,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "encode-httpx-3690",
@@ -422,13 +440,14 @@
         "story": "1",
         "claims": "1",
         "verdicts": "4",
-        "unexplained": "1"
+        "unexplained": "1",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "encode-httpx-3690",
@@ -442,13 +461,14 @@
         "story": "1",
         "claims": "1",
         "verdicts": "4",
-        "unexplained": "1"
+        "unexplained": "1",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "encode-httpx-3690",
@@ -462,13 +482,14 @@
         "story": "1",
         "claims": "1",
         "verdicts": "4",
-        "unexplained": "1"
+        "unexplained": "1",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "encode-httpx-3690",
@@ -482,13 +503,14 @@
         "story": "1",
         "claims": "1",
         "verdicts": "4",
-        "unexplained": "1"
+        "unexplained": "1",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "encode-httpx-3690",
@@ -502,13 +524,14 @@
         "story": "1",
         "claims": "1",
         "verdicts": "4",
-        "unexplained": "1"
+        "unexplained": "1",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "encode-httpx-3690",
@@ -522,13 +545,14 @@
         "story": "1",
         "claims": "1",
         "verdicts": "4",
-        "unexplained": "1"
+        "unexplained": "1",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "encode-httpx-3690",
@@ -543,13 +567,14 @@
         "story": "1",
         "claims": "1",
         "verdicts": "4",
-        "unexplained": "1"
+        "unexplained": "1",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "encode-httpx-3690",
@@ -564,13 +589,14 @@
         "story": "1",
         "claims": "1",
         "verdicts": "4",
-        "unexplained": "1"
+        "unexplained": "1",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "encode-httpx-3690",
@@ -585,13 +611,14 @@
         "story": "1",
         "claims": "1",
         "verdicts": "4",
-        "unexplained": "1"
+        "unexplained": "1",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "example-42",
@@ -604,7 +631,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "example-42",
@@ -617,7 +644,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "example-42",
@@ -630,7 +657,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "example-42",
@@ -643,7 +670,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "example-42",
@@ -656,7 +683,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "example-42",
@@ -669,7 +696,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "example-42",
@@ -682,7 +709,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "example-42",
@@ -695,7 +722,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "example-42",
@@ -708,7 +735,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "example-42",
@@ -721,7 +748,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "example-42",
@@ -734,7 +761,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "example-42",
@@ -747,7 +774,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "example-42",
@@ -760,7 +787,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "example-7",
@@ -777,7 +804,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "example-7",
@@ -794,7 +821,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "example-7",
@@ -811,7 +838,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "example-7",
@@ -828,7 +855,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "example-7",
@@ -845,7 +872,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "example-7",
@@ -862,7 +889,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "misstated-python",
@@ -878,7 +905,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "misstated-python",
@@ -894,7 +921,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "misstated-python",
@@ -910,7 +937,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "misstated-python",
@@ -927,7 +954,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "misstated-python",
@@ -944,7 +971,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "misstated-python",
@@ -961,7 +988,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "misstated-python",
@@ -978,7 +1005,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "pallets-click-3781",
@@ -998,7 +1025,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "pallets-click-3781",
@@ -1018,7 +1045,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "pallets-click-3781",
@@ -1038,7 +1065,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "pallets-click-3781",
@@ -1058,7 +1085,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "pallets-click-3781",
@@ -1078,7 +1105,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "pallets-click-3781",
@@ -1098,7 +1125,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "pallets-click-3781",
@@ -1119,7 +1146,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "pallets-click-3781",
@@ -1140,7 +1167,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "pallets-click-3781",
@@ -1161,7 +1188,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "planted-click",
@@ -1177,7 +1204,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "planted-click",
@@ -1193,7 +1220,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "planted-click",
@@ -1209,7 +1236,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "planted-typescript",
@@ -1225,7 +1252,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "planted-typescript",
@@ -1241,7 +1268,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "planted-typescript",
@@ -1257,7 +1284,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "seeded-csharp",
@@ -1273,7 +1300,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "seeded-csharp",
@@ -1289,7 +1316,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "seeded-csharp",
@@ -1305,7 +1332,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "seeded-csharp",
@@ -1321,7 +1348,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "seeded-csharp",
@@ -1337,7 +1364,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "seeded-python",
@@ -1353,7 +1380,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "seeded-python",
@@ -1369,7 +1396,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "seeded-python",
@@ -1385,7 +1412,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "seeded-python",
@@ -1401,7 +1428,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "seeded-python",
@@ -1417,7 +1444,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "seeded-typescript",
@@ -1433,7 +1460,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "seeded-typescript",
@@ -1449,7 +1476,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "seeded-typescript",
@@ -1465,7 +1492,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "seeded-typescript",
@@ -1481,7 +1508,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "seeded-typescript",
@@ -1497,7 +1524,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "sindresorhus-ky-880",
@@ -1511,13 +1538,14 @@
         "story": "1",
         "claims": "1",
         "verdicts": "4",
-        "unexplained": "1"
+        "unexplained": "1",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "sindresorhus-ky-880",
@@ -1531,13 +1559,14 @@
         "story": "1",
         "claims": "1",
         "verdicts": "4",
-        "unexplained": "1"
+        "unexplained": "1",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "sindresorhus-ky-880",
@@ -1551,13 +1580,14 @@
         "story": "1",
         "claims": "1",
         "verdicts": "4",
-        "unexplained": "1"
+        "unexplained": "1",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "sindresorhus-ky-880",
@@ -1571,13 +1601,14 @@
         "story": "1",
         "claims": "1",
         "verdicts": "4",
-        "unexplained": "1"
+        "unexplained": "1",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "sindresorhus-ky-880",
@@ -1591,13 +1622,14 @@
         "story": "1",
         "claims": "1",
         "verdicts": "4",
-        "unexplained": "1"
+        "unexplained": "1",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "sindresorhus-ky-880",
@@ -1611,13 +1643,14 @@
         "story": "1",
         "claims": "1",
         "verdicts": "4",
-        "unexplained": "1"
+        "unexplained": "1",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "sindresorhus-ky-880",
@@ -1632,13 +1665,14 @@
         "story": "1",
         "claims": "1",
         "verdicts": "4",
-        "unexplained": "1"
+        "unexplained": "1",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "sindresorhus-ky-880",
@@ -1653,13 +1687,14 @@
         "story": "1",
         "claims": "1",
         "verdicts": "4",
-        "unexplained": "1"
+        "unexplained": "1",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "sindresorhus-ky-880",
@@ -1674,13 +1709,14 @@
         "story": "1",
         "claims": "1",
         "verdicts": "4",
-        "unexplained": "1"
+        "unexplained": "1",
+        "explain": "1"
       },
       "agent": "none",
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "(all)",
@@ -1692,6 +1728,7 @@
         "claims": "1",
         "criteria-mapping": "1",
         "draft-comment": "1",
+        "explain": "1",
         "grouping": "2",
         "library-verdicts": "3",
         "ranking": "1",
@@ -1703,7 +1740,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "(all)",
@@ -1715,6 +1752,7 @@
         "claims": "1",
         "criteria-mapping": "1",
         "draft-comment": "1",
+        "explain": "1",
         "grouping": "2",
         "library-verdicts": "3",
         "ranking": "1",
@@ -1726,7 +1764,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "(all)",
@@ -1738,6 +1776,7 @@
         "claims": "1",
         "criteria-mapping": "1",
         "draft-comment": "1",
+        "explain": "1",
         "grouping": "2",
         "library-verdicts": "3",
         "ranking": "1",
@@ -1749,7 +1788,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "(all)",
@@ -1761,6 +1800,7 @@
         "claims": "1",
         "criteria-mapping": "1",
         "draft-comment": "1",
+        "explain": "1",
         "grouping": "2",
         "library-verdicts": "3",
         "ranking": "1",
@@ -1772,7 +1812,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "(all)",
@@ -1784,6 +1824,7 @@
         "claims": "1",
         "criteria-mapping": "1",
         "draft-comment": "1",
+        "explain": "1",
         "grouping": "2",
         "library-verdicts": "3",
         "ranking": "1",
@@ -1795,7 +1836,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "(all)",
@@ -1807,6 +1848,7 @@
         "claims": "1",
         "criteria-mapping": "1",
         "draft-comment": "1",
+        "explain": "1",
         "grouping": "2",
         "library-verdicts": "3",
         "ranking": "1",
@@ -1818,7 +1860,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "(all)",
@@ -1830,6 +1872,7 @@
         "claims": "1",
         "criteria-mapping": "1",
         "draft-comment": "1",
+        "explain": "1",
         "grouping": "2",
         "library-verdicts": "3",
         "ranking": "1",
@@ -1841,7 +1884,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "(all)",
@@ -1853,6 +1896,7 @@
         "claims": "1",
         "criteria-mapping": "1",
         "draft-comment": "1",
+        "explain": "1",
         "grouping": "2",
         "library-verdicts": "3",
         "ranking": "1",
@@ -1864,7 +1908,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "(all)",
@@ -1876,6 +1920,7 @@
         "claims": "1",
         "criteria-mapping": "1",
         "draft-comment": "1",
+        "explain": "1",
         "grouping": "2",
         "library-verdicts": "3",
         "ranking": "1",
@@ -1887,7 +1932,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "(all)",
@@ -1899,6 +1944,7 @@
         "claims": "1",
         "criteria-mapping": "1",
         "draft-comment": "1",
+        "explain": "1",
         "grouping": "2",
         "library-verdicts": "3",
         "ranking": "1",
@@ -1910,7 +1956,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "(all)",
@@ -1922,6 +1968,7 @@
         "claims": "1",
         "criteria-mapping": "1",
         "draft-comment": "1",
+        "explain": "1",
         "grouping": "2",
         "library-verdicts": "3",
         "ranking": "1",
@@ -1933,7 +1980,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "(all)",
@@ -1945,6 +1992,7 @@
         "claims": "1",
         "criteria-mapping": "1",
         "draft-comment": "1",
+        "explain": "1",
         "grouping": "2",
         "library-verdicts": "3",
         "ranking": "1",
@@ -1956,7 +2004,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "(all)",
@@ -1968,6 +2016,7 @@
         "claims": "1",
         "criteria-mapping": "1",
         "draft-comment": "1",
+        "explain": "1",
         "grouping": "2",
         "library-verdicts": "3",
         "ranking": "1",
@@ -1979,7 +2028,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "(all)",
@@ -1991,6 +2040,7 @@
         "claims": "1",
         "criteria-mapping": "1",
         "draft-comment": "1",
+        "explain": "1",
         "grouping": "2",
         "library-verdicts": "3",
         "ranking": "1",
@@ -2002,7 +2052,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "(all)",
@@ -2015,6 +2065,7 @@
         "claims": "1",
         "criteria-mapping": "1",
         "draft-comment": "1",
+        "explain": "1",
         "grouping": "2",
         "library-verdicts": "3",
         "ranking": "1",
@@ -2026,7 +2077,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "(all)",
@@ -2039,6 +2090,7 @@
         "claims": "1",
         "criteria-mapping": "1",
         "draft-comment": "1",
+        "explain": "1",
         "grouping": "2",
         "library-verdicts": "3",
         "ranking": "1",
@@ -2050,7 +2102,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "(all)",
@@ -2063,6 +2115,7 @@
         "claims": "1",
         "criteria-mapping": "1",
         "draft-comment": "1",
+        "explain": "1",
         "grouping": "2",
         "library-verdicts": "3",
         "ranking": "1",
@@ -2074,7 +2127,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "(all)",
@@ -2087,6 +2140,7 @@
         "claims": "1",
         "criteria-mapping": "1",
         "draft-comment": "1",
+        "explain": "1",
         "grouping": "2",
         "library-verdicts": "3",
         "ranking": "1",
@@ -2098,7 +2152,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "(all)",
@@ -2111,6 +2165,7 @@
         "claims": "1",
         "criteria-mapping": "1",
         "draft-comment": "1",
+        "explain": "1",
         "grouping": "2",
         "library-verdicts": "3",
         "ranking": "1",
@@ -2122,7 +2177,7 @@
       "agentVersion": "none",
       "model": "none",
       "effort": "none",
-      "runDate": "2026-10-06T11:34:34.487Z"
+      "runDate": "2026-10-07T09:59:44.995Z"
     },
     {
       "case": "encode-httpx-3690",
@@ -4324,6 +4379,240 @@
       "model": "zai-coding-cn/glm-5.3",
       "effort": "default",
       "runDate": "2026-10-06T11:33:18.523Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "explain-cites-part",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "library-verdicts": "3",
+        "explain": "1"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-07T09:56:32.574Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "explain-names-in-change",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "library-verdicts": "3",
+        "explain": "1"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-07T09:56:32.574Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "explain-cites-part",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "library-verdicts": "3",
+        "draft-comment": "1",
+        "explain": "1"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-07T09:56:32.574Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "explain-names-in-change",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "library-verdicts": "3",
+        "draft-comment": "1",
+        "explain": "1"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-07T09:56:32.574Z"
+    },
+    {
+      "case": "criteria-python",
+      "name": "explain-cites-part",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1",
+        "draft-comment": "1",
+        "explain": "1"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-07T09:56:32.574Z"
+    },
+    {
+      "case": "criteria-python",
+      "name": "explain-names-in-change",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1",
+        "draft-comment": "1",
+        "explain": "1"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-07T09:56:32.574Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "explain-cites-part",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "unexplained": "1",
+        "explain": "1"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-07T09:56:32.574Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "explain-names-in-change",
+      "value": 0.5,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "unexplained": "1",
+        "explain": "1"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-07T09:56:32.574Z"
+    },
+    {
+      "case": "sindresorhus-ky-880",
+      "name": "explain-cites-part",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "unexplained": "1",
+        "explain": "1"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-07T09:56:32.574Z"
+    },
+    {
+      "case": "sindresorhus-ky-880",
+      "name": "explain-names-in-change",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "4",
+        "unexplained": "1",
+        "explain": "1"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-07T09:56:32.574Z"
+    },
+    {
+      "case": "(all)",
+      "name": "explain-cites-part",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "explain": "1"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-07T09:56:32.574Z"
+    },
+    {
+      "case": "(all)",
+      "name": "explain-names-in-change",
+      "value": 0.8333333333333334,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "explain": "1"
+      },
+      "agent": "pi",
+      "agentVersion": "0.86.1",
+      "model": "zai-coding-cn/glm-5.3",
+      "effort": "default",
+      "runDate": "2026-10-07T09:56:32.574Z"
     }
   ],
   "failures": [],

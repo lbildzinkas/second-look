@@ -13,6 +13,7 @@
  * After the handshake, {@link REVIEW_METHOD} reviews a pull request,
  * {@link FETCH_LIBRARY_METHOD} presses one finding's library fetch,
  * {@link DRAFT_COMMENT_METHOD} drafts a comment from one finding,
+ * {@link ASK_METHOD} answers one ask about one part,
  * {@link SEND_REVIEW_METHOD} sends the pending review to GitHub as one
  * review — the protocol's one write of the review, asked for only when the
  * reviewer presses send (ADR 0002) — {@link REVIEWED_MARKS_METHOD} and
@@ -26,7 +27,8 @@
  */
 
 import type { AgentName } from './agents.js';
-import type { DraftComment, FindingRef, PendingReview, ReviewedMarks, ReviewResult, SentReview, ViewedFiles } from './protocol.js';
+import type { AskKind } from './asks.js';
+import type { AskAnswer, DraftComment, FindingRef, PendingReview, ReviewedMarks, ReviewResult, SentReview, ViewedFiles } from './protocol.js';
 import type { MarkedPart } from './reviewed-marks.js';
 
 /** Version of the JSON-RPC protocol between the extension and the engine. */
@@ -182,6 +184,28 @@ export interface DraftCommentParams {
 
 /** The draft request's result: the checked draft. */
 export type DraftCommentRpcResult = DraftComment;
+
+/**
+ * The request that answers one ask about one part, sent only when the
+ * reviewer makes it: the agent answers, and the engine checks the answer
+ * before sending it. The part is one of the engine's own latest review
+ * of the pull request. Nothing of it reaches GitHub.
+ */
+export const ASK_METHOD = 'ask' as const;
+
+/** One ask: the reviewed pull request, the ask, the part and the agent that answers. */
+export interface AskParams {
+  /** The pull request's HTML URL, as the review result names it. */
+  url: string;
+  ask: AskKind;
+  /** The part, by its index in the review result's parts. */
+  part: number;
+  /** The agent, model and account that answer; see {@link ReviewAgentChoice}. */
+  agent?: ReviewAgentChoice;
+}
+
+/** The ask request's result: the checked answer. */
+export type AskRpcResult = AskAnswer;
 
 /** The request that sends the pending review to GitHub as one review. */
 export const SEND_REVIEW_METHOD = 'sendReview' as const;

@@ -214,6 +214,12 @@ export interface ExpectedResults {
    * hand as the review would show it; absent when the case drafts none.
    */
   drafts?: DraftFinding[];
+  /**
+   * The parts the explain prompt explains, each by its name as the engine
+   * prints it, or else by its path (the first part holding that file);
+   * absent when the case explains none.
+   */
+  explain?: string[];
 }
 
 /** A case loaded from its folder. */
@@ -245,6 +251,7 @@ export async function loadCase(folder: string): Promise<EvaluationCase> {
     ...(recorded.unexplained ? { unexplained: recorded.unexplained } : {}),
     ...(recorded.criteria ? { criteria: recorded.criteria } : {}),
     ...(recorded.drafts ? { drafts: recorded.drafts } : {}),
+    ...(recorded.explain ? { explain: recorded.explain } : {}),
   };
   return { id: record.id, folder, record, expected };
 }

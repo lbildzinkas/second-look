@@ -263,6 +263,12 @@ function showsName(change: string, identifiers: ReadonlySet<string>, name: strin
   return words.length > 0 && words.every((word) => identifiers.has(word));
 }
 
+/** The names, each once, that the change does not show (see {@link changeText}): neither as written nor by every identifier in them. */
+export function namesOutside(used: readonly string[], change: string): string[] {
+  const identifiers = new Set(change.match(IDENTIFIER) ?? []);
+  return [...new Set(used.filter((name) => !showsName(change, identifiers, name)))];
+}
+
 /**
  * The plain checks of a story, the story prompt's score: whether every
  * must-review part is mentioned, whether the parts are first mentioned in
@@ -292,12 +298,11 @@ export function storyChecks(items: readonly StoryItem[], answer: StoryAnswer, ch
   const positions = mentionOrder.map((id) => order.get(id)!);
   const ids = items.filter((item) => levelOf(item.part) === 'must review').map((item) => item.id);
   const used = answer.sentences.flatMap(namesIn);
-  const identifiers = new Set(change.match(IDENTIFIER) ?? []);
   return {
     mustReview: { ids, mentioned: ids.filter((id) => mentionOrder.includes(id)) },
     mentionOrder,
     inOrder: positions.every((position, index) => index === 0 || position > positions[index - 1]!),
-    names: { used, outside: [...new Set(used.filter((name) => !showsName(change, identifiers, name)))] },
+    names: { used, outside: namesOutside(used, change) },
   };
 }
 

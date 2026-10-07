@@ -215,5 +215,6 @@
       "HTTPServer.wait in src/httpx/_server.py"
     ],
     "described": []
-  }
+  },
+  "explain": ["HTTPParser.wait_ready, HTTPParser in src/httpx/_parsers.py", "HTTPServer.wait in src/httpx/_server.py"]
 }
