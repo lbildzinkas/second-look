@@ -18,10 +18,10 @@ The engine drives only the agents `AGENT_NAMES` lists, `pi` and `claude-code` (`
 
 These hold for both agents, because they come from the engine rather than from either adapter.
 
-### The agent reads one folder, a read-only copy
+### The agent is started in one folder, a read-only copy
 
 - **The folder.** Each run is started with its working directory set to one folder (`pi.ts:197-203`, `claude-code.ts:241-247`): the head copy of the pull request for every review pass and ask (for example `review.ts:300`, `asks.ts:64`), or, after the reviewer presses a library fetch, that library's fetched folder alone (`library-verdicts.ts:252`). The base copy, the reviewer's workspace and the rest of the cache are never the run's folder.
-- **Read-only.** The copies and fetched libraries are all written by `archive.ts`, with every file mode `0444` and every folder `0555` (`archive.ts:18-19`, `archive.ts:168-175`), so nothing in them can be written or run in place. Each copy is unpacked from the commit's archive into the engine's cache (`cache.ts:80-109`): nothing is checked out in the reviewer's workspace, and nothing from the pull request is built, installed or run.
+- **Read-only.** The copies and fetched libraries are all written by `archive.ts`, with every file mode `0444` and every folder `0555` (`archive.ts:18-19`, `archive.ts:168-175`), so nothing in them can be written or run in place. Each copy is unpacked from the commit's archive into the engine's cache (`cache.ts:80-107`): nothing is checked out in the reviewer's workspace, and nothing from the pull request is built, installed or run.
 - **No links out.** Symbolic links, hard links and special files in an archive are skipped, never written, and an entry whose path would leave the folder is refused (`archive.ts:139-149`, `archive.ts:179-187`). A copy therefore holds no link an agent could follow out of it.
 
 ### The agent has no GitHub login
@@ -115,14 +115,14 @@ The head copy is the pull request's own repository, so it can hold agent configu
 
 ### What Claude Code can read
 
-Only files of the run's folder — the head copy, or a fetched library's folder — through the tools `Read`, `Grep` and `Glob` (`claude-code.ts:45`). Claude Code confines its file tools to the working directory, which is the run's folder (`claude-code.ts:241-247`), and with `--permission-prompts none` anything that would ask for permission is denied rather than asked (`claude-code.ts:96-97`).
+The run's folder — the head copy, or a fetched library's folder — through the tools `Read`, `Grep` and `Glob` (`claude-code.ts:45`), and, when Claude Code's own confinement fails, whatever lies outside it. The run is started with its working directory set to the run's folder (`claude-code.ts:241-247`), and with `--permission-prompts none` anything that would ask for permission is denied rather than asked (`claude-code.ts:96-97`): that is the intended confinement of the file tools to the working directory. It is Claude Code's own, not the companion's, and it does not hold reliably — live runs showed it to depend on the model (see the gaps below), so anything the reviewer's own user can read must be treated as within Claude Code's reach.
 
 ### What Claude Code is denied, and how
 
 | Denied | How it is enforced |
 | --- | --- |
 | A shell, file edits, web fetch and web search, and every tool but the three file-reading ones | Claude Code's tool allowlist, `--tools Read,Grep,Glob` (`claude-code.ts:94-95`). |
-| Any path outside the run's folder, including every credential path — SSH keys, cloud credentials, the GitHub login, its own and other agents' logins | Claude Code's own confinement of file tools to the working directory, with permission prompts denied (`claude-code.ts:96-97`, `claude-code.ts:241-247`). There is no companion-side check and no list of credential paths for Claude Code; see the gaps. |
+| Any path outside the run's folder, including every credential path — SSH keys, cloud credentials, the GitHub login, its own and other agents' logins | **Not a denial the companion enforces.** The intended mechanism is Claude Code's own confinement of its file tools to the working directory, with permission prompts denied (`claude-code.ts:96-97`, `claude-code.ts:241-247`); the companion adds no check of its own and refuses no credential path by name, and that confinement was falsified in live runs — it held with one model and not with another (see the gaps). Treat these paths as readable. |
 | MCP servers | `--strict-mcp-config` with no MCP configuration named, so every MCP configuration, the copy's `.mcp.json` included, is ignored (`claude-code.ts:93`). |
 | The GitHub token | Removed from the environment (`claude-code.ts:107-111`). |
 | Non-essential network traffic at startup | `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` in its environment (`claude-code.ts:110`). |
@@ -137,6 +137,7 @@ Only files of the run's folder — the head copy, or a fetched library's folder 
 ### Known gaps for Claude Code
 
 - **No operating-system sandbox, and no companion-side guard.** Every limit is a flag Claude Code honours itself. Unlike Pi, there is no guard of the companion's own checking each tool call, so path confinement and the denial of credential paths rest entirely on Claude Code's confinement of its file tools to the working directory. Claude Code runs as the reviewer's own user with the reviewer's own file permissions.
+- **Confinement to the run's folder failed in a live run, and depends on the model.** Locked down exactly as this page describes — working directory a read-only copy (`claude-code.ts:241-247`), `--tools Read,Grep,Glob` (`claude-code.ts:94-95`), `--permission-prompts none` (`claude-code.ts:96-97`) — Claude Code 2.1.289, driven through the engine's own adapter, read `/etc/hosts` from outside the copy with its default model (`claude-opus-5-5`) and reached a path under `~/.ssh` un-blocked (the tool answered "File does not exist", not a denial), while the identical run pinned to `--model haiku` was denied ("Path is outside allowed working directories"). Nothing the companion runs beside Claude Code can close this from outside its process, so a reviewer must not trust the outside-folder denial for a setup they have not checked: run `second-look-engine probe <pull-request-url> --agent claude-code --model <model> --target /etc/hosts` (any path outside the copy serves) and read the report's `outcome` for that target — `refused` is the denial holding, `read` is it failing.
 - **The reviewer's user-level settings load.** `--setting-sources user` keeps the reviewer's own settings (`claude-code.ts:91-92`). A user-level permission rule that allows reading outside the working directory, or an added directory, would widen what the agent may read, and the reviewer's own hooks still run. The companion does not inspect those settings.
 - **The environment is inherited.** Claude Code inherits the engine's whole environment minus the GitHub token variables (`claude-code.ts:107-111`). Its file tools cannot read environment variables, but any other secret in that environment is in the agent's process — and some are meant to be: an `ANTHROPIC_API_KEY`, an OAuth token or cloud credentials for Amazon Bedrock or Google Vertex AI are how Claude Code signs in (`claude-code.ts:122-141`).
 - **The agent process talks to its model.** "No network access" means no tool that reaches the network. Claude Code itself still connects to its model provider, and everything the prompt holds is sent there.
