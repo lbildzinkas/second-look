@@ -48,5 +48,8 @@
       "verdict": "unverifiable",
       "library": "Microsoft.IO.RecyclableMemoryStream"
     }
+  ],
+  "docs": [
+    { "api": "Microsoft.IO.RecyclableMemoryStreamManager", "sites": ["github.com/microsoft/Microsoft.IO.RecyclableMemoryStream"] }
   ]
 }

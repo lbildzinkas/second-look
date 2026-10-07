@@ -54,6 +54,11 @@
       "id": "cover",
       "version": "1",
       "files": ["packages/engine/src/cover.ts"]
+    },
+    {
+      "id": "doc-links",
+      "version": "1",
+      "files": ["packages/engine/src/doc-suggestions.ts"]
     }
   ]
 }

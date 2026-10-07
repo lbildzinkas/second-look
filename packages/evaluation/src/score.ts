@@ -1,13 +1,15 @@
-import { filesOfPart, parseDiff } from '@second-look/engine';
+import { docSuggestionProblems, filesOfPart, parseDiff } from '@second-look/engine';
 import type {
   AcceptanceCriterion,
   Claim,
   ClaimVerdict,
   DescribedChange,
+  DocSuggestionAnswer,
   DraftChecks,
   CoverChecks,
   ExplainChecks,
   FileSlice,
+  LibraryApi,
   LinkedIssue,
   NoiseAssessment,
   Part,
@@ -19,6 +21,7 @@ import type {
   ExpectedCover,
   ExpectedCriterion,
   ExpectedDescribed,
+  ExpectedDocLink,
   ExpectedNoise,
   ExpectedResults,
   ExpectedSelection,
@@ -121,6 +124,14 @@ export const COVER_SCORES: readonly string[] = [
   'cover-none-found',
 ];
 
+/**
+ * The scores of the documentation links the agent suggests for the
+ * labelled APIs no inventory links: the share of those APIs given a link
+ * under one of the sites their labels name, and the share of the links it
+ * gave that the engine's checks accept.
+ */
+export const DOC_LINKS_SCORES: readonly string[] = ['doc-links-on-site', 'doc-links-checked'];
+
 /** One score of a run, with the direction in which it improves. */
 export interface Score {
   /** The score's name, such as `coverage` or `noise-recall:lockfile:claimed`. */
@@ -199,6 +210,48 @@ export interface Tally {
   verifications: VerifyTally;
   /** The counts behind what the agent said covers the labelled parts. */
   covers: CoverTally;
+  /** The counts behind the documentation links the agent suggested for the labelled APIs. */
+  docs: DocLinksTally;
+}
+
+/**
+ * The counts behind the suggested documentation links: the labelled APIs
+ * and those given a link under one of their sites, and the links given
+ * and those the engine's checks accept.
+ */
+export interface DocLinksTally {
+  apis: number;
+  onSite: number;
+  links: number;
+  checked: number;
+}
+
+function noDocLinks(): DocLinksTally {
+  return { apis: 0, onSite: 0, links: 0, checked: 0 };
+}
+
+/**
+ * Tallies the agent's own answer for the labelled APIs, asked about in
+ * their order: a link counts as checked when the engine's checks accept
+ * it, and an API as on a site when its first accepted link, without its
+ * scheme, starts with one of the sites its label names, compared without
+ * case. An API the agent gave no link, or an answer that fell back,
+ * counts on no site.
+ */
+export function tallyDocLinks(labels: readonly ExpectedDocLink[], apis: readonly LibraryApi[], answer: DocSuggestionAnswer | undefined): DocLinksTally {
+  const tally = noDocLinks();
+  tally.apis = labels.length;
+  const accepted = (answer?.links ?? []).filter((link) => {
+    tally.links++;
+    return docSuggestionProblems({ links: [link] }, apis).length === 0;
+  });
+  tally.checked = accepted.length;
+  labels.forEach((label, index) => {
+    const link = accepted.find((each) => each.api.trim() === `a${index + 1}`);
+    const where = link === undefined ? undefined : new URL(link.url.trim()).href.replace(/^https:\/\//, '').toLowerCase();
+    if (where !== undefined && label.sites.some((site) => where.startsWith(site.toLowerCase()))) tally.onSite++;
+  });
+  return tally;
 }
 
 /**
@@ -756,6 +809,7 @@ export function tallyCase(
     explanations: noExplanations(),
     verifications: noVerifications(),
     covers: noCovers(),
+    docs: noDocLinks(),
   };
   if (!parts) return tally;
 
@@ -869,6 +923,7 @@ export function addTallies(tallies: readonly Tally[]): Tally {
     explanations: noExplanations(),
     verifications: noVerifications(),
     covers: noCovers(),
+    docs: noDocLinks(),
   };
   for (const tally of tallies) {
     total.changedLines += tally.changedLines;
@@ -885,6 +940,7 @@ export function addTallies(tallies: readonly Tally[]): Tally {
     for (const key of Object.keys(total.explanations) as (keyof ExplainTally)[]) total.explanations[key] += tally.explanations[key];
     for (const key of Object.keys(total.verifications) as (keyof VerifyTally)[]) total.verifications[key] += tally.verifications[key];
     for (const key of Object.keys(total.covers) as (keyof CoverTally)[]) total.covers[key] += tally.covers[key];
+    for (const key of Object.keys(total.docs) as (keyof DocLinksTally)[]) total.docs[key] += tally.docs[key];
     for (const [name, counts] of tally.noise) {
       const sum = total.noise.get(name) ?? { expected: 0, predicted: 0, matched: 0 };
       sum.expected += counts.expected;
@@ -927,8 +983,9 @@ function median(values: readonly number[]): number {
  * in each direction, the accuracy, false-met rate and evidence recall
  * of the verdicts it gave the acceptance criteria, and the plain checks
  * of the drafts it wrote from findings and of the explanations it gave
- * of parts, the verify ask's verdicts on the labelled selections, and
- * what it said covers the labelled parts. A score with nothing to
+ * of parts, the verify ask's verdicts on the labelled selections,
+ * what it said covers the labelled parts, and the documentation links it
+ * suggested for the labelled APIs. A score with nothing to
  * count is left out rather than given a value it did not earn.
  */
 export function scoresOf(tally: Tally): Score[] {
@@ -1004,6 +1061,8 @@ export function scoresOf(tally: Tally): Score[] {
     ...ratio('cover-tests-precision', covers.citedLabelled, covers.citedFiles),
     ...ratio('cover-manual-recall', covers.manualCited, covers.manualChecks),
     ...ratio('cover-none-found', covers.noneFound, covers.uncovered),
+    ...ratio('doc-links-on-site', tally.docs.onSite, tally.docs.apis),
+    ...ratio('doc-links-checked', tally.docs.checked, tally.docs.links),
   );
   return scores;
 }
