@@ -10,6 +10,8 @@ import {
   partsLeft,
   reviewedState,
   unexplainedReasons,
+  type ClaimJudging,
+  type Claims,
   type Comment,
   type FileSlice,
   type Importance,
@@ -106,7 +108,8 @@ const SECTION_TOOLTIPS: Record<Importance, string> = {
  * sections are left out, and snapshots and fixtures never sink, because a
  * change there is a behaviour change. A part the listed claims are
  * attached to shows their count beside it, and a badge counting its
- * findings once the claims are judged. A part neither the description nor
+ * findings once the claims are judged or the Verify this claim ask
+ * judged one of them. A part neither the description nor
  * a linked issue explains carries the unexplained badge, its one-line
  * reason in the tooltip. Every part carries its reviewed state for its
  * checkbox, and a part whose content changed since the reviewer marked it
@@ -122,13 +125,14 @@ export function buildTree(result: ReviewResult, marks: ReviewedMarks = NO_MARKS,
 
   const counts = claimCounts(result.claims, result.parts.length);
   const findings = findingCounts(result.claims, result.parts.length);
+  const asked = askedCounts(result.claims, result.parts.length);
   const judged = result.claims?.judging?.outcome === 'judged';
   const unexplained = unexplainedReasons(result.unexplained, result.parts.length);
   const since = result.sinceLastLook;
   const changed = result.parts.map((part) => since !== undefined && changedSinceLastLook(part, since));
   const withBadges = (node: TreePart, index: number): TreePart => {
     const reviewed = reviewedState(result.parts[index]!, marks);
-    const badged = withUnexplained(withClaims(node, counts[index]!, findings[index]!, judged), unexplained[index]);
+    const badged = withUnexplained(withClaims(node, counts[index]!, findings[index]!, judged, asked[index]!, result.claims?.judging), unexplained[index]);
     return withReviewed(changed[index] ? withLastLook(badged, since!, reviewed) : badged, reviewed);
   };
   result.parts.forEach((part, index) => {
@@ -248,19 +252,22 @@ export function findingBadge(count: number): string {
 }
 
 /**
- * A part's node with its claim count and, once the claims are judged, the
- * badge counting its findings: first beside the label, and in the tooltip
- * with the claims' state. A part with no claim is left as it is.
+ * A part's node with its claim count and, once the claims are judged or
+ * the Verify this claim ask judged one of them, the badge counting its
+ * findings: first beside the label, and in the tooltip with the claims'
+ * state. A part with no claim is left as it is.
  */
-function withClaims(node: TreePart, count: number, findings: number, judged: boolean): TreePart {
+function withClaims(node: TreePart, count: number, findings: number, judged: boolean, asked: number, judging: ClaimJudging | undefined): TreePart {
   if (count === 0) return node;
   const badge = findings > 0 ? `${findingBadge(findings)} · ` : '';
   const text = `${badge}${claimCountText(count)}`;
-  const state = !judged
-    ? 'not checked yet; the overview lists them'
-    : findings > 0
+  const state = judged
+    ? findings > 0
       ? `${findings} refuted or unverifiable, each a thread on the diff; the overview lists them`
-      : 'all verified; the overview lists them';
+      : 'all verified; the overview lists them'
+    : asked > 0
+      ? `${asked} checked by the Verify this claim ask${findings > 0 ? `, ${findings} refuted or unverifiable, each a thread on the diff` : ''}, the ${judging === undefined ? 'verdicts pass did not run' : 'judging pass fell back'}; the overview lists them`
+      : 'not checked yet; the overview lists them';
   const line = `${claimCountText(count)}, ${state}`;
   return {
     ...node,
@@ -269,6 +276,15 @@ function withClaims(node: TreePart, count: number, findings: number, judged: boo
     description: node.description === undefined ? text : `${text} · ${node.description}`,
     tooltip: node.tooltip === undefined ? line : `${node.tooltip}\n${line}`,
   };
+}
+
+/** How many claims each part holds that the Verify this claim ask judged alone, by the part's index. */
+function askedCounts(claims: Claims | undefined, partCount: number): number[] {
+  const counts = new Array<number>(partCount).fill(0);
+  for (const claim of claims?.claims ?? []) {
+    if (claim.asked === true && claim.part >= 0 && claim.part < partCount) counts[claim.part]!++;
+  }
+  return counts;
 }
 
 /** What a part whose content changed since the reviewer marked it says. */
