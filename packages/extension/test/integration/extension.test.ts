@@ -25,6 +25,7 @@ import {
   activate,
 } from '../../src/extension.js';
 import { changeUri, libraryUri } from '../../src/change-copies.js';
+import { askCommand } from '../../src/commands.js';
 import { escapeMarkdown } from '../../src/findings.js';
 import { SEND_REVIEW_VIEW_TYPE } from '../../src/send-page.js';
 import { claimsResult, criteriaResult, fetchedResult, judgedResult, mixedResult, offeredResult, storyResult, unexplainedResult } from '../results.js';
@@ -67,6 +68,8 @@ interface FakeEngineOptions {
   fetchResult?: unknown;
   /** The draft the engine answers a draft request with. */
   draftResult?: unknown;
+  /** The answer the engine answers an ask with. */
+  askResult?: unknown;
 }
 
 function fakeEngine(options: FakeEngineOptions): ChildProcessWithoutNullStreams {
@@ -93,6 +96,7 @@ function fakeEngine(options: FakeEngineOptions): ChildProcessWithoutNullStreams 
         : {}),
       ...(options.fetchResult !== undefined ? { FAKE_ENGINE_FETCH_RESULT: JSON.stringify(options.fetchResult) } : {}),
       ...(options.draftResult !== undefined ? { FAKE_ENGINE_DRAFT_RESULT: JSON.stringify(options.draftResult) } : {}),
+      ...(options.askResult !== undefined ? { FAKE_ENGINE_ASK_RESULT: JSON.stringify(options.askResult) } : {}),
       FAKE_ENGINE_LOG: join(workDir, options.logName),
     },
   });
@@ -124,6 +128,7 @@ async function reviewWithFakeEngine(options: FakeEngineOptions): Promise<StubTre
     DRAFT_COMMENT_COMMAND,
     ADD_DRAFT_COMMAND,
     DISCARD_DRAFT_COMMAND,
+    askCommand('explain'),
   ]);
 
   stub.inputBoxResult = PR_URL;
@@ -244,6 +249,7 @@ describe('activating the companion', () => {
       DRAFT_COMMENT_COMMAND,
       ADD_DRAFT_COMMAND,
       DISCARD_DRAFT_COMMAND,
+      askCommand('explain'),
     ]);
     expect(stub.treeViews.map((view) => view.id)).toEqual([REVIEW_TREE_VIEW]);
     expect(stub.fileSystemProviders.map((entry) => entry.scheme)).toEqual(['second-look-change']);
@@ -747,6 +753,41 @@ describe('the overview', () => {
 
     await registeredCommands().get(WHY_THIS_MATTERS_COMMAND)!(partNode(view, 'CHANGELOG.md'));
     expect(overview().webview.html).toContain('The story does not mention CHANGELOG.md.');
+  });
+
+  it("explains a part from its context menu: the answer opens the overview at the top, and its cited line opens in its side's copy", async () => {
+    const result = storyResult();
+    const asked = result.parts[0]!;
+    const answer = {
+      ask: 'explain',
+      part: 0,
+      partName: asked.name ?? asked.path,
+      sections: [
+        { heading: 'What it does', text: '`send` now retries a transient error instead of raising at once.' },
+        { heading: 'Why it matters to the change', text: 'Every delivery runs through it.' },
+      ],
+      cited: [{ path: 'src/retry.py', side: 'base', line: 5, quote: 'if response.status >= 500:' }],
+      promptVersion: '1',
+      stamp: { agent: 'pi', agentVersion: '0.86.1', model: 'zai/glm-4.6', effort: null, runAt: '2026-10-07T00:00:00.000Z' },
+    };
+    const view = await reviewWithFakeEngine({ result, askResult: answer, logName: 'ask.log' });
+
+    await registeredCommands().get(askCommand('explain'))!(partNode(view, asked.name ?? asked.path));
+
+    // The engine answered about the part, with no token: nothing reached GitHub.
+    const request = readFileSync(join(workDir, 'ask.log'), 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { method: string; params: unknown })
+      .at(-1)!;
+    expect(request).toMatchObject({ method: 'ask', params: { url: PR_URL, ask: 'explain', part: 0 } });
+    expect(request.params).not.toHaveProperty('token');
+    expect(overview().webview.html).toContain('<li class="answer focus"><div class="where"><b>Explain this part</b> · ');
+    expect(overview().webview.html).toContain('<code>send</code> now retries a transient error');
+
+    overview().webview.receive({ type: 'openCited', answer: 0, index: 0 });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(stub.executedCommands.at(-1)).toEqual({ id: 'vscode.open', args: [base('src/retry.py'), { selection: new Range(4, 0, 4, 0), preview: true }] });
   });
 
   it("opens a part the story links in the diff editor", async () => {

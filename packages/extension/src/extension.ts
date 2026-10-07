@@ -22,6 +22,7 @@ import {
   REVIEW_TREE_VIEW,
   SUBMIT_REVIEW_COMMAND,
   WHY_THIS_MATTERS_COMMAND,
+  askCommand,
 } from './commands.js';
 import { CHANGE_SCHEME, ChangeCopiesProvider, changeUri, libraryUri } from './change-copies.js';
 import { openPartInDiffEditor, openWholeChangeInDiffEditor, PartMarker } from './diff-view.js';
@@ -43,6 +44,8 @@ import { OverviewPanel } from './overview.js';
 import { AgentStatusBar } from './agent-status.js';
 import { readAgentSettings, reviewAgentChoice } from './agent-settings.js';
 import {
+  ASK_KINDS,
+  ASKS,
   NO_MARKS,
   draftFinding,
   filesOfPart,
@@ -50,6 +53,8 @@ import {
   markedPart,
   parsePullRequestUrl,
   wholeFilesReviewed,
+  type AskKind,
+  type CommentSide,
   type LibraryFetchOffer,
   type Part,
   type PendingReview,
@@ -247,7 +252,7 @@ class ReviewSession {
   /** The review's overview: the story, the acceptance criteria, the claims, the description and who made each result. */
   private readonly overview = new OverviewPanel(
     (part) => void this.openPart(part),
-    (path, line) => void this.openHeadLine(path, line),
+    (path, line, side) => void this.openLine(path, line, side),
     (finding) => void this.draftComment(finding),
   );
   /** The review's findings, its refuted and unverifiable claims, as threads on the diff. */
@@ -386,6 +391,7 @@ class ReviewSession {
       this.page = undefined;
       this.comments.setReview(result);
       this.mirrorWaiting.clear();
+      this.overview.clearAnswers();
       if (previous !== result.pullRequest.url) this.onlyChanged = false;
     }
     this.render();
@@ -706,15 +712,56 @@ class ReviewSession {
     });
   }
 
-  /** Opens one line of the read-only head copy, such as the code or a test a criterion's verdict cites. */
-  async openHeadLine(path: string, line: number): Promise<void> {
+  /**
+   * Opens one line of the read-only head or base copy, such as the code
+   * or a test a criterion's verdict cites, or a line an answer cites; a
+   * base line of a renamed file opens at the file's old path.
+   */
+  async openLine(path: string, line: number, side: CommentSide): Promise<void> {
     const result = this.result;
     if (result === undefined) return;
     const at = line - 1;
-    await vscode.commands.executeCommand('vscode.open', changeUri('head', result.copies.head.commit, path), {
+    const file = side === 'base' ? result.parts.flatMap(filesOfPart).find((each) => each.path === path) : undefined;
+    const uri = changeUri(side, result.copies[side].commit, file?.previousPath ?? path);
+    await vscode.commands.executeCommand('vscode.open', uri, {
       selection: new vscode.Range(at, 0, at, 0),
       preview: true,
     });
+  }
+
+  /**
+   * Makes one ask about a part, the reviewer having picked it from the
+   * part's context menu: the engine has the agent the settings pick answer
+   * about the part of its latest review, checked before it arrives, and
+   * the overview shows the answer with its stamp. The tree passes its
+   * element, so the part is read out of whatever the argument carries,
+   * and found in the result shown by where it starts.
+   */
+  async ask(kind: AskKind, arg?: unknown): Promise<void> {
+    const part = carriedPart(arg);
+    const anchor = part === undefined ? undefined : JSON.stringify(anchorOf(part));
+    const index = this.result?.parts.findIndex((each) => JSON.stringify(anchorOf(each)) === anchor) ?? -1;
+    if (this.result === undefined || this.url === undefined || index < 0) {
+      vscode.window.showWarningMessage('Review a pull request first, then ask about its parts.');
+      return;
+    }
+    const review = this.reviews;
+    const asked = this.result.parts[index]!;
+    try {
+      const answer = await vscode.window.withProgress(
+        { location: { viewId: REVIEW_TREE_VIEW }, title: `${ASKS[kind].title}: asking the agent…` },
+        async () => (await this.readyEngine()).ask(this.url!, kind, index, reviewAgentChoice(readAgentSettings())),
+      );
+      // A review started meanwhile replaces this one, asks and all.
+      if (review !== this.reviews || this.result === undefined) return;
+      if (answer.partName !== (asked.name ?? asked.path)) {
+        vscode.window.showWarningMessage('The review changed while the agent answered; ask again.');
+        return;
+      }
+      this.overview.answer(answer);
+    } catch (error) {
+      vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
+    }
   }
 
   /** Opens the review's overview at the story's start. */
@@ -941,7 +988,8 @@ class ReviewSession {
  * the commands that open the review's overview — at the story's start, or
  * at one part as its "why this matters" — the commands that draft a
  * comment from a finding and add the draft to the pending review or
- * discard it, the parts' reviewed checkboxes, and the status bar entry
+ * discard it, one command for each ask a part's context menu offers,
+ * whose answer the overview shows, the parts' reviewed checkboxes, and the status bar entry
  * that shows the agent and model in use.
  * Nothing here runs anything from the workspace — the engine is started
  * from the companion's own install, reads GitHub, and writes only the
@@ -1014,6 +1062,7 @@ export function activate(
     vscode.commands.registerCommand(DISCARD_DRAFT_COMMAND, (comment?: unknown) =>
       isEditorComment(comment) ? session.discardDraft(comment) : undefined,
     ),
+    ...ASK_KINDS.map((kind) => vscode.commands.registerCommand(askCommand(kind), (arg?: unknown) => session.ask(kind, arg))),
   );
   return tree;
 }

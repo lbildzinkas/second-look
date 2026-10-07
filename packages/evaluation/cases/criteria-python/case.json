@@ -5,7 +5,8 @@
   "recordedAt": "2026-10-06T08:30:53.460Z",
   "prompts": [
     "criteria-mapping",
-    "draft-comment"
+    "draft-comment",
+    "explain"
   ],
   "pullRequest": {
     "url": "https://github.com/example-org/example-repo/pull/7359",

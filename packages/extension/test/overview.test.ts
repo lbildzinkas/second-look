@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { AgentStamp, FindingRef, Part, ReviewResult } from '@second-look/engine';
+import type { AgentStamp, AskAnswer, CommentSide, FindingRef, Part, ReviewResult } from '@second-look/engine';
 import {
   OVERVIEW_VIEW_TYPE,
   OverviewPanel,
@@ -775,6 +775,92 @@ describe('OverviewPanel', () => {
 
     overview.open();
     expect(panel.webview.html).not.toContain('sentence focus');
+  });
+
+  /** An answer to explain about the result's first part, citing a removed line and an added one. */
+  function explained(result: ReviewResult, text = 'It retries `send` up to `MAX_ATTEMPTS` times.'): AskAnswer {
+    const part = result.parts[0]!;
+    return {
+      ask: 'explain',
+      part: 0,
+      partName: part.name ?? part.path,
+      sections: [
+        { heading: 'What it does', text },
+        { heading: 'Why it matters to the change', text: 'The new limit takes effect here.' },
+      ],
+      cited: [
+        { path: 'web/cart.ts', side: 'base', line: 2, quote: 'return 1;' },
+        { path: 'web/cart.ts', side: 'head', line: 3, quote: 'return items.length;' },
+      ],
+      promptVersion: '1',
+      stamp: { agent: 'pi', agentVersion: '0.86.1', model: 'zai/glm', effort: null, runAt: '2026-10-07T00:00:00.000Z' },
+    };
+  }
+
+  it('shows an answer at the top of the page with its stamp, its sections and each cited line a button, and opens at it', () => {
+    const overview = new OverviewPanel(() => undefined, () => undefined, () => undefined);
+    const result = storyResult();
+    overview.update(result);
+    expect(overviewHtml({ result }, 'N')).not.toContain('id="asks"');
+
+    overview.answer(explained(result));
+
+    const html = stub.webviewPanels[0]!.webview.html;
+    expect(html.indexOf('<section id="asks">')).toBeLessThan(html.indexOf('<section id="story">'));
+    expect(html).toContain('<li class="answer focus"><div class="where"><b>Explain this part</b> · ');
+    expect(html).toContain(`<button type="button" class="pt" data-part="0">${escapeHtml(result.parts[0]!.name!)}</button>`);
+    expect(html).toContain('<span class="stamp">pi · zai/glm · explain prompt v1</span>');
+    expect(html).toContain('<div class="why"><b>What it does</b> It retries <code>send</code> up to <code>MAX_ATTEMPTS</code> times.</div>');
+    expect(html).toContain('<button type="button" class="pt asked" data-answer="0" data-index="0">web/cart.ts:2 (base)</button> <span class="cited">return 1;</span>');
+    expect(html).toContain('<button type="button" class="pt asked" data-answer="0" data-index="1">web/cart.ts:3</button>');
+    expect(html).toContain("document.querySelector('.answer.focus')");
+  });
+
+  it("keeps the answers across the review's updates, newest first, until a new review clears them", () => {
+    const overview = new OverviewPanel(() => undefined, () => undefined, () => undefined);
+    const result = storyResult();
+    overview.update(result);
+    overview.answer(explained(result, 'The first answer.'));
+    overview.answer(explained(result, 'The second answer.'));
+    const panel = stub.webviewPanels[0]!;
+
+    overview.update(result);
+    expect(panel.webview.html.indexOf('The second answer.')).toBeLessThan(panel.webview.html.indexOf('The first answer.'));
+    expect(panel.webview.html).not.toContain('answer focus');
+
+    overview.clearAnswers();
+    expect(panel.webview.html).not.toContain('id="asks"');
+  });
+
+  it('opens a line an answer cites in the copy of its side, and ignores a citation it does not have', () => {
+    const lines: [string, number, CommentSide][] = [];
+    const overview = new OverviewPanel(() => undefined, (path, line, side) => lines.push([path, line, side]), () => undefined);
+    const result = storyResult();
+    overview.update(result);
+    overview.answer(explained(result));
+    const panel = stub.webviewPanels[0]!;
+
+    panel.webview.receive({ type: 'openCited', answer: 0, index: 0 });
+    panel.webview.receive({ type: 'openCited', answer: 0, index: 1 });
+    panel.webview.receive({ type: 'openCited', answer: 0, index: 2 });
+    panel.webview.receive({ type: 'openCited', answer: 1, index: 0 });
+    panel.webview.receive({ type: 'openCited', answer: '0', index: 0 });
+
+    expect(lines).toEqual([
+      ['web/cart.ts', 2, 'base'],
+      ['web/cart.ts', 3, 'head'],
+    ]);
+  });
+
+  it("renders an answer's text and quotes as escaped text, never as markup, and its part as text once the part is gone", () => {
+    const result = storyResult();
+    const answer = { ...explained(result, REMOTE), partName: 'a part this result no longer holds', cited: [{ path: '<img src=x>.ts', side: 'head' as const, line: 1, quote: REMOTE.split('\n')[0]! }] };
+
+    const html = overviewHtml({ result, answers: [answer] }, 'N');
+
+    expect(html).not.toContain('<img src');
+    expect(html).not.toContain('<a href');
+    expect(html).toContain('<b>Explain this part</b> · a part this result no longer holds <span class="stamp">');
   });
 
   it('opens a fresh page after the reviewer closed it, and none once disposed', () => {

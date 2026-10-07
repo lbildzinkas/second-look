@@ -37,5 +37,6 @@
       "optional": true
     }
   ],
-  "groups": [["src/BlobReader.cs#1"]]
+  "groups": [["src/BlobReader.cs#1"]],
+  "explain": ["BlobReader, BlobReader.Read in src/BlobReader.cs"]
 }

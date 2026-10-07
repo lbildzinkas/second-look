@@ -5,6 +5,7 @@ import type {
   ClaimVerdict,
   DescribedChange,
   DraftChecks,
+  ExplainChecks,
   FileSlice,
   LinkedIssue,
   NoiseAssessment,
@@ -76,6 +77,14 @@ export const CRITERIA_SCORES: readonly string[] = [
  * length cap.
  */
 export const DRAFT_SCORES: readonly string[] = ['draft-cites-evidence', 'draft-no-new-claim', 'draft-under-cap'];
+
+/**
+ * The plain checks of the explanations the agent gives of the labelled
+ * parts: the share that cite lines of the part and only lines the part
+ * shows, and the share that name no file or code the change does not
+ * show.
+ */
+export const EXPLAIN_SCORES: readonly string[] = ['explain-cites-part', 'explain-names-in-change'];
 
 /** One score of a run, with the direction in which it improves. */
 export interface Score {
@@ -149,6 +158,38 @@ export interface Tally {
   criteria: CriteriaTally;
   /** The counts behind the plain checks of the drafts the agent wrote. */
   drafts: DraftTally;
+  /** The counts behind the plain checks of the explanations the agent gave. */
+  explanations: ExplainTally;
+}
+
+/**
+ * The counts behind the explanations' plain checks: the parts explained,
+ * and the explanations that cite only lines the part shows, at least
+ * one, and that name only what the change shows.
+ */
+export interface ExplainTally {
+  parts: number;
+  citesPart: number;
+  namesInChange: number;
+}
+
+function noExplanations(): ExplainTally {
+  return { parts: 0, citesPart: 0, namesInChange: 0 };
+}
+
+/**
+ * Tallies the explanations' plain checks, one per part: a part the agent
+ * gave no explanation of fails every check.
+ */
+export function tallyExplanations(checks: readonly (ExplainChecks | undefined)[]): ExplainTally {
+  const tally = noExplanations();
+  for (const each of checks) {
+    tally.parts++;
+    if (each === undefined) continue;
+    if (each.cited.length > 0 && each.refused.length === 0) tally.citesPart++;
+    if (each.names.outside.length === 0) tally.namesInChange++;
+  }
+  return tally;
 }
 
 /**
@@ -574,6 +615,7 @@ export function tallyCase(
     unexplained: noUnexplained(),
     criteria: noCriteria(),
     drafts: noDrafts(),
+    explanations: noExplanations(),
   };
   if (!parts) return tally;
 
@@ -598,16 +640,18 @@ export function tallyCase(
 
   if (parts.length >= TOP_K) {
     for (const important of expected.importantParts) {
-      const byName = parts.findIndex((part) => part.name === important);
-      const index =
-        byName >= 0
-          ? byName
-          : parts.findIndex((part) => filesOfPart(part).some((file) => file.path === important));
+      const index = labelledPart(parts, important);
       tally.positions.push(index >= 0 ? index + 1 : parts.length + 1);
     }
   }
   if (expected.groups) tally.pairs = pairAgreement(expected.groups, hunkOwners(diffFiles, parts));
   return tally;
+}
+
+/** The index of the part a hand label names: by its name as the engine prints it, or else the first part holding a file of that path; -1 for none. */
+export function labelledPart(parts: readonly Part[], label: string): number {
+  const byName = parts.findIndex((part) => part.name === label);
+  return byName >= 0 ? byName : parts.findIndex((part) => filesOfPart(part).some((file) => file.path === label));
 }
 
 /** A hunk's reference in hand labels: `path#n`, or the bare path of a file without hunks. */
@@ -682,6 +726,7 @@ export function addTallies(tallies: readonly Tally[]): Tally {
     unexplained: noUnexplained(),
     criteria: noCriteria(),
     drafts: noDrafts(),
+    explanations: noExplanations(),
   };
   for (const tally of tallies) {
     total.changedLines += tally.changedLines;
@@ -695,6 +740,7 @@ export function addTallies(tallies: readonly Tally[]): Tally {
     for (const key of Object.keys(total.unexplained) as (keyof UnexplainedTally)[]) total.unexplained[key] += tally.unexplained[key];
     for (const key of Object.keys(total.criteria) as (keyof CriteriaTally)[]) total.criteria[key] += tally.criteria[key];
     for (const key of Object.keys(total.drafts) as (keyof DraftTally)[]) total.drafts[key] += tally.drafts[key];
+    for (const key of Object.keys(total.explanations) as (keyof ExplainTally)[]) total.explanations[key] += tally.explanations[key];
     for (const [name, counts] of tally.noise) {
       const sum = total.noise.get(name) ?? { expected: 0, predicted: 0, matched: 0 };
       sum.expected += counts.expected;
@@ -736,7 +782,8 @@ function median(values: readonly number[]): number {
  * gave, the recall and precision of the unexplained changes it found
  * in each direction, the accuracy, false-met rate and evidence recall
  * of the verdicts it gave the acceptance criteria, and the plain checks
- * of the drafts it wrote from findings. A score with nothing to
+ * of the drafts it wrote from findings and of the explanations it gave
+ * of parts. A score with nothing to
  * count is left out rather than given a value it did not earn.
  */
 export function scoresOf(tally: Tally): Score[] {
@@ -794,6 +841,11 @@ export function scoresOf(tally: Tally): Score[] {
     ...ratio('draft-cites-evidence', drafts.cited, drafts.findings),
     ...ratio('draft-no-new-claim', drafts.noNewClaim, drafts.findings),
     ...ratio('draft-under-cap', drafts.underCap, drafts.findings),
+  );
+  const { explanations } = tally;
+  scores.push(
+    ...ratio('explain-cites-part', explanations.citesPart, explanations.parts),
+    ...ratio('explain-names-in-change', explanations.namesInChange, explanations.parts),
   );
   return scores;
 }

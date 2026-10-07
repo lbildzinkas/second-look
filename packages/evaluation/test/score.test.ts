@@ -11,6 +11,7 @@ import {
   tallyCase,
   tallyCriteria,
   tallyDrafts,
+  tallyExplanations,
   tallyFinding,
   tallyJudging,
   tallyStory,
@@ -423,6 +424,29 @@ describe('the draft checks', () => {
     const added = addTallies([{ ...base(), drafts: tallyDrafts([good]) }, { ...base(), drafts: tallyDrafts([inventive]) }]);
     expect(draftScores(added)).toEqual({ 'draft-cites-evidence': 0.5, 'draft-no-new-claim': 0.5, 'draft-under-cap': 0.5 });
     expect(draftScores(base())).toEqual({});
+  });
+});
+
+describe('the explain checks', () => {
+  const base = () => tallyCase(DIFF, { noise: {}, importantParts: [], claims: [] }, undefined);
+  const explainScores = (tally: ReturnType<typeof base>) =>
+    Object.fromEntries(scoresOf(tally).filter((score) => score.name.startsWith('explain-')).map((score) => [score.name, score.value]));
+  const cited = { path: 'src/cart.ts', side: 'head' as const, line: 1, quote: 'export const total = 2;' };
+  const good = { cited: [cited], refused: [], names: { used: ['total'], outside: [] } };
+  const invented = { cited: [cited], refused: ['the citation src/cart.ts:9 (head) names a line the part does not show'], names: { used: ['subtotal'], outside: ['subtotal'] } };
+  const uncited = { cited: [], refused: [], names: { used: [], outside: [] } };
+
+  it('scores the explanations that cite only lines the part shows, at least one, and name only what the change shows, a missing one failing both', () => {
+    expect(explainScores({ ...base(), explanations: tallyExplanations([good, invented, uncited, undefined]) })).toEqual({
+      'explain-cites-part': 0.25,
+      'explain-names-in-change': 0.5,
+    });
+  });
+
+  it('adds the explanation counts across cases, and gives a case that explains nothing no explain score', () => {
+    const added = addTallies([{ ...base(), explanations: tallyExplanations([good]) }, { ...base(), explanations: tallyExplanations([invented]) }]);
+    expect(explainScores(added)).toEqual({ 'explain-cites-part': 0.5, 'explain-names-in-change': 0.5 });
+    expect(explainScores(base())).toEqual({});
   });
 });
 

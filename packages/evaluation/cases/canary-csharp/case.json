@@ -3,7 +3,7 @@
   "id": "canary-csharp",
   "source": "https://github.com/example-org/example-repo/pull/11",
   "recordedAt": "2026-10-02T00:00:00.000Z",
-  "prompts": ["grouping", "ranking", "story", "claims", "verdicts", "library-verdicts"],
+  "prompts": ["grouping", "ranking", "story", "claims", "verdicts", "library-verdicts", "explain"],
   "pullRequest": {
     "url": "https://github.com/example-org/example-repo/pull/11",
     "number": 11,

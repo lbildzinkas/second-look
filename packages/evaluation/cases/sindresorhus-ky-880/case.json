@@ -9,7 +9,8 @@
     "story",
     "claims",
     "verdicts",
-    "unexplained"
+    "unexplained",
+    "explain"
   ],
   "pullRequest": {
     "url": "https://github.com/sindresorhus/ky/pull/880",

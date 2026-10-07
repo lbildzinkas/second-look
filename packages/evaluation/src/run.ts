@@ -5,6 +5,7 @@ import {
   CRITERIA_MAPPING_PROMPT_ID,
   DEFAULT_EFFORT,
   DRAFT_COMMENT_PROMPT_ID,
+  EXPLAIN_PROMPT_ID,
   GROUPING_PROMPT_ID,
   LIBRARY_VERDICTS_PROMPT_ID,
   RANKING_PROMPT_ID,
@@ -14,6 +15,8 @@ import {
   changeText,
   draftChecks,
   draftComment,
+  explainChecks,
+  explainPart,
   findClaims,
   findUnexplained,
   judgeClaims,
@@ -28,7 +31,7 @@ import {
   storyItems,
   writeStory,
 } from '@second-look/engine';
-import type { AgentAdapter, AgentSettings, AgentStamp, Claim, DraftChecks, Part } from '@second-look/engine';
+import type { AgentAdapter, AgentSettings, AgentStamp, Claim, DraftChecks, ExplainChecks, Part } from '@second-look/engine';
 import { caseInput, recordedFetch } from './case.js';
 import type { EvaluationCase } from './case.js';
 import { labelledClaims, reportClaims, reportedClaims } from './claims.js';
@@ -38,6 +41,7 @@ import {
   CLAIM_SCORES,
   CRITERIA_SCORES,
   DRAFT_SCORES,
+  EXPLAIN_SCORES,
   GROUPING_AGREEMENT,
   RANK_SCORES,
   STORY_SCORES,
@@ -45,10 +49,12 @@ import {
   VERDICT_SCORES,
   addTallies,
   isClaimCheck,
+  labelledPart,
   scoresOf,
   tallyCase,
   tallyCriteria,
   tallyDrafts,
+  tallyExplanations,
   tallyFinding,
   tallyJudging,
   tallyStory,
@@ -99,7 +105,7 @@ export interface RunResults {
   rows: ResultRow[];
   /** Cases whose review failed, with the engine's message. */
   failures: { case: string; error: string }[];
-  /** Cases whose agent grouping, ranking, story, unexplained changes, claims, verdicts, criteria mapping or drafts fell back, with the prompt and why. */
+  /** Cases whose agent grouping, ranking, story, unexplained changes, claims, verdicts, criteria mapping, drafts or explanations fell back, with the prompt and why. */
   fallbacks?: { case: string; agent: string; prompt?: string; detail: string }[];
   /** How each agent, model and effort's ranking scored against the plain ranking over the same cases. */
   rankings?: RankingComparison[];
@@ -139,7 +145,7 @@ export const GROUPING_SCORES: readonly string[] = ['coverage', GROUPING_AGREEMEN
  */
 export const RANKING_SCORES: readonly string[] = RANK_SCORES;
 
-export { CLAIM_SCORES, CRITERIA_SCORES, DRAFT_SCORES, STORY_SCORES, UNEXPLAINED_SCORES, VERDICT_SCORES };
+export { CLAIM_SCORES, CRITERIA_SCORES, DRAFT_SCORES, EXPLAIN_SCORES, STORY_SCORES, UNEXPLAINED_SCORES, VERDICT_SCORES };
 
 /**
  * The prompt an agent row's score belongs to: each agent prompt gives its
@@ -155,6 +161,7 @@ export function promptOfScore(row: { name: string; agent: string }): string | un
   if (UNEXPLAINED_SCORES.includes(row.name)) return UNEXPLAINED_PROMPT_ID;
   if (CRITERIA_SCORES.includes(row.name)) return CRITERIA_MAPPING_PROMPT_ID;
   if (DRAFT_SCORES.includes(row.name)) return DRAFT_COMMENT_PROMPT_ID;
+  if (EXPLAIN_SCORES.includes(row.name)) return EXPLAIN_PROMPT_ID;
   if (isClaimCheck(row.name)) return LIBRARY_VERDICTS_PROMPT_ID;
   return undefined;
 }
@@ -193,7 +200,7 @@ export interface RunOptions {
   /**
    * The agent that runs the agent prompts the cases are tied to, the
    * grouping, ranking, story, unexplained-changes, claims, verdicts,
-   * criteria-mapping and draft-comment prompts; without one the run is
+   * criteria-mapping, draft-comment and explain prompts; without one the run is
    * model-free.
    */
   agent?: { adapter: AgentAdapter; settings?: AgentSettings };
@@ -263,13 +270,16 @@ export interface Run {
  * draft-comment prompt has a comment drafted by the agent from each of
  * its hand-written findings, scored on the draft's plain checks with its
  * {@link DRAFT_SCORES} — the agent's own answer, which the run does not
- * hold to those checks. A grouping or ranking fallback scores what the
+ * hold to those checks; and each case tied to the explain prompt has
+ * each of its labelled parts explained by the agent, scored on the
+ * explanation's plain checks with its {@link EXPLAIN_SCORES}, again the
+ * agent's own answer. A grouping or ranking fallback scores what the
  * reviewer would see, the plain parts; a story fallback fails the
  * story's checks, a claims fallback lists no claim, a verdicts
  * fallback leaves every claim not checked, an unexplained-changes
  * fallback flags nothing, a criteria-mapping fallback leaves every
- * criterion not checked, and a draft that fell back fails every draft
- * check. With `prompts`, the agent runs only those
+ * criterion not checked, and a draft or an explanation that fell back
+ * fails every check of its own. With `prompts`, the agent runs only those
  * prompts. A model-free run makes no agent call, so its trace stays
  * empty.
  */
@@ -306,6 +316,7 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
   const unexplainedTallies = new Map<string, { stamp: AgentStamp; tallies: Tally[] }>();
   const criteriaTallies = new Map<string, { stamp: AgentStamp; tallies: Tally[] }>();
   const draftTallies = new Map<string, { stamp: AgentStamp; tallies: Tally[] }>();
+  const explainTallies = new Map<string, { stamp: AgentStamp; tallies: Tally[] }>();
   const stampKey = (stamp: Stamp): string => JSON.stringify([stamp.agent, stamp.agentVersion, stamp.model, stamp.effort]);
   for (const evaluationCase of options.cases) {
     const input = await caseInput(evaluationCase);
@@ -503,6 +514,39 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
       }
     }
 
+    const labelled = evaluationCase.expected.explain ?? [];
+    if (runs(EXPLAIN_PROMPT_ID) && parts && labelled.length > 0) {
+      try {
+        const change = changeText(parts);
+        const checks: (ExplainChecks | undefined)[] = [];
+        let stamp: AgentStamp | undefined;
+        for (const label of labelled) {
+          const index = labelledPart(parts, label);
+          if (index < 0) throw new Error(`the explain prompt's case names a part the review does not give: ${label}`);
+          const explained = await explainPart(parts, index, {
+            adapter: adapterFor(EXPLAIN_PROMPT_ID),
+            ...settings,
+            root: input.copies.head.path,
+            pullRequest: input.pullRequest,
+            plainChecks: false,
+          });
+          stamp = explained.stamp;
+          if (explained.answer === undefined) {
+            results.fallbacks!.push({ case: evaluationCase.id, agent: explained.stamp.agent, prompt: EXPLAIN_PROMPT_ID, detail: explained.detail });
+          }
+          checks.push(explained.answer === undefined ? undefined : explainChecks(parts[index]!, change, explained.answer));
+        }
+        const explainTally: Tally = { ...tallyCase(input.diff, evaluationCase.expected, undefined), explanations: tallyExplanations(checks) };
+        const rowStamp = stampFor(evaluationCase.record.prompts, stamp);
+        results.rows.push(...rowsOf(evaluationCase.id, explainTally, rowStamp, EXPLAIN_SCORES));
+        const group = explainTallies.get(stampKey(rowStamp)) ?? { stamp: stamp!, tallies: [] };
+        group.tallies.push(explainTally);
+        explainTallies.set(stampKey(rowStamp), group);
+      } catch (error) {
+        failedAgent(error, EXPLAIN_SCORES);
+      }
+    }
+
     const judgesVerdicts = runs(VERDICTS_PROMPT_ID);
     const pressesFetches = runs(LIBRARY_VERDICTS_PROMPT_ID);
     if ((judgesVerdicts || pressesFetches) && parts && parts.length > 0) {
@@ -615,6 +659,9 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
   }
   for (const { stamp, tallies: byAgent } of draftTallies.values()) {
     results.rows.push(...rowsOf(ALL_CASES, addTallies(byAgent), stampFor([DRAFT_COMMENT_PROMPT_ID], stamp), DRAFT_SCORES));
+  }
+  for (const { stamp, tallies: byAgent } of explainTallies.values()) {
+    results.rows.push(...rowsOf(ALL_CASES, addTallies(byAgent), stampFor([EXPLAIN_PROMPT_ID], stamp), EXPLAIN_SCORES));
   }
 
   await writeFile(join(folder, 'results.json'), `${JSON.stringify(results, null, 2)}\n`);

@@ -44,6 +44,11 @@
       "id": "draft-comment",
       "version": "1",
       "files": ["packages/engine/src/draft-comment.ts"]
+    },
+    {
+      "id": "explain",
+      "version": "1",
+      "files": ["packages/engine/src/explain.ts"]
     }
   ]
 }

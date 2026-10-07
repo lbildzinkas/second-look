@@ -1,3 +1,5 @@
+import type { AskKind } from '@second-look/engine';
+
 /** The commands the companion contributes, and the tree view it fills. */
 export const REVIEW_COMMAND = 'second-look.reviewPullRequest' as const;
 
@@ -77,3 +79,12 @@ export const DISCARD_DRAFT_COMMAND = 'second-look.discardDraft' as const;
 
 /** The context value the companion's draft comments carry while the reviewer edits them. */
 export const DRAFT_COMMENT_CONTEXT = 'second-look-draft' as const;
+
+/**
+ * The command that makes one ask (the glossary's ask) about a part, from
+ * the part's context menu in the tree: one command for each kind in the
+ * engine's ask registry, which the manifest declares with the ask's title.
+ */
+export function askCommand(kind: AskKind): string {
+  return `second-look.ask.${kind}`;
+}

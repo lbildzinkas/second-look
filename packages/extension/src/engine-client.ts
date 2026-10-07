@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import {
+  ASK_METHOD,
   DRAFT_COMMENT_METHOD,
   ENGINE_PROTOCOL_VERSION,
   FETCH_LIBRARY_METHOD,
@@ -13,6 +14,8 @@ import {
   REVIEW_METHOD,
   REVIEW_STAGE_METHOD,
   SEND_REVIEW_METHOD,
+  type AskAnswer,
+  type AskKind,
   type DraftComment,
   type FindingRef,
   type InitializeResult,
@@ -25,10 +28,12 @@ import {
   type ViewedFiles,
 } from '@second-look/engine';
 import {
+  AskProtocolError,
   DraftProtocolError,
   MarksProtocolError,
   ProtocolError,
   SendProtocolError,
+  isAskAnswer,
   isDraftComment,
   isReviewResult,
   isReviewedMarks,
@@ -92,6 +97,9 @@ const FETCH_LIBRARY_TIMEOUT_MS = 900_000;
 
 /** How long one draft may take: the agent's probe, and its run with its one retry. */
 const DRAFT_COMMENT_TIMEOUT_MS = 720_000;
+
+/** How long one ask may take: the agent's probe, and its run with its one retry. */
+const ASK_TIMEOUT_MS = 720_000;
 
 /** How long one send request may take before the engine is given up on. */
 const SEND_REVIEW_TIMEOUT_MS = 60_000;
@@ -297,6 +305,24 @@ export class EngineClient {
     );
     if (!isDraftComment(result)) {
       throw new DraftProtocolError();
+    }
+    return result;
+  }
+
+  /**
+   * Asks one ask about one part, sent only when the reviewer makes it:
+   * the engine has the agent the settings picked answer about the part of
+   * its latest review of the pull request, and checks the answer.
+   * Resolves with the answer; rejects with the engine's plain message,
+   * such as an answer the checks refused twice.
+   */
+  async ask(url: string, ask: AskKind, part: number, agent?: ReviewAgentChoice): Promise<AskAnswer> {
+    if (!this.handshaken) {
+      throw new Error('the engine has not completed its handshake yet');
+    }
+    const result = await this.request(ASK_METHOD, { url, ask, part, ...(agent !== undefined ? { agent } : {}) }, ASK_TIMEOUT_MS);
+    if (!isAskAnswer(result)) {
+      throw new AskProtocolError();
     }
     return result;
   }

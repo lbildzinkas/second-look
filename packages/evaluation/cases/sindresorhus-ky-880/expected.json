@@ -76,5 +76,6 @@
         "optional": true
       }
     ]
-  }
+  },
+  "explain": ["deepMergeInternal in source/utils/merge.ts"]
 }
