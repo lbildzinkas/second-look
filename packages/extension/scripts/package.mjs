@@ -10,7 +10,8 @@
 //   dist/index.js                                  the extension, bundled
 //   node_modules/@second-look/engine/package.json  a manifest for resolution
 //   node_modules/@second-look/engine/dist/main.js  the engine, bundled
-//   node_modules/@second-look/engine/dist/pi-guard.js
+//   node_modules/@second-look/engine/dist/pi-guard.js      Pi's guard, bundled
+//   node_modules/@second-look/engine/dist/claude-guard.js  Claude Code's guard, bundled
 //   node_modules/@vscode/tree-sitter-wasm/...      the WASM grammars
 //
 // The engine's own JavaScript dependencies are inlined into its bundle;
@@ -18,7 +19,7 @@
 // are WASM files the engine resolves by name at review time.
 //
 // Run with `npm run package`, which builds first: the script reads the
-// compiled engine output (dist/main.js and the pi-guard.js the engine
+// compiled engine output (dist/main.js and the guards the engine
 // resolves next to itself) and the pure helpers from the extension's own
 // compiled dist.
 import { build } from 'esbuild';
@@ -75,16 +76,20 @@ async function main() {
     external: ['vscode', '@vscode/tree-sitter-wasm'],
   });
 
-  // The engine: bundled from its compiled output, so the guard file the
-  // engine resolves next to itself (pi-guard.js) is a real file esbuild
-  // can see and keep beside the bundle.
+  // The engine: bundled from its compiled output. The guards the engine
+  // resolves next to itself — Pi's extension and Claude Code's hook — are
+  // bundled as entry points of their own, so each ships as one
+  // self-contained file with the core they share inlined.
   const stagedEngineDist = join(stage, 'node_modules', '@second-look', 'engine', 'dist');
   await bundle({
     entryPoints: [join(engineRoot, 'dist', 'main.js')],
     outfile: join(stagedEngineDist, 'main.js'),
     external: ['@vscode/tree-sitter-wasm'],
   });
-  copyFileSync(join(engineRoot, 'dist', 'pi-guard.js'), join(stagedEngineDist, 'pi-guard.js'));
+  await bundle({
+    entryPoints: [join(engineRoot, 'dist', 'pi-guard.js'), join(engineRoot, 'dist', 'claude-guard.js')],
+    outdir: stagedEngineDist,
+  });
   writeFileSync(
     join(stage, 'node_modules', '@second-look', 'engine', 'package.json'),
     `${JSON.stringify(stagedEngineManifest(engineManifest), undefined, 2)}\n`,

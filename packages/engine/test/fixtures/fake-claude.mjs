@@ -2,8 +2,12 @@
 // A fake Claude Code for the agent contract tests: it answers --version and
 // --help like Claude Code, and in print mode it records how it was started,
 // then plays the next scripted run from FAKE_CLAUDE_DIR/scenario.json as
-// Claude Code's stream-json output. It never calls a model and never reads
+// Claude Code's stream-json output. A scripted tool call runs the PreToolUse
+// hook the --settings argument names, through a shell as Claude Code does,
+// unless the run skips the guard or the call is denied by a permission rule,
+// which Claude Code checks before the hook and reports in the result. It never calls a model and never reads
 // anything outside its own state folder.
+import { spawnSync } from 'node:child_process';
 import { appendFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -53,7 +57,10 @@ record({
   args,
   cwd: process.cwd(),
   stdin,
-  env: pick(['GITHUB_TOKEN', 'GH_TOKEN', 'ANTHROPIC_API_KEY', 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC', 'FAKE_AGENT_LOGIN']),
+  env: pick([
+    'GITHUB_TOKEN', 'GH_TOKEN', 'ANTHROPIC_API_KEY', 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC', 'FAKE_AGENT_LOGIN',
+    'SECOND_LOOK_READ_ROOT', 'SECOND_LOOK_GUARD_AUDIT', 'ELECTRON_RUN_AS_NODE',
+  ]),
   at: Date.now(),
 });
 
@@ -62,14 +69,35 @@ const usage = run.usage ?? {
 };
 const cost = run.cost ?? 0.01;
 const model = run.model ?? 'fake-model';
+const flag = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
+const settings = JSON.parse(flag('--settings') ?? '{}');
+const hookCommand = settings.hooks?.PreToolUse?.[0]?.hooks?.[0]?.command;
 // The init event is held back until the scripted answer starts, so a hung
 // run names no model — the contract's "ends before the agent names one".
 const init = () =>
   emit({
     type: 'system', subtype: 'init', cwd: process.cwd(),
     tools: ['Read', 'Grep', 'Glob', 'StructuredOutput'], mcp_servers: [],
-    model, apiKeySource: process.env.ANTHROPIC_API_KEY ? 'environment variable' : 'none',
+    model, permissionMode: run.permissionMode ?? flag('--permission-mode') ?? 'auto',
+    apiKeySource: process.env.ANTHROPIC_API_KEY ? 'environment variable' : 'none',
   });
+
+// Each scripted tool call: its start streamed, the whole call in an
+// assistant message, then the guard hook run on it unless the run skips it.
+const callTools = () => {
+  for (const [index, call] of (run.toolCalls ?? []).entries()) {
+    const id = `toolu_fake_${earlier}_${index}`;
+    emit({ type: 'stream_event', event: { type: 'content_block_start', index, content_block: { type: 'tool_use', id, name: call.name, input: {} } } });
+    emit({ type: 'assistant', message: { model, role: 'assistant', content: [{ type: 'tool_use', id, name: call.name, input: call.input }] } });
+    if (call.deniedByRule || run.skipGuard || !hookCommand) continue;
+    const event = {
+      session_id: 'fake-session', hook_event_name: 'PreToolUse', cwd: process.cwd(),
+      permission_mode: flag('--permission-mode') ?? 'auto', tool_name: call.name, tool_input: call.input, tool_use_id: id,
+    };
+    const hook = spawnSync(hookCommand, { shell: true, input: JSON.stringify(event), encoding: 'utf8' });
+    record({ kind: 'hook', id, tool: call.name, status: hook.status, stdout: hook.stdout, stderr: hook.stderr });
+  }
+};
 
 if (run.delayMs) await sleep(run.delayMs);
 if (run.hang) {
@@ -78,15 +106,20 @@ if (run.hang) {
   setInterval(() => undefined, 1000);
 } else if (run.error) {
   init();
+  callTools();
   emit({ type: 'result', subtype: 'error_during_execution', is_error: true, result: run.error, model, usage, total_cost_usd: cost });
   record({ kind: 'end', at: Date.now() });
   process.exitCode = 1;
 } else {
   init();
+  callTools();
   emit({ type: 'assistant', message: { model, role: 'assistant', content: [{ type: 'text', text: run.text }], usage } });
   for (const delta of [run.text.slice(0, 3), run.text.slice(3)]) {
     emit({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: delta } } });
   }
-  emit({ type: 'result', subtype: 'success', is_error: false, result: run.text, model, usage, total_cost_usd: cost });
+  const permission_denials = (run.toolCalls ?? []).flatMap((call, index) =>
+    call.deniedByRule ? [{ tool_name: call.name, tool_use_id: `toolu_fake_${earlier}_${index}`, tool_input: call.input }] : [],
+  );
+  emit({ type: 'result', subtype: 'success', is_error: false, result: run.text, model, usage, total_cost_usd: cost, permission_denials });
   record({ kind: 'end', at: Date.now() });
 }

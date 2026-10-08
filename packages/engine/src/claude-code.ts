@@ -1,6 +1,10 @@
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createInterface } from 'node:readline';
+import { fileURLToPath } from 'node:url';
 import { trackAgentChild } from './agent-children.js';
 import {
   GITHUB_TOKEN_VARIABLES,
@@ -12,11 +16,29 @@ import {
   type AgentStamp,
   type AgentTokens,
 } from './agent.js';
+import {
+  CLAUDE_READ_TOOLS,
+  GUARD_AUDIT_VARIABLE,
+  type GuardAuditLine,
+} from './claude-guard-check.js';
+import { CREDENTIAL_PATHS, READ_ROOT_VARIABLE } from './read-guard.js';
 
 /**
  * The Claude Code adapter (ADR 0004): the same contract as the Pi adapter,
- * built from what Claude Code itself offers rather than a guard extension.
+ * built from what Claude Code offers plus the companion's own guard.
  *
+ * - **the companion's guard**: a `PreToolUse` hook (`claude-guard.ts`),
+ *   passed with `--settings` for every tool, checks each call before it
+ *   runs: paths confined to the read-only copy, symbolic links followed,
+ *   credential paths and climbing or absolute glob patterns refused, every
+ *   other tool denied. The same settings pin `disableAllHooks` off, so the
+ *   reviewer's own settings cannot switch the guard off, and add deny rules
+ *   for every credential path.
+ * - **the default permission mode**: `--permission-mode default`. Claude
+ *   Code starts some models in its `auto` mode, which reads files outside
+ *   the working directory without asking; in `default` mode such a read
+ *   needs approval, which `--permission-prompts none` denies, so Claude
+ *   Code's own working-directory check stands behind the guard.
  * - **print mode with a schema**: `--print` runs the agent once and exits,
  *   and `--json-schema` makes Claude Code validate the answer against the
  *   task's schema before returning it.
@@ -26,15 +48,17 @@ import {
  * - **no project MCP servers**: `--strict-mcp-config` ignores every MCP
  *   configuration except the one the run names, and the run names none.
  * - **file-reading tools only**: `--tools Read,Grep,Glob` leaves the agent
- *   without a shell, network tools or edits. Claude Code is meant to confine
- *   its file tools to the working directory — the read-only copy — but that
- *   confinement is Claude Code's own, and live runs showed it to depend on
- *   the model; docs/agent-safety.md states the reach and the gaps.
+ *   without a shell, network tools or edits.
  * - `--permission-prompts none` denies anything that would ask, and
  *   `--no-session-persistence` writes no session file.
  *
  * A Claude Code whose help lacks any of these flags is never run, rather
- * than run with a weaker lockdown.
+ * than run with a weaker lockdown. A Claude Code hook that cannot start
+ * lets the call through, so the run fails closed instead: the probe runs
+ * the exact hook command on an outside read and requires a refusal, a run
+ * whose permission mode is not `default` is failed, and so is a run with a
+ * tool call the guard's audit file never saw and Claude Code did not deny
+ * itself.
  *
  * Each run's stamp reports which login it used. The companion never reads
  * the login — it names the source: an inherited `ANTHROPIC_API_KEY` (with a
@@ -43,8 +67,14 @@ import {
  * subscription sign-in.
  */
 
-/** The tools the agent may use: reading files of the copy, nothing else. */
-export const CLAUDE_READ_TOOLS = ['Read', 'Grep', 'Glob'] as const;
+/** The guard hook built next to this file. */
+export const CLAUDE_GUARD_PATH = fileURLToPath(new URL('./claude-guard.js', import.meta.url));
+
+/** The permission mode every run is pinned to, so Claude Code's own working-directory check applies. */
+export const CLAUDE_PERMISSION_MODE = 'default';
+
+/** Seconds Claude Code gives the guard hook for one call. */
+const GUARD_TIMEOUT_SECONDS = 30;
 
 /**
  * The flags the lockdown needs. A Claude Code whose help lacks any of them
@@ -59,6 +89,8 @@ const LOCKDOWN_FLAGS = [
   '--strict-mcp-config',
   '--tools',
   '--permission-prompts',
+  '--permission-mode',
+  '--settings',
   '--system-prompt',
   '--json-schema',
 ] as const;
@@ -66,6 +98,8 @@ const LOCKDOWN_FLAGS = [
 export interface ClaudeCodeAdapterOptions {
   /** The command that starts Claude Code, with any leading arguments; `['claude']` by default. */
   command?: readonly string[];
+  /** The guard hook Claude Code runs; {@link CLAUDE_GUARD_PATH} by default. */
+  guardPath?: string;
   /** The engine's environment, which the agent inherits minus the GitHub login. */
   env?: NodeJS.ProcessEnv;
   /** Milliseconds between asking a timed-out Claude Code to stop and killing it. */
@@ -73,16 +107,68 @@ export interface ClaudeCodeAdapterOptions {
 }
 
 /**
+ * The shell command Claude Code runs as the guard hook: this engine's own
+ * Node (the editor's binary inside VS Code, run as Node) on the guard
+ * script. Claude Code hands the command to a shell, so a path holding a
+ * quote, a backquote, a `$`, a line break, a backslash outside Windows or
+ * a `%` on Windows is refused rather than let it change the command.
+ */
+export function guardHookCommand(
+  nodePath: string,
+  guardPath: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  const unsafe = platform === 'win32' ? /["`$%\r\n]/ : /["`$\\\r\n]/;
+  for (const path of [nodePath, guardPath]) {
+    if (unsafe.test(path)) {
+      throw new Error(`the path ${JSON.stringify(path)} holds a character that could change the guard's hook command`);
+    }
+  }
+  return `"${nodePath}" "${guardPath}"`;
+}
+
+/**
+ * Permission rules that deny reading every credential path, generated from
+ * the guard's own list: the path itself, and everything under a folder.
+ * Claude Code applies a `Read` rule to Grep and Glob as well.
+ */
+export function credentialDenyRules(): string[] {
+  return CREDENTIAL_PATHS.flatMap(({ path, folder }) =>
+    folder ? [`Read(~/${path})`, `Read(~/${path}/**)`] : [`Read(~/${path})`],
+  );
+}
+
+/**
+ * The settings every run passes with `--settings`, which outrank the
+ * reviewer's user settings: hooks pinned on, the guard hook for every tool,
+ * and the credential deny rules.
+ */
+export function claudeSettings(hookCommand: string): string {
+  return JSON.stringify({
+    disableAllHooks: false,
+    hooks: {
+      PreToolUse: [
+        { matcher: '*', hooks: [{ type: 'command', command: hookCommand, timeout: GUARD_TIMEOUT_SECONDS }] },
+      ],
+    },
+    permissions: { deny: credentialDenyRules() },
+  });
+}
+
+/**
  * The exact arguments of a locked-down Claude Code run: print mode, streamed
  * JSON with partial messages so a timeout keeps what was written, no session
  * file, user-level settings only, every MCP configuration ignored,
- * file-reading tools only, permission prompts denied rather than asked, and
- * the companion's own system prompt with the answer's schema. The prompt
- * itself goes on stdin, so no argument can be read as a file to attach.
+ * file-reading tools only, permission prompts denied rather than asked, the
+ * default permission mode, the companion's settings with the guard hook,
+ * and the companion's own system prompt with the answer's schema. The
+ * prompt itself goes on stdin, so no argument can be read as a file to
+ * attach.
  */
 export function claudeArguments(
   request: Pick<AgentRunRequest, 'instructions' | 'schema' | 'model' | 'effort'>,
   supportsEffort: boolean,
+  hookCommand: string,
 ): string[] {
   return [
     '--print',
@@ -97,6 +183,10 @@ export function claudeArguments(
     CLAUDE_READ_TOOLS.join(','),
     '--permission-prompts',
     'none',
+    '--permission-mode',
+    CLAUDE_PERMISSION_MODE,
+    '--settings',
+    claudeSettings(hookCommand),
     '--system-prompt',
     request.instructions,
     ...(request.schema ? ['--json-schema', JSON.stringify(request.schema)] : []),
@@ -110,6 +200,21 @@ export function claudeEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const clean: NodeJS.ProcessEnv = { ...env };
   for (const name of GITHUB_TOKEN_VARIABLES) delete clean[name];
   return { ...clean, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1' };
+}
+
+/**
+ * The environment of one run, which Claude Code hands on to the guard hook:
+ * the agent's, plus the read-only copy, the audit file, and
+ * `ELECTRON_RUN_AS_NODE`, because inside VS Code the hook's Node is the
+ * editor's own binary, which runs plain Node code only when told to.
+ */
+export function claudeRunEnvironment(env: NodeJS.ProcessEnv, root: string, audit: string): NodeJS.ProcessEnv {
+  return {
+    ...claudeEnvironment(env),
+    [READ_ROOT_VARIABLE]: root,
+    [GUARD_AUDIT_VARIABLE]: audit,
+    ELECTRON_RUN_AS_NODE: '1',
+  };
 }
 
 /** The environment variable whose inherited value silently overrides the subscription. */
@@ -173,24 +278,123 @@ interface ClaudeUsage {
   cache_creation_input_tokens?: number | null;
 }
 
+interface ClaudeContentBlock {
+  type?: string;
+  id?: string;
+}
+
 interface ClaudeEvent {
   type?: string;
   subtype?: string;
   model?: string;
+  permissionMode?: string;
   result?: string;
   is_error?: boolean;
   usage?: ClaudeUsage;
   total_cost_usd?: number;
+  permission_denials?: { tool_use_id?: string }[];
   event?: {
     type?: string;
     delta?: { type?: string; text?: string; partial_json?: string };
+    content_block?: ClaudeContentBlock;
   };
-  message?: { model?: string };
+  message?: { model?: string; content?: ClaudeContentBlock[] };
+}
+
+/** The tool-use id of the preflight's synthetic call. */
+const PREFLIGHT_TOOL_USE_ID = 'second-look-guard-preflight';
+
+/** What the guard hook answered one event. */
+interface HookRun {
+  code: number | null;
+  stdout: string;
+  stderr: string;
+  error?: string;
+}
+
+/** Runs the guard hook command through a shell, as Claude Code does, with one event on stdin. */
+function runHook(hookCommand: string, eventText: string, env: NodeJS.ProcessEnv, cwd: string): Promise<HookRun> {
+  return new Promise((done) => {
+    const child = trackAgentChild(
+      spawn(hookCommand, { shell: true, cwd, env, stdio: ['pipe', 'pipe', 'pipe'], timeout: GUARD_TIMEOUT_SECONDS * 1000 }),
+    );
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8').on('data', (chunk: string) => (stdout += chunk));
+    child.stderr.setEncoding('utf8').on('data', (chunk: string) => (stderr = (stderr + chunk).slice(-2000)));
+    child.stdin.on('error', () => undefined);
+    child.stdin.end(eventText);
+    child.on('error', (error) => done({ code: null, stdout, stderr, error: error.message }));
+    child.on('close', (code) => done({ code, stdout, stderr }));
+  });
+}
+
+/** Reads the guard's audit file: one line per call it saw. A missing file means it saw none. */
+async function readAudit(audit: string): Promise<GuardAuditLine[]> {
+  let text: string;
+  try {
+    text = await readFile(audit, 'utf8');
+  } catch {
+    return [];
+  }
+  const lines: GuardAuditLine[] = [];
+  for (const line of text.split('\n')) {
+    if (line === '') continue;
+    try {
+      lines.push(JSON.parse(line) as GuardAuditLine);
+    } catch {
+      // A torn line names no call, so the call it was for counts as unseen.
+    }
+  }
+  return lines;
+}
+
+/**
+ * Runs the exact hook command on a synthetic read outside an empty copy,
+ * with no model involved, and requires the guard to deny it and audit it.
+ * Returns why the guard cannot be trusted, or undefined when it held.
+ */
+async function preflightGuard(hookCommand: string, env: NodeJS.ProcessEnv): Promise<string | undefined> {
+  const dir = await mkdtemp(join(tmpdir(), 'second-look-guard-preflight-'));
+  try {
+    const root = join(dir, 'copy');
+    await mkdir(root);
+    const audit = join(dir, 'audit.jsonl');
+    const event = {
+      session_id: PREFLIGHT_TOOL_USE_ID,
+      hook_event_name: 'PreToolUse',
+      cwd: root,
+      permission_mode: CLAUDE_PERMISSION_MODE,
+      tool_name: 'Read',
+      tool_input: { file_path: join(dir, 'outside.txt') },
+      tool_use_id: PREFLIGHT_TOOL_USE_ID,
+    };
+    const answer = await runHook(hookCommand, JSON.stringify(event), claudeRunEnvironment(env, root, audit), root);
+    if (answer.error) return answer.error;
+    const detail = answer.stderr.trim() ? `: ${answer.stderr.trim().split('\n').slice(-3).join(' ')}` : '';
+    if (answer.code !== 0) return `the hook exited with ${answer.code}${detail}`;
+    let decision: unknown;
+    try {
+      const parsed = JSON.parse(answer.stdout) as { hookSpecificOutput?: { permissionDecision?: unknown } };
+      decision = parsed.hookSpecificOutput?.permissionDecision;
+    } catch {
+      decision = undefined;
+    }
+    if (decision !== 'deny') return 'the hook did not refuse a read outside the copy';
+    const audited = await readAudit(audit);
+    if (!audited.some((line) => line.id === PREFLIGHT_TOOL_USE_ID && line.decision === 'deny')) {
+      return 'the hook did not write its audit line';
+    }
+    return undefined;
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 }
 
 /** Drives the installed Claude Code agent (ADR 0004); see {@link AgentAdapter} for the contract. */
 export function claudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}): AgentAdapter {
   const command = options.command ?? ['claude'];
+  const guardPath = options.guardPath ?? CLAUDE_GUARD_PATH;
   const env = options.env ?? process.env;
   const killGraceMs = options.killGraceMs ?? 2000;
   let probed: Promise<AgentProbe> | undefined;
@@ -211,14 +415,28 @@ export function claudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}): Agent
       const reason = `Claude Code ${found} lacks ${missing.join(', ')}, which the companion's lockdown needs`;
       return { ...base, version: found, supports, usable: false, reason };
     }
+    const unusable = (reason: string): AgentProbe => ({ ...base, version: found, supports, usable: false, reason });
+    let hookCommand: string;
+    try {
+      hookCommand = guardHookCommand(process.execPath, guardPath);
+    } catch (error) {
+      return unusable(`the companion's guard cannot be handed to Claude Code safely: ${(error as Error).message}`);
+    }
+    if (!existsSync(guardPath)) return unusable(`the companion's guard is missing: ${guardPath}`);
+    const failure = await preflightGuard(hookCommand, env).catch((error: Error) => error.message);
+    if (failure !== undefined) return unusable(`the companion's guard could not be run: ${failure}`);
     return {
       ...base,
       version: found,
       supports,
       usable: true,
       lockdown: [
+        "companion's guard hook checks every tool call: paths confined to the read-only copy, symbolic links " +
+          'followed; credential paths, URLs and absolute or climbing glob patterns refused; every other tool denied',
+        `permission mode pinned to ${CLAUDE_PERMISSION_MODE}, so Claude Code's own working-directory check also applies`,
+        "credential paths also denied by permission rules; hooks pinned on over the reviewer's own settings",
+        'a run fails when its permission mode is not default or a tool call has no guard audit line',
         `tool allowlist: ${CLAUDE_READ_TOOLS.join(', ')} (no shell, no network, no edits)`,
-        'outside-folder denial rests on Claude Code itself and failed in a live run with some models — check it with the probe',
         'user-level settings only: project and local settings, and the context in the copy, stay out',
         'no MCP servers: every MCP configuration is ignored',
         'no session file written; permission prompts denied, never asked',
@@ -240,10 +458,31 @@ export function claudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}): Agent
     if (!probeResult.usable) {
       return { status: 'failed', text: '', error: probeResult.reason, stamp };
     }
+    let auditDir: string;
+    try {
+      auditDir = await mkdtemp(join(tmpdir(), 'second-look-claude-audit-'));
+    } catch (error) {
+      return { status: 'failed', text: '', error: `the guard's audit file could not be made: ${(error as Error).message}`, stamp };
+    }
+    try {
+      return await runGuarded(request, probeResult, stamp, join(auditDir, 'audit.jsonl'));
+    } finally {
+      await rm(auditDir, { recursive: true, force: true });
+    }
+  };
+
+  const runGuarded = async (
+    request: AgentRunRequest,
+    probeResult: AgentProbe,
+    stamp: AgentStamp,
+    audit: string,
+  ): Promise<AgentRunOutcome> => {
+    const hookCommand = guardHookCommand(process.execPath, guardPath);
+    const args = claudeArguments(request, probeResult.supports.effort, hookCommand);
     const child = trackAgentChild(
-      spawn(command[0]!, [...command.slice(1), ...claudeArguments(request, probeResult.supports.effort)], {
+      spawn(command[0]!, [...command.slice(1), ...args], {
         cwd: request.root,
-        env: claudeEnvironment(env),
+        env: claudeRunEnvironment(env, request.root, audit),
         stdio: ['pipe', 'pipe', 'pipe'],
       }),
     );
@@ -254,6 +493,9 @@ export function claudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}): Agent
     let finalText: string | undefined;
     let error: string | undefined;
     let stderr = '';
+    let permissionMode: string | undefined;
+    const toolUseIds = new Set<string>();
+    const deniedIds = new Set<string>();
     const tokens: AgentTokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
     let tokensReported = false;
     let cost: number | undefined;
@@ -268,6 +510,14 @@ export function claudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}): Agent
       }
       const model = event.model ?? event.message?.model;
       if (model) stamp.model = model;
+      if (event.type === 'system' && event.subtype === 'init') {
+        permissionMode = typeof event.permissionMode === 'string' ? event.permissionMode : '';
+      }
+      const block = event.type === 'stream_event' && event.event?.type === 'content_block_start' ? event.event.content_block : undefined;
+      if (block?.type === 'tool_use' && block.id) toolUseIds.add(block.id);
+      if (event.type === 'assistant') {
+        for (const part of event.message?.content ?? []) if (part.type === 'tool_use' && part.id) toolUseIds.add(part.id);
+      }
       if (
         event.type === 'stream_event' &&
         event.event?.type === 'content_block_delta' &&
@@ -278,6 +528,7 @@ export function claudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}): Agent
         if (delta.type === 'input_json_delta' && delta.partial_json !== undefined) text += delta.partial_json;
       }
       if (event.type !== 'result') return;
+      for (const denial of event.permission_denials ?? []) if (denial.tool_use_id) deniedIds.add(denial.tool_use_id);
       const usage = event.usage;
       if (usage) {
         tokensReported = true;
@@ -315,7 +566,28 @@ export function claudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}): Agent
 
     if (tokensReported) stamp.tokens = tokens;
     if (cost !== undefined) stamp.costUsd = cost;
-    if (timedOut) return { status: 'timeout', text: finalText ?? text, stamp };
+    // The checks that keep the run closed when the guard was switched off or
+    // never ran: whatever such a run wrote is discarded, never shown. A call
+    // Claude Code denied itself read nothing, and its deny rules are checked
+    // before the hook runs, so such a call needs no audit line.
+    const audited = new Set((await readAudit(audit)).map((line) => line.id));
+    const unguarded = [...toolUseIds].filter((id) => !audited.has(id) && !deniedIds.has(id));
+    const wrongMode =
+      permissionMode === undefined || permissionMode === CLAUDE_PERMISSION_MODE
+        ? undefined
+        : permissionMode === ''
+          ? 'Claude Code did not report its permission mode, so the answer is discarded'
+          : `Claude Code ran in the ${permissionMode} permission mode instead of ${CLAUDE_PERMISSION_MODE}, ` +
+            'so the answer is discarded';
+    const unseen =
+      unguarded.length > 0
+        ? `Claude Code ran tool call ${unguarded.join(', ')} without the companion's guard, so the answer is discarded`
+        : undefined;
+    if (wrongMode) return { status: 'failed', text: '', error: wrongMode, stamp };
+    // A run stopped at its timeout can end between a tool call starting and
+    // the guard seeing it, so an unseen call only discards what it wrote.
+    if (timedOut) return { status: 'timeout', text: unseen ? '' : (finalText ?? text), stamp };
+    if (unseen) return { status: 'failed', text: '', error: unseen, stamp };
     if (exit.spawnError) {
       return { status: 'failed', text, error: `Claude Code could not be started: ${exit.spawnError}`, stamp };
     }
@@ -323,6 +595,9 @@ export function claudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}): Agent
     if (exit.code !== 0 || finalText === undefined) {
       const detail = stderr.trim() ? `: ${stderr.trim().split('\n').slice(-3).join(' ')}` : '';
       return { status: 'failed', text, error: `Claude Code exited with ${exit.code} without an answer${detail}`, stamp };
+    }
+    if (permissionMode === undefined) {
+      return { status: 'failed', text: '', error: 'Claude Code never reported its permission mode, so the answer is discarded', stamp };
     }
     return { status: 'completed', text: finalText, stamp };
   };

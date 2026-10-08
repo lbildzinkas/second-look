@@ -4,7 +4,7 @@ import { runCli } from '../src/cli.js';
 import { validateJson } from '../src/json-schema.js';
 import { PROBE_INSTRUCTIONS, PROBE_SCHEMA, probePrompt, runAgentProbe } from '../src/probe.js';
 import { HIDDEN_COMMENT_START, UNTRUSTED_INPUT_RULE } from '../src/untrusted.js';
-import { FAKE_CLAUDE, fakeClaude } from './fake-claude.js';
+import { CLAUDE_GUARD, FAKE_CLAUDE, fakeClaude } from './fake-claude.js';
 import { FAKE_PI, GUARD, fakePi } from './fake-pi.js';
 import { CaptureStream, PR_7_URL, PR_URL, fixtureFetch, pull42, pull7, temporaryCacheDir } from './helpers.js';
 
@@ -143,7 +143,7 @@ describe('runCli probe', () => {
         PATH: process.env['PATH'],
       },
       { out, err },
-      { fetch: fixtureFetch().fetch, claudeCode: { command: [process.execPath, FAKE_CLAUDE] } },
+      { fetch: fixtureFetch().fetch, claudeCode: { command: [process.execPath, FAKE_CLAUDE], guardPath: CLAUDE_GUARD } },
     );
     expect(code).toBe(0);
     expect(err.text).toBe('');

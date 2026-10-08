@@ -16,13 +16,12 @@
  * file-reading tools only, so no shell and no network; the agent's own
  * settings, extensions and context files from the pull request switched
  * off; every path confined to the read-only copy, with credential paths
- * (SSH keys, cloud credentials, the GitHub login) refused by name — for
- * Pi by the companion's guard inside the agent's process, for Claude
- * Code only by Claude Code itself, which live runs showed to depend on
- * the model (see docs/agent-safety.md). The agent signs in with its own
- * login: the companion never reads or stores it, and the GitHub token
- * the engine holds never reaches the agent — {@link GITHUB_TOKEN_VARIABLES}
- * names the variables every adapter strips.
+ * (SSH keys, cloud credentials, the GitHub login) refused by name — by
+ * the companion's guard, inside Pi's process as an extension and before
+ * every Claude Code tool call as a hook (see docs/agent-safety.md). The
+ * agent signs in with its own login: the companion never reads or stores
+ * it, and the GitHub token the engine holds never reaches the agent —
+ * {@link GITHUB_TOKEN_VARIABLES} names the variables every adapter strips.
  *
  * {@link runAgentTasks} sits on top of any adapter: it checks each answer
  * against its schema and the task's own check, retries an invalid answer
