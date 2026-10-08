@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AGENT_NAMES, agentAdapter, isAgentName } from '../src/agents.js';
-import { FAKE_CLAUDE, fakeClaude } from './fake-claude.js';
+import { CLAUDE_GUARD, FAKE_CLAUDE, fakeClaude } from './fake-claude.js';
 import { FAKE_PI, GUARD, fakePi } from './fake-pi.js';
 
 describe('agentAdapter', () => {
@@ -19,7 +19,7 @@ describe('agentAdapter', () => {
       env: { PATH: process.env['PATH'], FAKE_PI_DIR: pi.dir },
     });
     const other = agentAdapter('claude-code', {
-      claudeCode: { command: [process.execPath, FAKE_CLAUDE] },
+      claudeCode: { command: [process.execPath, FAKE_CLAUDE], guardPath: CLAUDE_GUARD },
       env: { PATH: process.env['PATH'], FAKE_CLAUDE_DIR: claude.dir },
     });
     expect(named.agent).toBe('pi');

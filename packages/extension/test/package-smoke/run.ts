@@ -1,5 +1,5 @@
 import { deepStrictEqual, ok } from 'node:assert';
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -91,6 +91,33 @@ async function packagedEngineHandshake(
   }
 }
 
+/**
+ * Runs the packaged Claude Code guard the way the engine has Claude Code
+ * run it inside the editor — the editor's binary as Node — on a read
+ * outside an empty copy, and returns its permission decision.
+ */
+function packagedClaudeGuardDecision(guard: string, workDir: string): unknown {
+  const copy = join(workDir, 'guard-copy');
+  mkdirSync(copy, { recursive: true });
+  const hook = spawnSync(process.execPath, [guard], {
+    input: JSON.stringify({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Read',
+      tool_input: { file_path: join(workDir, 'outside.txt') },
+      tool_use_id: 'package-smoke',
+    }),
+    encoding: 'utf8',
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', SECOND_LOOK_READ_ROOT: copy },
+    timeout: TIMEOUT_MS,
+  });
+  try {
+    return (JSON.parse(hook.stdout) as { hookSpecificOutput?: { permissionDecision?: unknown } }).hookSpecificOutput
+      ?.permissionDecision;
+  } catch {
+    return `no decision (exit ${hook.status}): ${hook.stderr}`;
+  }
+}
+
 export async function run(): Promise<void> {
   const workDir = mkdtempSync(join(tmpdir(), 'second-look-package-smoke-'));
   const sessionChanges =
@@ -124,12 +151,18 @@ export async function run(): Promise<void> {
     await withTimeout(extension.activate(), `activation of ${EXTENSION_ID}`);
 
     // The package carries what its code resolves at run time: the bundled
-    // engine with the guard beside it, and every grammar the engine's
+    // engine with both guards beside it, and every grammar the engine's
     // language list names.
     const installed = extension.extensionUri.fsPath;
     const engineDist = join(installed, 'node_modules', '@second-look', 'engine', 'dist');
     ok(existsSync(join(engineDist, 'main.js')), 'the package carries the bundled engine');
-    ok(existsSync(join(engineDist, 'pi-guard.js')), 'the package carries the engine guard beside it');
+    ok(existsSync(join(engineDist, 'pi-guard.js')), "the package carries Pi's guard beside the engine");
+    ok(existsSync(join(engineDist, 'claude-guard.js')), "the package carries Claude Code's guard beside the engine");
+    deepStrictEqual(
+      packagedClaudeGuardDecision(join(engineDist, 'claude-guard.js'), workDir),
+      'deny',
+      "the packaged Claude Code guard, run by the editor's binary as Node, refuses a read outside the copy",
+    );
     for (const language of LANGUAGES) {
       ok(
         existsSync(

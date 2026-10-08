@@ -13,7 +13,8 @@ import {
   type AgentStamp,
   type AgentTokens,
 } from './agent.js';
-import { READ_ROOT_VARIABLE, READ_TOOLS } from './pi-guard.js';
+import { READ_TOOLS } from './pi-guard.js';
+import { READ_ROOT_VARIABLE } from './read-guard.js';
 
 /**
  * The flags the lockdown needs. A Pi whose help lacks any of them is never

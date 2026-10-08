@@ -22,7 +22,7 @@ export interface AgentAdapterOptions {
   /** How the engine starts Pi; `['pi']` by default. */
   pi?: Pick<PiAdapterOptions, 'command' | 'guardPath'>;
   /** How the engine starts Claude Code; `['claude']` by default. */
-  claudeCode?: Pick<ClaudeCodeAdapterOptions, 'command'>;
+  claudeCode?: Pick<ClaudeCodeAdapterOptions, 'command' | 'guardPath'>;
   /** The engine's environment, which the agent inherits minus the GitHub login. */
   env?: NodeJS.ProcessEnv;
 }

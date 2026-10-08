@@ -12,56 +12,21 @@
  *   `SECOND_LOOK_READ_ROOT`, following symbolic links, and hands the tool
  *   the checked real path so it reads exactly what was checked.
  *
- * Without `SECOND_LOOK_READ_ROOT` every call is blocked. The file runs in
- * Pi's process, so it imports nothing but Node's own modules.
+ * Without `SECOND_LOOK_READ_ROOT` every call is blocked. The checks it
+ * shares with Claude Code's hook live in `read-guard.ts`. The file runs in
+ * Pi's process, so it imports nothing but Node's own modules and that
+ * sibling, and the package bundles the two into one file.
  */
-import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { confinePath, READ_ROOT_VARIABLE, UNICODE_SPACES, type GuardVerdict } from './read-guard.js';
 
 /** The tools the agent may use: reading files of the copy, nothing else. */
 export const READ_TOOLS = ['read', 'grep', 'find', 'ls'] as const;
 
-/** The environment variable that names the read-only copy. */
-export const READ_ROOT_VARIABLE = 'SECOND_LOOK_READ_ROOT';
-
-/** Credential paths under the home folder, refused whatever the read root is. */
-const CREDENTIAL_PATHS = [
-  '.ssh',
-  '.gnupg',
-  '.aws',
-  '.azure',
-  '.config/gcloud',
-  '.kube',
-  '.docker/config.json',
-  '.config/gh',
-  '.git-credentials',
-  '.config/git/credentials',
-  '.netrc',
-  '.npmrc',
-  '.pi/agent/auth.json',
-  '.claude/.credentials.json',
-  '.codex/auth.json',
-];
-
-/** What the guard decided about one tool call. */
-export type GuardVerdict = { allowed: true; path: string } | { allowed: false; reason: string };
-
-const URL_LIKE = /^[a-z][a-z0-9+.-]*:\/\//i;
-const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
-
-function isInside(path: string, folder: string): boolean {
-  const rest = relative(folder, path);
-  return rest === '' || (!rest.startsWith(`..${sep}`) && rest !== '..' && !isAbsolute(rest));
-}
-
-/** Resolves a tool's path argument the way Pi does: `@` prefix, `~`, odd spaces, cwd. */
-function resolveToolPath(raw: string, root: string, home: string): string {
-  let path = raw.replace(UNICODE_SPACES, ' ');
-  if (path.startsWith('@')) path = path.slice(1);
-  if (path === '~') path = home;
-  else if (path.startsWith('~/')) path = join(home, path.slice(2));
-  return resolve(root, path);
+/** Pi's own spelling of a path argument: odd spaces read as spaces, and an `@` prefix dropped. */
+function piToolPath(raw: string): string {
+  const path = raw.replace(UNICODE_SPACES, ' ');
+  return path.startsWith('@') ? path.slice(1) : path;
 }
 
 /**
@@ -86,33 +51,7 @@ export function checkToolCall(
   } else if (typeof given !== 'string') {
     return { allowed: false, reason: 'the path is not a string' };
   }
-  const raw = typeof given === 'string' ? given : '.';
-  if (URL_LIKE.test(raw.trim())) {
-    return { allowed: false, reason: 'URLs are refused: there is no network access, only files of the read-only copy' };
-  }
-  const path = resolveToolPath(raw, root, home);
-  if (CREDENTIAL_PATHS.some((credential) => isInside(path, join(home, credential)))) {
-    return { allowed: false, reason: 'credential paths may not be read' };
-  }
-  let realRoot: string;
-  try {
-    realRoot = realpathSync(root);
-  } catch {
-    return { allowed: false, reason: 'the read-only copy is missing' };
-  }
-  if (!isInside(path, root) && !isInside(path, realRoot)) {
-    return { allowed: false, reason: 'only files of the read-only copy may be read' };
-  }
-  let real: string;
-  try {
-    real = realpathSync(path);
-  } catch {
-    return { allowed: false, reason: 'no such file in the read-only copy' };
-  }
-  if (!isInside(real, realRoot)) {
-    return { allowed: false, reason: 'the path leads outside the read-only copy' };
-  }
-  return { allowed: true, path: real };
+  return confinePath(typeof given === 'string' ? given : '.', root, home, piToolPath);
 }
 
 /** The part of Pi's extension interface the guard uses. */

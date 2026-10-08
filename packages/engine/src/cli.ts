@@ -116,10 +116,8 @@ Each adapter reports which login the run used — Claude Code, for instance,
 its stored subscription sign-in, and a warning when an inherited
 ANTHROPIC_API_KEY overrides it.
 The agent runs with file-reading tools only and signs in with its own
-login; the GitHub token never reaches it. For Pi, the guard confines every
-path to the copy, and a credential path or a URL comes back refused; for
-Claude Code, the outside-folder denial rests on Claude Code itself and
-failed in a live run with some models, so check a setup with the probe
+login; the GitHub token never reaches it. The companion's guard confines
+every path to the copy, and a credential path or a URL comes back refused
 (docs/agent-safety.md states each agent's reach and gaps). Each run stops
 after --agent-timeout
 seconds (default ${DEFAULT_AGENT_SETTINGS.timeoutMs / 1000}), at most --agent-concurrency (default
@@ -164,7 +162,7 @@ export interface CliDeps {
   /** How the probe and the agent stage start Pi; tests point it at a fake agent. */
   pi?: Pick<PiAdapterOptions, 'command' | 'guardPath'>;
   /** How the probe and the agent stage start Claude Code; tests point it at a fake agent. */
-  claudeCode?: Pick<ClaudeCodeAdapterOptions, 'command'>;
+  claudeCode?: Pick<ClaudeCodeAdapterOptions, 'command' | 'guardPath'>;
 }
 
 /** Flags that take a value, beyond --token and --cache-dir. */
