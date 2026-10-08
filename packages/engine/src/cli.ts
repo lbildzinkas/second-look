@@ -115,9 +115,13 @@ stamp of each run: agent, version, model, effort, run date, tokens and cost.
 Each adapter reports which login the run used — Claude Code, for instance,
 its stored subscription sign-in, and a warning when an inherited
 ANTHROPIC_API_KEY overrides it.
-The agent runs with file-reading tools only, confined to the copy: a
-credential path or a URL comes back refused. It signs in with its own login;
-the GitHub token never reaches it. Each run stops after --agent-timeout
+The agent runs with file-reading tools only and signs in with its own
+login; the GitHub token never reaches it. For Pi, the guard confines every
+path to the copy, and a credential path or a URL comes back refused; for
+Claude Code, the outside-folder denial rests on Claude Code itself and
+failed in a live run with some models, so check a setup with the probe
+(docs/agent-safety.md states each agent's reach and gaps). Each run stops
+after --agent-timeout
 seconds (default ${DEFAULT_AGENT_SETTINGS.timeoutMs / 1000}), at most --agent-concurrency (default
 ${DEFAULT_AGENT_SETTINGS.concurrency}) at once, and a timed-out run keeps what it wrote.
 

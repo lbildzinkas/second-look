@@ -5,6 +5,7 @@ Second Look is a VS Code companion for human pull request review: it ranks the c
 - [CONTEXT.md](CONTEXT.md) — the project glossary: the shared words and what they mean.
 - [docs/adr/](docs/adr/) — the numbered decision records behind the design.
 - [docs/tested-models.md](docs/tested-models.md) — the current list of the agent, model and effort combinations the companion's evaluation has been tested with, and how each scored.
+- [docs/agent-safety.md](docs/agent-safety.md) — what each agent the companion drives can read, what it is denied and how each limit is enforced, what the companion fetches itself, and the known gaps.
 
 ## Repository layout
 
@@ -154,27 +155,13 @@ Then, with an agent, the APIs no inventory linked go to the agent, which suggest
 
 ## Probing the reviewer's coding agent
 
-The engine does its model work through the coding agent the reviewer already has installed and signed in, never through a model API of its own (ADR 0004). One adapter interface, documented in `packages/engine/src/agent.ts`, runs an agent non-interactively with the companion's own prompt and a JSON schema for the answer. It first probes the installed version for what it supports. Two adapters exist: Pi and Claude Code, chosen by name (`--agent pi` or `--agent claude-code`; the VS Code settings offer the same names).
+The engine does its model work through the coding agent the reviewer already has installed and signed in, never through a model API of its own (ADR 0004). One adapter interface, documented in `packages/engine/src/agent.ts`, runs an agent non-interactively with the companion's own prompt and a JSON schema for the answer. It first probes the installed version for what it supports. Two adapters exist: Pi and Claude Code, chosen by name (`--agent pi` or `--agent claude-code`; the VS Code settings offer the same names). Codex is not supported yet. [docs/agent-safety.md](docs/agent-safety.md) lists what each agent can read, what it is denied and how each limit is enforced, and the known gaps.
 
-Every Pi run is locked down. Pi has no sandbox of its own, so the strongest mechanism it offers is used:
+Every agent run is locked down: file-reading tools only, so no shell and no network; nothing from the pull request configures the agent; no session file; the companion's own system prompt, with the task on stdin; and the GitHub token variables removed from the agent's environment. A version whose help lacks any of the lockdown flags is never run. The agent signs in with its own login: the companion never reads or stores it, and the agent inherits the engine's environment minus the GitHub token.
 
-- File-reading tools only (`--tools read,grep,find,ls`): no shell and no network.
-- Pi's project trust off (`--no-approve`), and extensions, skills, prompt templates, themes and context files such as `AGENTS.md` and `CLAUDE.md` off, so nothing from the pull request configures the agent.
-- No session file, no startup network, and the companion's own system prompt. The prompt goes on stdin.
-- The companion's guard, loaded as Pi's one extension (`packages/engine/src/pi-guard.ts`), checks every tool call before it runs. It confines every path to the read-only copy, symbolic links included, and refuses URLs and credential paths by name: SSH keys, cloud credentials, the GitHub login, agents' own logins.
-- The GitHub token variables are removed from the agent's environment.
+The two agents reach that lockdown differently. Pi has no sandbox of its own, so the companion's guard (`packages/engine/src/pi-guard.ts`), loaded as Pi's one extension, checks every tool call before it runs, confining every path to the read-only copy, symbolic links included, and refusing URLs and credential paths by name: SSH keys, cloud credentials, the GitHub login, agents' own logins. Claude Code is driven by the flags it offers (`packages/engine/src/claude-code.ts`), and its outside-folder denial rests on Claude Code itself — it failed in a live run with some models, so check a setup with the probe. [docs/agent-safety.md](docs/agent-safety.md) lists, for each agent, what it can read, what it is denied, how each limit is enforced, and the known gaps.
 
-A Pi version whose help lacks any of these flags is never run. The agent signs in with its own login: the companion never reads or stores it, and the agent inherits the engine's environment minus the GitHub token.
-
-Claude Code runs under its own lockdown, built from the flags it offers (`packages/engine/src/claude-code.ts`):
-
-- Print mode (`--print`) with the answer checked against the task's schema (`--json-schema`), streamed as JSON with partial messages, so a run that times out keeps what it wrote.
-- File-reading tools only (`--tools Read,Grep,Glob`): no shell, no network tools, no edits. Claude Code confines its file tools to the working directory — the read-only copy.
-- User-level settings only (`--setting-sources user`), so nothing from the pull request configures the agent, and no MCP servers (`--strict-mcp-config`).
-- No session file (`--no-session-persistence`), permission prompts denied rather than asked (`--permission-prompts none`), and the companion's own system prompt. The prompt goes on stdin.
-- The GitHub token variables are removed from the agent's environment, as for Pi.
-
-A Claude Code version whose help lacks any of these flags is never run. Each run's stamp reports which login it used — the stored subscription sign-in, an OAuth token or cloud credentials from the environment — and warns when an inherited `ANTHROPIC_API_KEY` silently overrides the subscription. The key itself is never read, printed or copied: only its presence is checked. Anthropic's terms are unclear on third-party tools driving a reviewer's own Claude Code (ADR 0004).
+Each Claude Code run's stamp reports which login it used — the stored subscription sign-in, an OAuth token or cloud credentials from the environment — and warns when an inherited `ANTHROPIC_API_KEY` silently overrides the subscription. The key itself is never read, printed or copied: only its presence is checked. Anthropic's terms are unclear on third-party tools driving a reviewer's own Claude Code (ADR 0004).
 
 The VS Code settings pick the agent, the model and a label for the account or subscription it bills; the status bar shows them, and warns about an inherited API key when Claude Code is the agent. Choosing an agent and model the evaluation never tested shows a clear, non-blocking warning, since prompts behave differently on each model; the current list of tested combinations is published in [docs/tested-models.md](docs/tested-models.md). Every result is stamped, so the reviewer can always tell which agent and model said what.
 

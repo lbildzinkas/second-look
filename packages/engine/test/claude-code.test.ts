@@ -166,5 +166,8 @@ describe('the Claude Code adapter', () => {
     expect(probe.lockdown).toContain(
       `tool allowlist: ${CLAUDE_READ_TOOLS.join(', ')} (no shell, no network, no edits)`,
     );
+    expect(probe.lockdown).toContain(
+      'outside-folder denial rests on Claude Code itself and failed in a live run with some models — check it with the probe',
+    );
   });
 });

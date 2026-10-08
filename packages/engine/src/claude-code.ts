@@ -26,8 +26,10 @@ import {
  * - **no project MCP servers**: `--strict-mcp-config` ignores every MCP
  *   configuration except the one the run names, and the run names none.
  * - **file-reading tools only**: `--tools Read,Grep,Glob` leaves the agent
- *   without a shell, network tools or edits, and Claude Code confines its
- *   file tools to the working directory — the read-only copy.
+ *   without a shell, network tools or edits. Claude Code is meant to confine
+ *   its file tools to the working directory — the read-only copy — but that
+ *   confinement is Claude Code's own, and live runs showed it to depend on
+ *   the model; docs/agent-safety.md states the reach and the gaps.
  * - `--permission-prompts none` denies anything that would ask, and
  *   `--no-session-persistence` writes no session file.
  *
@@ -216,7 +218,7 @@ export function claudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}): Agent
       usable: true,
       lockdown: [
         `tool allowlist: ${CLAUDE_READ_TOOLS.join(', ')} (no shell, no network, no edits)`,
-        'file tools confined to the read-only copy by Claude Code itself',
+        'outside-folder denial rests on Claude Code itself and failed in a live run with some models — check it with the probe',
         'user-level settings only: project and local settings, and the context in the copy, stay out',
         'no MCP servers: every MCP configuration is ignored',
         'no session file written; permission prompts denied, never asked',
