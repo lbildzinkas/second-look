@@ -50,9 +50,12 @@ reads no publishing credential and stores none — it writes the file to
 Marketplace or Open VSX stays a separate, manual release step.
 
 CI builds the package on every pull request, reports its size, and keeps
-it as a build artifact. To try the companion by hand, download the
-`.vsix` from a CI run's artifacts page and follow [getting
-started](docs/getting-started.md) to install it and run a first review.
+it as a build artifact; every version tag (`v*`) publishes the same
+package, built and checked the same way, as an asset of that tag's
+GitHub Release. To try the companion by hand, download the
+`.vsix` from the [latest release](https://github.com/lbildzinkas/second-look/releases/latest)
+and follow [getting started](docs/getting-started.md) to install it and
+run a first review.
 A smoke test installs the package this way into a clean,
 downloaded VS Code on macOS, Linux and Windows in CI and runs one review
 in it (`npm run test:package-smoke` locally, which like the other editor

@@ -26,63 +26,8 @@ jobs:
       - run: xvfb-run -a npm run test:integration
       - run: xvfb-run -a npm run test:real-host
 
-  # The one extension package: the extension, the bundled engine and the
-  # WASM grammars together in one universal .vsix, built on every pull
-  # request so the companion can be installed from a file and used on real
-  # pull requests while it grows. Packaging reads no credential and stores
-  # none: publishing to the Marketplace or Open VSX stays a separate,
-  # manual release step.
+  # The package build and its smoke checks live in the shared Package
+  # workflow (issue #100), so the release of a version tag builds and
+  # checks exactly the same package a pull request does.
   package:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run package
-      - name: Report the package size
-        run: |
-          vsix=$(ls packages/extension/dist/*.vsix)
-          bytes=$(wc -c < "$vsix")
-          printf 'The extension package `%s` is %d bytes (%s).\n' \
-            "$(basename "$vsix")" "$bytes" "$(numfmt --to=iec --suffix=B "$bytes")" \
-            >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: second-look-extension-vsix
-          path: packages/extension/dist/*.vsix
-          if-no-files-found: error
-
-  # The package must install and work on every platform the editor runs
-  # on: each operating system downloads the package a pull request just
-  # built, installs it from its file into a clean, downloaded VS Code and
-  # runs the smoke test in it. Like the other extension tests that open a
-  # real editor window, this runs in CI only; Linux needs xvfb for it.
-  package-smoke:
-    needs: package
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    # The launcher bounds each of its steps; this backstop ends the job
-    # well before GitHub's own platform timeout would, so even a hang
-    # the step bounds cannot see fails visibly instead of stalling.
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - uses: actions/download-artifact@v4
-        with:
-          name: second-look-extension-vsix
-          path: package
-      - run: npm run test:package-smoke
-        if: matrix.os != 'ubuntu-latest'
-      - run: xvfb-run -a npm run test:package-smoke
-        if: matrix.os == 'ubuntu-latest'
+    uses: ./.github/workflows/package.yml
