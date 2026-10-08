@@ -2,6 +2,9 @@
 
 Second Look is a VS Code companion for human pull request review: it ranks the change by what matters, checks its claims against real code, and lets the reviewer send comments to GitHub.
 
+- [docs/getting-started.md](docs/getting-started.md) — the user documentation's entry: installing the extension and the engine, choosing the agent, model and account, and what each agent needs installed.
+- [docs/reviewing.md](docs/reviewing.md) — how a review works: the parts, their importance, the noise, the claims and their verdicts, the asks and the comments.
+- [docs/privacy.md](docs/privacy.md) — what the companion keeps on the machine, what it sends to GitHub, and what reaches the model provider.
 - [CONTEXT.md](CONTEXT.md) — the project glossary: the shared words and what they mean.
 - [docs/adr/](docs/adr/) — the numbered decision records behind the design.
 - [docs/tested-models.md](docs/tested-models.md) — the current list of the agent, model and effort combinations the companion's evaluation has been tested with, and how each scored.

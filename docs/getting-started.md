@@ -1,0 +1,68 @@
+# Getting started
+
+Second Look is a VS Code companion for human pull request review: it ranks the change by what matters, checks its claims against real code, and lets the reviewer send comments to GitHub. This page installs it and sets it up; [How a review works](reviewing.md) explains what you see once it runs.
+
+## Installing the extension and the engine
+
+The companion ships as one extension package, a `.vsix` file that carries everything it needs: the extension itself, the engine that does the reading and checking, and the parser grammars for the languages the engine reads. It is one universal package — no per-operating-system builds, no native modules — and there is nothing else to install: the engine is a separate local process, but the extension starts it from its own install and runs it on the editor's own binary, so no Node.js of your own is needed. It needs VS Code 1.90 or later.
+
+Today the package is built by CI on every pull request and every push to `master`, and kept as a build artifact; publishing to the VS Code Marketplace or Open VSX is a separate, manual release step. To install:
+
+1. Download the `.vsix` from a [CI run's artifacts page](https://github.com/lbildzinkas/second-look/actions) (the artifact is named `second-look-extension-vsix`).
+2. In VS Code's Extensions view, open the `…` menu and choose **Install from VSIX…**.
+3. Pick the downloaded file.
+
+To build the package yourself from source instead, see the repository's [README](../README.md#packaging-the-extension).
+
+## Installing a coding agent
+
+The companion does its model work through a coding agent you already have: it drives the agent you installed and signed in, on your own subscription, and never calls a model provider of its own and never handles the agent's login. One of these must be installed and signed in before a review:
+
+| Agent | What it needs | Started as |
+| --- | --- | --- |
+| Pi | the `pi` command line tool, installed and signed in with its own login | `pi` |
+| Claude Code | the `claude` command line tool, installed and signed in — a stored subscription sign-in, an OAuth token, or cloud credentials in the environment | `claude` |
+
+Codex is not supported yet.
+
+The tool must be on the `PATH` the editor was started with. An agent that is missing, or a version too old for the companion's lockdown, is never run: the engine's agent probe reports what is missing in plain words, the review still completes with the plain passes, and each result says why the agent's was not used.
+
+What each agent may read while it works, what it is denied and how each limit is enforced — including the known gaps — is documented in [What agents can read, reach and run](agent-safety.md).
+
+One optional extra: when a review's finding offers to decompile a .NET package that has no exact source, the companion runs ILSpy's `ilspycmd` as you installed it. Install it with `dotnet tool install --global ilspycmd` if you want that route; it is looked for on the `PATH` and in `~/.dotnet/tools`, and it is run with the network cut on macOS and Linux — on Windows nothing is decompiled yet. Nothing else needs it.
+
+## Choosing the agent, model and account
+
+The settings live under the `second-look` section (Settings, then search for "second look"):
+
+| Setting | What it picks | Default |
+| --- | --- | --- |
+| `second-look.agent` | The agent every agent pass of a review runs on: `pi` or `claude-code`. | `pi` |
+| `second-look.agentModel` | The model, in the agent's own naming — for example `anthropic/claude-sonnet-5` for Pi or `sonnet` for Claude Code. | empty: the agent's own default model |
+| `second-look.agentAccount` | A label for the account or subscription the agent bills, such as `Claude Max (work address)`. | empty: hidden |
+| `second-look.criteriaHeading` | The heading the acceptance criteria checklist sits under in the issues a pull request links. | `Acceptance criteria` |
+| `second-look.mirrorViewedToGitHub` | Whether reviewed marks are mirrored to GitHub's "Viewed" checkbox. Off by default, because the GitHub Pull Requests extension syncs the same field. | off |
+
+The agent, model and account travel with each review request, so switching them needs no restart: the next review runs its agent passes on the new choice, and every agent-produced result is stamped with it.
+
+The status bar shows what is in use, as `Second Look: Pi · default model` with the account label beside it when one is set. It warns when the chosen agent and model were never tested by the companion's evaluation — the warning blocks nothing, every review still runs and is stamped with who answered — and it names where the current list is published: [the tested models](tested-models.md). When Claude Code is the agent, it also warns when an `ANTHROPIC_API_KEY` inherited from the editor's environment silently overrides the subscription sign-in.
+
+### Which passes the agent runs
+
+The grouping pass always runs on the chosen agent, and the ranking pass runs on it only for an agent, model and effort whose evaluation matched or beat the plain ranking; elsewhere the plain ranking stays and each result says which ranking it shows and why. [The tested models](tested-models.md) lists the tested combinations and their scores.
+
+### Billing and subscriptions
+
+Every agent run bills the login the agent is signed in with — your subscription, your keys. The companion never reads, stores or copies that login: the account setting is only a label you give it, stamped on the results. Each run also carries a stamp — the agent, its version, the model, the run date, and the tokens and cost when the agent reports them — so you can always tell which agent and model said what.
+
+## Starting a review
+
+1. Open the Command Palette and run **Second Look: Review pull request**.
+2. Paste a GitHub pull request URL, such as `https://github.com/{owner}/{repo}/pull/{number}`.
+3. Sign in with VS Code's built-in GitHub login when it asks (the `repo` scope of the editor's GitHub account).
+
+The review tree appears in the Explorer side bar and the overview tab opens beside it; results arrive in stages while the agent works. [How a review works](reviewing.md) walks through each one.
+
+## Where the companion keeps things
+
+The engine keeps a per-pull-request cache on your machine — read-only copies of the change, fetched libraries, your reviewed marks, the record of your last look — in the platform's per-user cache folder: `~/Library/Caches/second-look` on macOS, `~/.cache/second-look` on Linux, `%LOCALAPPDATA%\second-look\cache` on Windows. Nothing is ever checked out or written into your workspace. [What stays on the machine and what is sent](privacy.md) explains in full what is kept, what is sent to GitHub and what reaches the model provider.
