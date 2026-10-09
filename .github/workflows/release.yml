@@ -1,0 +1,48 @@
+name: Release
+
+# Every version tag publishes the extension package as an asset of that
+# tag's GitHub Release (issue #100), so the repository's Releases section
+# always offers the latest .vsix for download. The workflow runs on v*
+# tags only, builds and checks the package exactly as CI does — through
+# the same shared Package workflow — and publishes nowhere else: nothing
+# goes to the VS Code Marketplace or Open VSX.
+on:
+  push:
+    tags:
+      - 'v*'
+
+# The build and smoke jobs need no write access; only the release job
+# below gets contents: write, and only to create the release and upload
+# its asset.
+permissions:
+  contents: read
+
+jobs:
+  # The same package build and checks CI runs on every pull request,
+  # reused: the version tag ships exactly the package CI built.
+  package:
+    uses: ./.github/workflows/package.yml
+
+  # The release job is the only one that writes: it attaches the .vsix
+  # the package job built — named with the version it installs — to the
+  # GitHub Release of the tag, with notes GitHub generates from the pull
+  # requests merged since the previous tag. A re-run of the job reuses
+  # the release it already created and only re-uploads the asset.
+  release:
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: second-look-extension-vsix
+          path: package
+      - name: Attach the package to the tag's release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 ||
+            gh release create "$GITHUB_REF_NAME" --generate-notes
+          gh release upload "$GITHUB_REF_NAME" package/*.vsix --clobber

@@ -6,11 +6,19 @@ Second Look is a VS Code companion for human pull request review: it ranks the c
 
 The companion ships as one extension package, a `.vsix` file that carries everything it needs: the extension itself, the engine that does the reading and checking, and the parser grammars for the languages the engine reads. It is one universal package — no per-operating-system builds, no native modules — and there is nothing else to install: the engine is a separate local process, but the extension starts it from its own install and runs it on the editor's own binary, so no Node.js of your own is needed. It needs VS Code 1.90 or later.
 
-Today the package is built by CI on every pull request and every push to `master`, and kept as a build artifact; publishing to the VS Code Marketplace or Open VSX is a separate, manual release step. To install:
+Every version tag (`v*`) builds this package exactly as CI builds it and publishes it as an asset of that tag's [GitHub Release](https://github.com/lbildzinkas/second-look/releases), so the repository's Releases section always offers the latest package for download; publishing to the VS Code Marketplace or Open VSX is a separate, manual release step. To install:
 
-1. Download the `.vsix` from a [CI run's artifacts page](https://github.com/lbildzinkas/second-look/actions) (the artifact is named `second-look-extension-vsix`).
+1. Download the `.vsix` from the [latest release](https://github.com/lbildzinkas/second-look/releases/latest) — the file is named `second-look-extension-<version>.vsix`, with the version it installs.
 2. In VS Code's Extensions view, open the `…` menu and choose **Install from VSIX…**.
 3. Pick the downloaded file.
+
+Or from a terminal, with the editor's own command line on the `PATH`:
+
+```sh
+code --install-extension second-look-extension-<version>.vsix
+```
+
+To update to a newer version, download the newer `.vsix` from the latest release and install it the same way — installing a package over the installed extension replaces it, so nothing needs removing first. To uninstall, open Second Look's entry in the Extensions view, choose **Uninstall** from its `…` menu, or run `code --uninstall-extension lbildzinkas.second-look-extension`.
 
 To build the package yourself from source instead, see the repository's [README](../README.md#packaging-the-extension).
 
