@@ -21,12 +21,14 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
-      "description": "In Restricted Mode a workspace cannot change the agent, model, effort or account: they are read from the user settings only.",
+      "description": "In Restricted Mode a workspace cannot change the agent, model, effort, account, budget or agent paths: they are read from the user settings only.",
       "restrictedConfigurations": [
         "second-look.agent",
         "second-look.agentModel",
         "second-look.agentEffort",
-        "second-look.agentAccount"
+        "second-look.agentAccount",
+        "second-look.claudeCodePath",
+        "second-look.piPath"
       ]
     }
   },
