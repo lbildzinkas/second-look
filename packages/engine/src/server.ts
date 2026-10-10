@@ -384,6 +384,11 @@ async function testAgentRequest(
     respond(sink, failure(id, ENGINE_FAILED_CODE, 'this engine runs no agent, so it has none to test'));
     return;
   }
+  const runProblem = agentRunProblem(agent, choice);
+  if (runProblem !== undefined) {
+    respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${TEST_AGENT_METHOD}: ${runProblem}`));
+    return;
+  }
   try {
     const result: TestAgentRpcResult = await testAgent(choiceAdapter(agent, choice), choice.agent, agentRunSettings(agent, choice));
     respond(sink, { jsonrpc: '2.0', id, result });
@@ -410,7 +415,21 @@ function agentChoiceProblem(value: unknown): string | undefined {
   }
   const pathProblem = choice['path'] === undefined ? undefined : agentPathProblem(choice['path']);
   if (pathProblem !== undefined) return `the agent choice path ${pathProblem}`;
-  return modelAndEffortProblem(choice['agent'], choice as Pick<ReviewAgentChoice, 'model' | 'effort'>);
+  return undefined;
+}
+
+/**
+ * Why a request's agent runs cannot start, in plain words; absent when
+ * they can. The request's own choice is checked first, then the settings
+ * the runs would take — the served defaults merged with that choice —
+ * against the agent that would run them, so no model or effort reaches
+ * an agent's command line unchecked, whichever side it came from.
+ */
+function agentRunProblem(agent: RpcAgentDeps | undefined, choice: unknown): string | undefined {
+  const problem = choice === undefined ? undefined : agentChoiceProblem(choice);
+  if (problem !== undefined || agent === undefined) return problem;
+  const chosen = choice as ReviewAgentChoice | undefined;
+  return modelAndEffortProblem(chosen?.agent ?? agent.defaultAgent, agentRunSettings(agent, chosen));
 }
 
 /** The adapter a request's agent passes run on: its chosen agent, started from its path when it gives one. */
@@ -482,12 +501,10 @@ async function review(
     respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${REVIEW_METHOD}: criteriaHeading must be a non-empty string`));
     return;
   }
-  if (choice !== undefined) {
-    const problem = agentChoiceProblem(choice);
-    if (problem !== undefined) {
-      respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${REVIEW_METHOD}: ${problem}`));
-      return;
-    }
+  const problem = agentRunProblem(deps.agent, choice);
+  if (problem !== undefined) {
+    respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${REVIEW_METHOD}: ${problem}`));
+    return;
   }
   const budgetProblem = budget === undefined ? undefined : budgetLimitsProblem(budget);
   if (budgetProblem !== undefined) {
@@ -556,7 +573,7 @@ async function fetchLibrary(
     respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${FETCH_LIBRARY_METHOD} needs params: { "url": string, "claim": number, "agent"?: { "agent": "${AGENT_NAMES.join('" | "')}", "model"?: string, "account"?: string } }`));
     return;
   }
-  const problem = choice === undefined ? undefined : agentChoiceProblem(choice);
+  const problem = agentRunProblem(deps.agent, choice);
   if (problem !== undefined) {
     respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${FETCH_LIBRARY_METHOD}: ${problem}`));
     return;
@@ -638,7 +655,7 @@ async function draft(
     );
     return;
   }
-  const problem = choice === undefined ? undefined : agentChoiceProblem(choice);
+  const problem = agentRunProblem(deps.agent, choice);
   if (problem !== undefined) {
     respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${DRAFT_COMMENT_METHOD}: ${problem}`));
     return;
@@ -702,7 +719,7 @@ async function ask(
     );
     return;
   }
-  const problem = choice === undefined ? undefined : agentChoiceProblem(choice);
+  const problem = agentRunProblem(deps.agent, choice);
   if (problem !== undefined) {
     respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${ASK_METHOD}: ${problem}`));
     return;
