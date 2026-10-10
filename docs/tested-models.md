@@ -9,6 +9,7 @@ The list is the `TESTED_MODELS` constant in [`packages/engine/src/tested-models.
 | Agent | Version | Model | Effort | Run date |
 | --- | --- | --- | --- | --- |
 | Pi | 0.86.1 | `zai-coding-cn/glm-5.3` | default | 2026-10-07T15:08:38.849Z |
+| Claude Code | 2.1.296 | `claude-sonnet-5-5` | high | 2026-10-10T14:26:15.320Z |
 
 One row per tested combination. The run date is the latest run recorded behind it; the scores below keep each prompt's own run date, because the recorded baseline merges the runs taken as each prompt landed.
 
@@ -32,6 +33,26 @@ The agent ranking is the default for this combination (`TESTED_RANKINGS` in [`pa
 
 The library verdicts prompt's claim checks — `claims-found`, `claims-verdict:<kind>`, `claims-evidence` and `claims-fetch-offered` — are scored per case and keep no whole-run row; the [baseline](../packages/evaluation/baseline.json) records them, case by case, for this combination. A score with nothing to count is left out rather than given a value, so a prompt whose cases give no score has none listed.
 
+### Claude Code 2.1.296 · `claude-sonnet-5-5` · high effort
+
+The agent ranking is the default for this combination (`TESTED_RANKINGS` in [`packages/engine/src/ranking.ts`](../packages/engine/src/ranking.ts)): over the seven cases it ranked, the known important parts sit at a median position of 1, with every one of them in the top three, against 2 and 0.8 for the plain ranking of the same parts. Every prompt's cases were scored in one run, signed in with the Claude subscription, through the engine's Claude Code adapter and its lockdown.
+
+| Prompt | Run date | Scores over all the run's cases |
+| --- | --- | --- |
+| grouping | 2026-10-10T14:26:15.320Z | coverage 1, grouping-agreement 0.7946 |
+| ranking | 2026-10-10T14:26:15.320Z | rank-median 1, rank-top-3 1 |
+| story | 2026-10-10T14:26:15.320Z | story-must-review 1, story-order 0.4444, story-names 1 |
+| claims | 2026-10-10T14:26:15.320Z | claims-recall 1, claims-precision 0.95 |
+| verdicts | 2026-10-10T14:26:15.320Z | verdict-accuracy 1, false-verified 0, verify-accuracy 1, verify-false-verified 0, verify-fetch-offered 1 |
+| unexplained changes | 2026-10-10T14:26:15.320Z | unexplained-recall 1, unexplained-precision 1, described-recall 1, described-precision 1 |
+| criteria mapping | 2026-10-10T14:26:15.320Z | criteria-accuracy 1, criteria-false-met 0, criteria-code-recall 1, criteria-tests-recall 1, criteria-manual-recall 1 |
+| draft comments | 2026-10-10T14:26:15.320Z | draft-cites-evidence 1, draft-no-new-claim 1, draft-under-cap 1 |
+| explain | 2026-10-10T14:26:15.320Z | explain-cites-part 1, explain-names-in-change 0.8333 |
+| cover | 2026-10-10T14:26:15.320Z | cover-cites-checked 1, cover-tests-recall 0.8, cover-tests-precision 1, cover-manual-recall 1, cover-none-found 1 |
+| documentation links | 2026-10-10T14:26:15.320Z | doc-links-on-site 1, doc-links-checked 1 |
+
+The library verdicts prompt's claim checks are recorded case by case in the [baseline](../packages/evaluation/baseline.json) for this combination too.
+
 ## Adding a combination
 
-Run the evaluation with the agent, model and effort — `second-look-eval run --agent pi --model <model> [--effort <level>] --write-baseline packages/evaluation/baseline.json` — so the run is recorded, then add the entry to `TESTED_MODELS` in [`packages/engine/src/tested-models.ts`](../packages/engine/src/tested-models.ts) and a section here with its scores and run dates. Keep the agent ranking out of `TESTED_RANKINGS` unless the run's ranking matched or beat the plain one; the evaluation's README says how each score is read.
+Run the evaluation with the agent, model and effort — `second-look-eval run --agent pi|claude-code --model <model> [--effort <level>] --write-baseline packages/evaluation/baseline.json` — so the run is recorded, then add the entry to `TESTED_MODELS` in [`packages/engine/src/tested-models.ts`](../packages/engine/src/tested-models.ts) and a section here with its scores and run dates. Keep the agent ranking out of `TESTED_RANKINGS` unless the run's ranking matched or beat the plain one; the evaluation's README says how each score is read.

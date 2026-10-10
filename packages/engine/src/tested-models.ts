@@ -34,9 +34,10 @@ export interface TestedModel {
 }
 
 /**
- * Every combination the evaluation has been run against. Pi 0.86.1 with
- * `zai-coding-cn/glm-5.3` at its default effort is the one so far,
- * scored over every prompt's cases in the recorded baseline.
+ * Every combination the evaluation has been run against, each scored over
+ * every prompt's cases in the recorded baseline: Pi 0.86.1 with
+ * `zai-coding-cn/glm-5.3` at its default effort, and Claude Code 2.1.296
+ * with `claude-sonnet-5-5` at high effort.
  */
 export const TESTED_MODELS: readonly TestedModel[] = [
   {
@@ -67,6 +68,50 @@ export const TESTED_MODELS: readonly TestedModel[] = [
       'criteria-accuracy': 1,
       'criteria-false-met': 0,
       'criteria-code-recall': 0.8889,
+      'criteria-tests-recall': 1,
+      'criteria-manual-recall': 1,
+      'draft-cites-evidence': 1,
+      'draft-no-new-claim': 1,
+      'draft-under-cap': 1,
+      'explain-cites-part': 1,
+      'explain-names-in-change': 0.8333,
+      'cover-cites-checked': 1,
+      'cover-tests-recall': 0.8,
+      'cover-tests-precision': 1,
+      'cover-manual-recall': 1,
+      'cover-none-found': 1,
+      'doc-links-on-site': 1,
+      'doc-links-checked': 1,
+    },
+  },
+  {
+    agent: 'claude-code',
+    agentVersion: '2.1.296',
+    model: 'claude-sonnet-5-5',
+    effort: 'high',
+    runDate: '2026-10-10T14:26:15.320Z',
+    scores: {
+      coverage: 1,
+      'grouping-agreement': 0.7946,
+      'rank-median': 1,
+      'rank-top-3': 1,
+      'story-must-review': 1,
+      'story-order': 0.4444,
+      'story-names': 1,
+      'claims-recall': 1,
+      'claims-precision': 0.95,
+      'verdict-accuracy': 1,
+      'false-verified': 0,
+      'verify-accuracy': 1,
+      'verify-false-verified': 0,
+      'verify-fetch-offered': 1,
+      'unexplained-recall': 1,
+      'unexplained-precision': 1,
+      'described-recall': 1,
+      'described-precision': 1,
+      'criteria-accuracy': 1,
+      'criteria-false-met': 0,
+      'criteria-code-recall': 1,
       'criteria-tests-recall': 1,
       'criteria-manual-recall': 1,
       'draft-cites-evidence': 1,

@@ -4,10 +4,14 @@ import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import {
+  AGENT_NAMES,
   DEFAULT_AGENT_SETTINGS,
+  agentAdapter,
   defaultCacheDir,
-  piAdapter,
+  isAgentName,
   redactToken,
+  type AgentAdapter,
+  type AgentAdapterOptions,
   type AgentSettings,
 } from '@second-look/engine';
 import { compareWithBaseline, mergeBaseline } from './baseline.js';
@@ -33,8 +37,8 @@ Usage:
   second-look-eval seed <mutant.diff> --source <dir> --id <name>
                         [--cases <dir>] [--fault <path>]
   second-look-eval run [--cases <dir>]... [--model-free] [--changed-since <ref>]
-                       [--agent pi [--model <model>] [--effort <level>]
-                        [--agent-timeout <seconds>]]
+                       [--agent pi|claude-code [--model <model>]
+                        [--effort <level>] [--agent-timeout <seconds>]]
                        [--baseline <file>] [--write-baseline <file>]
                        [--runs <dir>]
 
@@ -88,8 +92,10 @@ the stored baseline records them at those failing values. It reads the cases in
 folder of SECOND_LOOK_EVAL_CASES. --model-free keeps the cases tied to no
 prompt; --changed-since keeps the cases tied to the prompts this branch
 changed since the ref, and the agent then runs only those prompts.
-Without --agent no model is called. With --agent pi, the cases tied to
-the grouping prompt also run it through the reviewer's installed Pi, the
+Without --agent no model is called. With --agent pi or --agent
+claude-code, the cases tied to the grouping prompt also run it through
+the reviewer's installed Pi or Claude Code, signed in with its own login
+and locked down as in a review, at the --model and --effort given, the
 cases tied to the ranking prompt have their plain parts ranked by it, the
 cases tied to the story prompt have the story of their plain parts
 written by it, the cases tied to the claims prompt have the claims of
@@ -136,6 +142,8 @@ export interface CliStreams {
 
 export interface CliDeps {
   fetch?: typeof fetch;
+  /** How each agent is started; tests point them at a fake agent. */
+  agents?: Pick<AgentAdapterOptions, 'pi' | 'claudeCode'>;
 }
 
 /** The companion version every row is stamped with: the engine's. */
@@ -246,7 +254,7 @@ export async function runCli(
       return 0;
     }
 
-    const agent = agentOption(values, env);
+    const agent = agentOption(values, env, deps.agents);
     const run = await runEvaluation({
       cases: selected,
       registry,
@@ -302,9 +310,12 @@ export async function runCli(
 function agentOption(
   values: { agent?: string; model?: string; effort?: string; 'agent-timeout'?: string; 'model-free'?: boolean },
   env: NodeJS.ProcessEnv,
-): { adapter: ReturnType<typeof piAdapter>; settings: AgentSettings } | undefined {
+  agents: CliDeps['agents'] = {},
+): { adapter: AgentAdapter; settings: AgentSettings } | undefined {
   if (values.agent === undefined) return undefined;
-  if (values.agent !== 'pi') throw new Error(`--agent ${values.agent} is not supported; the one agent so far is pi`);
+  if (!isAgentName(values.agent)) {
+    throw new Error(`--agent ${values.agent} is not supported; choose ${AGENT_NAMES.join(' or ')}`);
+  }
   if (values['model-free']) throw new Error('--model-free runs no agent; leave out --agent');
   const settings: AgentSettings = { ...DEFAULT_AGENT_SETTINGS };
   if (values['agent-timeout'] !== undefined) {
@@ -314,7 +325,7 @@ function agentOption(
   }
   if (values.model) settings.model = values.model;
   if (values.effort) settings.effort = values.effort;
-  return { adapter: piAdapter({ env }), settings };
+  return { adapter: agentAdapter(values.agent, { ...agents, env }), settings };
 }
 
 /** A stored baseline, or undefined when the file does not exist yet. */

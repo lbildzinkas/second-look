@@ -50,6 +50,9 @@ export const TESTED_RANKINGS: readonly TestedRanking[] = [
   // Ranking prompt v1 with Pi 0.86.1 at its default effort: rank median 1
   // and top-3 share 0.9 over seven cases, against 2 and 0.8 plain.
   { agent: 'pi', model: 'zai-coding-cn/glm-5.3', effort: DEFAULT_EFFORT },
+  // Ranking prompt v1 with Claude Code 2.1.296 at high effort: rank median 1
+  // and top-3 share 1 over seven cases, against 2 and 0.8 plain.
+  { agent: 'claude-code', model: 'claude-sonnet-5-5', effort: 'high' },
 ];
 
 /** How many lines of a part the prompt shows; the agent can read the rest. */
