@@ -10,8 +10,10 @@ import { STORY_PROMPT_VERSION } from '../../engine/src/story.js';
 import {
   CaptureStream,
   PR_7_URL,
+  PR_9_URL,
   fixtureFetch,
   pull7,
+  pull9,
   temporaryCacheDir,
 } from '../../engine/test/helpers.js';
 import { CLAUDE_GUARD, FAKE_CLAUDE, fakeClaude } from '../../engine/test/fake-claude.js';
@@ -292,6 +294,24 @@ describe('the record command', () => {
     const folder = join(scratch, 'cases');
     await recordCase(PR_7_URL, { token: 't', cacheDir, casesFolder: folder, id: 'example-7', fetch: fixtureFetch(pull7()).fetch });
     await expect(loadCases([REPOSITORY_CASES, folder])).rejects.toThrow('two cases are named example-7');
+  });
+
+  it('carries the workspace member manifests the lock file check reads', async () => {
+    const folder = await recordCase(PR_9_URL, {
+      token: 't',
+      cacheDir,
+      casesFolder: join(scratch, 'cases'),
+      id: 'workspace-member',
+      fetch: fixtureFetch(pull9()).fetch,
+    });
+    // The member's package.json is not in the diff, but the review reads
+    // it beside the lock file, so both sides of the case carry it and the
+    // replay assesses the lock file exactly as the live review did.
+    for (const side of ['base', 'head'] as const) {
+      expect(
+        readFileSync(join(folder, side, 'packages', 'web', 'package.json'), 'utf8'),
+      ).toContain('"name": "web"');
+    }
   });
 });
 

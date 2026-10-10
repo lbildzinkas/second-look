@@ -12,6 +12,7 @@ import type { ChangeKind, DiffLine, Part } from '../src/protocol.js';
 export const PR_URL = 'https://github.com/example-org/example-repo/pull/42';
 export const PR_7_URL = 'https://github.com/example-org/example-repo/pull/7';
 export const PR_8_URL = 'https://github.com/example-org/example-repo/pull/8';
+export const PR_9_URL = 'https://github.com/example-org/example-repo/pull/9';
 
 const GITATTRIBUTES_URL =
   'https://api.github.com/repos/example-org/example-repo/contents/.gitattributes';
@@ -149,6 +150,23 @@ export function pull8(): PullFixture {
     mergeBase: '7777777777777777777777777777777777777776',
     base: fixtureTree('pull-8/base'),
     head: fixtureTree('pull-8/head'),
+  };
+}
+
+/**
+ * Pull request 9: an npm workspaces root bump whose lock file check
+ * reads a member package.json that is committed broken, so the review
+ * reports no check while it names the member's manifest.
+ */
+export function pull9(): PullFixture {
+  return {
+    number: 9,
+    json: 'pull-9.json',
+    diff: 'pull-9.diff',
+    headSha: '9999999999999999999999999999999999999999',
+    mergeBase: '9999999999999999999999999999999999999998',
+    base: fixtureTree('pull-9/base'),
+    head: fixtureTree('pull-9/head'),
   };
 }
 
