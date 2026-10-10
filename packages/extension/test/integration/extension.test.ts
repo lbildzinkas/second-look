@@ -897,7 +897,7 @@ describe('the overview', () => {
     expect(html).toContain('<li class="answer focus"><div class="where"><b>Verify this claim</b> · ');
     // The review shown now holds the judged claim, as the engine's latest review does.
     expect(html).toContain('<div class="why">the change itself: A 404 is retried like any other status.</div>');
-    expect(html).toContain('<span class="verdict finding">refuted</span>');
+    expect(html).toContain('<span class="pl tone-bad"><span class="ic" aria-hidden="true">✕</span>refuted</span>');
   });
 
   it("verifies the text selected on the head side of the part's diff, with no claim to pick", async () => {
@@ -943,7 +943,7 @@ describe('the overview', () => {
         '<span class="hidden" data-kind="html comment"><span class="flag">hidden HTML comment</span>',
     );
     expect(page.webview.html).toContain('<button type="button" class="pt issue" data-issue="0">#30 in example-org/example-repo</button>');
-    expect(page.webview.html).toContain('<span class="verdict">not checked</span>');
+    expect(page.webview.html).toContain('<span class="pl tone-mut"><span class="ic" aria-hidden="true">○</span>not checked</span>');
 
     page.webview.receive({ type: 'openIssue', issue: 1 });
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -980,7 +980,7 @@ describe('the overview', () => {
       [head('src/retry.py').toString(), 8, 'Unverifiable claim'],
       [head('src/settings.ts').toString(), undefined, 'Unverifiable claim'],
     ]);
-    expect(overview().webview.html).toContain('<span class="verdict finding">refuted</span>');
+    expect(overview().webview.html).toContain('<span class="pl tone-bad"><span class="ic" aria-hidden="true">✕</span>refuted</span>');
   });
 
   it("fetches a finding's library only when pressed, then shows the claim judged against it and opens the cited library file read-only", async () => {
