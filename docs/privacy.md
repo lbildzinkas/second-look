@@ -4,7 +4,7 @@ The companion works on text written by other people — a pull request's code, i
 
 ## What stays on your machine
 
-**The cache.** The engine keeps a per-pull-request cache — read-only copies of the base and head versions of the change, downloaded as archives; the libraries you fetch; your reviewed marks; the record of your last look — in the platform's per-user cache folder: `~/Library/Caches/second-look` on macOS, `~/.cache/second-look` on Linux, `%LOCALAPPDATA%\second-look\cache` on Windows. The `SECOND_LOOK_CACHE_DIR` environment variable names another folder when the editor was started with one. Nothing is ever checked out into your workspace, and the copies are written with read-only file modes — nothing from the pull request is built, installed or run. To delete a cache, make it writable first, because the files themselves are read-only: `chmod -R u+w ~/.cache/second-look && rm -rf ~/.cache/second-look` (adjust the path per platform).
+**The cache.** The engine keeps a per-pull-request cache — read-only copies of the base and head versions of the change, downloaded as archives; the libraries you fetch; your reviewed marks; the record of your last look — in the platform's per-user cache folder: `~/Library/Caches/second-look` on macOS, `~/.cache/second-look` on Linux, `%LOCALAPPDATA%\second-look\cache` on Windows. The `SECOND_LOOK_CACHE_DIR` environment variable names another folder when the editor was started with one. Nothing is ever checked out into your workspace, and the copies are written with read-only file modes — nothing from the pull request is built, installed or run by a review. The one run of its code is a sandboxed run you start yourself, inside a locked-down container ([ADR 0009](adr/0009-sandboxed-run-in-a-container.md)). To delete a cache, make it writable first, because the files themselves are read-only: `chmod -R u+w ~/.cache/second-look && rm -rf ~/.cache/second-look` (adjust the path per platform).
 
 **The GitHub token.** In VS Code the token comes from the editor's built-in GitHub sign-in, travels with each request to the engine, is used only for that request, and is never written to disk or logs. It never reaches the agent: the engine removes the GitHub token variables from every agent's environment.
 
@@ -31,6 +31,8 @@ Besides GitHub, the engine itself — never the agent — downloads three kinds 
 - **A library you fetch**, only when you press the link on a finding: the exact version the project pins, from the ecosystem's own host (PyPI's file host, nuget.org, npm, crates.io, the Go module proxy, Maven Central, or a tag archive from GitHub or GitLab), checked against the hash the project pins before anything is unpacked, then unpacked read-only and never built, installed or run.
 - **Documentation inventories**, after each review that uses a pinned library's APIs: the documentation host PyPI names for the pinned release, and `learn.microsoft.com` for .NET. Capped, no redirects, no credentials.
 - **The .NET decompiler's input**, when you press a decompile: the exact package, hash-checked as above. The decompiler itself runs with the network cut by the operating system.
+
+A sandboxed run makes one download of its own: the container image, pinned by digest and pulled through your own runtime and its login, only when you start the run ([ADR 0009](adr/0009-sandboxed-run-in-a-container.md)).
 
 A documentation page the agent suggests is never fetched; it is checked only as an address and shown labelled as a suggestion.
 

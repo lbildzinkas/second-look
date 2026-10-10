@@ -6,7 +6,7 @@ Some claims can only be settled by running the code, and running a pull request'
 
 The code runs only inside an OCI container, started through the Docker-compatible CLI the reviewer has already installed, `docker` or `podman`. The companion probes for the CLI and its version and never installs, starts or configures a runtime; where there is none, it says plainly that it cannot run the code and the rest of the review works as before ([ADR 0001](0001-any-language.md)). The image comes from the companion's own list, pinned by digest, and is never built from a Dockerfile or dev container in the pull request.
 
-The container has no host mount. The head copy, the same read-only copy the agent reads, streams in as an archive on stdin and is unpacked into a tmpfs, so the container never sees a path on the reviewer's machine. The companion starts the CLI with a minimal environment of its own (the path and the runtime's connection variables) and passes no `--env`, `--env-file` or `--env-host`, so nothing from the reviewer's or the engine's environment reaches the container.
+The container has no host mount. The head copy, the same read-only copy the agent reads, streams in as an archive on stdin and is unpacked into a tmpfs, so the container never sees a path on the reviewer's machine. The companion starts the CLI with a minimal environment of its own (the path, the folders the CLI keeps its configuration in, and the runtime's connection variables) and passes no `--env`, `--env-file` or `--env-host`, so nothing from the reviewer's or the engine's environment reaches the container.
 
 The run step is started with these flags, each for one reason:
 
@@ -14,7 +14,7 @@ The run step is started with these flags, each for one reason:
 | --- | --- |
 | `--network none` | No network: the code cannot send the copy anywhere, reach the reviewer's local network or fetch more code. Only loopback exists. |
 | `--read-only` | A read-only root: the code cannot change the image's programs or leave anything behind for a later step. |
-| `--tmpfs /work:rw,exec,nosuid,nodev,size=…,mode=1777`, and the same for `/tmp` | The only writable places, in memory and gone when the container ends. `/work` holds the copy; both must allow running what a build writes there, so `exec` is set explicitly where Podman defaults a tmpfs to `noexec`. |
+| `--tmpfs /work:rw,exec,nosuid,nodev,size=…,mode=1777`, and the same for `/tmp` and the home folder | The only writable places, in memory and gone when the container ends. `/work` holds the copy, and `/tmp` and a home folder of its own are what a toolchain usually needs to write; all must allow running what a build writes there, so `exec` is set explicitly where Podman defaults a tmpfs to `noexec`. |
 | `--cap-drop ALL` | Every Linux capability dropped, so even root inside could not mount, trace, change ownership or open raw sockets. |
 | `--security-opt no-new-privileges` | No setuid or setgid program can raise the process's privileges. |
 | `--user 65534:65534` | A non-root user, so an escape starts from an unprivileged account. |

@@ -61,4 +61,5 @@ export * from './doc-links.js';
 export * from './doc-suggestions.js';
 export * from './reviewed-marks.js';
 export * from './last-look.js';
+export * from './sandbox.js';
 export { runCli } from './cli.js';

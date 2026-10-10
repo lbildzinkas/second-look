@@ -1,14 +1,16 @@
 import { DEFAULT_AGENT_SETTINGS, type AgentSettings } from './agent.js';
 import { AGENT_NAMES, agentAdapter, isAgentName, modelAndEffortProblem } from './agents.js';
 import { budgetMeter, budgetOf } from './budget.js';
-import { defaultCacheDir } from './cache.js';
+import { defaultCacheDir, ensureCopy } from './cache.js';
 import { readFile } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import type { ClaudeCodeAdapterOptions } from './claude-code.js';
 import type { PiAdapterOptions } from './pi.js';
+import { GitHubClient, parsePullRequestUrl } from './github.js';
 import { runAgentProbe } from './probe.js';
 import type { Budget } from './protocol.js';
 import { reviewPullRequest } from './review.js';
+import { describeSandboxedRun, imageProblem, probeSandbox, runSandboxed, type SandboxDeps } from './sandbox.js';
 import { readPackagePdbs } from './symbols.js';
 import { runRpcServer, type RpcAgentDeps, type RpcServerDeps } from './server.js';
 import { redactToken } from './rpc.js';
@@ -24,6 +26,8 @@ Usage:
   second-look-engine probe <pull-request-url> [--agent <pi|claude-code>] [--target <path-or-url>]...
       [--model <model>] [--effort <level>] [--agent-timeout <seconds>]
       [--agent-concurrency <n>] [--token <token>] [--cache-dir <dir>]
+  second-look-engine run <pull-request-url> --image <name@sha256:digest>
+      [--yes] [--token <token>] [--cache-dir <dir>] -- <command>...
   second-look-engine pdb <package-file>
   second-look-engine serve [--agent <pi|claude-code>] [--model <model>]
       [--effort <level>] [--agent-timeout <seconds>]
@@ -129,6 +133,20 @@ after --agent-timeout
 seconds (default ${DEFAULT_AGENT_SETTINGS.timeoutMs / 1000}), at most --agent-concurrency (default
 ${DEFAULT_AGENT_SETTINGS.concurrency}) at once, and a timed-out run keeps what it wrote.
 
+The run command runs one command in the pull request's head copy inside
+a locked-down container, through the docker or podman the reviewer
+installed; it never installs, starts or configures one. It first prints
+what will run — the commit, the image, the command and the isolation —
+and runs only with --yes. The image must be pinned by its digest; it is
+pulled first, as a step of its own. The container has no network, no
+host folder and no host environment variable: the copy streams in on
+stdin and is unpacked into a folder in memory, under a read-only root, a
+non-root user, no capabilities and limits on CPU, memory, processes and
+time. Every word after -- is one argument of the command, and no shell
+on the reviewer's machine reads it. The result prints as JSON, labelled
+with the runtime, the image, the commit and the command, with the
+command's exit code and the last few KiB of its output.
+
 The pdb command is a debug command: given a NuGet package or symbols
 package (or a single .pdb or assembly), it reads every portable PDB in it,
 standalone or embedded in an assembly, and prints as JSON each source
@@ -169,6 +187,8 @@ export interface CliDeps {
   pi?: Pick<PiAdapterOptions, 'command' | 'guardPath'>;
   /** How the probe and the agent stage start Claude Code; tests point it at a fake agent. */
   claudeCode?: Pick<ClaudeCodeAdapterOptions, 'command' | 'guardPath'>;
+  /** Where the run command finds and starts the container runtime; tests inject a fake so none starts. */
+  sandbox?: Pick<SandboxDeps, 'dirs' | 'start'>;
 }
 
 /** Flags that take a value, beyond --token and --cache-dir. */
@@ -187,19 +207,25 @@ export async function runCli(
   streams: CliStreams,
   deps: CliDeps = {},
 ): Promise<number> {
+  // Every word after -- is the run command's command, never a flag.
+  const end = argv.indexOf('--');
+  const flags = end === -1 ? argv : argv.slice(0, end);
+  const commandWords = end === -1 ? undefined : argv.slice(end + 1);
   const positional: string[] = [];
   let tokenFlag: string | undefined;
   let cacheDirFlag: string | undefined;
   let criteriaHeading: string | undefined;
+  let image: string | undefined;
+  let confirmed = false;
   const agentFlags: Record<string, string[]> = {};
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i]!;
+  for (let i = 0; i < flags.length; i++) {
+    const arg = flags[i]!;
     if (arg === '--help' || arg === '-h') {
       streams.out.write(`${USAGE}\n`);
       return 0;
     }
     if (arg === '--token') {
-      const value = argv[++i];
+      const value = flags[++i];
       if (value === undefined) {
         streams.err.write('second-look-engine: --token needs a value\n');
         return 1;
@@ -207,8 +233,21 @@ export async function runCli(
       tokenFlag = value;
       continue;
     }
+    if (arg === '--image') {
+      const value = flags[++i];
+      if (value === undefined) {
+        streams.err.write('second-look-engine: --image needs an image pinned by digest\n');
+        return 1;
+      }
+      image = value;
+      continue;
+    }
+    if (arg === '--yes') {
+      confirmed = true;
+      continue;
+    }
     if (arg === '--cache-dir') {
-      const value = argv[++i];
+      const value = flags[++i];
       if (value === undefined) {
         streams.err.write('second-look-engine: --cache-dir needs a value\n');
         return 1;
@@ -217,7 +256,7 @@ export async function runCli(
       continue;
     }
     if (arg === CRITERIA_HEADING_FLAG) {
-      const value = argv[++i];
+      const value = flags[++i];
       if (value === undefined || value.trim() === '') {
         streams.err.write(`second-look-engine: ${CRITERIA_HEADING_FLAG} needs a heading\n`);
         return 1;
@@ -226,7 +265,7 @@ export async function runCli(
       continue;
     }
     if (AGENT_FLAGS.includes(arg)) {
-      const value = argv[++i];
+      const value = flags[++i];
       if (value === undefined) {
         streams.err.write(`second-look-engine: ${arg} needs a value\n`);
         return 1;
@@ -269,6 +308,9 @@ export async function runCli(
       settings,
     };
     return serve(streams, tokenFlag !== undefined, deps, cacheDirFlag ?? defaultCacheDir(env), agent);
+  }
+  if (command === 'run') {
+    return runCommand(url, { image, commandWords, confirmed, tokenFlag, cacheDir: cacheDirFlag ?? defaultCacheDir(env) }, env, streams, deps);
   }
   if (command !== 'review' && command !== 'probe') {
     streams.err.write(`${USAGE}\n`);
@@ -381,6 +423,68 @@ function agentSettings(flags: Record<string, string[]>): AgentSettings | string 
   if (model) settings.model = model;
   if (effort) settings.effort = effort;
   return settings;
+}
+
+/**
+ * Runs one command in the pull request's head copy inside a locked-down
+ * container: it explains what will run, and runs it only when confirmed.
+ * An image without a digest, a missing runtime or one that does not
+ * answer is refused with a plain message, and nothing runs.
+ */
+async function runCommand(
+  url: string | undefined,
+  options: { image?: string; commandWords?: readonly string[]; confirmed: boolean; tokenFlag?: string; cacheDir: string },
+  env: NodeJS.ProcessEnv,
+  streams: CliStreams,
+  deps: CliDeps,
+): Promise<number> {
+  const fail = (message: string): number => {
+    streams.err.write(`second-look-engine: ${message}\n`);
+    return 1;
+  };
+  if (!url) return fail('run needs a pull request URL');
+  const ref = parsePullRequestUrl(url);
+  if (!ref) return fail(`not a GitHub pull request URL: ${url}`);
+  if (options.image === undefined) return fail('run needs --image <name@sha256:digest>, the image to run in');
+  const problem = imageProblem(options.image);
+  if (problem !== undefined) return fail(`${problem}; nothing ran`);
+  const argv = options.commandWords ?? [];
+  if (argv.length === 0) return fail('run needs the command to run after --, such as -- npm test');
+  const token = options.tokenFlag ?? env['GITHUB_TOKEN'] ?? env['GH_TOKEN'];
+  if (!token) return fail('no GitHub token; pass one with --token or the GITHUB_TOKEN environment variable');
+
+  try {
+    const probe = await probeSandbox({ env, ...deps.sandbox });
+    if (!probe.usable) return fail(`${probe.reason} Nothing ran.`);
+    const client = new GitHubClient({ token, fetch: deps.fetch });
+    const pullRequest = await client.getPullRequestSummary(ref);
+    const explanation = describeSandboxedRun({
+      pullRequestUrl: pullRequest.url,
+      commit: pullRequest.headSha,
+      image: options.image,
+      argv,
+      runtime: probe.runtime,
+    });
+    if (!options.confirmed) {
+      streams.out.write(`${explanation}\n\nNothing has run. Run the same command with --yes to start it.\n`);
+      return 0;
+    }
+    streams.err.write(`${explanation}\n\nRunning.\n`);
+    const copy = await ensureCopy({
+      cacheDir: options.cacheDir,
+      ref,
+      commit: pullRequest.headSha,
+      download: (wanted) => client.downloadTarball(ref, wanted),
+    });
+    const run = await runSandboxed(
+      { runtime: probe.runtime, image: options.image, copy, argv },
+      { env, ...(deps.sandbox?.start ? { start: deps.sandbox.start } : {}) },
+    );
+    streams.out.write(`${JSON.stringify(run, null, 2)}\n`);
+    return run.exitCode === 0 ? 0 : 1;
+  } catch (error) {
+    return fail(redactToken(error instanceof Error ? error.message : String(error), token));
+  }
 }
 
 /** Prints every portable PDB in a package file, with its documents. */

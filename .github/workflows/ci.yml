@@ -19,6 +19,10 @@ jobs:
       # Every case, with no agent, scored against the stored
       # baseline; the step fails when any score drops.
       - run: npm run eval
+      # The sandboxed run's live suite starts real containers through
+      # the runner's Docker, so it runs here and on explicit opt-in only,
+      # never in the default checks.
+      - run: npm run test:sandbox
       # The extension integration tests run in CI only, under xvfb; the
       # default checks exclude them so no local run launches anything that
       # could open a VS Code window on a developer machine. The real-host

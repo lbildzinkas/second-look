@@ -15,6 +15,7 @@
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:live-claude": "vitest run --config vitest.live.config.ts",
+    "test:sandbox": "vitest run --config vitest.sandbox.config.ts",
     "test:real-host": "npm run build && tsc -p packages/extension/test/real-host && node packages/extension/test/real-host/dist/real-host/launch.js",
     "package": "npm run build && node packages/extension/scripts/package.mjs",
     "test:package-smoke": "npm run build && tsc -p packages/extension/test/package-smoke && node packages/extension/test/package-smoke/dist/package-smoke/launch.js",
