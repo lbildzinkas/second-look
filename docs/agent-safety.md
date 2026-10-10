@@ -21,12 +21,13 @@ These hold for both agents, because they come from the engine rather than from e
 ### The agent is started in one folder, a read-only copy
 
 - **The folder.** Each run is started with its working directory set to one folder (`pi.ts:198-204`, `claude-code.ts:482-488`): the head copy of the pull request for every review pass and ask (for example `review.ts:300`, `asks.ts:64`), or, after the reviewer presses a library fetch, that library's fetched folder alone (`library-verdicts.ts:252`). The base copy, the reviewer's workspace and the rest of the cache are never the run's folder.
-- **Read-only.** The copies and fetched libraries are all written by `archive.ts`, with every file mode `0444` and every folder `0555` (`archive.ts:18-19`, `archive.ts:168-175`), so nothing in them can be written or run in place. Each copy is unpacked from the commit's archive into the engine's cache (`cache.ts:80-107`): nothing is checked out in the reviewer's workspace, and nothing from the pull request is built, installed or run.
+- **Read-only.** The copies and fetched libraries are all written by `archive.ts`, with every file mode `0444` and every folder `0555` (`archive.ts:18-19`, `archive.ts:168-175`), so nothing in them can be written or run in place. Each copy is unpacked from the commit's archive into the engine's cache (`cache.ts:81-108`): nothing is checked out in the reviewer's workspace, and nothing from the pull request is built, installed or run.
 - **No links out.** Symbolic links, hard links and special files in an archive are skipped, never written, and an entry whose path would leave the folder is refused (`archive.ts:139-149`, `archive.ts:179-187`). A copy therefore holds no link an agent could follow out of it.
+- **Never the project loaded for navigation.** When the reviewer loads the project for navigation, the engine writes a writable copy of the head copy to `project/<commit>` beside the read-only copies, never inside one (`cache.ts:117-127`, `cache.ts:145-174`), and no agent run is ever started there: every run's folder is still the read-only head copy or a fetched library. The agents' lockdown is the same whether or not a project was loaded; what that copy may run belongs to the editor window it opens in, described [below](#the-project-loaded-for-navigation).
 
 ### The agent has no GitHub login
 
-The engine removes `GITHUB_TOKEN`, `GH_TOKEN`, `GH_ENTERPRISE_TOKEN` and `GITHUB_ENTERPRISE_TOKEN` from every agent's environment (`agent.ts:148-153`, applied at `pi.ts:88-92` and `claude-code.ts:199-203`). The token the engine holds lives only in its GitHub client's memory (`github.ts:58-70`). In VS Code the token comes from VS Code's authentication API with each request and is never put in the engine's environment (`packages/extension/src/engine-client.ts:84-85` passes the editor's environment, not a token).
+The engine removes `GITHUB_TOKEN`, `GH_TOKEN`, `GH_ENTERPRISE_TOKEN` and `GITHUB_ENTERPRISE_TOKEN` from every agent's environment (`agent.ts:148-153`, applied at `pi.ts:88-92` and `claude-code.ts:199-203`). The token the engine holds lives only in its GitHub client's memory (`github.ts:58-70`). In VS Code the token comes from VS Code's authentication API with each request and is never put in the engine's environment (`packages/extension/src/engine-client.ts:88-89` passes the editor's environment, not a token).
 
 ### The agent signs in with its own login, which the companion never reads
 
@@ -71,6 +72,20 @@ The agent runs on the companion's own system prompt, passed with `--system-promp
 ### The agent is never run with a weaker lockdown
 
 Before any run, each adapter reads the installed agent's `--help` and refuses to run a version that lacks any flag of its lockdown (`pi.ts:23-36`, `pi.ts:162-167`; `claude-code.ts:83-96`, `claude-code.ts:412-417`). The probe itself runs `--version` and `--help` from the system's temporary folder, not from any copy (`pi.ts:101-116`, `claude-code.ts:257-272`).
+
+### The project loaded for navigation
+
+The one writable copy of a pull request is the one the reviewer asks for with **Second Look: Load the project for navigation…**, so language extensions can offer go to definition. It is never an agent run's folder, and the companion runs nothing in it:
+
+- **Nothing before the reviewer confirms.** The command first shows a modal warning that names what can run once the folder is open — restoring the project, its build targets, analyzers and source generators, and the interpreters, SDKs and tools the project or its editor settings name — and only its confirm button goes on; dismissing it writes and opens nothing (`packages/extension/src/project-load.ts:25-39`, `packages/extension/src/extension.ts:828-859`).
+- **What is written.** The engine copies the finished review's head copy, regular files and folders only and never a link, files `0644` and folders `0755`, so nothing is executable (`cache.ts:110-143`). The engine itself runs nothing in it (`server.ts:735-769`).
+- **Untrusted unless the reviewer trusts it.** The folder opens in a new window with the editor's own `vscode.openFolder` (`packages/extension/src/extension.ts:855`); the companion never marks it trusted, so VS Code's workspace trust opens it in Restricted Mode until the reviewer trusts it. The warning says so, and says instead that it opens trusted when the reviewer turned workspace trust off.
+
+Known gaps:
+
+- **Trusting it runs the pull request's code as the reviewer.** Once trusted, a restore, a build target, an analyzer or an interpreter the project names runs with the reviewer's own user, files and network. No sandbox stands behind it: the warning and workspace trust are the whole defence.
+- **Trust can be inherited.** A folder inside one the reviewer already trusts, such as a trusted home folder, opens trusted; the companion cannot read the editor's list of trusted folders, so the warning only names the case.
+- **A loaded copy is reused as the reviewer left it.** A second load at the same commit opens the same folder again, with whatever a restore or a build wrote there.
 
 ## Pi
 

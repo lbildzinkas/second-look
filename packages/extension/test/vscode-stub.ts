@@ -177,6 +177,10 @@ export interface StubState {
   /** The quick picks shown: their titles and the items they offered. */
   quickPicks: { title: string; items: unknown[] }[];
   warningMessages: string[];
+  /** The modal warnings shown: each message with its detail and the buttons it offered. */
+  modalWarnings: { message: string; detail?: string; items: string[] }[];
+  /** What a modal showWarningMessage resolves with; undefined reads as dismissed. */
+  modalWarningChoice: string | undefined;
   errorMessages: string[];
   informationMessages: string[];
   /** What showInformationMessage resolves with; undefined reads as dismissed. */
@@ -218,6 +222,8 @@ export const stub: StubState = {
   quickPickResult: undefined,
   quickPicks: [],
   warningMessages: [],
+  modalWarnings: [],
+  modalWarningChoice: undefined,
   errorMessages: [],
   informationMessages: [],
   informationChoice: undefined,
@@ -247,6 +253,8 @@ export const stub: StubState = {
     stub.quickPickResult = undefined;
     stub.quickPicks = [];
     stub.warningMessages = [];
+    stub.modalWarnings = [];
+    stub.modalWarningChoice = undefined;
     stub.errorMessages = [];
     stub.informationMessages = [];
     stub.informationChoice = undefined;
@@ -528,9 +536,15 @@ export const window = {
     stub.quickPicks.push({ title: options?.title ?? '', items });
     return Promise.resolve(stub.quickPickResult);
   },
-  showWarningMessage(message: string): Promise<void> {
+  showWarningMessage(message: string, ...rest: unknown[]): Promise<string | undefined> {
+    const [options] = rest;
+    if (typeof options === 'object' && options !== null && (options as { modal?: boolean }).modal === true) {
+      const items = rest.slice(1).filter((item): item is string => typeof item === 'string');
+      stub.modalWarnings.push({ message, detail: (options as { detail?: string }).detail, items });
+      return Promise.resolve(stub.modalWarningChoice);
+    }
     stub.warningMessages.push(message);
-    return Promise.resolve();
+    return Promise.resolve(undefined);
   },
   showErrorMessage(message: string): Promise<void> {
     stub.errorMessages.push(message);

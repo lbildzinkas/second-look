@@ -1,10 +1,11 @@
 import { randomBytes } from 'node:crypto';
-import { chmod, mkdir, readdir, rename, rm, stat } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { chmod, copyFile, mkdir, readdir, rename, rm, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { extractTarball } from './archive.js';
 import type { PullRequestRef } from './github.js';
-import type { ChangeCopy } from './protocol.js';
+import type { ChangeCopy, ProjectCopy } from './protocol.js';
 
 /**
  * The folder the engine keeps its cache in when the caller names none:
@@ -104,4 +105,70 @@ export async function ensureCopy(request: CopyRequest): Promise<ChangeCopy> {
     throw error;
   }
   return { commit, path, reused: false };
+}
+
+/**
+ * Modes of the project loaded for navigation: writable, so restoring the
+ * project can write beside its files, but never executable.
+ */
+const PROJECT_FILE = 0o644;
+const PROJECT_DIR = 0o755;
+
+/**
+ * The folder the project loaded for navigation sits in:
+ * `<pull request folder>/project/<commit>`, beside the read-only copies
+ * and never inside one, so no agent run's folder holds it.
+ */
+export function projectCopyDir(cacheDir: string, ref: PullRequestRef, commit: string): string {
+  if (!COMMIT.test(commit)) {
+    throw new Error(`not a full commit hash: ${commit}`);
+  }
+  return join(pullRequestCacheDir(cacheDir, ref), 'project', commit);
+}
+
+/** Copies a folder's regular files and folders, writable and never executable; a link or special file is never copied. */
+async function copyTree(from: string, to: string): Promise<void> {
+  await mkdir(to);
+  await chmod(to, PROJECT_DIR);
+  for (const entry of await readdir(from, { withFileTypes: true })) {
+    const source = join(from, entry.name);
+    const target = join(to, entry.name);
+    if (entry.isDirectory()) {
+      await copyTree(source, target);
+    } else if (entry.isFile()) {
+      await copyFile(source, target, constants.COPYFILE_EXCL);
+      await chmod(target, PROJECT_FILE);
+    }
+  }
+}
+
+/**
+ * Writes the project loaded for navigation, which the client asks for
+ * only once the reviewer confirmed it: a writable copy of the head copy,
+ * so language extensions can restore the project and offer go to
+ * definition in it. The head copy itself stays read-only and stays the
+ * folder agent runs read, so the agents' locked-down posture is
+ * unchanged: this copy is written beside it, never inside it. Only
+ * regular files and folders are copied, never a link. A copy is written
+ * into a private folder and renamed into place once complete, and a load
+ * an earlier request left at the same commit is reused as the reviewer
+ * left it.
+ */
+export async function ensureProjectCopy(cacheDir: string, ref: PullRequestRef, head: ChangeCopy): Promise<ProjectCopy> {
+  const path = projectCopyDir(cacheDir, ref, head.commit);
+  if (await exists(path)) return { commit: head.commit, path, reused: true };
+
+  const projects = join(pullRequestCacheDir(cacheDir, ref), 'project');
+  await mkdir(projects, { recursive: true });
+  const partial = join(projects, `.partial-${head.commit}-${randomBytes(6).toString('hex')}`);
+  try {
+    await copyTree(head.path, partial);
+    await rename(partial, path);
+  } catch (error) {
+    await removeCopy(partial);
+    // Another request finished the same copy first; theirs is just as good.
+    if (await exists(path)) return { commit: head.commit, path, reused: true };
+    throw error;
+  }
+  return { commit: head.commit, path, reused: false };
 }

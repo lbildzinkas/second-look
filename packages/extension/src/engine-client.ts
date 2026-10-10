@@ -8,6 +8,7 @@ import {
   ENGINE_PROTOCOL_VERSION,
   FETCH_LIBRARY_METHOD,
   INITIALIZE_METHOD,
+  LOAD_PROJECT_METHOD,
   MARK_REVIEWED_METHOD,
   MARK_VIEWED_METHOD,
   REVIEWED_MARKS_METHOD,
@@ -22,6 +23,7 @@ import {
   type InitializeResult,
   type MarkedPart,
   type PendingReview,
+  type ProjectCopy,
   type ReviewAgentChoice,
   type ReviewedMarks,
   type ReviewResult,
@@ -32,10 +34,12 @@ import {
   AskProtocolError,
   DraftProtocolError,
   MarksProtocolError,
+  ProjectProtocolError,
   ProtocolError,
   SendProtocolError,
   isAskAnswer,
   isDraftComment,
+  isProjectCopy,
   isReviewResult,
   isReviewedMarks,
   isSentReview,
@@ -110,6 +114,9 @@ const MARKS_TIMEOUT_MS = 10_000;
 
 /** How long marking files "Viewed" on GitHub may take before the engine is given up on. */
 const MARK_VIEWED_TIMEOUT_MS = 60_000;
+
+/** How long writing the project loaded for navigation may take: one copy of the head copy. */
+const LOAD_PROJECT_TIMEOUT_MS = 120_000;
 
 /** How long a stalled engine gets to die from SIGTERM before it is killed outright. */
 const KILL_GRACE_MS = 2_000;
@@ -390,6 +397,22 @@ export class EngineClient {
     const result = await this.request(MARK_VIEWED_METHOD, { url, token, paths }, MARK_VIEWED_TIMEOUT_MS);
     if (!isViewedFiles(result)) {
       throw new MarksProtocolError();
+    }
+    return result;
+  }
+
+  /**
+   * Has the engine write the project loaded for navigation: a writable
+   * copy of the head copy of the pull request's latest review. Sent only
+   * once the reviewer confirmed the warning. Resolves with where it is.
+   */
+  async loadProject(url: string): Promise<ProjectCopy> {
+    if (!this.handshaken) {
+      throw new Error('the engine has not completed its handshake yet');
+    }
+    const result = await this.request(LOAD_PROJECT_METHOD, { url }, LOAD_PROJECT_TIMEOUT_MS);
+    if (!isProjectCopy(result)) {
+      throw new ProjectProtocolError();
     }
     return result;
   }
