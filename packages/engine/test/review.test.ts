@@ -3,13 +3,17 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { budgetMeter } from '../src/budget.js';
 import { removeCopy } from '../src/cache.js';
+import { CLAIMS_INSTRUCTIONS } from '../src/claims.js';
+import { CRITERIA_MAPPING_INSTRUCTIONS } from '../src/criteria-mapping.js';
 import { REVIEW_RESULT_VERSION } from '../src/protocol.js';
 import type { Part } from '../src/protocol.js';
 import { fetchChange, reviewChange, reviewPullRequest, type ReviewStage } from '../src/review.js';
+import { VERDICTS_INSTRUCTIONS } from '../src/verdicts.js';
 import {
   PR_7_URL,
   PR_8_URL,
   PR_URL,
+  answeringAgent,
   fixtureFetch,
   pull7,
   pull8,
@@ -36,7 +40,7 @@ describe('reviewPullRequest', () => {
     });
 
     expect(result.version).toBe(REVIEW_RESULT_VERSION);
-    expect(result.version).toBe(19);
+    expect(result.version).toBe(20);
     expect(result.pullRequest.number).toBe(42);
     expect(result.pullRequest.description).toHaveLength(8082);
     // The head commit's SHA, where the noise attributes are read.
@@ -442,8 +446,7 @@ describe('reviewPullRequest on a budget', () => {
     const { result, stages, agent, transport } = await review(meter);
 
     expect(result.budget!.limits).toEqual({ agentRuns: 2, filesFetched: 3, downloadMiB: 0.5 });
-    // Every attempt counts, the retries included, and every GitHub answer
-    // and archive counts as a file.
+    // Every attempt counts, and every GitHub answer and archive counts as a file.
     expect(result.budget!.used.agentRuns).toBe(agent.requests.length);
     expect(result.budget!.used.filesFetched).toBe(transport.requests.length);
     expect(result.budget!.used.downloadBytes).toBeGreaterThan(0);
@@ -452,10 +455,41 @@ describe('reviewPullRequest on a budget', () => {
     const runs = stages.map((stage) => stage.result.budget!.used.agentRuns);
     expect(runs[0]).toBe(0);
     expect(runs).toEqual([...runs].sort((a, b) => a - b));
-    expect(runs.at(-1)).toBeLessThan(agent.requests.length);
-    // Nothing is refused yet: the review ran past every limit.
-    expect(agent.requests.length).toBeGreaterThan(2);
+    // The review's own reads went past the file limit: none is refused.
     expect(transport.requests.length).toBeGreaterThan(3);
+  });
+
+  it('stops the agent stages at the run limit, in their order, each falling back with the limit as its reason', async () => {
+    const meter = budgetMeter({ agentRuns: 2, filesFetched: 0, downloadMiB: 0 });
+    // The grouping answers; the story's answer is invalid, and its retry would pass the limit.
+    const transport = fixtureFetch(pull7());
+    const agent = scriptedAgent([grouping, 'not json', 'never asked']);
+    const stages: ReviewStage[] = [];
+    const result = await reviewPullRequest(PR_7_URL, {
+      token: 'test-token',
+      fetch: transport.fetch,
+      cacheDir,
+      budget: meter,
+      agentStage: { adapter: agent, onStage: (stage) => stages.push(stage) },
+    });
+    const otherCache = temporaryCacheDir();
+    const unlimited = await review(undefined, otherCache);
+    await removeCopy(otherCache);
+
+    expect(agent.requests).toHaveLength(2);
+    expect(result.budget!.used.agentRuns).toBe(2);
+    expect(result.grouping).toMatchObject({ by: 'agent' });
+    expect(result.story).toMatchObject({
+      outcome: 'fell back',
+      detail: expect.stringContaining(
+        'and was not retried: the review used its 2 agent runs; raise `second-look.budget.agentRuns` to retry it',
+      ),
+    });
+    const notRun = 'budget-limit: the agent was not run: the review used its 2 agent runs; raise `second-look.budget.agentRuns` to run it';
+    expect(result.unexplained).toMatchObject({ outcome: 'fell back', detail: expect.stringContaining(notRun) });
+    expect(result.claims).toMatchObject({ outcome: 'fell back', claims: [], detail: expect.stringContaining(notRun) });
+    // The stages keep their order: each is still announced where it was.
+    expect(stages.map((stage) => stage.running)).toEqual(unlimited.stages.map((stage) => stage.running));
   });
 
   it('leaves the review as it was with every limit 0, apart from the budget', async () => {
@@ -479,5 +513,63 @@ describe('reviewPullRequest on a budget', () => {
     // The same downloads, in whatever order the copies race in.
     const urls = (requests: { url: string }[]) => requests.map((request) => request.url).sort();
     expect(urls(metered.transport.requests)).toEqual(urls(plain.transport.requests));
+  });
+});
+
+describe('reviewPullRequest on a budget, with claims and criteria', () => {
+  const CLAIM = 'The full description must never be truncated by the companion, whatever its length.';
+
+  /** Lists one claim from the description, judges it, and maps the four criteria; any other pass gets no answer it accepts. */
+  function judgingAgent() {
+    return answeringAgent((run) => {
+      if (run.instructions === CLAIMS_INSTRUCTIONS) return { claims: [{ source: 'description', quote: CLAIM, file: null, line: null, part: 'p1' }] };
+      if (run.instructions === VERDICTS_INSTRUCTIONS) {
+        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: "the model's memory", reason: 'Nothing in the change shows it.', evidence: [], library: null }] };
+      }
+      if (run.instructions === CRITERIA_MAPPING_INSTRUCTIONS) {
+        return { criteria: ['a1', 'a2', 'a3', 'a4'].map((id) => ({ id, verdict: "can't tell", reason: 'Nothing in the change shows it.', code: [], tests: [], manual: [] })) };
+      }
+      return {};
+    });
+  }
+
+  async function review(meter: ReturnType<typeof budgetMeter>) {
+    const transport = fixtureFetch();
+    const agent = judgingAgent();
+    const result = await reviewPullRequest(PR_URL, {
+      token: 'test-token',
+      fetch: transport.fetch,
+      cacheDir,
+      budget: meter,
+      agentStage: { adapter: agent, story: false, unexplained: false },
+    });
+    return { result, agent, transport };
+  }
+
+  it('leaves the claims and criteria past the run limit not checked, with the limit as the reason, never missing', async () => {
+    // The grouping's two invalid answers and the claims listing use the three runs.
+    const { result, agent } = await review(budgetMeter({ agentRuns: 3, filesFetched: 0, downloadMiB: 0 }));
+
+    expect(agent.requests).toHaveLength(3);
+    expect(agent.requests.at(-1)!.instructions).toBe(CLAIMS_INSTRUCTIONS);
+    const reason = 'the review used its 3 agent runs; raise `second-look.budget.agentRuns` to check it';
+    expect(result.claims!.judging).toMatchObject({ outcome: 'fell back', detail: expect.stringContaining('the agent was not run') });
+    expect(result.claims!.claims.map((claim) => [claim.quote, claim.verdict])).toEqual([[CLAIM, { kind: 'not checked', reason }]]);
+    expect(result.criteria!.mapping).toMatchObject({ outcome: 'fell back', detail: expect.stringContaining('the agent was not run') });
+    expect(result.criteria!.criteria).toHaveLength(4);
+    expect(result.criteria!.criteria.every((criterion) => criterion.verdict.kind === 'not checked' && criterion.verdict.reason === reason)).toBe(true);
+  });
+
+  it("never refuses the review's own reads, whatever the file and size limits, and judges and maps past them", async () => {
+    const { result, transport } = await review(budgetMeter({ agentRuns: 0, filesFetched: 1, downloadMiB: 0.0001 }));
+
+    // The pull request, its diff, both copies, CI and the linked issues were all read.
+    expect(result.budget!.used.filesFetched).toBe(transport.requests.length);
+    expect(transport.requests.length).toBeGreaterThan(1);
+    expect(result.budget!.used.downloadBytes).toBeGreaterThan(0.0001 * 1024 * 1024);
+    expect(result.parts).toHaveLength(11);
+    expect(result.criteria).toMatchObject({ outcome: 'read' });
+    expect(result.claims!.claims.map((claim) => claim.verdict.kind)).toEqual(['unverifiable']);
+    expect(result.criteria!.criteria.map((criterion) => criterion.verdict.kind)).toEqual(["can't tell", "can't tell", "can't tell", "can't tell"]);
   });
 });

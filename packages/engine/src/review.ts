@@ -4,12 +4,13 @@ import {
   type AgentAdapter,
   type AgentSettings,
 } from './agent.js';
-import { meteredFetch, withBudget, type BudgetMeter } from './budget.js';
+import { limitedFetch, meteredFetch, withBudget, type BudgetMeter } from './budget.js';
 import { ensureCopy } from './cache.js';
 import { readCi } from './ci.js';
 import { findClaims } from './claims.js';
 import { DEFAULT_CRITERIA_HEADING, readCriteria } from './criteria.js';
 import { mapCriteria } from './criteria-mapping.js';
+import { publicDocsFetch } from './doc-fetch.js';
 import { findDocLinks } from './doc-links.js';
 import { validateCoverage } from './coverage.js';
 import { parseDiff, type ParsedDiff } from './diff.js';
@@ -59,8 +60,12 @@ export interface ReviewOptions {
   /**
    * Counts what the review uses — every agent run it starts, every file it
    * downloads and their bytes — and puts the use on the result and on
-   * every stage's result so far; nothing is refused. Absent, nothing is
-   * counted and the result carries no budget.
+   * every stage's result so far, and stops at its limits: an agent stage,
+   * or its retry, starts only while a run is left, else it falls back
+   * saying which limit, and a documentation download past the file or
+   * size limit is refused. The review's own reads of the pull request are
+   * never refused. Absent, nothing is counted or limited and the result
+   * carries no budget.
    */
   budget?: BudgetMeter;
 }
@@ -104,13 +109,17 @@ export async function reviewPullRequest(
   const meter = options.budget;
   const metered = meter ? meteredOptions(options, meter) : options;
   const reviewed = await reviewChange(await fetchChange(url, metered), metered.agentStage);
-  const result = await docLinksStage(reviewed, metered);
+  // The documentation is no read of the pull request: past a limit, it is refused.
+  const docsFetch = meter ? limitedFetch(options.fetch ?? publicDocsFetch(), meter) : options.fetch;
+  const result = await docLinksStage(reviewed, { ...metered, ...(docsFetch ? { fetch: docsFetch } : {}) });
   return meter ? withBudget(result, meter) : result;
 }
 
 /**
- * The options with the review's meter wired in: around the fetch, into
- * every agent run's settings, and onto each stage's result so far.
+ * The options with the review's meter wired in: around the fetch, which
+ * counts the review's own reads and refuses none, into every agent run's
+ * settings, which stop at the agent-run limit, and onto each stage's
+ * result so far.
  */
 function meteredOptions(options: ReviewOptions, meter: BudgetMeter): ReviewOptions {
   const agentStage = options.agentStage;
@@ -122,7 +131,7 @@ function meteredOptions(options: ReviewOptions, meter: BudgetMeter): ReviewOptio
       ? {
           agentStage: {
             ...agentStage,
-            settings: { ...(agentStage.settings ?? DEFAULT_AGENT_SETTINGS), budget: meter },
+            settings: { ...(agentStage.settings ?? DEFAULT_AGENT_SETTINGS), budget: meter, stopAtBudget: true },
             ...(onStage ? { onStage: (stage: ReviewStage) => onStage({ ...stage, result: withBudget(stage.result, meter) }) } : {}),
           },
         }

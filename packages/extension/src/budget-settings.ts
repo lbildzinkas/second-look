@@ -7,7 +7,7 @@ import type { BudgetLimits } from '@second-look/engine';
  * limit, the default. Like the agent settings they live in the user
  * settings only, since they bound what a review may do, and every review
  * request carries them, so the engine meters the review against them and
- * its result shows the use so far. Nothing is refused yet.
+ * its result shows the use so far. The engine stops the review at them.
  */
 
 /**

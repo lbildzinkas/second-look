@@ -28,9 +28,10 @@
  * once and then reports the failure — it never guesses an answer — and
  * runs tasks at most
  * `concurrency` at a time, each under its own timeout, keeping whatever
- * finished when another task times out.
+ * finished when another task times out. On a budget that stops the runs,
+ * a task, or its retry, starts only while an agent run is left.
  */
-import { countAgentRun, type BudgetMeter } from './budget.js';
+import { countAgentRun, hasAgentRunLeft, limitReason, type BudgetMeter } from './budget.js';
 import { validateJson, type JsonSchema } from './json-schema.js';
 
 /** What a probe learned about the installed agent. */
@@ -213,6 +214,12 @@ export interface AgentSettings {
   account?: string;
   /** The review's budget meter, which counts every run started, a retry included; absent counts nothing. */
   budget?: BudgetMeter;
+  /**
+   * True when the meter's agent-run limit stops the runs: a task starts,
+   * and its retry, only while a run is left, else it fails saying so. The
+   * review's stages stop; the reviewer's asks and drafts only count.
+   */
+  stopAtBudget?: boolean;
 }
 
 export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
@@ -244,8 +251,8 @@ export interface AgentTask {
   check?: (answer: unknown) => string[] | Promise<string[]>;
 }
 
-/** Why a task produced no answer. */
-export type AgentFailureReason = 'unusable' | 'timeout' | 'agent-failed' | 'invalid-answer';
+/** Why a task produced no answer; `budget-limit` when the agent-run limit kept a run, or its retry, from starting. */
+export type AgentFailureReason = 'unusable' | 'timeout' | 'agent-failed' | 'invalid-answer' | 'budget-limit';
 
 /** A task's result: a schema-valid answer, or a failure that says why; always stamped. */
 export type AgentResult =
@@ -259,6 +266,16 @@ export type AgentResult =
       partial?: string;
       stamp: AgentStamp;
     };
+
+/**
+ * Why what a task was to settle is left not checked, naming the limit,
+ * when the agent-run limit kept the task or its retry from running;
+ * undefined when it ran or failed otherwise.
+ */
+export function agentRunLimitReason(result: AgentResult, settings: AgentSettings, toDo: string): string | undefined {
+  if (result.ok || result.reason !== 'budget-limit' || settings.budget === undefined) return undefined;
+  return limitReason(settings.budget, 'agentRuns', toDo);
+}
 
 /**
  * Reads an answer: the whole text must be one JSON value, optionally inside
@@ -306,19 +323,36 @@ function withAccount(stamp: AgentStamp, account: string | undefined): AgentStamp
   return account ? { ...stamp, account } : stamp;
 }
 
+/** The stamp of a task the agent never ran, from what its probe learned. */
+function probeStamp(probe: AgentProbe, account: string | undefined): AgentStamp {
+  return withAccount(
+    { agent: probe.agent, agentVersion: probe.version, model: null, effort: null, runAt: new Date().toISOString() },
+    account,
+  );
+}
+
 async function runTask(
   adapter: AgentAdapter,
   task: AgentTask,
   settings: AgentSettings,
+  probe: AgentProbe,
 ): Promise<AgentResult> {
   let stamp: AgentStamp | undefined;
   let problems: string[] = [];
   for (let attempt = 1; attempt <= 2; attempt++) {
+    const meter = settings.budget;
+    if (meter && settings.stopAtBudget && !hasAgentRunLeft(meter)) {
+      const message =
+        attempt === 1
+          ? `the agent was not run: ${limitReason(meter, 'agentRuns', 'run it')}`
+          : `the answer was invalid (${problems.join('; ')}) and was not retried: ${limitReason(meter, 'agentRuns', 'retry it')}`;
+      return { ok: false, reason: 'budget-limit', message, attempts: attempt - 1, stamp: stamp ?? probeStamp(probe, settings.account) };
+    }
     const prompt =
       attempt === 1
         ? task.prompt
         : `${task.prompt}\n\n${RETRY_NOTE}\n- ${problems.join('\n- ')}\nAnswer again with only the JSON value.`;
-    if (settings.budget) countAgentRun(settings.budget);
+    if (meter) countAgentRun(meter);
     const outcome = await adapter.run({
       root: task.root,
       instructions: task.instructions,
@@ -376,16 +410,7 @@ export async function runAgentTasks(
   const probe = await adapter.probe();
   if (!probe.usable) {
     const message = probe.reason ?? `${probe.agent} cannot run with the companion's lockdown`;
-    const stamp: AgentStamp = withAccount(
-      {
-        agent: probe.agent,
-        agentVersion: probe.version,
-        model: null,
-        effort: null,
-        runAt: new Date().toISOString(),
-      },
-      settings.account,
-    );
+    const stamp = probeStamp(probe, settings.account);
     return {
       probe,
       results: tasks.map(() => ({ ok: false, reason: 'unusable', message, attempts: 0, stamp })),
@@ -396,7 +421,7 @@ export async function runAgentTasks(
   const worker = async (): Promise<void> => {
     while (next < tasks.length) {
       const index = next++;
-      results[index] = await runTask(adapter, tasks[index]!, settings);
+      results[index] = await runTask(adapter, tasks[index]!, settings, probe);
     }
   };
   const workers = Math.max(1, Math.min(settings.concurrency, tasks.length));

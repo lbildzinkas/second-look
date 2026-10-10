@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import {
   DEFAULT_AGENT_SETTINGS,
+  agentRunLimitReason,
   runAgentTasks,
   type AgentAdapter,
   type AgentSettings,
@@ -484,7 +485,9 @@ export interface VerdictsOptions {
  * Asks the agent to judge every listed claim, re-checks each citation
  * against the head copy or the CI log it names, and returns the claims with their verdicts, in
  * the same order, and the judging's outcome. A rejected answer is retried
- * once and then reported, and every claim stays not checked.
+ * once and then reported, and every claim stays not checked — with the
+ * reason, naming the limit, when the agent-run limit kept the judging or
+ * its retry from running.
  */
 export async function judgeClaims(
   parts: readonly Part[],
@@ -510,7 +513,9 @@ export async function judgeClaims(
   const base = { promptVersion: VERDICTS_PROMPT_VERSION, stamp: result.stamp };
   if (!result.ok) {
     const detail = `the agent gave no usable answer (${result.reason}: ${result.message})`;
-    return { claims: [...claims], judging: { ...base, outcome: 'fell back', detail } };
+    const reason = agentRunLimitReason(result, options.settings ?? DEFAULT_AGENT_SETTINGS, 'check it');
+    const left = reason === undefined ? [...claims] : claims.map((claim): Claim => (claim.verdict.kind === 'not checked' ? { ...claim, verdict: { kind: 'not checked', reason } } : claim));
+    return { claims: left, judging: { ...base, outcome: 'fell back', detail } };
   }
   const read = copyReader(options.root);
   const byId = new Map((result.answer as VerdictsAnswer).verdicts.map((verdict) => [verdict.id, verdict]));
