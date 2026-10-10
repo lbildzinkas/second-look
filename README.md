@@ -33,7 +33,7 @@ CI runs the same on every pull request and on every push to `master`, then `npm 
 
 Individual steps: `npm run build`, `npm run lint`, `npm test`.
 
-The extension integration tests are the one exception: they never run in
+The extension integration tests never run in
 `npm test` or `npm run check`, so no local run can launch anything that
 opens a VS Code window on a developer machine. CI runs them on Linux
 under xvfb: the fast stub-based test (`npm run test:integration`) and the
