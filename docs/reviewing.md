@@ -59,7 +59,7 @@ A **claim** is a statement about how the code or a library behaves, quoted as wr
 - **unverifiable** — nothing readable settles it;
 - **not checked** — not judged (yet).
 
-Every verdict names its **evidence source**: the change itself, library source at the pinned version, a named repository (a library's repository at a tag the agent named, weaker than pinned source), decompiled library code, a CI log, the issue text, or the model's memory — and the model's memory alone never yields **verified**. The engine re-reads every line a verdict cites before showing it: a citation that does not match drops the verdict to unverifiable and says why.
+Every verdict names its **evidence source**, from the [glossary](../CONTEXT.md)'s list — and the model's memory alone never yields **verified**. The engine re-reads every line a verdict cites before showing it: a citation that does not match drops the verdict to unverifiable and says why.
 
 A refuted or unverifiable claim is a **finding**, shown as the companion's own comment thread on the exact line that makes it, and badged on the part in the tree.
 
