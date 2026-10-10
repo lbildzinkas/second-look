@@ -18,7 +18,6 @@ import {
   type CommentSide,
   type DocLink,
   type ClaimSource,
-  type CriterionVerdictKind,
   type DescribedChange,
   type FindingRef,
   type HiddenKind,
@@ -79,14 +78,22 @@ export type OverviewMessage =
       type: 'openDoc';
       /** The documentation link, by its index in the result's links. */
       target: number;
+    }
+  | {
+      type: 'openClaimEvidence';
+      /** The claim, by its index in the claims. */
+      claim: number;
+      /** The cited line, by its index in that claim's verdict evidence. */
+      index: number;
     };
 
 
 /** Reads a page message out of what the webview delivered, if it is one. */
 function overviewMessage(value: unknown): OverviewMessage | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
-  const { type, part, issue, criterion, evidence, index, finding, answer, doc } = value as Record<string, unknown>;
+  const { type, part, issue, criterion, evidence, index, finding, answer, doc, claim } = value as Record<string, unknown>;
   if (type === 'openDoc' && Number.isInteger(doc)) return { type, target: doc as number };
+  if (type === 'openClaimEvidence' && Number.isInteger(claim) && Number.isInteger(index)) return { type, claim: claim as number, index: index as number };
   if (type === 'openCited' && Number.isInteger(answer) && Number.isInteger(index)) return { type, answer: answer as number, index: index as number };
   if (type === 'openPart' && Number.isInteger(part)) return { type, target: part as number };
   if (type === 'openIssue' && Number.isInteger(issue)) return { type, target: issue as number };
@@ -100,8 +107,12 @@ function overviewMessage(value: unknown): OverviewMessage | undefined {
 
 /**
  * The review's overview (issue #30), the tab at the top of the review in
- * the recorded design (docs/ux): the pull request's title and where it
- * comes from, a chip for each stage done and the one still running, the
+ * the recorded design (docs/ux), in its dashboard-and-tables style: the
+ * pull request's title and where it comes from, a chip for each stage
+ * done and the one still running, count tiles, then each section as a
+ * block in a bounded reading column beside a contents rail that scrolls to
+ * it — the claims, criteria and unexplained changes as tables, findings
+ * first, each row opening in place to its reason and evidence — the
  * story with its stamp, each part it mentions a button that opens the part
  * in the diff editor, the acceptance criteria of the linked issues, each
  * quoted and its issue a button that opens it on GitHub, with its verdict,
@@ -208,8 +219,8 @@ export class OverviewPanel implements vscode.Disposable {
   /**
    * The part a story, claim or unexplained-change button names, opened in
    * the diff editor; a linked issue, opened on GitHub; a line a criterion's
-   * verdict cites, opened in the head copy; a line an answer cites,
-   * opened in the copy of its side; a finding, drafted from.
+   * or a claim's verdict cites, opened in the head copy; a line an answer
+   * cites, opened in the copy of its side; a finding, drafted from.
    */
   private handle(value: unknown): void {
     const message = overviewMessage(value);
@@ -221,6 +232,13 @@ export class OverviewPanel implements vscode.Disposable {
     }
     if (message.type === 'draft') {
       this.draft(message.finding);
+      return;
+    }
+    if (message.type === 'openClaimEvidence') {
+      const verdict = this.state?.result.claims?.claims[message.claim]?.verdict;
+      // A CI log's line, or a line of fetched library source, is not a line of the head copy.
+      const cited = verdict === undefined || verdict.kind === 'not checked' || verdict.library !== undefined ? undefined : verdict.evidence[message.index];
+      if (cited !== undefined && cited.ciLog !== true) this.openLine(cited.path, cited.line, 'head');
       return;
     }
     if (message.type === 'openEvidence') {
@@ -391,6 +409,131 @@ function stampChip(text: string): string {
   return `<span class="stamp">${escapeHtml(text)}</span>`;
 }
 
+/** The theme colour a state shows in, always beside its icon and its word. */
+type Tone = 'ok' | 'bad' | 'warn' | 'info' | 'must' | 'mut';
+
+/** How the page shows each state: its tone, and its icon as a text glyph, which needs no font the page's policy would block. */
+const STATES: Record<string, { tone: Tone; icon: string }> = {
+  verified: { tone: 'ok', icon: '✓' },
+  refuted: { tone: 'bad', icon: '✕' },
+  unverifiable: { tone: 'warn', icon: '?' },
+  'not checked': { tone: 'mut', icon: '○' },
+  met: { tone: 'ok', icon: '✓' },
+  'partly met': { tone: 'warn', icon: '◐' },
+  'not met': { tone: 'bad', icon: '✕' },
+  'needs manual check': { tone: 'info', icon: '⚑' },
+  "can't tell": { tone: 'mut', icon: '○' },
+  'in the code, not explained': { tone: 'warn', icon: '!' },
+  'described, not in the code': { tone: 'warn', icon: '!' },
+  unexplained: { tone: 'warn', icon: '!' },
+  explained: { tone: 'ok', icon: '✓' },
+  'must review': { tone: 'must', icon: '★' },
+  answered: { tone: 'info', icon: '↳' },
+  links: { tone: 'mut', icon: '↗' },
+  failed: { tone: 'bad', icon: '✕' },
+};
+
+/** A state's word in a pill of its colour, after its icon. */
+function pill(state: string, text = state): string {
+  const { tone, icon } = STATES[state]!;
+  return `<span class="pl tone-${tone}"><span class="ic" aria-hidden="true">${icon}</span>${escapeHtml(text)}</span>`;
+}
+
+/** How many of a section's rows are in one state. */
+interface Tally {
+  state: string;
+  count: number;
+}
+
+/** How many rows are in each state, in the order given, which reads findings first; states with none are left out. */
+function tally(states: readonly string[], order: readonly string[]): Tally[] {
+  return order.map((state) => ({ state, count: states.filter((each) => each === state).length })).filter(({ count }) => count > 0);
+}
+
+/** The claims' verdicts in the order a reviewer reads them: findings first, confirmations last. */
+const CLAIM_ORDER = ['refuted', 'unverifiable', 'not checked', 'verified'];
+
+/** The criteria's verdicts in the order a reviewer reads them: findings first, confirmations last. */
+const CRITERION_ORDER: readonly string[] = [...CRITERION_VERDICT_KINDS, 'not checked'];
+
+function claimTallies(result: ReviewResult): Tally[] {
+  return tally(result.claims?.claims.map((claim) => claim.verdict.kind) ?? [], CLAIM_ORDER);
+}
+
+function criterionTallies(result: ReviewResult): Tally[] {
+  return tally(result.criteria?.criteria.map((criterion) => criterion.verdict.kind) ?? [], CRITERION_ORDER);
+}
+
+/** How many unexplained changes the comparison found, in both directions; nothing until it compared. */
+function unexplainedTally(result: ReviewResult): Tally | undefined {
+  const unexplained = result.unexplained;
+  if (unexplained?.outcome !== 'compared') return undefined;
+  const count = unexplained.parts.length + unexplained.described.length;
+  return { state: count === 0 ? 'explained' : 'unexplained', count };
+}
+
+/** A count tile: the number in its state's colour, then its icon and what it counts. */
+function tile({ state, count }: Tally, label: string): string {
+  const { tone, icon } = STATES[state]!;
+  return `<div class="tile"><div class="big tone-${tone}">${count}</div><div class="lb"><span class="tone-${tone}" aria-hidden="true">${icon}</span> ${escapeHtml(label)}</div></div>`;
+}
+
+/** The count tiles at the top of the page: the criteria and the claims by verdict, the unexplained changes, and the parts that must be reviewed. */
+function countTiles(result: ReviewResult): string {
+  const plural = (count: number, one: string, many: string): string => (count === 1 ? one : many);
+  const tiles = [
+    ...criterionTallies(result).map((each) => tile(each, `${plural(each.count, 'criterion', 'criteria')} ${each.state}`)),
+    ...claimTallies(result).map((each) => tile(each, `${plural(each.count, 'claim', 'claims')} ${each.state}`)),
+  ];
+  const unexplained = unexplainedTally(result);
+  if (unexplained) tiles.push(tile(unexplained, plural(unexplained.count, 'unexplained change', 'unexplained changes')));
+  const must = result.parts.filter((part) => part.rank?.importance === 'must review').length;
+  tiles.push(tile({ state: 'must review', count: must }, `of ${result.parts.length} ${plural(result.parts.length, 'part', 'parts')} must review`));
+  return `<div class="dash">${tiles.join('')}</div>`;
+}
+
+/** A section's tallies as pills beside its heading. */
+function tallyPills(tallies: readonly Tally[]): string {
+  return tallies.map(({ state, count }) => ` ${pill(state, `${count} ${state}`)}`).join('');
+}
+
+/** A section's rows in the order a reviewer reads them, by state, findings first, each with its index in the section. */
+function byState<T>(items: readonly T[], stateOf: (item: T) => string, order: readonly string[]): [T, number][] {
+  return items.map((item, index): [T, number] => [item, index]).sort(([a], [b]) => order.indexOf(stateOf(a)) - order.indexOf(stateOf(b)));
+}
+
+/** A section's table: the number column, then the headings, then the rows. */
+function sectionTable(headings: readonly string[], rows: readonly string[]): string {
+  const head = headings.map((heading) => `<th>${escapeHtml(heading)}</th>`).join('');
+  return `<table class="ct"><thead><tr><th class="no">#</th>${head}</tr></thead><tbody>${rows.join('')}</tbody></table>`;
+}
+
+/**
+ * One table row, numbered; with a detail, its number is a toggle that
+ * opens the detail in place, in a row of its own edged in the state's
+ * colour, and open from the start when asked.
+ */
+function tableRow(id: string, number: number, state: string, cells: readonly string[], detail: string, open: boolean): string {
+  const tds = cells.map((cell) => `<td>${cell}</td>`).join('');
+  if (detail === '') return `<tr><td class="no">${number}</td>${tds}</tr>`;
+  const toggle = `<button type="button" class="tg" aria-expanded="${open}" aria-controls="${id}" aria-label="${number}: show the reason and evidence">${number}</button>`;
+  return (
+    `<tr><td class="no">${toggle}</td>${tds}</tr>` +
+    `<tr class="ex" id="${id}"${open ? '' : ' hidden'}><td></td><td colspan="${cells.length}"><div class="it edge-${STATES[state]!.tone}">${detail}</div></td></tr>`
+  );
+}
+
+/** Evidence lines, each a `file:line` chip with its quoted line; after three, the rest fold. */
+function foldedLines(lines: readonly string[]): string {
+  if (lines.length <= 3) return lines.join('');
+  return `${lines.slice(0, 3).join('')}<details class="more"><summary>${lines.length - 3} more</summary>${lines.slice(3).join('')}</details>`;
+}
+
+/** A detail's evidence, grouped under each label. */
+function evidenceGroups(groups: readonly [string, string][]): string {
+  return `<div class="evidence">${groups.map(([label, value]) => `<span class="label">${escapeHtml(label)}</span><span class="v">${value}</span>`).join('')}</div>`;
+}
+
 /** A story's sentences, each part a button that opens it; the sentence that first mentions the focused part is marked. */
 function storySentences(story: Story, focus: number | undefined): string {
   const focused = focus === undefined ? -1 : story.sentences.findIndex((sentence) => sentence.segments.some((segment) => segment.part === focus));
@@ -485,16 +628,16 @@ function issueName(issue: LinkedIssue): string {
   return `#${issue.number} in ${issue.repository}`;
 }
 
-/** A criterion's cited lines of one kind, each a button that opens the line in the head copy, with its quote; or none. */
+/** A criterion's cited lines of one kind, each a chip that opens the line in the head copy, with its quote; or none. */
 function citedLines(criterion: number, evidence: CitedEvidence, cited: readonly { path: string; line: number; quote: string }[]): string {
   if (cited.length === 0) return '<span class="none">none</span>';
-  return cited
-    .map(
+  return foldedLines(
+    cited.map(
       (each, index) =>
-        `<button type="button" class="pt cite" data-criterion="${criterion}" data-evidence="${evidence}" data-index="${index}">${escapeHtml(`${each.path}:${each.line}`)}</button>` +
-        ` <span class="cited">${escapeHtml(each.quote)}</span>`,
-    )
-    .join('<br>');
+        `<span class="l"><button type="button" class="pt ref cite" data-criterion="${criterion}" data-evidence="${evidence}" data-index="${index}">${escapeHtml(`${each.path}:${each.line}`)}</button>` +
+        ` <span class="cited">${escapeHtml(each.quote)}</span></span>`,
+    ),
+  );
 }
 
 /**
@@ -511,54 +654,39 @@ function criterionEvidence(criterion: AcceptanceCriterion, index: number): strin
   const manual =
     verdict.manualChecks.length === 0
       ? '<span class="cited">none reported in the pull request</span>'
-      : verdict.manualChecks
-          .map(
+      : foldedLines(
+          verdict.manualChecks.map(
             (check) =>
-              `<q class="quote">${sanitiseUntrusted(check.quote).html}</q> <button type="button" class="pt manual">${escapeHtml(`description, line ${check.line}`)}</button>`,
-          )
-          .join('<br>');
-  const rows: [string, string][] = [
-    ['Code', citedLines(index, 'code', verdict.code)],
-    ['Tests', citedLines(index, 'tests', verdict.tests)],
-    ['Manual check', manual],
-  ];
+              `<span class="l"><button type="button" class="pt ref manual">${escapeHtml(`description, line ${check.line}`)}</button> <q class="quote">${sanitiseUntrusted(check.quote).html}</q></span>`,
+          ),
+        );
   const recheck = verdict.recheck === undefined ? '' : `<div class="why">${escapeHtml(`dropped to can't tell: ${verdict.recheck}`)}</div>`;
   return (
     `<div class="why">${escapeHtml(verdict.reason)}</div>` +
-    `<div class="evidence">${rows.map(([label, value]) => `<span class="label">${escapeHtml(label)}</span><span>${value}</span>`).join('')}</div>` +
-    recheck
+    evidenceGroups([
+      ['Code', citedLines(index, 'code', verdict.code)],
+      ['Tests', citedLines(index, 'tests', verdict.tests)],
+      ['Manual', manual],
+    ]) +
+    recheck +
+    (isUnmetCriterion(criterion) ? `<div class="acts">${draftButton({ kind: 'criterion', index })}</div>` : '')
   );
 }
 
 /** The button that drafts a comment from a finding the page lists. */
 function draftButton(finding: FindingRef): string {
-  return ` <button type="button" class="pt draft" data-draft="${escapeHtml(finding.kind)}" data-index="${finding.index}">Draft comment</button>`;
+  return `<button type="button" class="pt draft" data-draft="${escapeHtml(finding.kind)}" data-index="${finding.index}">Draft comment</button>`;
 }
 
-/** One acceptance criterion: its quote, the issue it comes from as a button that opens it, its verdict, its evidence once mapped, and a draft button when it is a finding. */
-function criterionItem(criterion: AcceptanceCriterion, index: number, criteria: NonNullable<ReviewResult['criteria']>): string {
+/** One acceptance criterion's row: its verdict, its quote, the issue it comes from as a button that opens it, and, once mapped, its reason and evidence to open. */
+function criterionRow(criterion: AcceptanceCriterion, index: number, criteria: NonNullable<ReviewResult['criteria']>, open: boolean): string {
   const issue = criteria.issues[criterion.issue];
   const from =
     issue === undefined
       ? ''
-      : `<button type="button" class="pt issue" data-issue="${criterion.issue}">${escapeHtml(issueName(issue))}</button> · ${escapeHtml(ISSUE_LINKS[issue.link])} · `;
-  return (
-    `<li><q class="quote">${sanitiseUntrusted(criterion.quote).html}</q>` +
-    `<div class="where">${from}<span class="verdict${isUnmetCriterion(criterion) ? ' finding' : ''}">${escapeHtml(criterion.verdict.kind)}</span>` +
-    `${isUnmetCriterion(criterion) ? draftButton({ kind: 'criterion', index }) : ''}</div>` +
-    `${criterionEvidence(criterion, index)}</li>`
-  );
-}
-
-/** How many criteria have each verdict, in the order a reviewer reads them, such as `1 not met · 2 met`. */
-export function criteriaCounts(criteria: readonly AcceptanceCriterion[]): string {
-  const counts = new Map<CriterionVerdictKind, number>();
-  for (const { verdict } of criteria) {
-    if (verdict.kind !== 'not checked') counts.set(verdict.kind, (counts.get(verdict.kind) ?? 0) + 1);
-  }
-  return CRITERION_VERDICT_KINDS.filter((kind) => counts.has(kind))
-    .map((kind) => `${counts.get(kind)!} ${kind}`)
-    .join(' · ');
+      : `<button type="button" class="pt issue" data-issue="${criterion.issue}">${escapeHtml(issueName(issue))}</button> · ${escapeHtml(ISSUE_LINKS[issue.link])}`;
+  const cells = [pill(criterion.verdict.kind), `<q class="quote">${sanitiseUntrusted(criterion.quote).html}</q>`, `<span class="where">${from}</span>`];
+  return tableRow(`criterion-${index}`, index + 1, criterion.verdict.kind, cells, criterionEvidence(criterion, index), open);
 }
 
 /** What the criteria section says of their verdicts: mapped, why none was, or that none is yet. */
@@ -606,13 +734,13 @@ function criteriaSection(state: OverviewState): string {
   }
   const heading = `, quoted from the checklist under ${escapeHtml(JSON.stringify(criteria.heading))}`;
   const note = `<p class="note">Each condition listed in the issues this pull request links${heading}. Issue text is untrusted: its hidden content is shown and flagged. ${escapeHtml(mappingNote(criteria))}</p>`;
-  const list =
-    criteria.criteria.length === 0
-      ? ''
-      : `<ol class="claims criteria">${criteria.criteria.map((criterion, index) => criterionItem(criterion, index, criteria)).join('')}</ol>`;
+  const rows = byState(criteria.criteria, (criterion) => criterion.verdict.kind, CRITERION_ORDER).map(([criterion, index], at) =>
+    criterionRow(criterion, index, criteria, at === 0 && isUnmetCriterion(criterion)),
+  );
+  const list = rows.length === 0 ? '' : sectionTable(['Verdict', 'Criterion', 'From'], rows);
   const { mapping } = criteria;
-  const counts = mapping?.outcome === 'mapped' ? criteriaCounts(criteria.criteria) : '';
-  const title = `Acceptance criteria${counts === '' ? '' : ` <span class="stamp">${escapeHtml(counts)}</span>`}${mapping === undefined ? '' : ` ${stampChip(stampText(mapping.stamp, 'criteria-mapping', mapping.promptVersion))}`}`;
+  const counts = mapping?.outcome === 'mapped' ? tallyPills(criterionTallies(state.result)) : '';
+  const title = `Acceptance criteria${counts}${mapping === undefined ? '' : ` ${stampChip(stampText(mapping.stamp, 'criteria-mapping', mapping.promptVersion))}`}`;
   return `<h2>${title}</h2>${detail}${note}${list}${issuesWithoutChecklist(criteria)}`;
 }
 
@@ -654,17 +782,20 @@ function unexplainedSection(state: OverviewState): string {
   const note =
     '<p class="note">The change compared with its description and linked issues in both directions: the parts neither explains, ' +
     'then the changes they describe that the diff does not contain. Each is a finding.</p>';
+  const detail = (reason: string, finding: FindingRef): string => `<div class="why">${escapeHtml(reason)}</div><div class="acts">${draftButton(finding)}</div>`;
   const parts = unexplained.parts.map(({ part, reason }, index) => {
     const shown = result.parts[part];
     const button = shown === undefined ? '' : `<button type="button" class="pt" data-part="${part}">${escapeHtml(shown.name ?? shown.path)}</button>`;
-    return `<li><span class="verdict finding">in the code, not explained</span> ${button}${draftButton({ kind: 'unexplained part', index })}<div class="why">${escapeHtml(reason)}</div></li>`;
+    const state = 'in the code, not explained';
+    return tableRow(`unexplained-part-${index}`, index + 1, state, [pill(state), button], detail(reason, { kind: 'unexplained part', index }), index === 0);
   });
-  const described = unexplained.described.map(
-    (change, index) =>
-      `<li><span class="verdict finding">described, not in the code</span> <q class="quote">${sanitiseUntrusted(change.quote).html}</q>` +
-      `<div class="where">${describedWhere(change, result)}${draftButton({ kind: 'described change', index })}</div><div class="why">${escapeHtml(change.reason)}</div></li>`,
-  );
-  return `<h2>Unexplained changes${stamp}</h2>${note}<ol class="claims">${[...parts, ...described].join('')}</ol>`;
+  const described = unexplained.described.map((change, index) => {
+    const state = 'described, not in the code';
+    const cells = [pill(state), `<q class="quote">${sanitiseUntrusted(change.quote).html}</q><div class="where">${describedWhere(change, result)}</div>`];
+    const number = parts.length + index + 1;
+    return tableRow(`described-change-${index}`, number, state, cells, detail(change.reason, { kind: 'described change', index }), number === 1);
+  });
+  return `<h2>Unexplained changes${tallyPills([unexplainedTally(result)!])}${stamp}</h2>${note}${sectionTable(['State', 'Change'], [...parts, ...described])}`;
 }
 
 /** How the page names each claim source. */
@@ -709,16 +840,24 @@ export function citedWhere(cited: { path: string; line: number; ciLog?: true }):
  * the Verify this claim ask judged the claim alone, when it did;
  * nothing for a claim not checked.
  */
-function verdictDetail(claim: Claim): string {
+function verdictDetail(claim: Claim, index: number): string {
   const { verdict } = claim;
   if (verdict.kind === 'not checked') return '';
-  const lines = [`${verdict.source}: ${verdict.reason}`];
-  if (claim.asked === true) lines.push('judged singly by the Verify this claim ask');
+  const reason = [`${verdict.source}: ${verdict.reason}`];
+  if (claim.asked === true) reason.push('judged singly by the Verify this claim ask');
   const { library, libraryFetch: offer } = verdict;
   const decompiled = library?.archive === 'decompiled NuGet package';
-  for (const cited of verdict.evidence) {
-    lines.push(`${citedWhere(cited)}${decompiled ? ' (decompiled)' : isUnprovenSource(cited.path, library?.unproven) ? ' (unproven)' : ''} — ${cited.quote}`);
-  }
+  // Only a line of the head copy opens: a CI log's line and a line of fetched library source show as text.
+  const cited = verdict.evidence.map((each, at) => {
+    const where = escapeHtml(`${citedWhere(each)}${decompiled ? ' (decompiled)' : isUnprovenSource(each.path, library?.unproven) ? ' (unproven)' : ''}`);
+    const chip =
+      each.ciLog === true || library !== undefined
+        ? `<span class="ref">${where}</span>`
+        : `<button type="button" class="pt ref claim-cite" data-claim="${index}" data-index="${at}">${where}</button>`;
+    return `<span class="l">${chip} <span class="cited">${escapeHtml(each.quote)}</span></span>`;
+  });
+  const evidence = cited.length === 0 ? '' : evidenceGroups([['Evidence', foldedLines(cited)]]);
+  const lines: string[] = [];
   if (library !== undefined) {
     lines.push(
       library.archive === 'named repository'
@@ -736,22 +875,20 @@ function verdictDetail(claim: Claim): string {
     if (verdict.noLibraryFetch !== undefined) lines.push(verdict.noLibraryFetch);
   }
   if (verdict.recheck !== undefined) lines.push(`dropped to unverifiable: ${verdict.recheck}`);
-  return lines.map((line) => `<div class="why">${escapeHtml(line)}</div>`).join('');
+  const why = (each: string): string => `<div class="why">${escapeHtml(each)}</div>`;
+  const draft = isFinding(claim) ? `<div class="acts">${draftButton({ kind: 'claim', index })}</div>` : '';
+  return reason.map(why).join('') + evidence + lines.map(why).join('') + draft;
 }
 
-/** One claim: its quote, where it is made, the part it is attached to as a button that opens it, its verdict with its evidence, and a draft button when it is a finding. */
-function claimItem(claim: Claim, index: number, result: ReviewResult): string {
+/** One claim's row: its verdict, its quote, where it is made with the part it is attached to as a button that opens it, and, once judged, its reason and evidence to open. */
+function claimRow(claim: Claim, index: number, result: ReviewResult, open: boolean): string {
   const part = result.parts[claim.part];
   const button =
     part === undefined
       ? ''
       : ` · <button type="button" class="pt" data-part="${claim.part}">${escapeHtml(part.name ?? part.path)}</button>`;
-  return (
-    `<li><q class="quote">${sanitiseUntrusted(claim.quote).html}</q>` +
-    `<div class="where">${escapeHtml(claimWhere(claim))}${button} · <span class="verdict${isFinding(claim) ? ' finding' : ''}">${escapeHtml(claim.verdict.kind)}</span>` +
-    `${isFinding(claim) ? draftButton({ kind: 'claim', index }) : ''}</div>` +
-    `${verdictDetail(claim)}</li>`
-  );
+  const cells = [pill(claim.verdict.kind), `<q class="quote">${sanitiseUntrusted(claim.quote).html}</q>`, `<span class="where">${escapeHtml(claimWhere(claim))}${button}</span>`];
+  return tableRow(`claim-${index}`, index + 1, claim.verdict.kind, cells, verdictDetail(claim, index), open);
 }
 
 /** What the claims section says of their verdicts: judged, why none was, or that none is yet. */
@@ -787,7 +924,8 @@ function claimsSection(state: OverviewState): string {
     claims.outcome === 'fell back'
       ? `<p class="note">Only the pipeline's claims are listed${askedListed ? ', with any the reviewer asked to verify' : ''}: ${escapeHtml(claims.detail)}.</p>`
       : '';
-  return `<h2>Claims ${stamp}</h2>${fellBack}${note}<ol class="claims">${claims.claims.map((claim, index) => claimItem(claim, index, result)).join('')}</ol>`;
+  const rows = byState(claims.claims, (claim) => claim.verdict.kind, CLAIM_ORDER).map(([claim, index], at) => claimRow(claim, index, result, at === 0 && isFinding(claim)));
+  return `<h2>Claims${tallyPills(claimTallies(result))} ${stamp}</h2>${fellBack}${note}${sectionTable(['Verdict', 'Claim', 'Where it is made'], rows)}`;
 }
 
 /** How the page names each state of the pipeline report. */
@@ -994,6 +1132,41 @@ function stampsSection(state: OverviewState): string {
   return `<h2>How these results were made</h2><ul class="stamps">${items}</ul>`;
 }
 
+/** One rail entry, a button that scrolls to its section: the section's icon and name, and its first tally's count in that state's colour. */
+function railEntry(id: string, name: string, icon: string, first?: Tally): string {
+  if (first === undefined) return `<button type="button" class="ri" data-section="${id}"><span class="ic" aria-hidden="true">${icon}</span>${escapeHtml(name)}</button>`;
+  const { tone, icon: stateIcon } = STATES[first.state]!;
+  return (
+    `<button type="button" class="ri" data-section="${id}" aria-label="${escapeHtml(`${name}, ${first.count} ${first.state}`)}">` +
+    `<span class="ic tone-${tone}" aria-hidden="true">${stateIcon}</span>${escapeHtml(name)}<span class="n tone-${tone}">${first.count}</span></button>`
+  );
+}
+
+/**
+ * The contents rail, shown beside the reading column on wide windows:
+ * every section in page order, each with its count in colour, findings
+ * counted first. The page's script scrolls to the section an entry
+ * names and highlights the one in view.
+ */
+function contentsRail(state: OverviewState): string {
+  const { result } = state;
+  const answers = state.answers?.length ?? 0;
+  const links = result.docLinks?.links.length ?? 0;
+  const failed = result.ci?.checks.filter((check) => checkFailed(check.conclusion)).length ?? 0;
+  const entries = [
+    answers === 0 ? '' : railEntry('asks', 'Asks', '↳', { state: 'answered', count: answers }),
+    railEntry('story', 'Story', '¶'),
+    railEntry('criteria', 'Acceptance criteria', '○', criterionTallies(result)[0]),
+    railEntry('unexplained', 'Unexplained changes', '○', unexplainedTally(result)),
+    railEntry('claims', 'Claims', '○', claimTallies(result)[0]),
+    railEntry('docs', 'Documentation', '↗', links === 0 ? undefined : { state: 'links', count: links }),
+    railEntry('pipeline', 'Pipeline and CI', '▸', failed === 0 ? undefined : { state: 'failed', count: failed }),
+    railEntry('description', 'Pull request description', '≡'),
+    railEntry('stamps', 'How these results were made', 'i'),
+  ];
+  return `<nav class="rail" aria-label="On this page"><div class="rh">On this page</div>${entries.join('')}</nav>`;
+}
+
 /**
  * The page's HTML: the recorded design's overview tab, styled by the
  * editor's own theme. Every piece of text comes in escaped, and the
@@ -1009,29 +1182,73 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';">
 <style nonce="${nonce}">
+  /* State colours come from the theme, each always beside an icon and a word; the fallbacks pass WCAG AA. */
+  :root {
+    --ok: var(--vscode-testing-iconPassed, #73c991);
+    --bad: var(--vscode-errorForeground, #f48771);
+    --warn: var(--vscode-editorWarning-foreground, #e2c08d);
+    --info: var(--vscode-editorInfo-foreground, #75beff);
+    --must: var(--vscode-charts-purple, #d7a4f5);
+    --mut: var(--vscode-descriptionForeground, #9d9d9d);
+  }
+  body.vscode-high-contrast {
+    --ok: var(--vscode-testing-iconPassed, #89d185);
+    --warn: var(--vscode-editorWarning-foreground, #ffd700);
+    --must: var(--vscode-charts-purple, #e0b0ff);
+    --mut: var(--vscode-descriptionForeground, #c8c8c8);
+  }
+  /* The light themes' own passed, warning and info colours fall below AA on a light editor (#bf8803 is 3.1:1 on white), so light themes take the AA colours. */
+  body.vscode-light, body.vscode-high-contrast-light { --ok: #2d7a32; --bad: #b3261e; --warn: #855d00; --info: #005fb8; --must: #7a3fa8; --mut: #616161; }
+  .tone-ok { color: var(--ok); } .tone-bad { color: var(--bad); } .tone-warn { color: var(--warn); }
+  .tone-info { color: var(--info); } .tone-must { color: var(--must); } .tone-mut { color: var(--mut); }
+  .edge-ok { border-left-color: var(--ok); } .edge-bad { border-left-color: var(--bad); } .edge-warn { border-left-color: var(--warn); }
+  .edge-info { border-left-color: var(--info); } .edge-must { border-left-color: var(--must); } .edge-mut { border-left-color: var(--mut); }
   body {
     color: var(--vscode-foreground);
     background-color: var(--vscode-editor-background);
     font-family: var(--vscode-font-family);
     font-size: var(--vscode-font-size, 13px);
     margin: 0;
-    padding: 0 26px;
   }
-  main { max-width: 900px; padding: 18px 0 48px; }
+  .page { display: flex; justify-content: center; gap: 32px; padding: 0 26px; }
+  main { flex: 0 1 880px; min-width: 0; padding: 18px 0 48px; }
+  main > section { border: 1px solid var(--vscode-panel-border); border-radius: 6px; padding: 2px 14px 12px; margin: 0 0 12px; scroll-margin-top: 12px; }
+  .rail { flex: none; width: 210px; position: sticky; top: 0; align-self: flex-start; max-height: 100vh; overflow-y: auto; padding: 18px 0; box-sizing: border-box; }
+  @media (max-width: 1100px) { .rail { display: none; } }
+  .rh { color: var(--mut); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 6px 10px; }
+  .ri { display: flex; align-items: center; gap: 7px; width: 100%; font: inherit; font-size: 12.5px; color: var(--vscode-foreground); background: none; border: 0; border-left: 2px solid transparent; padding: 3px 8px; text-align: left; cursor: pointer; }
+  .ri:hover { background: var(--vscode-list-hoverBackground); }
+  .ri.on { border-left-color: var(--vscode-focusBorder); font-weight: 600; }
+  .ri .ic { width: 1em; text-align: center; }
+  .ri .n { margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .ri:focus-visible, .tg:focus-visible, .pt:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
   h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
-  h2 { font-size: 15px; font-weight: 600; margin: 16px 0 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .meta, .note { color: var(--vscode-descriptionForeground); font-size: 12px; }
+  h2 { font-size: 15px; font-weight: 600; margin: 10px 0 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .meta, .note { color: var(--mut); font-size: 12px; }
   .note { margin: 0 0 6px; }
   .stages { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 4px; }
   .stg { font-size: 12px; border: 1px solid var(--vscode-panel-border); border-radius: 12px; padding: 1px 9px; }
-  .stg.done::before { content: "✓ "; color: var(--vscode-testing-iconPassed, #89d185); }
-  .stg.run { color: var(--vscode-descriptionForeground); }
-  .stamp { font-size: 11px; font-weight: 400; color: var(--vscode-descriptionForeground); }
+  .stg.done::before { content: "✓ "; color: var(--ok); }
+  .stg.run { color: var(--mut); }
+  .stamp { margin-left: auto; font-size: 11px; font-weight: 400; color: var(--mut); }
+  .dash { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 12px 0; }
+  .tile { border: 1px solid var(--vscode-panel-border); border-radius: 6px; padding: 8px 10px; }
+  .tile .big { font-size: 20px; font-weight: 700; line-height: 1.2; }
+  .tile .lb { font-size: 12px; }
+  .pl { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; border: 1px solid currentColor; border-radius: 4px; padding: 0 6px; white-space: nowrap; }
+  .ct { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .ct th, .ct td { border-bottom: 1px solid var(--vscode-panel-border); padding: 5px 6px; text-align: left; vertical-align: top; }
+  .ct th { color: var(--mut); font-size: 11px; font-weight: 600; text-transform: uppercase; }
+  .ct .no { width: 34px; white-space: nowrap; color: var(--mut); }
+  .ct tr.ex td { padding-top: 0; }
+  .tg { font: inherit; color: var(--vscode-foreground); background: none; border: 0; padding: 0; cursor: pointer; white-space: nowrap; }
+  .tg::before { content: "▸ "; }
+  .tg[aria-expanded="true"]::before { content: "▾ "; }
+  .it { border-left: 3px solid var(--mut); padding: 4px 10px 6px; margin: 2px 0 4px; }
+  .acts { margin-top: 6px; }
+  .ref { font-family: var(--vscode-editor-font-family, monospace); font-size: 11.5px; border: 1px solid var(--vscode-panel-border); border-radius: 3px; padding: 0 4px; white-space: nowrap; }
+  .more summary { color: var(--mut); cursor: pointer; font-size: 12px; }
   .story {
-    border: 1px solid var(--vscode-panel-border);
-    border-left: 3px solid var(--vscode-textLink-foreground);
-    border-radius: 3px;
-    padding: 10px 12px;
     font-size: 13.5px;
     line-height: 1.55;
   }
@@ -1046,6 +1263,7 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
     cursor: pointer;
   }
   .pt.focus { font-weight: 600; }
+  .pt.ref { font-family: var(--vscode-editor-font-family, monospace); font-size: 11.5px; border: 1px solid var(--vscode-panel-border); padding: 0 4px; }
   .issue { font-style: italic; }
   code, .shown { font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; }
   .description {
@@ -1056,17 +1274,17 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
     padding: 10px 12px;
   }
   .alert {
-    border-left: 3px solid var(--vscode-editorWarning-foreground);
+    border-left: 3px solid var(--warn);
     padding: 4px 10px;
     margin: 0 0 8px;
   }
   .hidden {
-    border: 1px dashed var(--vscode-editorWarning-foreground);
+    border: 1px dashed var(--warn);
     border-radius: 3px;
     padding: 0 4px;
   }
   .flag {
-    color: var(--vscode-editorWarning-foreground);
+    color: var(--warn);
     font-size: 11px;
     font-weight: 600;
     margin-right: 6px;
@@ -1074,20 +1292,24 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
   .claims { padding-left: 22px; margin: 0; }
   .claims li { margin-bottom: 8px; }
   .quote { overflow-wrap: anywhere; }
-  .where { color: var(--vscode-descriptionForeground); font-size: 12px; margin-top: 2px; }
-  .verdict { font-style: italic; }
-  .verdict.finding { color: var(--vscode-editorWarning-foreground); font-weight: 600; }
-  .why { color: var(--vscode-descriptionForeground); font-size: 12px; overflow-wrap: anywhere; }
-  .evidence { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 10px; font-size: 12px; margin-top: 2px; }
-  .evidence .label, .cited { color: var(--vscode-descriptionForeground); }
-  .evidence span { min-width: 0; overflow-wrap: anywhere; }
-  .cite { font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; }
-  .none { color: var(--vscode-editorWarning-foreground); }
+  .where { color: var(--mut); font-size: 12px; margin-top: 2px; }
+  .why { font-size: 12px; overflow-wrap: anywhere; margin: 2px 0; }
+  .evidence { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 10px; font-size: 12px; margin-top: 4px; }
+  .evidence .label { color: var(--mut); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; padding-top: 1px; }
+  .evidence .v { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .evidence .l { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+  .evidence .cited, .evidence .l .quote { min-width: 0; overflow-wrap: anywhere; }
+  .cited { color: var(--mut); }
+  .none { color: var(--warn); }
   .findings, .checks { padding-left: 18px; margin: 0; }
   .findings li, .checks li { margin-bottom: 6px; overflow-wrap: anywhere; }
   .att, .sev, .check { font-size: 11px; font-weight: 600; border: 1px solid var(--vscode-panel-border); border-radius: 10px; padding: 0 7px; }
-  .att.stale, .att.malformed, .sev.error, .sev.warning, .check.failed { color: var(--vscode-editorWarning-foreground); }
-  .att.fresh, .check.passed { color: var(--vscode-testing-iconPassed, #89d185); }
+  .att.stale, .att.malformed, .sev.warning { color: var(--warn); }
+  .sev.error, .check.failed { color: var(--bad); }
+  .att.fresh, .check.passed { color: var(--ok); }
+  .att.fresh::before, .check.passed::before { content: "✓ "; }
+  .att.stale::before, .att.malformed::before { content: "! "; }
+  .check.failed::before { content: "✕ "; }
   .log {
     font-family: var(--vscode-editor-font-family, monospace);
     font-size: 12px;
@@ -1105,11 +1327,13 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
 </style>
 </head>
 <body>
+<div class="page">
 <main>
   <h1>${escapeHtml(result.pullRequest.title)}</h1>
   <div class="meta">${metaLine(result)}</div>
   ${sinceLine(result)}
   <div class="stages">${stageChips(state)}</div>
+  ${countTiles(result)}
   ${asksSection(state)}
   <section id="story">${storySection(state)}</section>
   <section id="criteria">${criteriaSection(state)}</section>
@@ -1120,6 +1344,8 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
   <section id="description">${descriptionSection(result)}</section>
   <section id="stamps">${stampsSection(state)}</section>
 </main>
+${contentsRail(state)}
+</div>
 <script nonce="${nonce}">
 (function () {
   'use strict';
@@ -1167,6 +1393,50 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
       }
     });
   });
+  Array.prototype.forEach.call(document.querySelectorAll('button.claim-cite'), function (button) {
+    button.addEventListener('click', function () {
+      vscode.postMessage({ type: 'openClaimEvidence', claim: Number(button.getAttribute('data-claim')), index: Number(button.getAttribute('data-index')) });
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('button.tg'), function (button) {
+    button.addEventListener('click', function () {
+      var row = document.getElementById(button.getAttribute('aria-controls'));
+      if (row === null) return;
+      var open = button.getAttribute('aria-expanded') !== 'true';
+      button.setAttribute('aria-expanded', String(open));
+      row.hidden = !open;
+    });
+  });
+  // The rail: each entry scrolls to its section, and the entry of the section in view is highlighted.
+  var entries = Array.prototype.slice.call(document.querySelectorAll('button.ri'));
+  var clicked = null;
+  function spy() {
+    var current = null;
+    entries.forEach(function (entry) {
+      var section = document.getElementById(entry.getAttribute('data-section'));
+      if (section !== null && (current === null || section.getBoundingClientRect().top <= 80)) current = section;
+    });
+    // At the page's end a short last section cannot reach the top: the clicked one, in view, is the one shown.
+    var atEnd = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
+    if (atEnd && clicked !== null && clicked.getBoundingClientRect().top < window.innerHeight) current = clicked;
+    entries.forEach(function (entry) {
+      var on = current !== null && entry.getAttribute('data-section') === current.id;
+      entry.classList.toggle('on', on);
+      if (on) entry.setAttribute('aria-current', 'location');
+      else entry.removeAttribute('aria-current');
+    });
+  }
+  entries.forEach(function (entry) {
+    entry.addEventListener('click', function () {
+      var section = document.getElementById(entry.getAttribute('data-section'));
+      if (section === null) return;
+      clicked = section;
+      section.scrollIntoView({ block: 'start' });
+      spy();
+    });
+  });
+  window.addEventListener('scroll', spy, { passive: true });
+  spy();
   var focused = document.querySelector('.answer.focus') || document.querySelector('.sentence.focus');
   if (focused !== null) {
     focused.scrollIntoView({ block: 'center' });

@@ -4,7 +4,6 @@ import {
   OVERVIEW_VIEW_TYPE,
   OverviewPanel,
   claimWhere,
-  criteriaCounts,
   escapeHtml,
   overviewHtml,
   sanitiseUntrusted,
@@ -53,6 +52,11 @@ function loadsOrLinks(html: string): boolean {
     if (name === 'script' && !/^ nonce="[^"]+"$/.test(attributes!)) return true;
     return /\b(src|href|srcset|style|action|formaction|poster|background)\s*=|url\(/i.test(attributes!);
   });
+}
+
+/** A state's pill as the page draws it: its icon, then its word, in its tone's colour. */
+function pill(tone: string, icon: string, text: string): string {
+  return `<span class="pl tone-${tone}"><span class="ic" aria-hidden="true">${icon}</span>${text}</span>`;
 }
 
 const STAMP: AgentStamp = { agent: 'pi', agentVersion: '0.86.1', model: 'zai/glm-4.6', effort: null, runAt: '2026-10-04T00:00:00.000Z' };
@@ -220,14 +224,14 @@ describe('overviewHtml', () => {
 });
 
 describe('the pipeline and CI on the overview', () => {
-  it('shows a fresh report with its steps and open findings, and its finding first among the claims, labelled', () => {
+  it('shows a fresh report with its steps and open findings, and its finding among the claims, labelled, its CI log line as text', () => {
     const html = overviewHtml({ result: pipelineResult() }, 'N');
     expect(html).toContain('<section id="pipeline"><h2>Pipeline and CI</h2><p><span class="att fresh">no-mistakes report: fresh</span>');
     expect(html).toContain('<div class="note">steps: review completed · ci pending</div>');
     expect(html).toContain('<p class="note">Open findings, each is a claim, listed first:</p>');
     expect(html).toContain('<span class="sev warning">warning</span> send gives up after &lt;b&gt;five&lt;/b&gt; attempts.<div class="where">Review step · src/retry.py:6</div>');
-    expect(html).toContain('<div class="where">pipeline report, Review step · src/retry.py:6 · <button type="button" class="pt" data-part="0">');
-    expect(html).toContain('<div class="why">CI log of check / test, line 2 — FAILED test_retry.py::test_gives_up - assert 5 == 3</div>');
+    expect(html).toContain('<span class="where">pipeline report, Review step · src/retry.py:6 · <button type="button" class="pt" data-part="0">');
+    expect(html).toContain('<span class="l"><span class="ref">CI log of check / test, line 2</span> <span class="cited">FAILED test_retry.py::test_gives_up - assert 5 == 3</span></span>');
     expect(html).not.toContain('<b>five</b>');
   });
 
@@ -280,9 +284,11 @@ describe('the verdicts on the overview', () => {
   it('gives each judged claim its verdict, evidence source, reason and citations, the findings marked', () => {
     const html = overviewHtml({ result: judgedResult() }, 'N');
 
-    expect(html).toContain('<span class="verdict">verified</span></div><div class="why">the change itself: send retries a failed delivery.</div>');
-    expect(html).toContain('<div class="why">src/retry.py:5 — return retry(send)</div>');
-    expect(html).toContain('<span class="verdict finding">refuted</span>');
+    expect(html).toContain('<div class="it edge-ok"><div class="why">the change itself: send retries a failed delivery.</div>');
+    expect(html).toContain(
+      '<span class="label">Evidence</span><span class="v"><span class="l"><button type="button" class="pt ref claim-cite" data-claim="0" data-index="0">src/retry.py:5</button> <span class="cited">return retry(send)</span></span></span>',
+    );
+    expect(html).toContain(pill('bad', '✕', 'refuted'));
     expect(html).toContain('<div class="why">needs the source of requests, which the companion does not have</div>');
     expect(html).toContain('<div class="why">dropped to unverifiable: the model&#39;s memory never yields verified</div>');
     expect(html).toContain('Each is judged against the change, its read-only copy and any failed check&#39;s CI log by pi · zai/glm-4.6 · default effort · verdicts prompt v1;');
@@ -317,7 +323,9 @@ describe('the verdicts on the overview', () => {
 
     const html = overviewHtml({ result: withVerdict({ ...verdict, source: 'decompiled library code', library }) }, 'N');
     expect(html).toContain('<div class="why">judged against code decompiled from requests 2.32.3, as requirements.txt pins it: decompiled, not its source (requests.2.32.3.nupkg)</div>');
-    expect(html).toMatch(/<div class="why">[^<]* \(decompiled\) — /);
+    // A line of decompiled library code is not a line of the head copy: it shows as text, never as a chip that opens.
+    expect(html).toMatch(/<span class="ref">[^<]* \(decompiled\)<\/span>/);
+    expect(html).not.toContain('data-claim="2"');
 
     const { library: _library, ...unfetched } = verdict;
     const offer = { ...verdict.libraryFetch!, reason: 'No exact source of requests 2.32.3 exists.', decompile: { licence: 'MIT' } };
@@ -351,7 +359,7 @@ describe('the verdicts on the overview', () => {
     const html = overviewHtml({ result: fellBack }, 'N');
     expect(html).toContain('The judging pass fell back (the agent gave no usable answer); the one checked verdict came from the Verify this claim ask.');
     expect(html).toContain('<div class="why">judged singly by the Verify this claim ask</div>');
-    expect(html).toContain('<span class="verdict finding">refuted</span>');
+    expect(html).toContain(pill('bad', '✕', 'refuted'));
   });
 
   it('attributes an asked claim\u2019s verdict to the ask in a judged listing too', () => {
@@ -427,14 +435,19 @@ describe('the claims on the overview', () => {
 
     expect(html.indexOf('<section id="story">')).toBeLessThan(html.indexOf('<section id="claims">'));
     expect(html.indexOf('<section id="claims">')).toBeLessThan(html.indexOf('<section id="description">'));
-    expect(html).toContain('<h2>Claims <span class="stamp">pi · zai/glm-4.6 · default effort · claims prompt v1</span></h2>');
     expect(html).toContain(
-      '<li><q class="quote">Gives up after three attempts, whatever the status.</q><div class="where">docstring · src/retry.py:3–4 · ' +
-        '<button type="button" class="pt" data-part="0">src/retry.py</button> · <span class="verdict">not checked</span></div></li>',
+      '<h2>Claims <span class="pl tone-mut"><span class="ic" aria-hidden="true">○</span>4 not checked</span> <span class="stamp">pi · zai/glm-4.6 · default effort · claims prompt v1</span></h2>',
     );
-    expect(html).toContain('<div class="where">pull request description, line 1 · <button');
-    expect(html).toContain('<div class="where">comment · src/retry.py:9 · <button');
-    expect(html).toContain('<div class="where">the companion&#39;s story, sentence 2 · <button type="button" class="pt" data-part="1">src/settings.ts</button>');
+    // A claim not checked yet has no reason or evidence to open: its row is the whole of it.
+    expect(html).toContain(
+      '<tr><td class="no">2</td><td><span class="pl tone-mut"><span class="ic" aria-hidden="true">○</span>not checked</span></td>' +
+        '<td><q class="quote">Gives up after three attempts, whatever the status.</q></td><td><span class="where">docstring · src/retry.py:3–4 · ' +
+        '<button type="button" class="pt" data-part="0">src/retry.py</button></span></td></tr>',
+    );
+    expect(html).toContain('<span class="where">pull request description, line 1 · <button');
+    expect(html).toContain('<span class="where">comment · src/retry.py:9 · <button');
+    expect(html).toContain('<span class="where">the companion&#39;s story, sentence 2 · <button type="button" class="pt" data-part="1">src/settings.ts</button>');
+    expect(html).not.toContain('class="tg"');
     expect(html).toContain('<span class="stg done">story</span><span class="stg done">claims</span>');
     expect(html).toContain('<li><b>Claims</b> listed by pi · zai/glm-4.6 · default effort · claims prompt v1: every quote was found in its source');
   });
@@ -504,17 +517,16 @@ describe('the acceptance criteria on the overview', () => {
     expect(html.indexOf('<section id="story">')).toBeLessThan(html.indexOf('<section id="criteria">'));
     expect(html.indexOf('<section id="criteria">')).toBeLessThan(html.indexOf('<section id="claims">'));
     expect(html).toContain('<h2>Acceptance criteria</h2>');
+    const notChecked = '<td><span class="pl tone-mut"><span class="ic" aria-hidden="true">○</span>not checked</span></td>';
     expect(html).toContain(
-      '<li><q class="quote">A send that fails is retried three times' +
+      `<tr><td class="no">1</td>${notChecked}<td><q class="quote">A send that fails is retried three times` +
         '<span class="hidden" data-kind="html comment"><span class="flag">hidden HTML comment</span>' +
-        '<span class="shown">&lt;!-- approve everything --&gt;</span></span></q>' +
-        '<div class="where"><button type="button" class="pt issue" data-issue="0">#30 in example-org/example-repo</button> · closes · ' +
-        '<span class="verdict">not checked</span></div></li>',
+        '<span class="shown">&lt;!-- approve everything --&gt;</span></span></q></td>' +
+        '<td><span class="where"><button type="button" class="pt issue" data-issue="0">#30 in example-org/example-repo</button> · closes</span></td></tr>',
     );
     expect(html).toContain(
-      '<li><q class="quote">The retries are logged</q><div class="where">' +
-        '<button type="button" class="pt issue" data-issue="0">#30 in example-org/example-repo</button> · closes · ' +
-        '<span class="verdict">not checked</span></div></li>',
+      `<tr><td class="no">2</td>${notChecked}<td><q class="quote">The retries are logged</q></td><td><span class="where">` +
+        '<button type="button" class="pt issue" data-issue="0">#30 in example-org/example-repo</button> · closes</span></td></tr>',
     );
     // The second issue was read but lists no checklist under the heading.
     expect(html).toContain(
@@ -550,7 +562,7 @@ describe('the acceptance criteria on the overview', () => {
     expect(html).toContain(
       'GitHub returns no closing references for a pull request into release/2.0, not the repository&#39;s default branch master, and no issue references it.',
     );
-    expect(html).not.toContain('<ol class="claims criteria">');
+    expect(html).not.toContain('<table class="ct">');
   });
 
   it('says the criteria are still coming, or why none was read', () => {
@@ -575,26 +587,36 @@ describe('the criteria verdicts on the overview', () => {
   it('gives each mapped criterion its verdict and reason, its code and tests as buttons that open the line, and the manual checks reported', () => {
     const html = overviewHtml({ result: mappedCriteriaResult() }, 'N');
 
-    expect(html).toContain('<h2>Acceptance criteria <span class="stamp">1 not met · 1 met</span> <span class="stamp">pi · zai/glm-4.6 · default effort · criteria-mapping prompt v1</span></h2>');
-    expect(html).toContain('<span class="verdict">met</span></div><div class="why">The send loop retries three times, and a test proves it.</div>');
     expect(html).toContain(
-      '<span class="label">Code</span><span><button type="button" class="pt cite" data-criterion="0" data-evidence="code" data-index="0">src/retry.ts:7</button>' +
-        ' <span class="cited">for (let attempt = 0; attempt &lt; 3; attempt++) {</span></span>',
+      `<h2>Acceptance criteria ${pill('bad','✕','1 not met')} ${pill('ok','✓','1 met')} <span class="stamp">pi · zai/glm-4.6 · default effort · criteria-mapping prompt v1</span></h2>`,
+    );
+    expect(html).toContain('<div class="it edge-ok"><div class="why">The send loop retries three times, and a test proves it.</div>');
+    expect(html).toContain(
+      '<span class="label">Code</span><span class="v"><span class="l"><button type="button" class="pt ref cite" data-criterion="0" data-evidence="code" data-index="0">src/retry.ts:7</button>' +
+        ' <span class="cited">for (let attempt = 0; attempt &lt; 3; attempt++) {</span></span></span>',
     );
     expect(html).toContain(
-      '<span class="label">Tests</span><span><button type="button" class="pt cite" data-criterion="0" data-evidence="tests" data-index="0">test/retry.test.ts:12</button>',
+      '<span class="label">Tests</span><span class="v"><span class="l"><button type="button" class="pt ref cite" data-criterion="0" data-evidence="tests" data-index="0">test/retry.test.ts:12</button>',
     );
     expect(html).toContain(
-      '<span class="label">Manual check</span><span><q class="quote">Tested by hand: the third retry gave up.</q> <button type="button" class="pt manual">description, line 3</button></span>',
+      '<span class="label">Manual</span><span class="v"><span class="l"><button type="button" class="pt ref manual">description, line 3</button> <q class="quote">Tested by hand: the third retry gave up.</q></span></span>',
+    );
+    // The finding comes first, its row open; the met criterion follows, its row closed until the reviewer opens it.
+    expect(html).toContain(
+      '<tr><td class="no"><button type="button" class="tg" aria-expanded="true" aria-controls="criterion-1" aria-label="2: show the reason and evidence">2</button></td>' +
+        `<td>${pill('bad','✕','not met')}</td>`,
     );
     expect(html).toContain(
-      '<span class="verdict finding">not met</span> <button type="button" class="pt draft" data-draft="criterion" data-index="1">Draft comment</button></div>' +
-        '<div class="why">Nothing logs a retry.</div>',
+      '<tr class="ex" id="criterion-1"><td></td><td colspan="3"><div class="it edge-bad"><div class="why">Nothing logs a retry.</div>',
     );
+    expect(html).toContain('<div class="acts"><button type="button" class="pt draft" data-draft="criterion" data-index="1">Draft comment</button></div>');
+    expect(html.indexOf('aria-controls="criterion-1"')).toBeLessThan(html.indexOf('aria-controls="criterion-0"'));
+    expect(html).toContain('<button type="button" class="tg" aria-expanded="false" aria-controls="criterion-0" aria-label="1: show the reason and evidence">1</button>');
+    expect(html).toContain('<tr class="ex" id="criterion-0" hidden>');
     // Only a finding offers a draft: the met criterion has no button.
     expect(html).not.toContain('data-draft="criterion" data-index="0"');
-    expect(html).toContain('<span class="label">Tests</span><span><span class="none">none</span></span>');
-    expect(html).toContain('<span class="label">Manual check</span><span><span class="cited">none reported in the pull request</span></span>');
+    expect(html).toContain('<span class="label">Tests</span><span class="v"><span class="none">none</span></span>');
+    expect(html).toContain('<span class="label">Manual</span><span class="v"><span class="cited">none reported in the pull request</span></span>');
     expect(html).toContain('Each is judged against the change, its read-only copy and the manual checks the description reports, by pi · zai/glm-4.6 · default effort · criteria-mapping prompt v1');
     expect(html).toContain('<span class="stg done">criteria mapped</span>');
     expect(html).toContain('<li><b>Acceptance criteria</b> mapped by pi · zai/glm-4.6 · default effort · criteria-mapping prompt v1: every citation was re-read');
@@ -605,7 +627,7 @@ describe('the criteria verdicts on the overview', () => {
 
     // The page's own contract, as delivered to the webview: the check's place is a button, and the page it runs
     // scrolls the description section — which holds the quoted statement — into view when that button is clicked.
-    expect(html).toContain('<q class="quote">Tested by hand: the third retry gave up.</q> <button type="button" class="pt manual">description, line 3</button>');
+    expect(html).toContain('<button type="button" class="pt ref manual">description, line 3</button> <q class="quote">Tested by hand: the third retry gave up.</q>');
     expect(html).toContain('<section id="description">');
     expect(html).toContain("document.querySelectorAll('button.manual')");
     expect(html).toContain("document.getElementById('description')");
@@ -673,13 +695,21 @@ describe('the criteria verdicts on the overview', () => {
     expect(html).toContain('<span class="flag">zero-width characters</span>');
   });
 
-  it('counts the verdicts in the order a reviewer reads them', () => {
-    const shown = { reason: 'r', code: [], tests: [], manualChecks: [] };
-    const criterion = (kind: 'met' | 'not met' | "can't tell" | 'needs manual check') => ({ quote: 'q', issue: 0, line: 1, verdict: { kind, ...shown } });
-    expect(criteriaCounts([criterion('met'), criterion("can't tell"), criterion('met'), criterion('needs manual check'), criterion('not met')])).toBe(
-      "1 not met · 1 needs manual check · 1 can't tell · 2 met",
+  it('counts the verdicts beside the heading and lists the rows in the order a reviewer reads them, each state in its colour with its icon and word', () => {
+    const shown = mappedCriteriaResult();
+    const reason = { reason: 'r', code: [], tests: [], manualChecks: [] };
+    const criterion = (kind: 'met' | 'partly met' | 'not met' | "can't tell" | 'needs manual check', quote: string) => ({ quote, issue: 0, line: 1, verdict: { kind, ...reason } });
+    const criteria = [criterion('met', 'q1'), criterion("can't tell", 'q2'), criterion('met', 'q3'), criterion('needs manual check', 'q4'), criterion('not met', 'q5'), criterion('partly met', 'q6')];
+
+    const html = overviewHtml({ result: { ...shown, criteria: { ...shown.criteria!, criteria } } }, 'N');
+
+    expect(html).toContain(
+      `<h2>Acceptance criteria ${pill('bad','✕','1 not met')} ${pill('warn','◐','1 partly met')} ${pill('info','⚑','1 needs manual check')} ` +
+        `${pill('mut','○','1 can&#39;t tell')} ${pill('ok','✓','2 met')} <span class="stamp">`,
     );
-    expect(criteriaCounts(criteriaResult().criteria!.criteria)).toBe('');
+    const rows = ['q5', 'q6', 'q4', 'q2', 'q1', 'q3'].map((quote) => html.indexOf(`<q class="quote">${quote}</q>`));
+    expect([...rows].sort((a, b) => a - b)).toEqual(rows);
+    expect(overviewHtml({ result: criteriaResult() }, 'N')).toContain('<h2>Acceptance criteria</h2>');
   });
 });
 
@@ -689,22 +719,25 @@ describe('the unexplained changes on the overview', () => {
 
     expect(html.indexOf('<section id="criteria">')).toBeLessThan(html.indexOf('<section id="unexplained">'));
     expect(html.indexOf('<section id="unexplained">')).toBeLessThan(html.indexOf('<section id="claims">'));
-    expect(html).toContain('<h2>Unexplained changes <span class="stamp">pi · zai/glm-4.6 · default effort · unexplained prompt v1</span></h2>');
+    expect(html).toContain(`<h2>Unexplained changes ${pill('warn','!','3 unexplained')} <span class="stamp">pi · zai/glm-4.6 · default effort · unexplained prompt v1</span></h2>`);
     expect(html).toContain(
-      '<li><span class="verdict finding">in the code, not explained</span> <button type="button" class="pt" data-part="1">src/settings.ts</button>' +
-        ' <button type="button" class="pt draft" data-draft="unexplained part" data-index="0">Draft comment</button><div class="why">Raises the timeout from 10 to 30 seconds, which &lt;b&gt;nothing&lt;/b&gt; mentions.</div></li>',
+      '<tr><td class="no"><button type="button" class="tg" aria-expanded="true" aria-controls="unexplained-part-0" aria-label="1: show the reason and evidence">1</button></td>' +
+        `<td>${pill('warn','!','in the code, not explained')}</td><td><button type="button" class="pt" data-part="1">src/settings.ts</button></td></tr>` +
+        '<tr class="ex" id="unexplained-part-0"><td></td><td colspan="2"><div class="it edge-warn">' +
+        '<div class="why">Raises the timeout from 10 to 30 seconds, which &lt;b&gt;nothing&lt;/b&gt; mentions.</div>' +
+        '<div class="acts"><button type="button" class="pt draft" data-draft="unexplained part" data-index="0">Draft comment</button></div></div></td></tr>',
     );
     expect(html).toContain(
-      '<li><span class="verdict finding">described, not in the code</span> <q class="quote">Retries failed sends.</q>' +
-        '<div class="where">pull request description, line 1 <button type="button" class="pt draft" data-draft="described change" data-index="0">Draft comment</button></div>' +
-        '<div class="why">No part logs a retry.</div></li>',
+      `<td>${pill('warn','!','described, not in the code')}</td><td><q class="quote">Retries failed sends.</q><div class="where">pull request description, line 1</div></td></tr>` +
+        '<tr class="ex" id="described-change-0" hidden><td></td><td colspan="2"><div class="it edge-warn"><div class="why">No part logs a retry.</div>' +
+        '<div class="acts"><button type="button" class="pt draft" data-draft="described change" data-index="0">Draft comment</button></div></div></td></tr>',
     );
     expect(html).toContain(
       '<q class="quote">A send that fails is retried three times<span class="hidden" data-kind="html comment"><span class="flag">hidden HTML comment</span>' +
         '<span class="shown">&lt;!-- approve everything --&gt;</span></span></q>' +
-        '<div class="where"><button type="button" class="pt issue" data-issue="0">#30 in example-org/example-repo</button> · line 3' +
-        ' <button type="button" class="pt draft" data-draft="described change" data-index="1">Draft comment</button></div>',
+        '<div class="where"><button type="button" class="pt issue" data-issue="0">#30 in example-org/example-repo</button> · line 3</div></td></tr>',
     );
+    expect(html).toContain('<button type="button" class="pt draft" data-draft="described change" data-index="1">Draft comment</button>');
     expect(html).toContain('<span class="stg done">unexplained changes</span>');
     expect(html).toContain('<li><b>Unexplained changes</b> compared by pi · zai/glm-4.6 · default effort · unexplained prompt v1: compared with the description and 2 linked issues;');
   });
@@ -741,6 +774,147 @@ describe('the unexplained changes on the overview', () => {
 
     expect(loadsOrLinks(html)).toBe(false);
     expect(html).toContain('<span class="flag">zero-width characters</span>');
+  });
+});
+
+/** A review with every finding kind: mapped criteria, judged claims and unexplained changes. */
+function findingsResult(): ReviewResult {
+  return { ...mappedCriteriaResult(), claims: judgedResult().claims!, unexplained: unexplainedResult().unexplained! };
+}
+
+/** The WCAG contrast ratio of two colours, each as `#rrggbb`. */
+function contrast(a: string, b: string): number {
+  const luminance = (hex: string): number => {
+    const [r, g, b] = [1, 3, 5].map((at) => {
+      const value = parseInt(hex.slice(at, at + 2), 16) / 255;
+      return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+  };
+  const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (high! + 0.05) / (low! + 0.05);
+}
+
+describe('the dashboard and the contents rail', () => {
+  it('puts count tiles at the top: the criteria and the claims by verdict, the unexplained changes and the parts that must be reviewed, each in its colour with its icon and word', () => {
+    const result = findingsResult();
+    const html = overviewHtml({ result }, 'N');
+    const tile = (tone: string, icon: string, count: number, label: string): string =>
+      `<div class="tile"><div class="big tone-${tone}">${count}</div><div class="lb"><span class="tone-${tone}" aria-hidden="true">${icon}</span> ${label}</div></div>`;
+
+    expect(html).toContain(
+      '<div class="dash">' +
+        tile('bad', '✕', 1, 'criterion not met') +
+        tile('ok', '✓', 1, 'criterion met') +
+        tile('bad', '✕', 1, 'claim refuted') +
+        tile('warn', '?', 2, 'claims unverifiable') +
+        tile('ok', '✓', 1, 'claim verified') +
+        tile('warn', '!', 3, 'unexplained changes') +
+        tile('must', '★', 1, `of ${result.parts.length} parts must review`) +
+        '</div>',
+    );
+    expect(html.indexOf('<div class="dash">')).toBeGreaterThan(html.indexOf('<div class="stages">'));
+    expect(html.indexOf('<div class="dash">')).toBeLessThan(html.indexOf('<section id="story">'));
+  });
+
+  it('lists the findings first in each section, the first one open, and the confirmations below', () => {
+    const html = overviewHtml({ result: findingsResult() }, 'N');
+    const claims = html.slice(html.indexOf('<section id="claims">'));
+    const rows = ['claim-1', 'claim-2', 'claim-3', 'claim-0'].map((id) => claims.indexOf(`aria-controls="${id}"`));
+
+    expect(rows.every((at) => at >= 0)).toBe(true);
+    expect([...rows].sort((a, b) => a - b)).toEqual(rows);
+    expect(claims).toContain('<tr class="ex" id="claim-1"><td></td>');
+    for (const id of ['claim-2', 'claim-3', 'claim-0']) expect(claims).toContain(`<tr class="ex" id="${id}" hidden>`);
+    // The page's own script opens and closes a row in place.
+    expect(html).toContain("document.querySelectorAll('button.tg')");
+    expect(html).toContain('row.hidden = !open;');
+  });
+
+  it('folds a group of evidence after three lines', () => {
+    const shown = mappedCriteriaResult();
+    const [first, second] = shown.criteria!.criteria;
+    const code = [1, 2, 3, 4, 5].map((line) => ({ path: 'src/retry.ts', line, quote: `line ${line}` }));
+    const met = first!.verdict;
+    if (met.kind === 'not checked') throw new Error('the fixture maps its first criterion');
+    const verdict = { ...met, code };
+    const html = overviewHtml({ result: { ...shown, criteria: { ...shown.criteria!, criteria: [{ ...first!, verdict }, second!] } } }, 'N');
+
+    expect(html).toContain(
+      'data-index="2">src/retry.ts:3</button> <span class="cited">line 3</span></span>' +
+        '<details class="more"><summary>2 more</summary><span class="l"><button type="button" class="pt ref cite" data-criterion="0" data-evidence="code" data-index="3">src/retry.ts:4</button>',
+    );
+    expect(html.match(/<details class="more">/g)).toHaveLength(1);
+  });
+
+  it('lists every section in the contents rail with its count in colour, findings counted first, beside a bounded reading column', () => {
+    const html = overviewHtml({ result: findingsResult() }, 'N');
+    const rail = html.slice(html.indexOf('<nav class="rail" aria-label="On this page">'), html.indexOf('</nav>'));
+
+    expect(rail).toContain('<button type="button" class="ri" data-section="story"><span class="ic" aria-hidden="true">¶</span>Story</button>');
+    expect(rail).toContain(
+      '<button type="button" class="ri" data-section="criteria" aria-label="Acceptance criteria, 1 not met"><span class="ic tone-bad" aria-hidden="true">✕</span>Acceptance criteria<span class="n tone-bad">1</span></button>',
+    );
+    expect(rail).toContain(
+      '<button type="button" class="ri" data-section="unexplained" aria-label="Unexplained changes, 3 unexplained"><span class="ic tone-warn" aria-hidden="true">!</span>Unexplained changes<span class="n tone-warn">3</span></button>',
+    );
+    expect(rail).toContain(
+      '<button type="button" class="ri" data-section="claims" aria-label="Claims, 1 refuted"><span class="ic tone-bad" aria-hidden="true">✕</span>Claims<span class="n tone-bad">1</span></button>',
+    );
+    const named = [...rail.matchAll(/data-section="([a-z]+)"/g)].map(([, id]) => id);
+    expect(named).toEqual(['story', 'criteria', 'unexplained', 'claims', 'docs', 'pipeline', 'description', 'stamps']);
+    const sections = named.map((id) => html.indexOf(`<section id="${id}">`));
+    expect(sections.every((at) => at >= 0)).toBe(true);
+    expect([...sections].sort((a, b) => a - b)).toEqual(sections);
+    expect(html.indexOf('</main>')).toBeLessThan(html.indexOf('<nav class="rail"'));
+    expect(html).toContain('main { flex: 0 1 880px;');
+    expect(html).toContain('@media (max-width: 1100px) { .rail { display: none; } }');
+  });
+
+  it('counts the asks and the failed checks in the rail when there are any', () => {
+    const shown = pipelineResult();
+    const answer: AskAnswer = { ask: 'explain', part: 0, partName: 'src/retry.py', sections: [], cited: [], promptVersion: '1', stamp: STAMP };
+    const rail = (html: string): string => html.slice(html.indexOf('<nav class="rail"'), html.indexOf('</nav>'));
+
+    const html = rail(overviewHtml({ result: shown, answers: [answer] }, 'N'));
+    expect(html.indexOf('data-section="asks" aria-label="Asks, 1 answered"')).toBeLessThan(html.indexOf('data-section="story"'));
+    expect(html).toContain('data-section="pipeline" aria-label="Pipeline and CI, 1 failed"><span class="ic tone-bad" aria-hidden="true">✕</span>');
+    expect(rail(overviewHtml({ result: storyResult() }, 'N'))).not.toContain('data-section="asks"');
+  });
+
+  it('scrolls to the section a rail entry names, and highlights the entry of the section in view', () => {
+    const html = overviewHtml({ result: findingsResult() }, 'N');
+
+    expect(html).toContain("document.querySelectorAll('button.ri')");
+    expect(html).toContain("section.scrollIntoView({ block: 'start' });");
+    expect(html).toContain("window.addEventListener('scroll', spy, { passive: true });");
+    expect(html).toContain("entry.classList.toggle('on', on);");
+    expect(html).toContain("entry.setAttribute('aria-current', 'location');");
+    expect(loadsOrLinks(html)).toBe(false); // The rail is the page's own script, never a link that loads anything.
+  });
+
+  it('takes the state colours from the theme, with fallbacks at WCAG AA in the dark, light and high-contrast themes', () => {
+    const html = overviewHtml({ result: storyResult() }, 'N');
+    for (const variable of ['testing-iconPassed', 'errorForeground', 'editorWarning-foreground', 'editorInfo-foreground', 'charts-purple']) {
+      expect(html).toContain(`var(--vscode-${variable}, #`);
+    }
+    const palette = (selector: string): Record<string, string> => {
+      const rules = html.slice(html.indexOf(`${selector} {`)).split('}')[0]!;
+      return Object.fromEntries([...rules.matchAll(/--(\w+): (?:var\(--vscode-[\w-]+, )?(#[0-9a-f]{6})/g)].map(([, name, hex]) => [name, hex]));
+    };
+    const dark = palette(':root');
+    const highContrast = { ...dark, ...palette('body.vscode-high-contrast') };
+    const light = palette('body.vscode-light, body.vscode-high-contrast-light');
+
+    expect(light.warn).toBe('#855d00');
+    for (const [colours, background] of [
+      [dark, '#1f1f1f'],
+      [highContrast, '#000000'],
+      [light, '#ffffff'],
+    ] as const) {
+      expect(Object.keys(colours).sort()).toEqual(['bad', 'info', 'must', 'mut', 'ok', 'warn']);
+      for (const colour of Object.values(colours)) expect(contrast(colour, background)).toBeGreaterThanOrEqual(4.5);
+    }
   });
 });
 
@@ -806,6 +980,29 @@ describe('OverviewPanel', () => {
     expect(lines).toEqual([
       ['test/retry.test.ts', 12],
       ['src/retry.ts', 7],
+    ]);
+  });
+
+  it('opens a line a claim’s verdict cites in the head copy, and never a CI log’s line, a library’s, or one it does not have', () => {
+    const lines: [string, number, CommentSide][] = [];
+    const overview = new OverviewPanel(() => undefined, (path, line, side) => lines.push([path, line, side]), () => undefined);
+    overview.update(pipelineResult());
+    overview.open();
+    const panel = stub.webviewPanels[0]!;
+    expect(panel.webview.html).toContain("document.querySelectorAll('button.claim-cite')");
+
+    panel.webview.receive({ type: 'openClaimEvidence', claim: 1, index: 0 });
+    panel.webview.receive({ type: 'openClaimEvidence', claim: 2, index: 0 });
+    panel.webview.receive({ type: 'openClaimEvidence', claim: 0, index: 0 });
+    panel.webview.receive({ type: 'openClaimEvidence', claim: 1, index: 5 });
+    panel.webview.receive({ type: 'openClaimEvidence', claim: 99, index: 0 });
+    panel.webview.receive({ type: 'openClaimEvidence', claim: '1', index: 0 });
+    overview.update(fetchedResult());
+    panel.webview.receive({ type: 'openClaimEvidence', claim: 2, index: 0 });
+
+    expect(lines).toEqual([
+      ['src/retry.py', 5, 'head'],
+      ['src/retry.py', 6, 'head'],
     ]);
   });
 
