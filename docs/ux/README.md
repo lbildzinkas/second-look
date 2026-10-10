@@ -34,3 +34,36 @@ Every result carries its model stamp.
 
 - **Story reader.** One editor-wide page that reads like an article: the story, each part in order with its diff and findings inline, then the criteria, then the review to send. It is the easiest start on unfamiliar code, but the diff is a webview copy rather than VS Code's editor, and jumping around breaks the flow. Only its send page was kept.
 - **Findings triage.** An inbox of findings sorted by what needs a decision, with each finding's code and evidence on the right. It is fast on large changes, but it invites reviewing only what was flagged, it shrinks the story to one line, and it needs the most custom interface.
+
+## v1.1 review path
+
+The v1.1 design takes the reviewer from first open to sending the review in one guided path in the side bar. The mockup is [review-path.html](review-path.html), a self-contained page you open in a browser; it shows each step on a real review, and its appendix lists every decision, where each command, ask and setting lives, and the colours in four themes. The side bar becomes one webview view in place of the ranked tree ([ADR 0008](../adr/0008-webview-side-bar.md)); the diff editor, the comment threads, the part banner and the Send review page stay as above.
+
+### The eight steps
+
+1. **First open: set up the agent, model and effort.** Step 1's card opens by itself once, with a form for the agent, the model, the effort and an optional account label. The status bar always shows the agent, the model and the effort, and clicking it opens a quick pick to change any of them.
+2. **Pick a pull request.** A list in the side bar, with each pull request's short description, review state and size, grouped as review requested, yours, involving you and open in this repository. Pasting a pull request URL works too.
+3. **The review starts.** The agent's work shows in the side bar, as a progress strip and a spinner on the running step, and in the overview, as a stage list with placeholders where results are still arriving. A notification appears only when a stage falls back or fails.
+4. **Read the story, then review the parts.** The overview tells the story; the side bar lists the parts, must review first, with their reviewed marks and asks.
+5. **Claims and verdicts.** Findings come first, as cards with their actions; confirmed claims fold below them. The overview's contents rail jumps to Claims.
+6. **Acceptance criteria and unexplained changes.** Each criterion with its verdict and evidence, then unexplained changes in both directions.
+7. **Write and edit comments.** Draft comments gather in step 7, where the reviewer edits, adds or discards each one.
+8. **Send the review.** Step 8 opens the Send review page.
+
+### The picks
+
+- **Side bar:** one webview view carrying the whole path, with each step's state and actions on its card.
+- **Pull request picker:** a list in the side bar with short descriptions.
+- **Setup:** a form in step 1's card, plus a quick pick from the status bar for fast changes.
+- **Progress:** shown in the side bar and in the overview.
+- **Overview:** a dashboard-and-tables style, in a bounded column beside a contents rail of clickable links that jump to each section.
+
+### Options not chosen
+
+- **Side bar:** one native tree with a section per step; a stepper header above native trees.
+- **Pull request picker:** a drop-down quick pick (its pasted URL in the same box is kept); a review queue (its waiting order and last-look flag are kept).
+- **Setup:** VS Code's Getting Started walkthrough; quick picks only, with no form; the form everywhere, with the status bar opening step 1.
+- **Progress:** a progress notification; a timeline in the overview only.
+- **Overview style:** semantic accent stripes (kept inside opened finding rows); tinted cards.
+
+The codicon font under [codicons/](codicons/) is VS Code's, licensed CC BY 4.0 ([LICENSE](codicons/LICENSE)).
