@@ -397,7 +397,7 @@ async function testAgentRequest(
   }
 }
 
-/** Why a review's agent choice is not one the engine can run, in plain words; absent when it is. */
+/** Why a request's agent choice is malformed, in plain words; absent when it is. */
 function agentChoiceProblem(value: unknown): string | undefined {
   if (typeof value !== 'object' || value === null) return 'the agent choice must be an object';
   const choice = value as Record<string, unknown>;
