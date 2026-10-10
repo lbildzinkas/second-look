@@ -62,6 +62,7 @@ const stage = process.env.FAKE_ENGINE_STAGE ? JSON.parse(process.env.FAKE_ENGINE
 const stageOnly = Boolean(process.env.FAKE_ENGINE_STAGE_ONLY);
 const answerDelayMs = Number(process.env.FAKE_ENGINE_ANSWER_DELAY_MS ?? '0');
 const viewedError = process.env.FAKE_ENGINE_VIEWED_ERROR;
+const probeResult = process.env.FAKE_ENGINE_PROBE_RESULT ? JSON.parse(process.env.FAKE_ENGINE_PROBE_RESULT) : { agents: [] };
 let marks = [];
 
 if (process.env.FAKE_ENGINE_IGNORE_SIGTERM) {
@@ -109,6 +110,10 @@ function handle(line) {
       return;
     }
     send({ jsonrpc: '2.0', id: request.id, result: { protocolVersion } });
+    return;
+  }
+  if (request.method === 'agents/probe') {
+    send({ jsonrpc: '2.0', id: request.id, result: probeResult });
     return;
   }
   if (request.method === 'review') {

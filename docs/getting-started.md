@@ -33,7 +33,7 @@ The companion does its model work through a coding agent you already have: it dr
 
 Codex is not supported yet.
 
-The tool must be on the `PATH` the editor was started with. An agent that is missing, or a version too old for the companion's lockdown, is never run: the engine's agent probe reports what is missing in plain words, the review still completes with the plain passes, and each result says why the agent's was not used.
+The tool must be on the `PATH` the editor was started with, or named by its path setting below. An agent that is missing, or a version too old for the companion's lockdown, is never run: the engine's agent probe reports what is missing in plain words, the review still completes with the plain passes, and each result says why the agent's was not used.
 
 What each agent may read while it works, what it is denied and how each limit is enforced — including the known gaps — is documented in [What agents can read, reach and run](agent-safety.md).
 
@@ -49,17 +49,19 @@ The settings live under the `second-look` section (Settings, then search for "se
 | `second-look.agentModel` | The model, in the agent's own naming — for example `anthropic/claude-sonnet-5` for Pi or `sonnet` for Claude Code. | empty: the agent's own default model |
 | `second-look.agentEffort` | The effort (thinking) level, one the agent accepts — for example `low`, `medium`, `high`, `xhigh` or `max` for Claude Code, or `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max` for Pi. | empty: the agent's own default effort |
 | `second-look.agentAccount` | A label for the account or subscription the agent bills, such as `Claude Max (work address)`. | empty: hidden |
+| `second-look.claudeCodePath` | The absolute path of the Claude Code executable, started in place of `claude`. User settings only. | empty: `claude` on the `PATH` |
+| `second-look.piPath` | The absolute path of the Pi executable, started in place of `pi`. User settings only. | empty: `pi` on the `PATH` |
 | `second-look.criteriaHeading` | The heading the acceptance criteria checklist sits under in the issues a pull request links. | `Acceptance criteria` |
 | `second-look.mirrorViewedToGitHub` | Whether reviewed marks are mirrored to GitHub's "Viewed" checkbox. Off by default, because the GitHub Pull Requests extension syncs the same field. | off |
 | `second-look.budget.agentRuns` | The most agent runs one review may start, a retry included. | `0`: no limit |
 | `second-look.budget.filesFetched` | The most files one review may download. | `0`: no limit |
 | `second-look.budget.downloadMiB` | The most mebibytes one review may download. | `0`: no limit |
 
-The agent, model, effort and account live in the user settings only: a workspace or folder settings file, such as a pull request's own `.vscode/settings.json`, cannot change them, and VS Code lists them as restricted in an untrusted workspace. The engine refuses, before any agent starts, a model or effort that is not a plain name — letters, digits and `.` `_` `-` `/` `:`, not starting with `-` — and an effort the chosen agent does not accept, and says why.
+The agent, model, effort, account and each agent's executable path live in the user settings only: a workspace or folder settings file, such as a pull request's own `.vscode/settings.json`, cannot change them, and VS Code lists them as restricted in an untrusted workspace. The engine refuses, before any agent starts, a model or effort that is not a plain name — letters, digits and `.` `_` `-` `/` `:`, not starting with `-` — and an effort the chosen agent does not accept, and says why.
 
 The budget settings live in the user settings only too, and travel with each review request. The engine meters the review against them — every agent run it starts, every file it downloads and their bytes, its later library fetches, asks and drafts included — and the review's result carries the limits and the use so far as `budget`. The review stops at them: an agent pass starts only while a run is left, and what the limit leaves, such as claims and acceptance criteria, stays not checked with the limit as the reason; documentation and library downloads past the file or size limit are refused, but the review's own reads of the pull request never are. Asks and drafts are only counted.
 
-The agent, model, effort and account travel with each review request, so switching them needs no restart: the next review runs its agent passes on the new choice, and every agent-produced result is stamped with it, the effort that answered included — shown as `default effort` when the run asked for none.
+The agent, model, effort, account and the agent's path travel with each review request, so switching them needs no restart: the next review runs its agent passes on the new choice, and every agent-produced result is stamped with it, the effort that answered included — shown as `default effort` when the run asked for none.
 
 The status bar always shows what is in use, as `Second Look: Pi · default model · default effort` — or, say, `Second Look: Claude Code · claude-sonnet-5-5 · effort high` — with the account label beside it when one is set, and a gear before it until you choose anything. A beaker before it warns that the chosen agent, model and effort were never tested by the companion's evaluation, with the full warning in its tooltip — the warning blocks nothing, every review still runs and is stamped with who answered — naming where the current list is published: [the tested models](tested-models.md). When Claude Code is the agent, it also warns when an `ANTHROPIC_API_KEY` inherited from the editor's environment silently overrides the subscription sign-in.
 

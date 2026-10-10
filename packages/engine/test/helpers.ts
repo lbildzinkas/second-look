@@ -457,8 +457,10 @@ export function scriptedAgent(answers: readonly string[], probe: Partial<AgentPr
     probe: async () => ({
       agent: 'fake',
       version: '1.2.3',
+      installed: true,
       usable: true,
       supports: { effort: false },
+      effortLevels: [],
       lockdown: [],
       ...probe,
     }),

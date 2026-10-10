@@ -1,4 +1,5 @@
 import {
+  AGENT_NAMES,
   ASK_KINDS,
   CHECKED_VERDICT_KINDS,
   CLAIM_SOURCE_ORDER,
@@ -23,6 +24,7 @@ import {
   type PartOrigin,
   type PartRank,
   type PartRole,
+  type ProbeAgentsRpcResult,
   type ReviewedMarks,
   type ReviewResult,
   type SentReview,
@@ -985,6 +987,41 @@ export function isReviewedMarks(value: unknown): value is ReviewedMarks {
       isString(mark['markedAt']) &&
       Array.isArray(mark['pieces']) &&
       mark['pieces'].every((piece) => isString(piece) && SHA256.test(piece)),
+  );
+}
+
+/** Error thrown when a probe answer is not the installed agents. */
+export class AgentsProtocolError extends Error {
+  constructor() {
+    super(`the engine's answer is not the probe of the installed agents`);
+    this.name = 'AgentsProtocolError';
+  }
+}
+
+/**
+ * Checks that a value read over the protocol is the probe of the installed
+ * agents: for each agent the engine can drive, whether it is installed,
+ * its version, whether it can run and why not, its effort support and
+ * levels, and the login it would use when the adapter can tell.
+ */
+export function isAgentsProbe(value: unknown): value is ProbeAgentsRpcResult {
+  if (!isRecord(value) || !Array.isArray(value['agents'])) return false;
+  return value['agents'].every(
+    (probe) =>
+      isRecord(probe) &&
+      (AGENT_NAMES as readonly unknown[]).includes(probe['agent']) &&
+      typeof probe['installed'] === 'boolean' &&
+      isString(probe['version']) &&
+      typeof probe['usable'] === 'boolean' &&
+      (probe['reason'] === undefined || isString(probe['reason'])) &&
+      isRecord(probe['supports']) &&
+      typeof probe['supports']['effort'] === 'boolean' &&
+      isStringList(probe['effortLevels']) &&
+      (probe['login'] === undefined ||
+        (isRecord(probe['login']) &&
+          isString(probe['login']['source']) &&
+          (probe['login']['warning'] === undefined || isString(probe['login']['warning'])))) &&
+      isStringList(probe['lockdown']),
   );
 }
 

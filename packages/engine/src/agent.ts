@@ -38,6 +38,8 @@ import { validateJson, type JsonSchema } from './json-schema.js';
 export interface AgentProbe {
   /** The adapter's agent, such as `pi`. */
   agent: string;
+  /** False when no agent executable was found where the engine looked: on its PATH, or at the path the settings gave. */
+  installed: boolean;
   /** The installed version, as the agent reports it; empty when it could not be read. */
   version: string;
   /** True when every part of the lockdown is available, so the agent may run. */
@@ -49,9 +51,48 @@ export interface AgentProbe {
     /** The agent takes an effort (thinking) level. */
     effort: boolean;
   };
+  /**
+   * The effort levels the agent accepts, as its own help lists them, else
+   * the levels the adapter knows; empty when it takes no effort.
+   */
+  effortLevels: string[];
+  /** Which login a run would sign in with, when the adapter can tell without reading it. */
+  login?: AgentLogin;
   /** The lockdown mechanisms this run will use, strongest first, for the reader to check. */
   lockdown: string[];
 }
+
+/**
+ * The effort levels an agent's help lists for its effort flag: the
+ * comma-separated words after a colon or inside parentheses in the flag's
+ * description, which may wrap onto the lines below it, as in
+ * `--effort <level>  Effort level (low, medium, high)`. Falls back to
+ * `known` when the help lists none, so a reworded help still offers the
+ * levels the adapter was built against.
+ */
+export function helpEffortLevels(help: string, flag: string, known: readonly string[]): string[] {
+  const lines = help.split('\n');
+  const start = lines.findIndex((line) => new RegExp(`^\\s*(?:-[\\w-]+,\\s*)*${flag}\\b`).test(line));
+  if (start < 0) return [...known];
+  const block = [lines[start]!.slice(lines[start]!.indexOf(flag) + flag.length)];
+  for (const line of lines.slice(start + 1)) {
+    if (line.trim() === '' || /^\s*-/.test(line)) break;
+    block.push(line);
+  }
+  const listed = /[(:]\s*([a-z][\w-]*(?:\s*,\s*[a-z][\w-]*)+)/i.exec(block.join(' '));
+  return listed ? listed[1]!.split(',').map((level) => level.trim()) : [...known];
+}
+
+/**
+ * The effort levels each agent accepts, as its own help lists them —
+ * Claude Code 2.1.296's `--effort` and Pi 0.86.1's `--thinking` — offered
+ * when an agent's help lists none, and the levels the engine accepts for
+ * each agent.
+ */
+export const AGENT_EFFORT_LEVELS: Record<'pi' | 'claude-code', readonly string[]> = {
+  pi: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+  'claude-code': ['low', 'medium', 'high', 'xhigh', 'max'],
+};
 
 /** One run of the agent. */
 export interface AgentRunRequest {

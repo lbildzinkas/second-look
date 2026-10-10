@@ -25,7 +25,7 @@ const TITLE = 'Second Look: Choose agent and model';
 
 /** One row of the summary: the setting it edits, or none for "Open the setup". */
 interface SummaryItem extends vscode.QuickPickItem {
-  field?: keyof AgentSettings;
+  field?: keyof typeof AGENT_SETTING_KEYS;
 }
 
 /** Opens the summary and runs the pick the reviewer makes; Escape changes nothing. */
@@ -151,7 +151,7 @@ async function chooseAccount(settings: AgentSettings): Promise<void> {
  * Writes one agent setting to the user settings, and warns when a
  * workspace setting overrides it, so the choice would not take effect.
  */
-async function writeSetting(field: keyof AgentSettings, value: string): Promise<void> {
+async function writeSetting(field: keyof typeof AGENT_SETTING_KEYS, value: string): Promise<void> {
   await vscode.workspace.getConfiguration('second-look').update(AGENT_SETTING_KEYS[field], value, vscode.ConfigurationTarget.Global);
   if (overrideNote(field) === undefined) return;
   void vscode.window.showWarningMessage(
@@ -161,7 +161,7 @@ async function writeSetting(field: keyof AgentSettings, value: string): Promise<
 }
 
 /** The note on a summary row whose value a workspace or folder setting overrides. */
-function overrideNote(field: keyof AgentSettings): string | undefined {
+function overrideNote(field: keyof typeof AGENT_SETTING_KEYS): string | undefined {
   const set = vscode.workspace.getConfiguration('second-look').inspect(AGENT_SETTING_KEYS[field]);
   if (set?.workspaceValue === undefined && set?.workspaceFolderValue === undefined) return undefined;
   return '$(warning) Set in the workspace settings, which override the user settings';

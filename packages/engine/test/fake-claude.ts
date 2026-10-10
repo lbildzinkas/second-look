@@ -57,6 +57,8 @@ export interface FakeToolCall {
 export interface FakeClaudeScenario extends ContractScenario {
   /** Flags the fake's help leaves out. */
   missingFlags?: string[];
+  /** What the fake's help says about a flag, by flag, in place of "A flag"; it may wrap onto further lines. */
+  flagHelp?: Record<string, string>;
   runs: (ContractRun & {
     /** Tool calls made before the answer. */
     toolCalls?: FakeToolCall[];
