@@ -125,8 +125,11 @@ export function meteredFetch(fetchImpl: typeof fetch, meter: BudgetMeter): typeo
  * A metering fetch that also refuses what passes a download limit: a
  * download is not started once the files or bytes used reach their limit,
  * and a body that passes the size limit as it streams fails there. Each
- * refusal is a {@link BudgetLimitError} naming the limit. For anything but
- * the review's own reads, which {@link meteredFetch} only counts.
+ * download holds one of the file limit's slots from its start until its
+ * file is counted or its request fails, so downloads running together
+ * cannot each pass the same last slot. Each refusal is a
+ * {@link BudgetLimitError} naming the limit. For anything but the
+ * review's own reads, which {@link meteredFetch} only counts.
  */
 export function limitedFetch(fetchImpl: typeof fetch, meter: BudgetMeter): typeof fetch {
   const metered = meteredFetch(fetchImpl, meter);
@@ -134,11 +137,36 @@ export function limitedFetch(fetchImpl: typeof fetch, meter: BudgetMeter): typeo
   return async (input, init) => {
     const spent = spentDownloadLimit(meter);
     if (spent !== undefined) throw refusal(spent);
-    return throughBody(await metered(input, init), (chunk, controller) => {
-      if (meter.limits.downloadMiB > 0 && meter.used.downloadBytes > meter.limits.downloadMiB * MIB) controller.error(refusal('downloadMiB'));
-      else controller.enqueue(chunk);
-    });
+    reserveDownload(meter, refusal);
+    try {
+      const response = await metered(input, init);
+      return throughBody(response, (chunk, controller) => {
+        if (meter.limits.downloadMiB > 0 && meter.used.downloadBytes > meter.limits.downloadMiB * MIB) controller.error(refusal('downloadMiB'));
+        else controller.enqueue(chunk);
+      });
+    } finally {
+      releaseDownload(meter);
+    }
   };
+}
+
+/** The downloads each meter has going, which hold the file limit's remaining slots until they are counted or fail. */
+const downloadsInFlight = new WeakMap<BudgetMeter, number>();
+
+/**
+ * Holds one of the meter's file-limit slots for a download about to start,
+ * or throws the limit's refusal when none is left. Synchronous, so
+ * downloads starting together cannot each take the same last slot.
+ */
+function reserveDownload(meter: BudgetMeter, refuse: (limit: BudgetLimit) => BudgetLimitError): void {
+  const going = (downloadsInFlight.get(meter) ?? 0) + 1;
+  if (meter.limits.filesFetched > 0 && meter.used.filesFetched + going > meter.limits.filesFetched) throw refuse('filesFetched');
+  downloadsInFlight.set(meter, going);
+}
+
+/** Gives a download's slot back: the metered fetch counted its file, or the request never answered. */
+function releaseDownload(meter: BudgetMeter): void {
+  downloadsInFlight.set(meter, (downloadsInFlight.get(meter) ?? 0) - 1);
 }
 
 /** The response with its body passed through the given transform, keeping its status, headers, URL and redirect flag. */

@@ -220,6 +220,48 @@ describe('limitedFetch', () => {
     expect(meter.used.filesFetched).toBe(1);
   });
 
+  it('refuses downloads that start together past the files limit, naming it', async () => {
+    const meter = budgetMeter({ agentRuns: 0, filesFetched: 3, downloadMiB: 0 });
+    let open: () => void = () => {};
+    const held = new Promise<void>((resolve) => (open = resolve));
+    const urls: string[] = [];
+    const transport: typeof fetch = async (input) => {
+      urls.push(String(input));
+      await held;
+      return new Response('x');
+    };
+    const fetchImpl = limitedFetch(transport, meter);
+
+    const attempts = ['a', 'b', 'c', 'd', 'e'].map((name) => fetchImpl(`https://example.com/${name}`).then(() => 'fetched'));
+    open();
+    const settled = await Promise.allSettled(attempts);
+
+    const refusals = settled.flatMap((each) => (each.status === 'rejected' ? [each.reason] : []));
+    expect(refusals).toHaveLength(2);
+    for (const refusal of refusals) {
+      expect(refusal).toBeInstanceOf(BudgetLimitError);
+      expect(refusal).toMatchObject({
+        limit: 'filesFetched',
+        message: 'the review fetched its 3 files; raise `second-look.budget.filesFetched` to download more',
+      });
+    }
+    expect(urls).toEqual(['https://example.com/a', 'https://example.com/b', 'https://example.com/c']);
+    expect(settled.filter((each) => each.status === 'fulfilled')).toHaveLength(3);
+    expect(meter.used.filesFetched).toBe(3);
+  });
+
+  it('gives the file slot back when the request never answered, so the next download fits', async () => {
+    const meter = budgetMeter({ agentRuns: 0, filesFetched: 1, downloadMiB: 0 });
+    await expect(limitedFetch(async () => {
+      throw new TypeError('fetch failed');
+    }, meter)('https://example.com/a')).rejects.toThrow('fetch failed');
+    expect(meter.used).toEqual({ agentRuns: 0, filesFetched: 0, downloadBytes: 0 });
+
+    const transport = chunkedFetch(['abc']);
+    expect(await (await limitedFetch(transport.fetch, meter)('https://example.com/b')).text()).toBe('abc');
+    expect(meter.used.filesFetched).toBe(1);
+  });
+
   it('starts no download once the bytes reach the size limit, and fails a body as it passes it', async () => {
     const meter = budgetMeter({ agentRuns: 0, filesFetched: 0, downloadMiB: 8 / (1024 * 1024) });
     const transport = chunkedFetch(['abcde', 'fghij', 'klm']);
