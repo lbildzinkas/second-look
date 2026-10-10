@@ -103,3 +103,6 @@ export const PART_BANNER_CONTROLLER_ID = 'second-look.part' as const;
 
 /** The context value the banner's thread carries. */
 export const PART_BANNER_CONTEXT = 'second-look-part-banner' as const;
+
+/** Opens the quick pick that changes the agent, model, effort and account label, as the status bar entry does. */
+export const CHOOSE_AGENT_COMMAND = 'second-look.chooseAgent' as const;

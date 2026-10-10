@@ -33,6 +33,25 @@ export interface AgentSettings {
   account: string;
 }
 
+/** Each agent setting's key in the `second-look` section. */
+export const AGENT_SETTING_KEYS = {
+  agent: 'agent',
+  model: 'agentModel',
+  effort: 'agentEffort',
+  account: 'agentAccount',
+} as const satisfies Record<keyof AgentSettings, string>;
+
+/** The effort levels each agent accepts, as the settings document them. */
+export const EFFORT_LEVELS: Readonly<Record<AgentName, readonly string[]>> = {
+  pi: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+  'claude-code': ['low', 'medium', 'high', 'xhigh', 'max'],
+};
+
+/** The agent's name as the reviewer reads it. */
+export function agentLabel(agent: AgentName): string {
+  return agent === 'claude-code' ? 'Claude Code' : 'Pi';
+}
+
 /**
  * Reads the agent settings. A value the settings no longer offer falls back
  * to Pi, so a renamed agent never breaks the companion.
@@ -46,6 +65,20 @@ export function readAgentSettings(): AgentSettings {
     effort: configuration.get<string>('agentEffort', '').trim(),
     account: configuration.get<string>('agentAccount', '').trim(),
   };
+}
+
+/**
+ * Whether the reviewer has chosen anything yet: true once any agent
+ * setting carries a value in the user, workspace or folder settings, so
+ * the status bar can tell the defaults it shows before any choice apart
+ * from a choice that happens to match them.
+ */
+export function isAgentChosen(): boolean {
+  const configuration = vscode.workspace.getConfiguration('second-look');
+  return Object.values(AGENT_SETTING_KEYS).some((key) => {
+    const set = configuration.inspect(key);
+    return set?.globalValue !== undefined || set?.workspaceValue !== undefined || set?.workspaceFolderValue !== undefined;
+  });
 }
 
 /**
@@ -76,7 +109,7 @@ export function apiKeyOverrideWarning(settings: AgentSettings, env: NodeJS.Proce
 
 /** What the status bar shows: the agent, model and effort in use, and the account when labelled. */
 export function agentStatusBarText(settings: AgentSettings): string {
-  const agent = settings.agent === 'claude-code' ? 'Claude Code' : 'Pi';
+  const agent = agentLabel(settings.agent);
   const model = settings.model === '' ? 'default model' : settings.model;
   const effort = settings.effort === '' ? 'default effort' : `effort ${settings.effort}`;
   const parts = settings.account === '' ? [agent, model, effort] : [agent, model, effort, settings.account];
@@ -101,7 +134,7 @@ export function untestedModelWarning(
   settings: AgentSettings,
   tested: readonly TestedModel[] = TESTED_MODELS,
 ): string | undefined {
-  const name = settings.agent === 'claude-code' ? 'Claude Code' : 'Pi';
+  const name = agentLabel(settings.agent);
   const level = settings.effort === '' ? DEFAULT_EFFORT : settings.effort;
   const at = level === DEFAULT_EFFORT ? 'at its default effort' : `at effort ${level}`;
   const tried = tested.filter((entry) => entry.agent === settings.agent && entry.effort === level);
@@ -116,4 +149,22 @@ export function untestedModelWarning(
   const models = [...new Set(tried.map((entry) => entry.model))].join(', ');
   const known = tried.length === 0 ? '' : `; ${at} it has been tested with ${models}`;
   return `${name} with ${settings.model} ${at} has not been tested by the companion's evaluation${known}. ${tail}`;
+}
+
+/**
+ * The efforts the evaluation tested one agent and model at, as the quick
+ * pick names them: "tested at high", or "tested at its default effort";
+ * undefined when it never tested them, or when no model is chosen.
+ */
+export function testedAtText(
+  agent: AgentName,
+  model: string,
+  tested: readonly TestedModel[] = TESTED_MODELS,
+): string | undefined {
+  if (model === '') return undefined;
+  const efforts = tested
+    .filter((entry) => entry.agent === agent && entry.model === model)
+    .map((entry) => (entry.effort === DEFAULT_EFFORT ? 'its default effort' : entry.effort));
+  if (efforts.length === 0) return undefined;
+  return `tested at ${[...new Set(efforts)].join(', ')}`;
 }

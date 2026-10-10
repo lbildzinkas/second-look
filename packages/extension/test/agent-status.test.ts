@@ -6,11 +6,14 @@ import { AgentStatusBar } from '../src/agent-status.js';
 import {
   apiKeyOverrideWarning,
   agentStatusBarText,
+  isAgentChosen,
   readAgentSettings,
   reviewAgentChoice,
+  testedAtText,
   untestedModelWarning,
   type AgentSettings,
 } from '../src/agent-settings.js';
+import { CHOOSE_AGENT_COMMAND } from '../src/commands.js';
 import type { TestedModel } from '@second-look/engine';
 
 const CLAUDE_CODE: AgentSettings = { agent: 'claude-code', model: 'sonnet', effort: '', account: 'Claude Max (work)' };
@@ -171,10 +174,10 @@ describe('AgentStatusBar', () => {
   it('refreshes when the settings change', () => {
     const bar = new AgentStatusBar({});
     bar.refresh();
-    expect(stub.statusBarItems[0]!.text).toBe('Second Look: Pi · default model · default effort');
+    expect(stub.statusBarItems[0]!.text).toBe('$(settings-gear) Second Look: Pi · default model · default effort');
     stub.configuration = { 'second-look.agent': 'claude-code', 'second-look.agentModel': 'sonnet', 'second-look.agentEffort': 'max' };
     stub.fireConfigurationChange();
-    expect(stub.statusBarItems[0]!.text).toBe('Second Look: Claude Code · sonnet · effort max');
+    expect(stub.statusBarItems[0]!.text).toBe('$(beaker) Second Look: Claude Code · sonnet · effort max');
     bar.dispose();
   });
 
@@ -182,7 +185,7 @@ describe('AgentStatusBar', () => {
     activate(stubContext() as never, { env: { ANTHROPIC_API_KEY: 'sk-ant-inherited' } });
     const [item] = stub.statusBarItems;
     // The key is inherited, but Pi is the agent, so no warning shows for it.
-    expect(item!.text).toBe('Second Look: Pi · default model · default effort');
+    expect(item!.text).toBe('$(settings-gear) Second Look: Pi · default model · default effort');
     expect(item!.tooltip).not.toContain('names the login it used');
   });
 
@@ -194,6 +197,85 @@ describe('AgentStatusBar', () => {
     expect(item!.tooltip).toContain('overrides the Claude subscription');
     expect(item!.tooltip).toContain('Claude Code with sonnet at its default effort has not been tested');
     bar.dispose();
+  });
+
+  it('shows the defaults with a gear before any choice, and opens the quick pick when clicked', () => {
+    const bar = new AgentStatusBar({});
+    bar.refresh();
+    const [item] = stub.statusBarItems;
+    expect(item!.text).toBe('$(settings-gear) Second Look: Pi · default model · default effort');
+    expect(item!.tooltip!.split('\n')[0]).toBe('Not chosen yet, click to choose');
+    expect(item!.command).toBe(CHOOSE_AGENT_COMMAND);
+    expect(item!.backgroundColor).toBeUndefined();
+    bar.dispose();
+  });
+
+  it('drops the gear once any value is chosen, in the user or the workspace settings, even one matching the defaults', () => {
+    stub.configuration = { 'second-look.agent': 'pi' };
+    const bar = new AgentStatusBar({});
+    bar.refresh();
+    expect(stub.statusBarItems[0]!.text).toBe('Second Look: Pi · default model · default effort');
+    expect(stub.statusBarItems[0]!.tooltip).not.toContain('Not chosen yet');
+    stub.configuration = {};
+    stub.workspaceConfiguration = { 'second-look.agentAccount': 'Pi personal key' };
+    stub.fireConfigurationChange();
+    expect(stub.statusBarItems[0]!.text).toBe('Second Look: Pi · default model · default effort · Pi personal key');
+    bar.dispose();
+  });
+
+  it('marks an untested combination with a beaker, keeping the full warning in the tooltip', () => {
+    stub.configuration = { 'second-look.agent': 'claude-code', 'second-look.agentModel': 'claude-opus-5-5', 'second-look.agentEffort': 'max' };
+    const bar = new AgentStatusBar({});
+    bar.refresh();
+    const [item] = stub.statusBarItems;
+    expect(item!.text).toBe('$(beaker) Second Look: Claude Code · claude-opus-5-5 · effort max');
+    expect(item!.tooltip).toContain(untestedModelWarning(readAgentSettings()));
+    expect(item!.backgroundColor).toBeUndefined();
+    bar.dispose();
+  });
+
+  it('keeps the warning icon and background for the API-key override over the beaker', () => {
+    stub.configuration = { 'second-look.agent': 'claude-code', 'second-look.agentModel': 'sonnet' };
+    const bar = new AgentStatusBar({ ANTHROPIC_API_KEY: 'sk-ant-inherited' });
+    bar.refresh();
+    const [item] = stub.statusBarItems;
+    expect(item!.text).toBe('$(warning) Second Look: Claude Code · sonnet · default effort');
+    expect(item!.backgroundColor).toMatchObject({ id: 'statusBarItem.warningBackground' });
+    bar.dispose();
+  });
+});
+
+describe('isAgentChosen', () => {
+  beforeEach(() => stub.reset());
+
+  it('is false until any agent setting carries a value, wherever it is set', () => {
+    expect(isAgentChosen()).toBe(false);
+    stub.configuration = { 'second-look.mirrorViewedToGitHub': true };
+    expect(isAgentChosen()).toBe(false);
+    stub.configuration = { 'second-look.agentEffort': '' };
+    expect(isAgentChosen()).toBe(true);
+    stub.configuration = {};
+    stub.workspaceConfiguration = { 'second-look.agentModel': 'sonnet' };
+    expect(isAgentChosen()).toBe(true);
+  });
+});
+
+describe('testedAtText', () => {
+  const TESTED: readonly TestedModel[] = [
+    { agent: 'pi', agentVersion: '0.86.1', model: 'zai-coding-cn/glm-5.3', effort: 'default', runDate: '2026-10-07T15:08:38.849Z', scores: {} },
+    { agent: 'claude-code', agentVersion: '2.1.296', model: 'claude-sonnet-5-5', effort: 'high', runDate: '2026-10-07T15:08:38.849Z', scores: {} },
+  ];
+
+  it('names the efforts the evaluation tested the agent and model at', () => {
+    expect(testedAtText('claude-code', 'claude-sonnet-5-5', TESTED)).toBe('tested at high');
+    expect(testedAtText('pi', 'zai-coding-cn/glm-5.3', TESTED)).toBe('tested at its default effort');
+    expect(testedAtText('claude-code', 'claude-sonnet-5-5', [...TESTED, { ...TESTED[1]!, effort: 'max' }])).toBe('tested at high, max');
+  });
+
+  it('says nothing for an untested model, another agent’s model or the default model', () => {
+    expect(testedAtText('claude-code', 'sonnet', TESTED)).toBeUndefined();
+    expect(testedAtText('pi', 'claude-sonnet-5-5', TESTED)).toBeUndefined();
+    expect(testedAtText('pi', '', TESTED)).toBeUndefined();
   });
 });
 
