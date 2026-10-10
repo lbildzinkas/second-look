@@ -1,3 +1,6 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { removeCopy } from '../src/cache.js';
@@ -9,6 +12,7 @@ import {
   fixtureFetch,
   temporaryCacheDir,
 } from './helpers.js';
+import { answering, fakeRuntime } from './fake-runtime.js';
 
 const TOKEN = 'ghp_test-token-do-not-print';
 
@@ -219,6 +223,114 @@ describe('runCli review', () => {
     const code = await runCli(['rank', PR_URL], {}, { out, err }, {});
     expect(code).toBe(1);
     expect(err.text).toContain('Usage:');
+  });
+});
+
+describe('runCli run', () => {
+  const IMAGE = `node@sha256:${'ab'.repeat(32)}`;
+  const VERSION = '{"Client":{"Version":"29.1.3"},"Server":{"Version":"29.1.3"}}';
+
+  /** A folder holding a runnable `docker`, which the fake runtime stands in for; nothing runs it. */
+  function dockerDir(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'second-look-programs-'));
+    writeFileSync(join(dir, 'docker'), '#!/bin/sh\nexit 99\n', { mode: 0o755 });
+    return dir;
+  }
+
+  /** A runtime whose daemon answers, whose pull succeeds and whose run prints `ran`. */
+  function workingRuntime(): ReturnType<typeof fakeRuntime> {
+    const run = answering('ran\n');
+    return fakeRuntime((call) => (call.args[0] === 'version' ? call.child.finish(0, VERSION) : run(call)));
+  }
+
+  async function runCommand(
+    args: string[],
+    runtime: ReturnType<typeof fakeRuntime>,
+    dirs: string[] = [dockerDir()],
+  ): Promise<{ code: number; out: string; err: string; fetched: string[] }> {
+    const { out, err } = streams();
+    const transport = fixtureFetch();
+    const code = await runCli(
+      ['run', PR_URL, ...args],
+      { GITHUB_TOKEN: TOKEN, SECOND_LOOK_CACHE_DIR: cacheDir },
+      { out, err },
+      { fetch: transport.fetch, sandbox: { dirs, start: runtime.start } },
+    );
+    await Promise.all(dirs.map((dir) => removeCopy(dir)));
+    return { code, out: out.text, err: err.text, fetched: transport.requests.map((request) => request.url) };
+  }
+
+  it('explains what will run and runs nothing without --yes', async () => {
+    const runtime = workingRuntime();
+    const result = await runCommand(['--image', IMAGE, '--', 'sh', '-c', 'ls ~; env'], runtime);
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain('Commit        f00dcafe1234567890abcdef1234567890abcdef');
+    expect(result.out).toContain(`Image         ${IMAGE}`);
+    expect(result.out).toContain("Command       sh -c 'ls ~; env', in /work");
+    expect(result.out).toContain('No network');
+    expect(result.out).toContain('Nothing has run. Run the same command with --yes to start it.');
+    expect(runtime.calls.map((call) => call.args[0])).toEqual(['version']);
+    expect(result.fetched.some((url) => url.includes('tarball'))).toBe(false);
+  });
+
+  it('runs with --yes and prints the labelled result', async () => {
+    const runtime = workingRuntime();
+    const result = await runCommand(['--image', IMAGE, '--yes', '--', 'npm', 'test', '--', '--yes'], runtime);
+
+    expect(result.code).toBe(0);
+    expect(result.err).toContain('Running.');
+    expect(runtime.calls.map((call) => call.args[0])).toEqual(['version', 'pull', 'run']);
+    const run = JSON.parse(result.out) as { commit: string; image: string; argv: string[]; exitCode: number; output: string };
+    expect(run).toMatchObject({
+      commit: 'f00dcafe1234567890abcdef1234567890abcdef',
+      image: IMAGE,
+      argv: ['npm', 'test', '--', '--yes'],
+      exitCode: 0,
+      output: 'ran\n',
+    });
+    expect(result.out).not.toContain(TOKEN);
+    expect(runtime.calls.every((call) => !JSON.stringify(call.env).includes(TOKEN))).toBe(true);
+  });
+
+  it('refuses an image without a digest, and runs nothing', async () => {
+    const runtime = workingRuntime();
+    const result = await runCommand(['--image', 'node:22', '--yes', '--', 'true'], runtime);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toMatch(/the image must be pinned by its digest.*nothing ran/);
+    expect(runtime.calls).toEqual([]);
+    expect(result.fetched).toEqual([]);
+  });
+
+  it('refuses when no runtime is installed, saying how to get one, and runs nothing', async () => {
+    const runtime = workingRuntime();
+    const empty = mkdtempSync(join(tmpdir(), 'second-look-programs-'));
+    const result = await runCommand(['--image', IMAGE, '--yes', '--', 'true'], runtime, [empty]);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toMatch(/Neither docker nor podman is on the PATH.*Install Docker.*Nothing ran\./);
+    expect(runtime.calls).toEqual([]);
+    expect(result.out).toBe('');
+  });
+
+  it('refuses when the daemon does not answer, saying how to start it, and runs nothing', async () => {
+    const runtime = fakeRuntime((call) => call.child.finish(1, 'Cannot connect to the Docker daemon. Is the docker daemon running?'));
+    const result = await runCommand(['--image', IMAGE, '--yes', '--', 'true'], runtime);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toMatch(/docker is installed but no daemon answers.*Start Docker Desktop.*Nothing ran\./);
+    expect(runtime.calls.map((call) => call.args[0])).toEqual(['version']);
+    expect(result.out).toBe('');
+  });
+
+  it('asks for the image and the command', async () => {
+    const noImage = await runCommand(['--', 'true'], workingRuntime());
+    expect(noImage.code).toBe(1);
+    expect(noImage.err).toContain('run needs --image');
+    const noCommand = await runCommand(['--image', IMAGE, '--yes'], workingRuntime());
+    expect(noCommand.code).toBe(1);
+    expect(noCommand.err).toContain('run needs the command to run after --');
   });
 });
 

@@ -186,6 +186,20 @@ GITHUB_TOKEN="$(gh auth token)" node packages/engine/dist/main.js \
 
 It prints what the installed Pi supports and, for each target, the agent's schema-checked answer and the run's stamp. The credential path and the URL come back refused. `--agent` picks the adapter (`pi` by default, `claude-code` for Claude Code). `--model` and `--effort` pick the model and effort level; a model or effort that is not a plain name, or an effort the agent does not accept, is refused before the agent starts. `--agent-timeout` (seconds, default 300) and `--agent-concurrency` (default 2) set the pacing. Tests drive each adapter through a shared contract suite against a fake agent executable and never call a model. One opt-in suite does: `npm run test:live-claude` drives the real Claude Code adapter on the reviewer's signed-in Claude Code, on each model `SECOND_LOOK_LIVE_MODELS` names (`claude-opus-5-5,claude-sonnet-5,haiku` by default), and shows every read outside a fixture copy refused, a canary outside it never in any event, in-copy reads working, every tool call audited and the `default` permission mode; a second case removes the guard after the probe and shows `default` mode still refusing and the run failing. It spends subscription quota, so it never runs in `npm test`, `npm run check` or CI.
 
+## Running a pull request's code in a container
+
+The `run` command runs one command in a pull request's head copy inside a locked-down container ([ADR 0009](docs/adr/0009-sandboxed-run-in-a-container.md)), through the `docker` or `podman` the reviewer installed; the engine never installs, starts or configures a runtime, and says plainly how to get or start one when it finds none or its daemon does not answer. The image must be pinned by its digest.
+
+```sh
+GITHUB_TOKEN="$(gh auth token)" node packages/engine/dist/main.js \
+  run https://github.com/{owner}/{repo}/pull/{number} \
+  --image node@sha256:{digest} -- sh -c 'ls -la / /work; ls ~; env'
+```
+
+Without `--yes` it only prints what would run: the commit, the image, the command and the isolation. With `--yes` it pulls the image first, as a step of its own, then streams the head copy as a tar archive on stdin into a container with no network, no host mount and no host environment variable, a read-only root, in-memory `/work`, `/tmp` and home folders, a non-root user, every capability dropped, no new privileges, and limits on CPU, memory, processes and time; the container is killed by its name when the time limit passes or the engine is told to stop. It prints the result as JSON: the runtime and its version, the image, the commit, the command, its exit code, the last few KiB of its output, when it started and how long it took.
+
+Unit tests drive a fake runtime and never start a container. One opt-in suite does: `npm run test:sandbox` runs a small public image, pinned by digest, through the machine's runtime and shows from inside the container that the host's home folder, the engine's environment and the network are out of reach, and that a timeout or the engine stopping kills the container. CI runs it on Linux, where Docker is present.
+
 ## Reading a package's portable PDBs
 
 The `pdb` debug command reads a local NuGet package (`.nupkg`), symbols package (`.snupkg`), portable PDB or assembly, and prints every portable PDB in it — standalone `.pdb` files and PDBs embedded in an assembly — as JSON: each source document with its hash algorithm (SHA-1 or SHA-256), its hash, and its Source Link URL, plus each PDB's Source Link map. It needs no token and reads only the given file.
