@@ -228,8 +228,8 @@ describe('runRpcServer', () => {
     );
 
     const byId = new Map(responses.map((response) => [response.id, response]));
-    // Every GitHub answer and archive counts, and the review ran on past the
-    // limit of three files: nothing is refused yet.
+    // Every GitHub answer and archive counts, and the review's own reads
+    // ran on past the limit of three files: they are never refused.
     const { budget } = byId.get(2)!.result as ReviewResult;
     expect(budget!.limits).toEqual({ agentRuns: 5, filesFetched: 3, downloadMiB: 0.25 });
     expect(budget!.used).toMatchObject({ agentRuns: 0, filesFetched: transport.requests.length });
