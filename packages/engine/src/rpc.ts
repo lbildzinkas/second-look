@@ -23,9 +23,12 @@
  * agent choice — which installed agent runs the review's agent passes,
  * with which model — and the reviewer's label for the account it bills,
  * so switching the choice in the editor's settings reaches the next
- * review without restarting the engine.
+ * review without restarting the engine. {@link PROBE_AGENTS_METHOD}
+ * reports each agent the companion can drive as installed here, without
+ * running a model, so the editor can offer only what will run.
  */
 
+import type { AgentProbe } from './agent.js';
 import type { AgentName } from './agents.js';
 import type { AskKind } from './asks.js';
 import type { AskAnswer, AskedClaim, DraftComment, FindingRef, PendingReview, ReviewedMarks, ReviewResult, SentReview, ViewedFiles } from './protocol.js';
@@ -97,13 +100,40 @@ export interface InitializeResult {
   protocolVersion: EngineProtocolVersion;
 }
 
+/**
+ * The request that reports the installed agents (issue 131): each agent
+ * the companion can drive, probed as a review would start it — its
+ * version, whether the lockdown is available and why not, the effort
+ * levels its own help lists, and for Claude Code the login it would use.
+ * Nothing runs a model, and no login is read.
+ */
+export const PROBE_AGENTS_METHOD = 'agents/probe' as const;
+
+/**
+ * The reviewer's path settings: for each agent, the executable that
+ * replaces its command, as an absolute path; empty or absent starts the
+ * command found on the PATH the engine started with.
+ */
+export type AgentPaths = Partial<Record<AgentName, string>>;
+
+/** One probe request: the path settings the probe starts each agent with. */
+export interface ProbeAgentsParams {
+  paths?: AgentPaths;
+}
+
+/** The probe request's result: one probe per agent, in the order the settings offer them. */
+export interface ProbeAgentsRpcResult {
+  agents: (AgentProbe & { agent: AgentName })[];
+}
+
 /** The request that reviews one pull request. */
 export const REVIEW_METHOD = 'review' as const;
 
 /**
  * The agent choice a review request carries: which installed agent runs
  * the review's agent passes, the model it runs, the effort level it runs
- * at (issue 121) and the reviewer's label for the account it bills (issue 65). It mirrors the editor's agent
+ * at (issue 121), the reviewer's label for the account it bills (issue 65)
+ * and the path that starts it (issue 131). It mirrors the editor's agent
  * settings; absent from a request, the engine's serve-time choice stands.
  */
 export interface ReviewAgentChoice {
@@ -119,6 +149,8 @@ export interface ReviewAgentChoice {
   effort?: string;
   /** The reviewer's label for the account or subscription the runs bill; empty or absent when unlabelled. */
   account?: string;
+  /** The absolute path of the executable that replaces the agent's command; empty or absent starts the one on the PATH. */
+  path?: string;
 }
 
 /** One review request; the token travels with the request, never stored. */

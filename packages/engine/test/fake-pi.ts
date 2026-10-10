@@ -25,6 +25,8 @@ export interface FakeCall extends RecordedRun {
 export interface FakePiScenario extends ContractScenario {
   /** Flags the fake's help leaves out. */
   missingFlags?: string[];
+  /** What the fake's help says about a flag, by flag, in place of "A flag"; it may wrap onto further lines. */
+  flagHelp?: Record<string, string>;
   runs: (ContractRun & { toolUse?: boolean; ignoreTerm?: boolean })[];
 }
 

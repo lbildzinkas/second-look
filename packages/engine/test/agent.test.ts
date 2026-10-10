@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_AGENT_SETTINGS,
+  helpEffortLevels,
   parseAnswer,
   runAgentTasks,
   type AgentAdapter,
@@ -86,8 +87,10 @@ function stubAgent(options: { stamp?: AgentStamp; probe?: Partial<AgentProbe> } 
     probe: async () => ({
       agent: 'fake',
       version: '1.2.3',
+      installed: true,
       usable: true,
       supports: { effort: false },
+      effortLevels: [],
       lockdown: [],
       ...options.probe,
     }),
@@ -118,5 +121,35 @@ describe('runAgentTasks with the account label', () => {
 
     const unlabelled = await runAgentTasks(stubAgent(), [task], DEFAULT_AGENT_SETTINGS);
     expect(unlabelled.results[0]!.stamp).not.toHaveProperty('account');
+  });
+});
+
+describe('helpEffortLevels', () => {
+  const KNOWN = ['low', 'high'];
+
+  it('reads the levels Claude Code 2.1.296 lists in parentheses on the wrapped line below its flag', () => {
+    const help = [
+      '  --effort <level>                      Effort level for the current session',
+      '                                        (low, medium, high, xhigh, max)',
+      '  --environment <environment_id>        Create a new cloud session that runs on',
+    ].join('\n');
+    expect(helpEffortLevels(help, '--effort', KNOWN)).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+  });
+
+  it('reads the levels Pi 0.86.1 lists after a colon, not the ones its examples or other flags mention', () => {
+    const help = [
+      '  --model <pattern>              Model pattern or ID (supports "provider/id" and optional ":<thinking>")',
+      '  --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh, max',
+      '  --extension, -e <path>         Load an extension file (can be used multiple times)',
+      '',
+      '  # Cycle models with fixed thinking levels',
+      '  pi --models sonnet:high,haiku:low',
+    ].join('\n');
+    expect(helpEffortLevels(help, '--thinking', KNOWN)).toEqual(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+  });
+
+  it('falls back to the known levels when the flag lists none, or is not there', () => {
+    expect(helpEffortLevels('  --effort <level>   Effort level\n  --model <m>   (a, b)', '--effort', KNOWN)).toEqual(KNOWN);
+    expect(helpEffortLevels('  --model <m>   Model', '--effort', KNOWN)).toEqual(KNOWN);
   });
 });

@@ -10,6 +10,7 @@ import {
   INITIALIZE_METHOD,
   MARK_REVIEWED_METHOD,
   MARK_VIEWED_METHOD,
+  PROBE_AGENTS_METHOD,
   REVIEWED_MARKS_METHOD,
   REVIEW_METHOD,
   REVIEW_STAGE_METHOD,
@@ -17,11 +18,13 @@ import {
   type AskAnswer,
   type AskedClaim,
   type AskKind,
+  type AgentPaths,
   type DraftComment,
   type FindingRef,
   type InitializeResult,
   type MarkedPart,
   type PendingReview,
+  type ProbeAgentsRpcResult,
   type ReviewAgentChoice,
   type ReviewedMarks,
   type ReviewResult,
@@ -29,11 +32,13 @@ import {
   type ViewedFiles,
 } from '@second-look/engine';
 import {
+  AgentsProtocolError,
   AskProtocolError,
   DraftProtocolError,
   MarksProtocolError,
   ProtocolError,
   SendProtocolError,
+  isAgentsProbe,
   isAskAnswer,
   isDraftComment,
   isReviewResult,
@@ -89,6 +94,9 @@ export function spawnEngineProcess(): ChildProcessWithoutNullStreams {
 
 /** How long the version handshake may take before the engine is given up on. */
 const HANDSHAKE_TIMEOUT_MS = 10_000;
+
+/** How long probing the installed agents may take: each agent's version, help and guard check. */
+const PROBE_AGENTS_TIMEOUT_MS = 90_000;
 
 /** How long one review request may take before the engine is given up on. */
 const REVIEW_TIMEOUT_MS = 120_000;
@@ -220,6 +228,25 @@ export class EngineClient {
       );
     }
     this.handshaken = true;
+  }
+
+  /**
+   * Probes the installed agents (issue 131): for each agent the engine can
+   * drive, started from its path setting when one is given, whether it is
+   * installed, its version, whether it can run with the lockdown and why
+   * not, the effort levels its help lists and, for Claude Code, the login
+   * it would use. Nothing runs a model. Rejects with the engine's plain
+   * message when the engine fails.
+   */
+  async probeAgents(paths: AgentPaths = {}): Promise<ProbeAgentsRpcResult> {
+    if (!this.handshaken) {
+      throw new Error('the engine has not completed its handshake yet');
+    }
+    const result = await this.request(PROBE_AGENTS_METHOD, { paths }, PROBE_AGENTS_TIMEOUT_MS);
+    if (!isAgentsProbe(result)) {
+      throw new AgentsProtocolError();
+    }
+    return result;
   }
 
   /**

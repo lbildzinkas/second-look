@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { trackAgentChild } from './agent-children.js';
 import {
   GITHUB_TOKEN_VARIABLES,
+  helpEffortLevels,
   type AgentAdapter,
   type AgentProbe,
   type AgentRunOutcome,
@@ -38,8 +39,11 @@ const LOCKDOWN_FLAGS = [
 /** The guard extension built next to this file. */
 export const PI_GUARD_PATH = fileURLToPath(new URL('./pi-guard.js', import.meta.url));
 
+/** The thinking levels Pi 0.86.1 lists, offered when its help lists none. */
+export const PI_EFFORT_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+
 export interface PiAdapterOptions {
-  /** The command that starts Pi, with any leading arguments; `['pi']` by default. */
+  /** The command that starts Pi, with any leading arguments, such as the path the settings gave; `['pi']` by default. */
   command?: readonly string[];
   /** The guard extension Pi loads; {@link PI_GUARD_PATH} by default. */
   guardPath?: string;
@@ -95,6 +99,8 @@ interface Captured {
   code: number | null;
   stdout: string;
   error?: string;
+  /** True when no executable was found to start. */
+  missing?: boolean;
 }
 
 /** Runs a short Pi command, such as `--version`, outside any project folder. */
@@ -110,7 +116,9 @@ function capture(command: readonly string[], args: string[], env: NodeJS.Process
     );
     let stdout = '';
     child.stdout.setEncoding('utf8').on('data', (chunk: string) => (stdout += chunk));
-    child.on('error', (error) => done({ code: null, stdout, error: error.message }));
+    child.on('error', (error: NodeJS.ErrnoException) =>
+      done({ code: null, stdout, error: error.message, missing: error.code === 'ENOENT' }),
+    );
     child.on('close', (code) => done({ code, stdout }));
   });
 }
@@ -150,9 +158,16 @@ export function piAdapter(options: PiAdapterOptions = {}): AgentAdapter {
   let probed: Promise<AgentProbe> | undefined;
 
   const probe = async (): Promise<AgentProbe> => {
-    const base = { agent: 'pi', supports: { effort: false }, lockdown: [] as string[] };
+    const base = { agent: 'pi', installed: true, supports: { effort: false }, effortLevels: [] as string[], lockdown: [] as string[] };
     const quiet = piEnvironment(env, tmpdir());
     const version = await capture(command, ['--version'], quiet);
+    if (version.missing) {
+      const reason =
+        options.command === undefined
+          ? 'Pi is not installed: no pi command was found on the PATH the engine started with'
+          : `Pi was not found at ${command[0]}`;
+      return { ...base, installed: false, version: '', usable: false, reason };
+    }
     if (version.code !== 0) {
       const why = version.error ?? `pi --version exited with ${version.code}`;
       return { ...base, version: '', usable: false, reason: `Pi could not be started: ${why}` };
@@ -161,17 +176,19 @@ export function piAdapter(options: PiAdapterOptions = {}): AgentAdapter {
     const help = await capture(command, ['--help'], quiet);
     const missing = LOCKDOWN_FLAGS.filter((flag) => !new RegExp(`(^|\\s)${flag}\\b`, 'm').test(help.stdout));
     const supports = { effort: /(^|\s)--thinking\b/m.test(help.stdout) };
+    const effortLevels = supports.effort ? helpEffortLevels(help.stdout, '--thinking', PI_EFFORT_LEVELS) : [];
     if (missing.length > 0) {
       const reason = `Pi ${found} lacks ${missing.join(', ')}, which the companion's lockdown needs`;
-      return { ...base, version: found, supports, usable: false, reason };
+      return { ...base, version: found, supports, effortLevels, usable: false, reason };
     }
     if (!existsSync(guardPath)) {
-      return { ...base, version: found, supports, usable: false, reason: `the companion's guard is missing: ${guardPath}` };
+      return { ...base, version: found, supports, effortLevels, usable: false, reason: `the companion's guard is missing: ${guardPath}` };
     }
     return {
       ...base,
       version: found,
       supports,
+      effortLevels,
       usable: true,
       lockdown: [
         'guard extension confines every path to the read-only copy and refuses credential paths and URLs',
