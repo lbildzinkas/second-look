@@ -7,6 +7,7 @@ import {
   apiKeyOverrideWarning,
   agentStatusBarText,
   isAgentChosen,
+  readAgentPaths,
   readAgentSettings,
   reviewAgentChoice,
   testedAtText,
@@ -46,6 +47,27 @@ describe('readAgentSettings', () => {
     stub.configuration = { 'second-look.agent': 'codex' };
     expect(readAgentSettings().agent).toBe('pi');
   });
+
+  it('carries the chosen agent\u2019s path setting, and none when it is empty', () => {
+    stub.configuration = {
+      'second-look.agent': 'claude-code',
+      'second-look.claudeCodePath': ' /opt/claude/bin/claude ',
+      'second-look.piPath': '/opt/pi/bin/pi',
+    };
+    expect(readAgentSettings().path).toBe('/opt/claude/bin/claude');
+    stub.configuration = { 'second-look.agent': 'claude-code', 'second-look.claudeCodePath': ' ', 'second-look.piPath': '/opt/pi/bin/pi' };
+    expect(readAgentSettings()).not.toHaveProperty('path');
+  });
+});
+
+describe('readAgentPaths', () => {
+  beforeEach(() => stub.reset());
+
+  it('reads each agent\u2019s path setting, leaving out the empty ones', () => {
+    expect(readAgentPaths()).toEqual({});
+    stub.configuration = { 'second-look.piPath': ' /opt/pi/bin/pi ', 'second-look.claudeCodePath': '' };
+    expect(readAgentPaths()).toEqual({ pi: '/opt/pi/bin/pi' });
+  });
 });
 
 describe('reviewAgentChoice', () => {
@@ -62,6 +84,14 @@ describe('reviewAgentChoice', () => {
       effort: '',
       account: '',
     });
+  });
+
+  it('carries the agent\u2019s path when its setting names one', () => {
+    expect(reviewAgentChoice({ agent: 'pi', model: '', effort: '', account: '', path: '/opt/pi/bin/pi' })).toMatchObject({
+      agent: 'pi',
+      path: '/opt/pi/bin/pi',
+    });
+    expect(reviewAgentChoice({ agent: 'pi', model: '', effort: '', account: '' })).not.toHaveProperty('path');
   });
 });
 

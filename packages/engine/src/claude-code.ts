@@ -7,7 +7,9 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { trackAgentChild } from './agent-children.js';
 import {
+  AGENT_EFFORT_LEVELS,
   GITHUB_TOKEN_VARIABLES,
+  helpEffortLevels,
   type AgentAdapter,
   type AgentLogin,
   type AgentProbe,
@@ -60,11 +62,11 @@ import { CREDENTIAL_PATHS, READ_ROOT_VARIABLE } from './read-guard.js';
  * tool call the guard's audit file never saw and Claude Code did not deny
  * itself.
  *
- * Each run's stamp reports which login it used. The companion never reads
- * the login — it names the source: an inherited `ANTHROPIC_API_KEY` (with a
- * warning that it silently overrides the Claude subscription), an OAuth
- * token or cloud credentials from the environment, or the stored Claude
- * subscription sign-in.
+ * The probe and each run's stamp report which login it uses. The companion
+ * never reads the login — it names the source: an inherited
+ * `ANTHROPIC_API_KEY` (with a warning that it silently overrides the Claude
+ * subscription), an OAuth token or cloud credentials from the environment,
+ * or the stored Claude subscription sign-in.
  */
 
 /** The guard hook built next to this file. */
@@ -96,7 +98,7 @@ const LOCKDOWN_FLAGS = [
 ] as const;
 
 export interface ClaudeCodeAdapterOptions {
-  /** The command that starts Claude Code, with any leading arguments; `['claude']` by default. */
+  /** The command that starts Claude Code, with any leading arguments, such as the path the settings gave; `['claude']` by default. */
   command?: readonly string[];
   /** The guard hook Claude Code runs; {@link CLAUDE_GUARD_PATH} by default. */
   guardPath?: string;
@@ -251,6 +253,8 @@ interface Captured {
   code: number | null;
   stdout: string;
   error?: string;
+  /** True when no executable was found to start. */
+  missing?: boolean;
 }
 
 /** Runs a short Claude Code command, such as `--version`, outside any project folder. */
@@ -266,7 +270,9 @@ function capture(command: readonly string[], args: string[], env: NodeJS.Process
     );
     let stdout = '';
     child.stdout.setEncoding('utf8').on('data', (chunk: string) => (stdout += chunk));
-    child.on('error', (error) => done({ code: null, stdout, error: error.message }));
+    child.on('error', (error: NodeJS.ErrnoException) =>
+      done({ code: null, stdout, error: error.message, missing: error.code === 'ENOENT' }),
+    );
     child.on('close', (code) => done({ code, stdout }));
   });
 }
@@ -400,9 +406,23 @@ export function claudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}): Agent
   let probed: Promise<AgentProbe> | undefined;
 
   const probe = async (): Promise<AgentProbe> => {
-    const base = { agent: 'claude-code', supports: { effort: false }, lockdown: [] as string[] };
+    const base = {
+      agent: 'claude-code',
+      installed: true,
+      supports: { effort: false },
+      effortLevels: [] as string[],
+      login: claudeLogin(env),
+      lockdown: [] as string[],
+    };
     const quiet = claudeEnvironment(env);
     const version = await capture(command, ['--version'], quiet);
+    if (version.missing) {
+      const reason =
+        options.command === undefined
+          ? 'Claude Code is not installed: no claude command was found on the PATH the engine started with'
+          : `Claude Code was not found at ${command[0]}`;
+      return { ...base, installed: false, version: '', usable: false, reason };
+    }
     if (version.code !== 0) {
       const why = version.error ?? `claude --version exited with ${version.code}`;
       return { ...base, version: '', usable: false, reason: `Claude Code could not be started: ${why}` };
@@ -411,11 +431,12 @@ export function claudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}): Agent
     const help = await capture(command, ['--help'], quiet);
     const missing = LOCKDOWN_FLAGS.filter((flag) => !new RegExp(`(^|\\s)${flag}\\b`, 'm').test(help.stdout));
     const supports = { effort: /(^|\s)--effort\b/m.test(help.stdout) };
+    const effortLevels = supports.effort ? helpEffortLevels(help.stdout, '--effort', AGENT_EFFORT_LEVELS['claude-code']) : [];
     if (missing.length > 0) {
       const reason = `Claude Code ${found} lacks ${missing.join(', ')}, which the companion's lockdown needs`;
-      return { ...base, version: found, supports, usable: false, reason };
+      return { ...base, version: found, supports, effortLevels, usable: false, reason };
     }
-    const unusable = (reason: string): AgentProbe => ({ ...base, version: found, supports, usable: false, reason });
+    const unusable = (reason: string): AgentProbe => ({ ...base, version: found, supports, effortLevels, usable: false, reason });
     let hookCommand: string;
     try {
       hookCommand = guardHookCommand(process.execPath, guardPath);
@@ -429,6 +450,7 @@ export function claudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}): Agent
       ...base,
       version: found,
       supports,
+      effortLevels,
       usable: true,
       lockdown: [
         "companion's guard hook checks every tool call: paths confined to the read-only copy, symbolic links " +

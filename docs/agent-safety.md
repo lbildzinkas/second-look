@@ -12,7 +12,7 @@ Paths are relative to `packages/engine/src/` unless they name another folder.
 | Claude Code | yes | `claude-code.ts`, with the guard `claude-guard.ts` |
 | Codex | **no, not yet** | none |
 
-The engine drives only the agents `AGENT_NAMES` lists, `pi` and `claude-code` (`agents.ts:15`), and refuses any other name with an error (`agents.ts:39-43`). [ADR 0004](adr/0004-drive-installed-agent-clis.md) names Codex as an agent to drive, but no Codex adapter exists, so nothing on this page applies to Codex and the companion never starts it.
+The engine drives only the agents `AGENT_NAMES` lists, `pi` and `claude-code` (`agents.ts:16`), and refuses any other name with an error (`agents.ts:69-74`). [ADR 0004](adr/0004-drive-installed-agent-clis.md) names Codex as an agent to drive, but no Codex adapter exists, so nothing on this page applies to Codex and the companion never starts it.
 
 ## What every agent run shares
 
@@ -20,17 +20,17 @@ These hold for both agents, because they come from the engine rather than from e
 
 ### The agent is started in one folder, a read-only copy
 
-- **The folder.** Each run is started with its working directory set to one folder (`pi.ts:198-204`, `claude-code.ts:482-488`): the head copy of the pull request for every review pass and ask (for example `review.ts:342`, `asks.ts:64`), or, after the reviewer presses a library fetch, that library's fetched folder alone (`library-verdicts.ts:252`). The base copy, the reviewer's workspace and the rest of the cache are never the run's folder.
+- **The folder.** Each run is started with its working directory set to one folder (`pi.ts:213-219`, `claude-code.ts:504-510`): the head copy of the pull request for every review pass and ask (for example `review.ts:342`, `asks.ts:64`), or, after the reviewer presses a library fetch, that library's fetched folder alone (`library-verdicts.ts:252`). The base copy, the reviewer's workspace and the rest of the cache are never the run's folder.
 - **Read-only.** The copies and fetched libraries are all written by `archive.ts`, with every file mode `0444` and every folder `0555` (`archive.ts:18-19`, `archive.ts:168-175`), so nothing in them can be written or run in place. Each copy is unpacked from the commit's archive into the engine's cache (`cache.ts:80-107`): nothing is checked out in the reviewer's workspace, and nothing from the pull request is built, installed or run.
 - **No links out.** Symbolic links, hard links and special files in an archive are skipped, never written, and an entry whose path would leave the folder is refused (`archive.ts:139-149`, `archive.ts:179-187`). A copy therefore holds no link an agent could follow out of it.
 
 ### The agent has no GitHub login
 
-The engine removes `GITHUB_TOKEN`, `GH_TOKEN`, `GH_ENTERPRISE_TOKEN` and `GITHUB_ENTERPRISE_TOKEN` from every agent's environment (`agent.ts:151-156`, applied at `pi.ts:88-92` and `claude-code.ts:199-203`). The token the engine holds lives only in its GitHub client's memory (`github.ts:58-70`). In VS Code the token comes from VS Code's authentication API with each request and is never put in the engine's environment (`packages/extension/src/engine-client.ts:85-86` passes the editor's environment, not a token).
+The engine removes `GITHUB_TOKEN`, `GH_TOKEN`, `GH_ENTERPRISE_TOKEN` and `GITHUB_ENTERPRISE_TOKEN` from every agent's environment (`agent.ts:192-197`, applied at `pi.ts:90-94` and `claude-code.ts:201-205`). The token the engine holds lives only in its GitHub client's memory (`github.ts:58-70`). In VS Code the token comes from VS Code's authentication API with each request and is never put in the engine's environment (`packages/extension/src/engine-client.ts:90-91` passes the editor's environment, not a token).
 
 ### The agent signs in with its own login, which the companion never reads
 
-The agent uses whatever login the reviewer gave it. The companion never opens, reads or stores it. For Claude Code it only checks which kind of login is present, by the names of environment variables, and stamps that on the run (`claude-code.ts:229-248`); an `ANTHROPIC_API_KEY` is checked for presence only.
+The agent uses whatever login the reviewer gave it. The companion never opens, reads or stores it. For Claude Code it only checks which kind of login is present, by the names of environment variables, and names that on each run's stamp and on the probe (`claude-code.ts:231-250`); an `ANTHROPIC_API_KEY` is checked for presence only.
 
 ### Agents never have network access; the companion does all fetching
 
@@ -62,15 +62,15 @@ The one program besides the agent that the companion starts is the .NET decompil
 - **Cleaned.** Every piece of text someone else wrote — the title, description, linked issues, pipeline report, CI logs, the diff — reaches the agent with Unicode tag characters, zero-width characters and bidirectional controls stripped, and each HTML comment, which GitHub hides from the reviewer, kept but marked as hidden (`untrusted.ts:37-43`).
 - **Fenced.** That text is wrapped in an `<untrusted-input>` block whose id is random per call, so the text cannot close its block early (`untrusted.ts:50-60`).
 - **Named as data.** Every prompt's instructions carry the rule that text in those blocks was written by other people and is data to read, never instructions to follow (`untrusted.ts:63-65`), as in `grouping.ts:73`, `ranking.ts:97`, `claims.ts:100`, `criteria-mapping.ts:125`, `explain.ts:104`, `cover.ts:84`, `draft-comment.ts:84`, `doc-suggestions.ts:71` and `library-verdicts.ts:80`.
-- **Checked, not trusted.** Every answer is checked against its schema and the task's own checks — that every line it cites is in the copy, every id it names was offered — before anything is shown; an invalid answer is retried once and then reported as a failure, never guessed (`agent.ts:293-355`).
+- **Checked, not trusted.** Every answer is checked against its schema and the task's own checks — that every line it cites is in the copy, every id it names was offered — before anything is shown; an invalid answer is retried once and then reported as a failure, never guessed (`agent.ts:334-396`).
 
 ### The trusted instructions used instead
 
-The agent runs on the companion's own system prompt, passed with `--system-prompt` and replacing the agent's default (`pi.ts:80-81`, `claude-code.ts:190-191`): the instructions of each pass, versioned and evaluated with it ([ADR 0006](adr/0006-no-prompt-without-its-evaluation.md)). The task goes on stdin, so no argument can be read as a file to attach (`pi.ts:205-206`, `claude-code.ts:489-490`). For Pi, the one extension loaded is the companion's own guard, from the engine's install (`pi.ts:38-39`, `pi.ts:72-73`).
+The agent runs on the companion's own system prompt, passed with `--system-prompt` and replacing the agent's default (`pi.ts:82-83`, `claude-code.ts:192-193`): the instructions of each pass, versioned and evaluated with it ([ADR 0006](adr/0006-no-prompt-without-its-evaluation.md)). The task goes on stdin, so no argument can be read as a file to attach (`pi.ts:220-221`, `claude-code.ts:511-512`). For Pi, the one extension loaded is the companion's own guard, from the engine's install (`pi.ts:40-41`, `pi.ts:74-75`).
 
 ### The agent is never run with a weaker lockdown
 
-Before any run, each adapter reads the installed agent's `--help` and refuses to run a version that lacks any flag of its lockdown (`pi.ts:23-36`, `pi.ts:162-167`; `claude-code.ts:83-96`, `claude-code.ts:412-417`). The probe itself runs `--version` and `--help` from the system's temporary folder, not from any copy (`pi.ts:101-116`, `claude-code.ts:257-272`).
+Before any run, each adapter reads the installed agent's `--help` and refuses to run a version that lacks any flag of its lockdown (`pi.ts:25-38`, `pi.ts:175-181`; `claude-code.ts:85-98`, `claude-code.ts:432-438`). The probe itself runs `--version` and `--help` from the system's temporary folder, not from any copy (`pi.ts:105-122`, `claude-code.ts:261-278`). The agent's path setting (`second-look.piPath`, `second-look.claudeCodePath`) replaces the command an adapter starts, for the probe and for every run: the engine refuses a path that is not absolute, so it never resolves inside a copy, and the setting is read from the user settings only, so a workspace cannot set it.
 
 ## Pi
 
@@ -82,31 +82,31 @@ Only files of the run's folder — the head copy, or a fetched library's folder 
 
 | Denied | How it is enforced |
 | --- | --- |
-| A shell, file edits, and every tool but the four file-reading ones | Pi's tool allowlist, `--tools read,grep,find,ls` (`pi.ts:78-79`), and again by the guard, which blocks any other tool before it runs in case a Pi version ignores the allowlist (`pi-guard.ts:42-44`). |
+| A shell, file edits, and every tool but the four file-reading ones | Pi's tool allowlist, `--tools read,grep,find,ls` (`pi.ts:80-81`), and again by the guard, which blocks any other tool before it runs in case a Pi version ignores the allowlist (`pi-guard.ts:42-44`). |
 | Any path outside the run's folder, by absolute path, by `..`, by `~` or through a symbolic link | The guard resolves each tool's `path` the way Pi does, refuses it unless it sits inside the folder, then resolves its real path and refuses it again unless that is inside the folder's real path, and hands the tool the checked real path so it reads exactly what was checked (`pi-guard.ts:26-30`, `read-guard.ts:65-69`, `read-guard.ts:85-115`, `pi-guard.ts:71-78`). |
 | Credential paths: SSH keys (`~/.ssh`), GPG keys (`~/.gnupg`), cloud credentials (`~/.aws`, `~/.azure`, `~/.config/gcloud`, `~/.kube`, `~/.docker/config.json`), the GitHub login (`~/.config/gh`, `~/.git-credentials`, `~/.config/git/credentials`, `~/.netrc`), `~/.npmrc`, and the agents' own logins (`~/.pi/agent/auth.json`, `~/.claude/.credentials.json`, `~/.codex/auth.json`) | Refused by name before the file system is touched there, whatever the run's folder is, from the list Claude Code's guard shares (`read-guard.ts:31-47`, `read-guard.ts:94-95`). |
 | URLs | Any path that reads as a URL is refused (`read-guard.ts:53`, `read-guard.ts:91-93`). |
-| Reading anything when the run's folder is not set | The guard blocks every call without `SECOND_LOOK_READ_ROOT` (`pi-guard.ts:45`), which the adapter sets to the run's folder (`pi.ts:88-92`). |
-| The GitHub token | Removed from the environment (`pi.ts:88-92`). |
-| Network at startup | `--offline`, with `PI_OFFLINE=1` and `PI_TELEMETRY=0` in its environment (`pi.ts:69`, `pi.ts:91`). |
-| A session file | `--no-session` (`pi.ts:68`). |
+| Reading anything when the run's folder is not set | The guard blocks every call without `SECOND_LOOK_READ_ROOT` (`pi-guard.ts:45`), which the adapter sets to the run's folder (`pi.ts:90-94`). |
+| The GitHub token | Removed from the environment (`pi.ts:90-94`). |
+| Network at startup | `--offline`, with `PI_OFFLINE=1` and `PI_TELEMETRY=0` in its environment (`pi.ts:71`, `pi.ts:93`). |
+| A session file | `--no-session` (`pi.ts:70`). |
 
 ### What from the pull request Pi ignores
 
 The head copy is the pull request's own repository, so it can hold agent configuration. Pi runs with:
 
-- `--no-approve`: Pi's project trust is off, so the copy's own Pi settings are not applied (`pi.ts:70`).
-- `--no-extensions`, then `--extension` with the companion's guard only: no extension from the copy or from the reviewer's set loads (`pi.ts:71-73`).
-- `--no-skills`, `--no-prompt-templates`, `--no-themes` (`pi.ts:74-77`).
-- `--no-context-files`: context files such as `AGENTS.md` and `CLAUDE.md` in the copy are not read as instructions (`pi.ts:77`).
-- `--system-prompt` with the companion's own instructions (`pi.ts:80-81`).
+- `--no-approve`: Pi's project trust is off, so the copy's own Pi settings are not applied (`pi.ts:72`).
+- `--no-extensions`, then `--extension` with the companion's guard only: no extension from the copy or from the reviewer's set loads (`pi.ts:73-75`).
+- `--no-skills`, `--no-prompt-templates`, `--no-themes` (`pi.ts:76-79`).
+- `--no-context-files`: context files such as `AGENTS.md` and `CLAUDE.md` in the copy are not read as instructions (`pi.ts:79`).
+- `--system-prompt` with the companion's own instructions (`pi.ts:82-83`).
 
 ### Known gaps for Pi
 
 - **No operating-system sandbox.** Pi has none of its own, so the guard is an extension running inside Pi's process, checking tool calls before they run (`pi-guard.ts:1-19`). It is as strong as Pi's tool-call hook: a Pi bug that skipped the hook, or a tool that read a file without one, would not be stopped by anything below it. Pi runs as the reviewer's own user with the reviewer's own file permissions.
 - **Only `path` is checked.** The guard checks and rewrites each tool's `path` argument only (`pi-guard.ts:46-54`). The `pattern` of `find` and the `glob` of `grep` reach the tool unchecked, so keeping them beneath the checked path relies on Pi's own tools.
 - **The credential list is a list.** Credentials stored anywhere else under the home folder are not refused by name. They stay out of reach only because they are outside the run's folder; the name list matters as a second line should that confinement fail.
-- **The environment is inherited.** Pi inherits the engine's whole environment minus the GitHub token variables (`pi.ts:88-92`). Pi's tools cannot read environment variables, but any other secret in that environment, such as a cloud credential, is in the agent's process.
+- **The environment is inherited.** Pi inherits the engine's whole environment minus the GitHub token variables (`pi.ts:90-94`). Pi's tools cannot read environment variables, but any other secret in that environment, such as a cloud credential, is in the agent's process.
 - **The agent process talks to its model.** "No network access" means no tool that reaches the network. Pi itself still connects to the model provider it is signed in to, and everything the prompt holds — including the pull request's text and code — is sent there. `--offline` stops only its startup network.
 - **The reviewer's own Pi settings still apply.** The flags turn off extensions, skills, prompt templates, themes, context files and project trust; nothing in the adapter turns off the reviewer's own user-level Pi settings, which are trusted as the reviewer's.
 - **Tests use a fake Pi.** The contract tests drive the adapter against a fake Pi executable (`packages/engine/test/fake-pi.ts`) that checks the arguments it is given; the guard is tested on its own (`packages/engine/test/pi-guard.test.ts`). That a real Pi honours every flag is not tested in CI.
@@ -115,30 +115,30 @@ The head copy is the pull request's own repository, so it can hold agent configu
 
 ### What Claude Code can read
 
-Only files of the run's folder — the head copy, or a fetched library's folder — through the tools `Read`, `Grep` and `Glob`, plus `StructuredOutput`, the tool Claude Code returns the schema-checked answer through, which touches no file (`claude-guard-check.ts:34-37`). The run is started with its working directory set to the run's folder (`claude-code.ts:482-488`). The companion's guard, a `PreToolUse` hook Claude Code runs before every tool call, confines each call to that folder (`claude-guard-check.ts:90-108`), and Claude Code's own working-directory check stands behind it, because the run's permission mode is pinned to `default` (`claude-code.ts:186-187`).
+Only files of the run's folder — the head copy, or a fetched library's folder — through the tools `Read`, `Grep` and `Glob`, plus `StructuredOutput`, the tool Claude Code returns the schema-checked answer through, which touches no file (`claude-guard-check.ts:34-37`). The run is started with its working directory set to the run's folder (`claude-code.ts:504-510`). The companion's guard, a `PreToolUse` hook Claude Code runs before every tool call, confines each call to that folder (`claude-guard-check.ts:90-108`), and Claude Code's own working-directory check stands behind it, because the run's permission mode is pinned to `default` (`claude-code.ts:188-189`).
 
 ### What Claude Code is denied, and how
 
 | Denied | How it is enforced |
 | --- | --- |
-| A shell, file edits, web fetch and web search, and every tool but the three file-reading ones | Claude Code's tool allowlist, `--tools Read,Grep,Glob` (`claude-code.ts:182-183`), and again by the guard, which denies every tool but those three and `StructuredOutput` before it runs, in case a tool slips past the allowlist (`claude-guard-check.ts:96-99`). |
-| Any path outside the run's folder, by absolute path, by `..`, by `~` or through a symbolic link | **Enforced by the companion.** The guard checks Read's `file_path` and Grep's and Glob's `path` with the checks it shares with Pi's guard: it resolves the path the way Claude Code's tools do, refuses it unless it sits inside the folder, then resolves its real path and refuses it again unless that is inside the folder's real path, and refuses a path that does not exist (`claude-guard-check.ts:71-75`, `claude-guard-check.ts:101-107`, `read-guard.ts:65-69`, `read-guard.ts:85-115`). It never answers `allow` and never rewrites a call (`claude-guard-check.ts:115-153`), so a call it passes still meets Claude Code's own working-directory check: with the permission mode pinned to `default`, a read outside the working directory needs approval, which `--permission-prompts none` denies (`claude-code.ts:184-187`). |
+| A shell, file edits, web fetch and web search, and every tool but the three file-reading ones | Claude Code's tool allowlist, `--tools Read,Grep,Glob` (`claude-code.ts:184-185`), and again by the guard, which denies every tool but those three and `StructuredOutput` before it runs, in case a tool slips past the allowlist (`claude-guard-check.ts:96-99`). |
+| Any path outside the run's folder, by absolute path, by `..`, by `~` or through a symbolic link | **Enforced by the companion.** The guard checks Read's `file_path` and Grep's and Glob's `path` with the checks it shares with Pi's guard: it resolves the path the way Claude Code's tools do, refuses it unless it sits inside the folder, then resolves its real path and refuses it again unless that is inside the folder's real path, and refuses a path that does not exist (`claude-guard-check.ts:71-75`, `claude-guard-check.ts:101-107`, `read-guard.ts:65-69`, `read-guard.ts:85-115`). It never answers `allow` and never rewrites a call (`claude-guard-check.ts:115-153`), so a call it passes still meets Claude Code's own working-directory check: with the permission mode pinned to `default`, a read outside the working directory needs approval, which `--permission-prompts none` denies (`claude-code.ts:186-189`). |
 | A Glob `pattern` or Grep `glob` that names an absolute path or climbs out with `..` | The guard refuses a pattern that starts with `/`, `\`, `~` or a drive letter, and any `..` segment, inside braces and extended-glob groups too (`claude-guard-check.ts:60-84`). |
-| Credential paths: SSH keys (`~/.ssh`), GPG keys (`~/.gnupg`), cloud credentials (`~/.aws`, `~/.azure`, `~/.config/gcloud`, `~/.kube`, `~/.docker/config.json`), the GitHub login (`~/.config/gh`, `~/.git-credentials`, `~/.config/git/credentials`, `~/.netrc`), `~/.npmrc`, and the agents' own logins (`~/.pi/agent/auth.json`, `~/.claude/.credentials.json`, `~/.codex/auth.json`) | Refused by name by the guard before the file system is touched there, whatever the run's folder is, from the list it shares with Pi's guard (`read-guard.ts:31-47`, `read-guard.ts:94-95`), and again by permission rules generated from the same list — `Read(~/<path>)`, plus `Read(~/<path>/**)` for a folder — which Claude Code applies to Grep and Glob as well and checks before the hook runs (`claude-code.ts:135-139`, `claude-code.ts:146-156`). |
+| Credential paths: SSH keys (`~/.ssh`), GPG keys (`~/.gnupg`), cloud credentials (`~/.aws`, `~/.azure`, `~/.config/gcloud`, `~/.kube`, `~/.docker/config.json`), the GitHub login (`~/.config/gh`, `~/.git-credentials`, `~/.config/git/credentials`, `~/.netrc`), `~/.npmrc`, and the agents' own logins (`~/.pi/agent/auth.json`, `~/.claude/.credentials.json`, `~/.codex/auth.json`) | Refused by name by the guard before the file system is touched there, whatever the run's folder is, from the list it shares with Pi's guard (`read-guard.ts:31-47`, `read-guard.ts:94-95`), and again by permission rules generated from the same list — `Read(~/<path>)`, plus `Read(~/<path>/**)` for a folder — which Claude Code applies to Grep and Glob as well and checks before the hook runs (`claude-code.ts:137-141`, `claude-code.ts:148-158`). |
 | URLs | Any path that reads as a URL is refused (`read-guard.ts:53`, `read-guard.ts:91-93`). |
-| Reading anything when the run's folder is not set | The guard denies every file-reading call without `SECOND_LOOK_READ_ROOT` (`claude-guard-check.ts:100`), which the adapter sets to the run's folder, with the audit file and `ELECTRON_RUN_AS_NODE` so the editor's binary runs the guard as Node inside VS Code (`claude-code.ts:211-218`). |
-| The reviewer's own settings switching the guard off | The guard is passed with `--settings`, which outranks user, project and local settings, with `"disableAllHooks": false` and the hook on every tool (matcher `*`) (`claude-code.ts:146-156`, `claude-code.ts:188-189`). The command-line `--permission-mode default` outranks a `defaultMode` in any settings (`claude-code.ts:186-187`). The guard's deny outranks allow rules, added directories and another hook's `allow`. The hook command is refused when the Node or guard path holds a character that could change it in a shell (`claude-code.ts:116-128`). |
-| A run the guard did not see | **Fails closed**, because Claude Code lets a call through when a hook cannot start. The probe runs the exact hook command through a shell on a synthetic read outside an empty copy, and Claude Code is not used unless the guard refuses it and writes its audit line (`claude-code.ts:357-392`, `claude-code.ts:418-427`). A run whose start event reports a permission mode other than `default` fails, and so does a completed run that reports none (`claude-code.ts:575-586`, `claude-code.ts:599-601`). The guard writes one audit line per call (`claude-guard-check.ts:133-140`), and a run with a tool call that has no audit line and that Claude Code did not report denied itself fails, its answer discarded (`claude-code.ts:569-590`). The hook blocks the call with exit code 2 on any error of its own (`claude-guard.ts:14-35`). |
-| MCP servers | `--strict-mcp-config` with no MCP configuration named, so every MCP configuration, the copy's `.mcp.json` included, is ignored (`claude-code.ts:181`). |
-| The GitHub token | Removed from the environment (`claude-code.ts:199-203`). |
-| Non-essential network traffic at startup | `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` in its environment (`claude-code.ts:202`). |
-| A session file | `--no-session-persistence` (`claude-code.ts:178`). |
+| Reading anything when the run's folder is not set | The guard denies every file-reading call without `SECOND_LOOK_READ_ROOT` (`claude-guard-check.ts:100`), which the adapter sets to the run's folder, with the audit file and `ELECTRON_RUN_AS_NODE` so the editor's binary runs the guard as Node inside VS Code (`claude-code.ts:213-220`). |
+| The reviewer's own settings switching the guard off | The guard is passed with `--settings`, which outranks user, project and local settings, with `"disableAllHooks": false` and the hook on every tool (matcher `*`) (`claude-code.ts:148-158`, `claude-code.ts:190-191`). The command-line `--permission-mode default` outranks a `defaultMode` in any settings (`claude-code.ts:188-189`). The guard's deny outranks allow rules, added directories and another hook's `allow`. The hook command is refused when the Node or guard path holds a character that could change it in a shell (`claude-code.ts:118-130`). |
+| A run the guard did not see | **Fails closed**, because Claude Code lets a call through when a hook cannot start. The probe runs the exact hook command through a shell on a synthetic read outside an empty copy, and Claude Code is not used unless the guard refuses it and writes its audit line (`claude-code.ts:363-398`, `claude-code.ts:439-448`). A run whose start event reports a permission mode other than `default` fails, and so does a completed run that reports none (`claude-code.ts:597-608`, `claude-code.ts:621-623`). The guard writes one audit line per call (`claude-guard-check.ts:133-140`), and a run with a tool call that has no audit line and that Claude Code did not report denied itself fails, its answer discarded (`claude-code.ts:591-612`). The hook blocks the call with exit code 2 on any error of its own (`claude-guard.ts:14-35`). |
+| MCP servers | `--strict-mcp-config` with no MCP configuration named, so every MCP configuration, the copy's `.mcp.json` included, is ignored (`claude-code.ts:183`). |
+| The GitHub token | Removed from the environment (`claude-code.ts:201-205`). |
+| Non-essential network traffic at startup | `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` in its environment (`claude-code.ts:204`). |
+| A session file | `--no-session-persistence` (`claude-code.ts:180`). |
 
 ### What from the pull request Claude Code ignores
 
-- `--setting-sources user`: only the reviewer's user-level settings load; the copy's project settings (`.claude/settings.json`) and local settings (`.claude/settings.local.json`), and the copy's own context, stay out (`claude-code.ts:45-47`, `claude-code.ts:179-180`).
-- `--strict-mcp-config`: the copy's MCP servers stay out (`claude-code.ts:181`).
-- `--system-prompt` with the companion's own instructions, and `--json-schema` with the answer's schema, which Claude Code checks before returning (`claude-code.ts:190-192`).
+- `--setting-sources user`: only the reviewer's user-level settings load; the copy's project settings (`.claude/settings.json`) and local settings (`.claude/settings.local.json`), and the copy's own context, stay out (`claude-code.ts:47-49`, `claude-code.ts:181-182`).
+- `--strict-mcp-config`: the copy's MCP servers stay out (`claude-code.ts:183`).
+- `--system-prompt` with the companion's own instructions, and `--json-schema` with the answer's schema, which Claude Code checks before returning (`claude-code.ts:192-194`).
 
 ### Known gaps for Claude Code
 
@@ -149,14 +149,14 @@ Only files of the run's folder — the head copy, or a fetched library's folder 
 - **No operating-system sandbox.** The guard is a hook Claude Code runs as its own process before each tool call (`claude-guard.ts`), so it is as strong as Claude Code's hook runner; Claude Code runs as the reviewer's own user with the reviewer's own file permissions.
 - **A response stopped by Anthropic's safety classifier fails the run.** When the classifier stops a response while its tool call is streaming, Claude Code reports that call as interrupted and the call never reaches the hook, so the run fails rather than trust it.
 - **The credential list is a list.** Credentials stored anywhere else under the home folder are not refused by name. They stay out of reach only because they are outside the run's folder.
-- **The reviewer's user-level settings load.** `--setting-sources user` keeps the reviewer's own settings (`claude-code.ts:179-180`), so their allow rules, added directories and hooks still load; the guard's deny outranks them, and `disableAllHooks` is pinned off.
-- **The environment is inherited.** Claude Code inherits the engine's whole environment minus the GitHub token variables (`claude-code.ts:199-203`). Its file tools cannot read environment variables, but any other secret in that environment is in the agent's process — and some are meant to be: an `ANTHROPIC_API_KEY`, an OAuth token or cloud credentials for Amazon Bedrock or Google Vertex AI are how Claude Code signs in (`claude-code.ts:229-248`).
+- **The reviewer's user-level settings load.** `--setting-sources user` keeps the reviewer's own settings (`claude-code.ts:181-182`), so their allow rules, added directories and hooks still load; the guard's deny outranks them, and `disableAllHooks` is pinned off.
+- **The environment is inherited.** Claude Code inherits the engine's whole environment minus the GitHub token variables (`claude-code.ts:201-205`). Its file tools cannot read environment variables, but any other secret in that environment is in the agent's process — and some are meant to be: an `ANTHROPIC_API_KEY`, an OAuth token or cloud credentials for Amazon Bedrock or Google Vertex AI are how Claude Code signs in (`claude-code.ts:231-250`).
 - **The agent process talks to its model.** "No network access" means no tool that reaches the network. Claude Code itself still connects to its model provider, and everything the prompt holds is sent there.
 - **That the copy's context stays out rests on Claude Code.** The companion relies on `--setting-sources user` to keep the copy's `CLAUDE.md` and project settings out; nothing in the companion checks that a given Claude Code version does.
 - **Live runs are opt-in.** The contract tests drive the adapter against a fake Claude Code executable (`packages/engine/test/fake-claude.ts`) that checks the arguments it is given and runs the real guard hook on its tool calls; the guard is tested on its own (`packages/engine/test/claude-guard.test.ts`). An opt-in live suite, `npm run test:live-claude` (`packages/engine/test/live/claude-guard.live.test.ts`), drives the real adapter on the reviewer's own Claude Code and spends subscription quota, so it never runs in CI.
 
 ## Codex
 
-Codex is not supported yet: there is no adapter, the engine refuses the name (`agents.ts:15`, `agents.ts:39-43`), and the companion never starts it. Its limits will be documented here when its adapter lands.
+Codex is not supported yet: there is no adapter, the engine refuses the name (`agents.ts:16`, `agents.ts:69-74`), and the companion never starts it. Its limits will be documented here when its adapter lands.
 
 The one place Codex appears in the code today is the guards' shared credential list: Codex's login, `~/.codex/auth.json`, is refused to Pi and Claude Code like every other agent's login (`read-guard.ts:46`).

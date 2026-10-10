@@ -216,8 +216,8 @@ export function describeAgentContract(
     it('says plainly when the agent is not installed', async () => {
       const agent = start({ notInstalled: true, runs: [{ text: '{"verdict":"yes"}' }] });
       const { probe, results } = await runAgentTasks(agent.adapter, [task(root)], FAST);
-      expect(probe).toMatchObject({ usable: false, version: '' });
-      expect(probe.reason).toMatch(/could not be started/);
+      expect(probe).toMatchObject({ installed: false, usable: false, version: '' });
+      expect(probe.reason).toMatch(/was not found at .*no-such-/);
       expect(results[0]).toMatchObject({ ok: false, reason: 'unusable' });
     });
   });

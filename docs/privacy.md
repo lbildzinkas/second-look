@@ -8,7 +8,7 @@ The companion works on text written by other people — a pull request's code, i
 
 **The GitHub token.** In VS Code the token comes from the editor's built-in GitHub sign-in, travels with each request to the engine, is used only for that request, and is never written to disk or logs. It never reaches the agent: the engine removes the GitHub token variables from every agent's environment.
 
-**The agent's login.** The agent you chose signs in with its own login, which the companion never opens, reads or stores. For Claude Code it checks only which kind of login is present, to stamp the run. The `second-look.agentAccount` setting is a label you type yourself, nothing more.
+**The agent's login.** The agent you chose signs in with its own login, which the companion never opens, reads or stores. For Claude Code it checks only which kind of login is present, to stamp the run and to say in the probe of the installed agents which one it would use. The `second-look.agentAccount` setting is a label you type yourself, nothing more.
 
 **Your reviewed marks.** Kept locally, per pull request, keyed by each part's content, in the pull request's own cache folder. They are sent nowhere unless you turn the mirror setting on (below).
 

@@ -139,7 +139,12 @@ The serve command starts the engine as a JSON-RPC server on stdio, one
 JSON-RPC message per line. The protocol starts with a version handshake,
 and the GitHub token then arrives with each review request — never on the
 command line, where any process could read it — and is used only for that
-request. Each review arrives in stages: the plain result first, in a
+request. An agents/probe request, carrying the editor's agent path
+settings, reports each agent the companion can drive as installed here —
+its version, whether it can run with the lockdown and why not, the effort
+levels its own help lists, and for Claude Code the login it would use —
+without running a model or reading a login.
+Each review arrives in stages: the plain result first, in a
 review/stage notification, then the result with the agent's grouping in
 another while the agent ranks, then the ranked result in another while
 the agent writes the story, then the result with the story in another
@@ -149,7 +154,8 @@ the claims, then the result with the claims in another while the agent
 judges them, then the result with the verdicts in another while the agent
 maps the acceptance criteria, then the mapped result. Each review
 request may also carry the reviewer's agent choice — the agent, model,
-effort and account from the editor's settings — which runs that review's
+effort, account and agent path from the editor's settings, the path an
+absolute one that replaces the agent's command — which runs that review's
 agent passes and stamps the account label on their results, replacing
 this command's --agent, --model and --effort for that review; a request
 without a choice runs the agent chosen here.`;
@@ -264,7 +270,7 @@ export async function runCli(
       return 1;
     }
     const agent: RpcAgentDeps = {
-      adapterFor: (name) => agentAdapter(name, { pi: deps.pi, claudeCode: deps.claudeCode, env }),
+      adapterFor: (name, path) => agentAdapter(name, { pi: deps.pi, claudeCode: deps.claudeCode, env }, path),
       defaultAgent: agentName,
       settings,
     };

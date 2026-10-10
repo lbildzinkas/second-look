@@ -6,6 +6,7 @@ import {
   isAgentName,
   isTestedModel,
   type AgentName,
+  type AgentPaths,
   type ReviewAgentChoice,
   type TestedModel,
 } from '@second-look/engine';
@@ -16,7 +17,9 @@ import {
  * the reviewer's label for the account or subscription it bills. They are documented in their descriptions in the
  * extension's manifest, the status bar shows what they choose, and every
  * review request carries them so the engine runs its agent passes with
- * them and stamps the account label on their results. Choosing a
+ * them and stamps the account label on their results. Each agent's path
+ * setting (issue 131), when set, replaces the command the engine starts
+ * for it, in reviews and in the probe of the installed agents. Choosing a
  * combination the evaluation never tested shows the warning below
  * (issue 3), which blocks nothing.
  */
@@ -31,15 +34,34 @@ export interface AgentSettings {
   effort: string;
   /** The reviewer's label for the account or subscription the agent bills; empty hides it. */
   account: string;
+  /** The executable that starts the agent, from its path setting; absent starts the one on the PATH. */
+  path?: string;
 }
 
-/** Each agent setting's key in the `second-look` section. */
+/** Each agent's path setting in the `second-look` section. */
+const AGENT_PATH_SETTINGS: Record<AgentName, string> = { pi: 'piPath', 'claude-code': 'claudeCodePath' };
+
+/**
+ * Reads each agent's path setting: the executable the engine starts in
+ * place of the agent's command, for the agents whose setting is not empty.
+ */
+export function readAgentPaths(): AgentPaths {
+  const configuration = vscode.workspace.getConfiguration('second-look');
+  const paths: AgentPaths = {};
+  for (const [agent, setting] of Object.entries(AGENT_PATH_SETTINGS) as [AgentName, string][]) {
+    const path = configuration.get<string>(setting, '').trim();
+    if (path !== '') paths[agent] = path;
+  }
+  return paths;
+}
+
+/** Each agent setting's key in the `second-look` section; the path settings are per agent, in {@link AGENT_PATH_SETTINGS}. */
 export const AGENT_SETTING_KEYS = {
   agent: 'agent',
   model: 'agentModel',
   effort: 'agentEffort',
   account: 'agentAccount',
-} as const satisfies Record<keyof AgentSettings, string>;
+} as const satisfies Record<Exclude<keyof AgentSettings, 'path'>, string>;
 
 /** The effort levels each agent accepts, as the settings document them. */
 export const EFFORT_LEVELS: Readonly<Record<AgentName, readonly string[]>> = {
@@ -58,12 +80,15 @@ export function agentLabel(agent: AgentName): string {
  */
 export function readAgentSettings(): AgentSettings {
   const configuration = vscode.workspace.getConfiguration('second-look');
-  const agent = configuration.get<string>('agent', 'pi');
+  const chosen = configuration.get<string>('agent', 'pi');
+  const agent = isAgentName(chosen) ? chosen : 'pi';
+  const path = readAgentPaths()[agent];
   return {
-    agent: isAgentName(agent) ? agent : 'pi',
+    agent,
     model: configuration.get<string>('agentModel', '').trim(),
     effort: configuration.get<string>('agentEffort', '').trim(),
     account: configuration.get<string>('agentAccount', '').trim(),
+    ...(path !== undefined ? { path } : {}),
   };
 }
 
@@ -83,12 +108,19 @@ export function isAgentChosen(): boolean {
 
 /**
  * The agent choice a review request carries (issue 65): the agent, model,
- * effort and account the settings chose, so the engine runs every agent pass
- * with them. Switching the settings and re-running a review changes the
- * stamp on every agent-produced result.
+ * effort and account the settings chose, and the agent's path when its
+ * setting names one, so the engine runs every agent pass with them.
+ * Switching the settings and re-running a review changes the stamp on
+ * every agent-produced result.
  */
 export function reviewAgentChoice(settings: AgentSettings): ReviewAgentChoice {
-  return { agent: settings.agent, model: settings.model, effort: settings.effort, account: settings.account };
+  return {
+    agent: settings.agent,
+    model: settings.model,
+    effort: settings.effort,
+    account: settings.account,
+    ...(settings.path !== undefined ? { path: settings.path } : {}),
+  };
 }
 
 /**

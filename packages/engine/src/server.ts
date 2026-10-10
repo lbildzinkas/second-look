@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { DEFAULT_AGENT_SETTINGS, type AgentAdapter, type AgentSettings } from './agent.js';
 import { AGENT_NAMES, isAgentName, modelAndEffortProblem, type AgentName } from './agents.js';
 import { ASK_KINDS, ASKS, askAboutPart, isAskKind } from './asks.js';
@@ -27,6 +27,7 @@ import {
   MARK_REVIEWED_METHOD,
   MARK_VIEWED_METHOD,
   NOT_INITIALIZED_CODE,
+  PROBE_AGENTS_METHOD,
   REVIEWED_MARKS_METHOD,
   REVIEW_METHOD,
   REVIEW_STAGE_METHOD,
@@ -40,6 +41,8 @@ import {
   type InitializeParams,
   type MarkReviewedParams,
   type MarkViewedParams,
+  type ProbeAgentsParams,
+  type ProbeAgentsRpcResult,
   type ReviewAgentChoice,
   type ReviewParams,
   type ReviewedMarksParams,
@@ -66,11 +69,12 @@ export interface RpcLineSink {
  */
 export interface RpcAgentDeps {
   /**
-   * Starts the adapter for the agent a review names. The engine probes
-   * the adapter before any run, so an agent that is not installed is
-   * never run and its probe says so in plain words.
+   * Starts the adapter for the agent a review names, running the
+   * executable at `path` in place of its command when the request gives
+   * one. The engine probes the adapter before any run, so an agent that is
+   * not installed is never run and its probe says so in plain words.
    */
-  adapterFor: (name: AgentName) => AgentAdapter;
+  adapterFor: (name: AgentName, path?: string) => AgentAdapter;
   /** The agent that reviews when a request carries no choice. */
   defaultAgent: AgentName;
   /** The settings the passes run with; a request's choice replaces their model, effort and account. */
@@ -106,7 +110,9 @@ export interface RpcServerDeps {
  *
  * The protocol starts with a version handshake: `initialize` must succeed
  * before any other request, and a client speaking another protocol version
- * is refused with a plain message. `review` then carries the pull request
+ * is refused with a plain message. `agents/probe` reports each agent the
+ * companion can drive, started from the request's path settings, without
+ * running a model. `review` then carries the pull request
  * URL, the GitHub token and — when the client's settings chose one — the
  * agent, model, effort and account that run the review's agent passes; a request
  * without a choice runs the engine's serve-time default. Each review
@@ -195,6 +201,10 @@ export async function runRpcServer(
       initialized = initialize(value.params, value.id, sink);
       continue;
     }
+    if (value.method === PROBE_AGENTS_METHOD) {
+      running.push(probeAgents(value.params, value.id, sink, initialized, deps));
+      continue;
+    }
     if (value.method === REVIEW_METHOD) {
       running.push(review(value.params, value.id, sink, initialized, deps, reviews, meters));
       continue;
@@ -232,7 +242,7 @@ export async function runRpcServer(
       failure(
         value.id,
         JSON_RPC_METHOD_NOT_FOUND,
-        `unknown method: ${value.method}; this engine speaks ${INITIALIZE_METHOD}, ${REVIEW_METHOD}, ${FETCH_LIBRARY_METHOD}, ${DRAFT_COMMENT_METHOD}, ${ASK_METHOD}, ${SEND_REVIEW_METHOD}, ${REVIEWED_MARKS_METHOD}, ${MARK_REVIEWED_METHOD} and ${MARK_VIEWED_METHOD}`,
+        `unknown method: ${value.method}; this engine speaks ${INITIALIZE_METHOD}, ${PROBE_AGENTS_METHOD}, ${REVIEW_METHOD}, ${FETCH_LIBRARY_METHOD}, ${DRAFT_COMMENT_METHOD}, ${ASK_METHOD}, ${SEND_REVIEW_METHOD}, ${REVIEWED_MARKS_METHOD}, ${MARK_REVIEWED_METHOD} and ${MARK_VIEWED_METHOD}`,
       ),
     );
   }
@@ -270,6 +280,60 @@ function initialize(
   return true;
 }
 
+/** Why a path setting is not one the engine starts, in plain words; absent when it is. */
+function agentPathProblem(value: unknown): string | undefined {
+  if (typeof value !== 'string') return 'must be a string';
+  if (value !== '' && !isAbsolute(value)) return `must be an absolute path to the executable, not ${JSON.stringify(value)}`;
+  return undefined;
+}
+
+/**
+ * Reports each agent the companion can drive as a review would start it:
+ * from the request's path setting when it names one, else the command on
+ * the engine's PATH. Each probe reads the agent's version and help, and
+ * for Claude Code runs the guard's own check; none runs a model or reads
+ * a login.
+ */
+async function probeAgents(
+  params: unknown,
+  id: number,
+  sink: RpcLineSink,
+  initialized: boolean,
+  deps: RpcServerDeps,
+): Promise<void> {
+  if (!initialized) {
+    respond(sink, failure(id, NOT_INITIALIZED_CODE, `the protocol starts with a version handshake: ${INITIALIZE_METHOD} before ${PROBE_AGENTS_METHOD}`));
+    return;
+  }
+  const { paths = {} } = (params ?? {}) as Partial<ProbeAgentsParams>;
+  const shape = `${PROBE_AGENTS_METHOD} needs params: { "paths"?: { ${AGENT_NAMES.map((name) => `"${name}"?: string`).join(', ')} } }`;
+  if (typeof paths !== 'object' || paths === null || Array.isArray(paths) || !Object.keys(paths).every(isAgentName)) {
+    respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, shape));
+    return;
+  }
+  for (const [name, path] of Object.entries(paths)) {
+    const problem = agentPathProblem(path);
+    if (problem !== undefined) {
+      respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${PROBE_AGENTS_METHOD}: the ${name} path ${problem}`));
+      return;
+    }
+  }
+  const agent = deps.agent;
+  if (agent === undefined) {
+    respond(sink, failure(id, ENGINE_FAILED_CODE, 'this engine runs no agent, so it has none to probe'));
+    return;
+  }
+  try {
+    const agents = await Promise.all(
+      AGENT_NAMES.map(async (name) => ({ ...(await agent.adapterFor(name, paths[name] || undefined).probe()), agent: name })),
+    );
+    const result: ProbeAgentsRpcResult = { agents };
+    respond(sink, { jsonrpc: '2.0', id, result });
+  } catch (error) {
+    respond(sink, failure(id, ENGINE_FAILED_CODE, error instanceof Error ? error.message : String(error)));
+  }
+}
+
 /** Why a review's agent choice is not one the engine can run, in plain words; absent when it is. */
 function agentChoiceProblem(value: unknown): string | undefined {
   if (typeof value !== 'object' || value === null) return 'the agent choice must be an object';
@@ -286,7 +350,14 @@ function agentChoiceProblem(value: unknown): string | undefined {
   if (choice['account'] !== undefined && typeof choice['account'] !== 'string') {
     return 'the agent choice account must be a string';
   }
+  const pathProblem = choice['path'] === undefined ? undefined : agentPathProblem(choice['path']);
+  if (pathProblem !== undefined) return `the agent choice path ${pathProblem}`;
   return modelAndEffortProblem(choice['agent'], choice as Pick<ReviewAgentChoice, 'model' | 'effort'>);
+}
+
+/** The adapter a request's agent passes run on: its chosen agent, started from its path when it gives one. */
+function choiceAdapter(agent: RpcAgentDeps, choice: ReviewAgentChoice | undefined): AgentAdapter {
+  return agent.adapterFor(choice?.agent ?? agent.defaultAgent, choice?.path || undefined);
 }
 
 /**
@@ -377,7 +448,7 @@ async function review(
       ...(deps.agent
         ? {
             agentStage: {
-              adapter: deps.agent.adapterFor(choice?.agent ?? deps.agent.defaultAgent),
+              adapter: choiceAdapter(deps.agent, choice),
               settings: agentRunSettings(deps.agent, choice),
               ...(deps.agent.testedRankings ? { testedRankings: deps.agent.testedRankings } : {}),
               onStage: (stage) => notify(sink, REVIEW_STAGE_METHOD, { id, ...stage }),
@@ -450,7 +521,7 @@ async function fetchLibrary(
       headRoot: result.copies.head.path,
       librariesDir: join(pullRequestCacheDir(deps.cacheDir, ref), 'libraries'),
       ...(fetchImpl ? { fetch: fetchImpl } : {}),
-      adapter: deps.agent.adapterFor(choice?.agent ?? deps.agent.defaultAgent),
+      adapter: choiceAdapter(deps.agent, choice),
       settings: { ...agentRunSettings(deps.agent, choice, meter), stopAtBudget: true },
     });
     if (judging.outcome === 'fell back') throw new Error(`the library was fetched, but ${judging.detail}`);
@@ -522,7 +593,7 @@ async function draft(
   }
   try {
     const drafted = await draftComment(finding, {
-      adapter: deps.agent.adapterFor(choice?.agent ?? deps.agent.defaultAgent),
+      adapter: choiceAdapter(deps.agent, choice),
       settings: agentRunSettings(deps.agent, choice, meters.get(url)),
       root: result.copies.head.path,
     });
@@ -587,7 +658,7 @@ async function ask(
     const answer = await askAboutPart(kind, {
       result,
       part,
-      adapter: deps.agent.adapterFor(choice?.agent ?? deps.agent.defaultAgent),
+      adapter: choiceAdapter(deps.agent, choice),
       settings: agentRunSettings(deps.agent, choice, meters.get(url)),
       ...(claim ? { claim } : {}),
     });
