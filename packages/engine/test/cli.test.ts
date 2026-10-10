@@ -37,10 +37,23 @@ describe('runCli review', () => {
     );
 
     expect(code).toBe(0);
-    expect(err.text).toBe('');
-    const result = JSON.parse(out.text) as { version: number; parts: unknown[] };
-    expect(result.version).toBe(18);
+    const result = JSON.parse(out.text) as {
+      version: number;
+      parts: unknown[];
+      budget: { limits: Record<string, number>; used: { agentRuns: number; filesFetched: number; downloadBytes: number } };
+    };
+    expect(result.version).toBe(19);
     expect(result.parts).toHaveLength(11);
+    // Every GitHub answer and archive the review downloaded is counted,
+    // with no limit set, and the use is the last line on stderr.
+    const { used } = result.budget;
+    expect(result.budget.limits).toEqual({ agentRuns: 0, filesFetched: 0, downloadMiB: 0 });
+    expect(used.agentRuns).toBe(0);
+    expect(used.filesFetched).toBeGreaterThan(0);
+    expect(used.downloadBytes).toBeGreaterThan(0);
+    expect(err.text).toBe(
+      `second-look-engine: used 0 agent runs, ${used.filesFetched} files fetched, ${used.downloadBytes} bytes downloaded\n`,
+    );
   });
 
   it('accepts the token as a flag instead of the environment', async () => {
@@ -56,7 +69,7 @@ describe('runCli review', () => {
       version: number;
       copies: { head: { path: string } };
     };
-    expect(result.version).toBe(18);
+    expect(result.version).toBe(19);
     expect(result.copies.head.path.startsWith(cacheDir)).toBe(true);
   });
 

@@ -53,8 +53,13 @@ The settings live under the `second-look` section (Settings, then search for "se
 | `second-look.piPath` | The absolute path of the Pi executable, started in place of `pi`. User settings only. | empty: `pi` on the `PATH` |
 | `second-look.criteriaHeading` | The heading the acceptance criteria checklist sits under in the issues a pull request links. | `Acceptance criteria` |
 | `second-look.mirrorViewedToGitHub` | Whether reviewed marks are mirrored to GitHub's "Viewed" checkbox. Off by default, because the GitHub Pull Requests extension syncs the same field. | off |
+| `second-look.budget.agentRuns` | The most agent runs one review may start, a retry included. | `0`: no limit |
+| `second-look.budget.filesFetched` | The most files one review may download. | `0`: no limit |
+| `second-look.budget.downloadMiB` | The most mebibytes one review may download. | `0`: no limit |
 
 The agent, model, effort, account and each agent's executable path live in the user settings only: a workspace or folder settings file, such as a pull request's own `.vscode/settings.json`, cannot change them, and VS Code lists them as restricted in an untrusted workspace. The engine refuses, before any agent starts, a model or effort that is not a plain name — letters, digits and `.` `_` `-` `/` `:`, not starting with `-` — and an effort the chosen agent does not accept, and says why.
+
+The budget settings live in the user settings only too, and travel with each review request. The engine meters the review against them — every agent run it starts, every file it downloads and their bytes, its later library fetches, asks and drafts included — and the review's result carries the limits and the use so far as `budget`. For now the companion only counts: nothing is refused when a limit is reached.
 
 The agent, model, effort, account and the agent's path travel with each review request, so switching them needs no restart: the next review runs its agent passes on the new choice, and every agent-produced result is stamped with it, the effort that answered included — shown as `default effort` when the run asked for none.
 
@@ -72,11 +77,11 @@ Every agent run bills the login the agent is signed in with — your subscriptio
 
 ## Starting a review
 
-1. Click the **Second Look** icon in the Activity Bar (an eye with a check mark), then the **Review a pull request** button in the empty view, or the pull request button in the view's title bar. Running **Second Look: Review pull request** from the Command Palette does the same: the Second Look side bar opens when the review starts.
+1. Click the **Second Look** icon in the Activity Bar (an eye with a check mark), then the **Review a pull request** button on the side bar's second step, or the pull request button in the view's title bar. Running **Second Look: Review pull request** from the Command Palette does the same: the Second Look side bar opens when the review starts.
 2. Paste a GitHub pull request URL, such as `https://github.com/{owner}/{repo}/pull/{number}`.
 3. Sign in with VS Code's built-in GitHub login when it asks (the `repo` scope of the editor's GitHub account).
 
-The review tree fills the Second Look side bar and the overview tab opens beside it; results arrive in stages while the agent works. [How a review works](reviewing.md) walks through each one.
+The review fills the Second Look side bar and the overview tab opens beside it; results arrive in stages while the agent works. [How a review works](reviewing.md) walks through each one.
 
 ## Where the companion keeps things
 

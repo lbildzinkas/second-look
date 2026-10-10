@@ -112,7 +112,7 @@ describe('EngineClient against a fake engine', () => {
     await client.initialize();
     const result = await client.review(PR_URL, TOKEN);
 
-    expect(result.version).toBe(18);
+    expect(result.version).toBe(19);
     expect(result.parts).toHaveLength(7);
 
     const requests = loggedRequests('round-trip.log') as {
@@ -141,6 +141,22 @@ describe('EngineClient against a fake engine', () => {
     // The heading travels with the request only when it names one.
     expect(reviews[0]!.params['criteriaHeading']).toBe('Definition of done');
     expect(reviews[1]!.params).not.toHaveProperty('criteriaHeading');
+    client.dispose();
+  });
+
+  it('carries the budget limits with a review, and leaves them off when none are given', async () => {
+    const client = new EngineClient(() => fakeEngine({ result: mixedResult(), logName: 'budget.log' }));
+
+    await client.initialize();
+    const limits = { agentRuns: 20, filesFetched: 300, downloadMiB: 64 };
+    await client.review(PR_URL, TOKEN, undefined, undefined, undefined, limits);
+    await client.review(PR_URL, TOKEN);
+
+    const reviews = loggedRequests('budget.log').filter(
+      (request) => (request as { method: string }).method === 'review',
+    ) as { params: Record<string, unknown> }[];
+    expect(reviews[0]!.params['budget']).toEqual(limits);
+    expect(reviews[1]!.params).not.toHaveProperty('budget');
     client.dispose();
   });
 
@@ -520,7 +536,7 @@ describe('EngineClient against a fake engine', () => {
       await timedOut;
 
       await client.initialize();
-      expect(await client.review(PR_URL, TOKEN)).toMatchObject({ version: 18 });
+      expect(await client.review(PR_URL, TOKEN)).toMatchObject({ version: 19 });
       expect(spawns).toBe(2);
       client.dispose();
     } finally {
@@ -551,7 +567,7 @@ describe('EngineClient against a fake engine', () => {
     const stages: ReviewStageUpdate[] = [];
 
     await client.initialize();
-    expect(await client.review(PR_URL, TOKEN, undefined, (stage) => stages.push(stage))).toMatchObject({ version: 18 });
+    expect(await client.review(PR_URL, TOKEN, undefined, (stage) => stages.push(stage))).toMatchObject({ version: 19 });
     expect(stages).toEqual([]);
     client.dispose();
   });

@@ -32,16 +32,15 @@ import { openPartInDiffEditor, openWholeChangeInDiffEditor, PartMarker } from '.
 import {
   anchorOf,
   buildTree,
-  findAnchor,
   partAtAnchor,
   reviewBadge,
   treeMessage,
   pendingReviewSection,
   type PartAnchor,
-  type TreeComment,
-  type TreePart,
   type TreeSection,
 } from './tree.js';
+import { SideBarProvider } from './side-bar/provider.js';
+import type { SideBarState } from './side-bar/steps.js';
 import { draftTarget, ReviewComments } from './comments.js';
 import { escapeMarkdown, FindingThreads } from './findings.js';
 import { isSubmitKind, SendReviewPage } from './send-page.js';
@@ -52,6 +51,7 @@ import { AgentStatusBar } from './agent-status.js';
 import { chooseAgent } from './agent-picker.js';
 import { isBannerPartRef, PartBanner } from './part-banner.js';
 import { readAgentSettings, reviewAgentChoice, untestedModelWarning } from './agent-settings.js';
+import { readBudgetLimits } from './budget-settings.js';
 import {
   ASK_KINDS,
   ASKS,
@@ -102,13 +102,6 @@ export interface ExtensionDeps {
   env?: NodeJS.ProcessEnv;
 }
 
-/** A tree node: a section, a part inside it, or a pending comment. */
-type TreeNode = TreeSection | TreePart | TreeComment;
-
-function isSection(node: TreeNode): node is TreeSection {
-  return 'parts' in node;
-}
-
 /** Whether a value is a part of the reviewed change. */
 function isPart(value: unknown): value is Part {
   return (
@@ -131,8 +124,9 @@ function isEditorComment(value: unknown): value is vscode.Comment {
 }
 
 /**
- * The part a command's argument carries: the tree's element, unwrapped,
- * or the part itself, the way a tree item's own click command passes it.
+ * The part a command's argument carries: an element holding one,
+ * unwrapped, or the part itself, the way the side bar and the overview
+ * pass it to the open-part command.
  * Anything else reads as absent.
  */
 function carriedPart(arg: unknown): Part | undefined {
@@ -147,70 +141,6 @@ function carriedPart(arg: unknown): Part | undefined {
 }
 
 /**
- * The side-bar tree: importance groups in order with the reason beside
- * each part and the signals in its tooltip, the noise last, and the
- * pending review gathering above them all. Clicking a part opens it in
- * the diff editor, and its checkbox marks it reviewed.
- */
-class ReviewTreeProvider implements vscode.TreeDataProvider<TreeNode> {
-  private readonly change = new vscode.EventEmitter<void>();
-  private sections: TreeSection[] = [];
-
-  readonly onDidChangeTreeData = this.change.event;
-
-  setSections(sections: TreeSection[]): void {
-    this.sections = sections;
-    this.change.fire();
-  }
-
-  /** The sections the tree shows now. */
-  get current(): readonly TreeSection[] {
-    return this.sections;
-  }
-
-  getTreeItem(node: TreeNode): vscode.TreeItem {
-    if (isSection(node)) {
-      const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Expanded);
-      item.tooltip = node.tooltip;
-      // Stable ids keep a section's expanded state, and a part's selection,
-      // across a regrouping; a part is known by where it starts, since every
-      // hunk belongs to exactly one part.
-      item.id = `section:${node.label}`;
-      return item;
-    }
-    const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
-    item.description = node.description;
-    item.tooltip = node.tooltip;
-    item.contextValue = node.kind;
-    if (node.kind !== 'comment' && node.part !== undefined) {
-      item.id = `part:${JSON.stringify(anchorOf(node.part))}`;
-      item.checkboxState =
-        node.reviewed === 'reviewed' ? vscode.TreeItemCheckboxState.Checked : vscode.TreeItemCheckboxState.Unchecked;
-      item.command = {
-        command: OPEN_PART_COMMAND,
-        title: 'Open part in the diff editor',
-        arguments: [node.part],
-      };
-    }
-    return item;
-  }
-
-  getChildren(node?: TreeNode): TreeNode[] {
-    if (node === undefined) {
-      // Empty before the first review, so the view shows its welcome
-      // content: the button that starts one.
-      return this.sections;
-    }
-    return isSection(node) ? node.parts : [];
-  }
-
-  getParent(node: TreeNode): TreeNode | undefined {
-    if (isSection(node)) return undefined;
-    return this.sections.find((section) => section.parts.includes(node));
-  }
-}
-
-/**
  * Runs the review: asks for the pull request URL unless the command
  * already carries one as its argument, signs in with VS Code's built-in
  * GitHub login, and hands the request to the engine with the token from
@@ -219,34 +149,35 @@ class ReviewTreeProvider implements vscode.TreeDataProvider<TreeNode> {
  * pass on the chosen agent, model, effort and account. Progress shows while the
  * engine works, and an engine failure reads as its plain message.
  *
- * A review arrives in stages: the tree shows the plain parts first, with
- * a status line naming the stage still running, then updates in place
- * when the agent's parts arrive and again when its ranking does — keeping
- * the reviewer's place: the part holding the selected part's first hunk
- * stays selected, and the open diff editor stays as it is. A new review
- * replaces one still running.
+ * A review arrives in stages: the side bar shows the plain parts first,
+ * with a status line naming the stage still running, then updates in
+ * place when the agent's parts arrive and again when its ranking does,
+ * and the open diff editor stays as it is. A new review replaces one
+ * still running.
  *
  * The session keeps the result it shows, so a part click can open the
  * multi-file diff from the same copies the engine downloaded. The review's
  * overview opens with its first result, without taking the focus from the
- * tree, and follows every stage, as do the findings — the refuted and
+ * side bar, and follows every stage, as do the findings — the refuted and
  * unverifiable claims — shown as the companion's own threads on the diff.
  *
- * Each part's checkbox — in the tree, or in the banner above the part's
+ * Each part's checkbox — in the side bar, or in the banner above the part's
  * diff, which also carries its importance, signals and asks — marks it
  * reviewed in the engine's local store for
- * the pull request, which outlives the editor; the tree view's badge
+ * the pull request, which outlives the editor; the side bar's badge
  * counts the parts left, and a part whose content changed since it was
  * marked is unmarked and says so. With the opt-in mirror setting on, a
  * file whose every part is reviewed is marked "Viewed" on GitHub too.
  *
- * The line above the tree says which commit the reviewer's last look was
- * at and how many parts changed since, each flagged in the tree, and the
- * filter shows only those parts.
+ * The line above the parts says which commit the reviewer's last look was
+ * at and how many parts changed since, each flagged, and the filter shows
+ * only those parts.
+ *
+ * The side bar's eight steps follow the review: the step the reviewer is
+ * on is the first one not done.
  */
 class ReviewSession {
-  private readonly tree: ReviewTreeProvider;
-  private readonly treeView: vscode.TreeView<TreeNode>;
+  private readonly sideBar: SideBarProvider;
   private readonly copies: ChangeCopiesProvider;
   private readonly marker: PartMarker;
   private readonly comments: ReviewComments;
@@ -276,21 +207,21 @@ class ReviewSession {
   private stored: { url: string; marks: ReviewedMarks } | undefined;
   /** The files of parts marked while the review still runs, mirrored to GitHub once it finishes. */
   private readonly mirrorWaiting = new Set<string>();
-  /** True while the tree shows only the parts changed since the reviewer's last look. */
+  /** True while the side bar shows only the parts changed since the reviewer's last look. */
   private onlyChanged = false;
-  /** The stage the review is still running, in words, for the line above the tree. */
+  /** The stage the review is still running, in words, for the line above the parts. */
   private stage: string | undefined;
+  /** True once the reviewer opened the story, or moved on to the parts, in the review shown. */
+  private storyRead = false;
 
   constructor(
-    tree: ReviewTreeProvider,
-    treeView: vscode.TreeView<TreeNode>,
+    sideBar: SideBarProvider,
     copies: ChangeCopiesProvider,
     marker: PartMarker,
     comments: ReviewComments,
     deps: ExtensionDeps,
   ) {
-    this.tree = tree;
-    this.treeView = treeView;
+    this.sideBar = sideBar;
     this.copies = copies;
     this.marker = marker;
     this.comments = comments;
@@ -344,7 +275,7 @@ class ReviewSession {
     // only once they are in.
     let marksRead: Promise<void> = Promise.resolve();
     this.running = true;
-    this.treeView.message = undefined;
+    this.render();
     try {
       const result = await vscode.window.withProgress(
         { location: { viewId: REVIEW_TREE_VIEW }, title: 'Reading the pull request…' },
@@ -367,37 +298,29 @@ class ReviewSession {
       await marksRead;
       if (!current()) return;
       this.running = false;
+      this.render();
       await this.mirrorViewed();
     } catch (error) {
       if (!current()) return;
       this.stage = undefined;
-      this.treeView.message = undefined;
       vscode.window.showErrorMessage(
         error instanceof Error ? error.message : String(error),
       );
     } finally {
       await marksRead;
-      if (current()) this.running = false;
+      if (current() && this.running) {
+        this.running = false;
+        this.render();
+      }
     }
   }
 
   /**
-   * Shows a result in the tree. The first result of a review starts its
-   * pending review, opens the overview and reveals the first section; a
-   * later one updates the tree and the overview in place and keeps the
-   * reviewer's place, reselecting the part that now holds the selected
-   * part's first hunk, with every pending comment kept.
+   * Shows a result in the side bar. The first result of a review starts
+   * its pending review and opens the overview; a later one updates the
+   * side bar and the overview in place, with every pending comment kept.
    */
   private async show(result: ReviewResult, update: boolean, running?: string): Promise<void> {
-    const selected = this.treeView.selection[0];
-    const anchor =
-      update &&
-      selected !== undefined &&
-      !isSection(selected) &&
-      selected.kind !== 'comment' &&
-      selected.part !== undefined
-        ? anchorOf(selected.part)
-        : undefined;
     this.result = result;
     const previous = this.url;
     this.url = result.pullRequest.url;
@@ -414,23 +337,13 @@ class ReviewSession {
       this.mirrorWaiting.clear();
       this.overview.clearAnswers();
       this.opened = undefined;
+      this.storyRead = false;
       if (previous !== result.pullRequest.url) this.onlyChanged = false;
     }
     this.render();
     this.overview.update(result, running);
     this.findings.show(result);
-    if (!update) {
-      this.overview.open({ preserveFocus: true });
-      await this.revealFirstSection();
-      return;
-    }
-    const node = anchor === undefined ? undefined : findAnchor(this.tree.current, anchor);
-    if (node !== undefined) {
-      await this.treeView.reveal(node, { select: true, focus: false }).then(
-        () => undefined,
-        () => undefined,
-      );
-    }
+    if (!update) this.overview.open({ preserveFocus: true });
   }
 
   /** The tree's sections: the pending review gathering above the ranked parts. */
@@ -446,16 +359,30 @@ class ReviewSession {
   }
 
   /**
-   * Shows the tree's sections, the line above them — what changed since
-   * the last look and the stage still running — the badge counting the
-   * parts left to review, and the banner of the part open in the diff.
+   * Shows the session in the side bar — the setup line, the review, the
+   * tree's sections with the line above them, what changed since the last
+   * look and the stage still running, and the badge counting the parts
+   * left to review — and the banner of the part open in the diff.
    */
   private render(): void {
-    this.tree.setSections(this.sections());
     this.showBanner();
-    if (this.result === undefined) return;
-    this.treeView.message = treeMessage(this.result, this.stage, { onlyChangedSinceLastLook: this.onlyChanged });
-    this.treeView.badge = reviewBadge(this.result, this.marks());
+    const marks = this.marks();
+    const message = this.result === undefined ? undefined : treeMessage(this.result, this.stage, { onlyChangedSinceLastLook: this.onlyChanged });
+    const state: SideBarState = {
+      settings: readAgentSettings(),
+      ...(this.result !== undefined ? { result: this.result } : {}),
+      marks,
+      sections: this.sections(),
+      ...(message !== undefined ? { message } : {}),
+      reviewing: this.running,
+      storyRead: this.storyRead,
+    };
+    this.sideBar.update(state, this.result === undefined ? undefined : reviewBadge(this.result, marks));
+  }
+
+  /** Shows the session again, such as after the agent settings changed. */
+  refresh(): void {
+    this.render();
   }
 
   /**
@@ -474,8 +401,9 @@ class ReviewSession {
 
   /**
    * The part a command's argument carries: a banner's reference to one,
-   * found in the result shown by where it starts, or what the tree and
-   * the diff editor pass; see {@link carriedPart}.
+   * found in the result shown by where it starts — as the banner and a
+   * side bar row's context menu carry it — or what the diff editor
+   * passes; see {@link carriedPart}.
    */
   private partOf(arg: unknown): Part | undefined {
     if (!isBannerPartRef(arg)) return carriedPart(arg);
@@ -483,7 +411,7 @@ class ReviewSession {
   }
 
   /**
-   * Toggles the tree between every part and only the parts changed since
+   * Toggles the side bar between every part and only the parts changed since
    * the reviewer's last look; a first look has nothing to filter.
    */
   filterChanged(): void {
@@ -512,11 +440,9 @@ class ReviewSession {
     return same ? this.stored!.marks : NO_MARKS;
   }
 
-  /** Rebuilds the tree's sections after the pending review or the marks changed. */
+  /** Rebuilds the side bar after the pending review or the marks changed. */
   private refreshTree(): void {
-    if (this.result !== undefined) {
-      this.render();
-    }
+    this.render();
   }
 
   /**
@@ -538,20 +464,10 @@ class ReviewSession {
     }
   }
 
-  /** Ticks or clears the reviewed checkboxes the reviewer changed in the tree; see {@link mark}. */
-  async markParts(changes: readonly (readonly [TreeNode, vscode.TreeItemCheckboxState])[]): Promise<void> {
-    await this.mark(
-      changes.flatMap(([node, state]) =>
-        isSection(node) || node.kind === 'comment' || node.part === undefined
-          ? []
-          : [[node.part, state === vscode.TreeItemCheckboxState.Checked] as const],
-      ),
-    );
-  }
-
   /**
-   * Ticks or clears one part's reviewed checkbox from the banner above
-   * its diff, the same way its checkbox in the tree does; see {@link mark}.
+   * Ticks or clears one part's reviewed checkbox, from the side bar or the
+   * banner above its diff, which both carry the part by where it starts;
+   * see {@link mark}.
    */
   async markPart(arg?: unknown, reviewed?: unknown): Promise<void> {
     const part = this.partOf(arg);
@@ -564,14 +480,15 @@ class ReviewSession {
 
   /**
    * Ticks or clears reviewed marks, one part at a time, in the engine's
-   * local store, then shows the marks as they now stand — in the tree and
-   * in the banner — and mirrors the whole files they complete when the
+   * local store, then shows the marks as they now stand — in the side bar
+   * and in the banner — and mirrors the whole files they complete when the
    * setting asks for it. A review started meanwhile keeps its own marks.
    */
   private async mark(changes: readonly (readonly [Part, boolean])[]): Promise<void> {
     const url = this.url;
     if (url === undefined) return;
     const review = this.reviews;
+    this.storyRead = true;
     try {
       const engine = await this.readyEngine();
       for (const [part, reviewed] of changes) {
@@ -638,6 +555,7 @@ class ReviewSession {
       return;
     }
     this.opened = anchorOf(part);
+    this.moveOnFromStory();
     this.showBanner();
     try {
       await openPartInDiffEditor(part, this.result, this.marker);
@@ -648,7 +566,7 @@ class ReviewSession {
     }
   }
 
-  /** Opens the whole change in one multi-file diff, in the tree's ranked order. */
+  /** Opens the whole change in one multi-file diff, in the side bar's ranked order. */
   async openAllParts(): Promise<void> {
     if (this.result === undefined) {
       vscode.window.showWarningMessage(
@@ -658,6 +576,7 @@ class ReviewSession {
     }
     // The whole change is no one part, so no banner stands above it.
     this.opened = undefined;
+    this.moveOnFromStory();
     this.banner.clear();
     try {
       await openWholeChangeInDiffEditor(this.result, this.marker);
@@ -811,7 +730,7 @@ class ReviewSession {
    * part's context menu or the banner above its diff: the engine has the
    * agent the settings pick answer about the part of its latest review,
    * checked before it arrives, and the overview shows the answer with its
-   * stamp. The tree passes its element and the banner its reference, so
+   * stamp. The side bar's context menu and the banner pass a reference, so
    * the part is read out of whatever the argument carries, and found in
    * the result shown by where it starts. Verify this claim
    * checks the text selected on the head side of the part's diff, or else
@@ -826,6 +745,7 @@ class ReviewSession {
       vscode.window.showWarningMessage('Review a pull request first, then ask about its parts.');
       return;
     }
+    this.moveOnFromStory();
     const review = this.reviews;
     const asked = this.result.parts[index]!;
     const claim = ASKS[kind].takesClaim ? await this.claimToVerify(this.result, index) : undefined;
@@ -884,13 +804,22 @@ class ReviewSession {
   openOverview(): void {
     if (!this.overview.open()) {
       vscode.window.showWarningMessage('Review a pull request first, then open its overview.');
+      return;
     }
+    this.moveOnFromStory();
+  }
+
+  /** Ticks the side bar's story step, once the reviewer opened the story or moved on to the parts. */
+  private moveOnFromStory(): void {
+    if (this.storyRead) return;
+    this.storyRead = true;
+    this.render();
   }
 
   /**
    * A part's "why this matters": opens the overview's story at the first
-   * sentence that mentions the part, or says the story does not. The tree
-   * passes its element and the banner its reference, so the part is read
+   * sentence that mentions the part, or says the story does not. The side
+   * bar's context menu and the banner pass a reference, so the part is read
    * out of whatever the argument carries, and found in the result shown
    * by where it starts.
    */
@@ -903,6 +832,7 @@ class ReviewSession {
     const anchor = JSON.stringify(anchorOf(part));
     const index = this.result.parts.findIndex((each) => JSON.stringify(anchorOf(each)) === anchor);
     this.overview.open(index >= 0 ? { focus: index } : {});
+    this.moveOnFromStory();
   }
 
   /** Adds the comment the reviewer wrote in a thread to the pending review. */
@@ -912,8 +842,8 @@ class ReviewSession {
 
   /**
    * Starts a comment on a whole part, gathered in the pending review.
-   * The editor's context menu passes the tree's element and the banner
-   * its reference, so the part is read out of whatever the argument
+   * A side bar row's context menu and the banner pass a reference to
+   * the part, so the part is read out of whatever the argument
    * carries; with nothing usable, or
    * no review to comment on, the reviewer is told what is missing.
    */
@@ -925,6 +855,7 @@ class ReviewSession {
       );
       return;
     }
+    this.moveOnFromStory();
     this.comments.commentOnPart(part);
   }
 
@@ -942,7 +873,7 @@ class ReviewSession {
    * The arguments are the one send without the page: a command carrying
    * a completed review — a genuine submit kind and a body string, the way
    * the real-host test drives the flow, which cannot press the page's own
-   * button. The editor's menus forward other things — the tree title's
+   * button. The editor's menus forward other things — the side bar title's
    * button passes the view's context object — so anything else opens the
    * page.
    */
@@ -1060,7 +991,9 @@ class ReviewSession {
       .getConfiguration('second-look')
       .get<string>('criteriaHeading', '')
       .trim();
-    const reviewed = engine.review(url, token, reviewAgentChoice(readAgentSettings()), onStage, heading);
+    // The budget's limits travel the same way, and the engine meters the
+    // review against them.
+    const reviewed = engine.review(url, token, reviewAgentChoice(readAgentSettings()), onStage, heading, readBudgetLimits());
     onSent(engine);
     return reviewed;
   }
@@ -1079,16 +1012,6 @@ class ReviewSession {
     return engine;
   }
 
-  private async revealFirstSection(): Promise<void> {
-    const first = this.tree.getChildren()[0];
-    if (first !== undefined && isSection(first)) {
-      await this.treeView.reveal(first, { expand: true }).then(
-        () => undefined,
-        () => undefined,
-      );
-    }
-  }
-
   dispose(): void {
     this.engine?.dispose();
     this.page?.dispose();
@@ -1099,8 +1022,8 @@ class ReviewSession {
 }
 
 /**
- * Activates the companion: registers the review command and the review
- * tree, the read-only file system that serves the change's copies, the
+ * Activates the companion: registers the review command and the side bar
+ * (ADR 0008), the read-only file system that serves the change's copies, the
  * commands that open a part — or the whole change, in ranked order —
  * in the editor's multi-file diff, the comment threads the reviewer
  * writes the pending review in, the command that submits it to GitHub,
@@ -1108,8 +1031,8 @@ class ReviewSession {
  * at one part as its "why this matters" — the commands that draft a
  * comment from a finding and add the draft to the pending review or
  * discard it, one command for each ask a part's context menu offers,
- * whose answer the overview shows, the parts' reviewed checkboxes and
- * the command that ticks or clears one from the banner above its diff,
+ * whose answer the overview shows, and the command that ticks or clears
+ * a part's reviewed mark from the side bar or the banner above its diff,
  * the status bar entry that shows the agent, model and effort in use,
  * and the command it runs, which opens the quick pick that changes them.
  * Nothing here runs anything from the workspace — the engine is started
@@ -1118,31 +1041,25 @@ class ReviewSession {
  * setting on, the "Viewed" mark of each file whose every part they
  * reviewed.
  *
- * Returns the review tree's data provider, so a test running in a real
- * editor can read the tree the command filled.
+ * Returns the side bar's provider, so a test running in a real editor can
+ * read the steps and the parts the command filled.
  */
 export function activate(
   context: vscode.ExtensionContext,
   deps: ExtensionDeps = {},
-): vscode.TreeDataProvider<TreeSection | TreePart | TreeComment> {
-  const tree = new ReviewTreeProvider();
-  const treeView = vscode.window.createTreeView(REVIEW_TREE_VIEW, {
-    treeDataProvider: tree,
-    // A part's checkbox is its own: a section has none to tick it with.
-    manageCheckboxStateManually: true,
-  });
+): SideBarProvider {
+  const sideBar = new SideBarProvider({ settings: readAgentSettings(), marks: NO_MARKS, sections: [], reviewing: false, storyRead: false });
   const copies = new ChangeCopiesProvider();
   const marker = new PartMarker();
   const comments = new ReviewComments();
-  const session = new ReviewSession(tree, treeView, copies, marker, comments, deps);
+  const session = new ReviewSession(sideBar, copies, marker, comments, deps);
   const agentStatusBar = new AgentStatusBar(deps.env);
   agentStatusBar.refresh();
   // The untested-combination warning (issue 3): once for the settings the
   // reviewer arrives with, then whenever they choose an agent, model or effort.
   warnUntestedModelChoice();
   context.subscriptions.push(
-    treeView,
-    treeView.onDidChangeCheckboxState((event) => void session.markParts(event.items)),
+    vscode.window.registerWebviewViewProvider(REVIEW_TREE_VIEW, sideBar),
     marker,
     comments,
     { dispose: () => session.dispose() },
@@ -1154,6 +1071,7 @@ export function activate(
         change.affectsConfiguration('second-look.agentEffort')
       ) {
         warnUntestedModelChoice();
+        session.refresh();
       }
     }),
     vscode.workspace.registerFileSystemProvider(CHANGE_SCHEME, copies, {
@@ -1200,7 +1118,7 @@ export function activate(
     vscode.commands.registerCommand(MARK_REVIEWED_COMMAND, (part?: unknown, reviewed?: unknown) => session.markPart(part, reviewed)),
     vscode.commands.registerCommand(CHOOSE_AGENT_COMMAND, () => chooseAgent()),
   );
-  return tree;
+  return sideBar;
 }
 
 /** Runs at shutdown; the engine stops through the subscriptions activate recorded. */

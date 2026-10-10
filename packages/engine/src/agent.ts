@@ -30,6 +30,7 @@
  * `concurrency` at a time, each under its own timeout, keeping whatever
  * finished when another task times out.
  */
+import { countAgentRun, type BudgetMeter } from './budget.js';
 import { validateJson, type JsonSchema } from './json-schema.js';
 
 /** What a probe learned about the installed agent. */
@@ -210,6 +211,8 @@ export interface AgentSettings {
    * stamped on every result; empty or absent stamps nothing.
    */
   account?: string;
+  /** The review's budget meter, which counts every run started, a retry included; absent counts nothing. */
+  budget?: BudgetMeter;
 }
 
 export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
@@ -315,6 +318,7 @@ async function runTask(
       attempt === 1
         ? task.prompt
         : `${task.prompt}\n\n${RETRY_NOTE}\n- ${problems.join('\n- ')}\nAnswer again with only the JSON value.`;
+    if (settings.budget) countAgentRun(settings.budget);
     const outcome = await adapter.run({
       root: task.root,
       instructions: task.instructions,

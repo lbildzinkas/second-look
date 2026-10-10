@@ -800,6 +800,23 @@ function isDocLinks(value: unknown): boolean {
   return true;
 }
 
+/** A review's budget: its limits, each 0 for none, and its use so far, as counts and sizes of 0 or more. */
+function isBudget(value: unknown): boolean {
+  if (!isRecord(value) || !isRecord(value['limits']) || !isRecord(value['used'])) return false;
+  const { limits, used } = value;
+  const mib = limits['downloadMiB'];
+  return (
+    isNumber(limits['agentRuns']) &&
+    isNumber(limits['filesFetched']) &&
+    typeof mib === 'number' &&
+    Number.isFinite(mib) &&
+    mib >= 0 &&
+    isNumber(used['agentRuns']) &&
+    isNumber(used['filesFetched']) &&
+    isNumber(used['downloadBytes'])
+  );
+}
+
 /**
  * Checks that a value read over the protocol is a review result of the
  * version this extension understands. The engine and the extension share
@@ -824,6 +841,7 @@ export function isReviewResult(value: unknown): value is ReviewResult {
   if (value['criteria'] !== undefined && !isCriteria(value['criteria'])) return false;
   if (value['sinceLastLook'] !== undefined && !isSinceLastLook(value['sinceLastLook'])) return false;
   if (value['docLinks'] !== undefined && !isDocLinks(value['docLinks'])) return false;
+  if (value['budget'] !== undefined && !isBudget(value['budget'])) return false;
   const parts = value['parts'];
   if (!Array.isArray(parts) || !parts.every(isPart)) return false;
   const story = value['story'];

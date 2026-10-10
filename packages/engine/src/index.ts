@@ -24,6 +24,7 @@ export * from './symbols.js';
 export * from './json-schema.js';
 export * from './untrusted.js';
 export * from './agent.js';
+export * from './budget.js';
 export * from './read-guard.js';
 export * from './pi-guard.js';
 export * from './claude-guard-check.js';

@@ -1,10 +1,11 @@
 import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { budgetMeter } from '../src/budget.js';
 import { removeCopy } from '../src/cache.js';
 import { REVIEW_RESULT_VERSION } from '../src/protocol.js';
 import type { Part } from '../src/protocol.js';
-import { fetchChange, reviewChange, reviewPullRequest } from '../src/review.js';
+import { fetchChange, reviewChange, reviewPullRequest, type ReviewStage } from '../src/review.js';
 import {
   PR_7_URL,
   PR_8_URL,
@@ -12,6 +13,7 @@ import {
   fixtureFetch,
   pull7,
   pull8,
+  scriptedAgent,
   temporaryCacheDir,
 } from './helpers.js';
 
@@ -34,7 +36,7 @@ describe('reviewPullRequest', () => {
     });
 
     expect(result.version).toBe(REVIEW_RESULT_VERSION);
-    expect(result.version).toBe(18);
+    expect(result.version).toBe(19);
     expect(result.pullRequest.number).toBe(42);
     expect(result.pullRequest.description).toHaveLength(8082);
     // The head commit's SHA, where the noise attributes are read.
@@ -409,5 +411,73 @@ describe('ranking in a review', () => {
     // web/checkout.ts calls cart.total(); app/dedent.py reads order.total,
     // which a name-based count cannot tell apart.
     expect(cart.signals!.references).toEqual({ basis: 'name-based', names: ['total'], files: 2 });
+  });
+});
+
+describe('reviewPullRequest on a budget', () => {
+  const grouping = JSON.stringify({
+    parts: [
+      { name: 'fresh, with its test', hunks: ['h2', 'h7'] },
+      { name: 'the rest', hunks: ['h1', 'h3', 'h4', 'h5', 'h6'] },
+    ],
+  });
+
+  /** Reviews pull request 7 with the agent, metered when a meter is given, with the stages it announced. */
+  async function review(meter?: ReturnType<typeof budgetMeter>, cache = cacheDir) {
+    const transport = fixtureFetch(pull7());
+    const agent = scriptedAgent([grouping]);
+    const stages: ReviewStage[] = [];
+    const result = await reviewPullRequest(PR_7_URL, {
+      token: 'test-token',
+      fetch: transport.fetch,
+      cacheDir: cache,
+      ...(meter ? { budget: meter } : {}),
+      agentStage: { adapter: agent, onStage: (stage) => stages.push(stage) },
+    });
+    return { result, stages, agent, transport };
+  }
+
+  it('counts every agent run and every download with its bytes, on the result and each stage', async () => {
+    const meter = budgetMeter({ agentRuns: 2, filesFetched: 3, downloadMiB: 0.5 });
+    const { result, stages, agent, transport } = await review(meter);
+
+    expect(result.budget!.limits).toEqual({ agentRuns: 2, filesFetched: 3, downloadMiB: 0.5 });
+    // Every attempt counts, the retries included, and every GitHub answer
+    // and archive counts as a file.
+    expect(result.budget!.used.agentRuns).toBe(agent.requests.length);
+    expect(result.budget!.used.filesFetched).toBe(transport.requests.length);
+    expect(result.budget!.used.downloadBytes).toBeGreaterThan(0);
+    // Each stage carries the use so far, which only grows.
+    expect(stages.length).toBeGreaterThan(1);
+    const runs = stages.map((stage) => stage.result.budget!.used.agentRuns);
+    expect(runs[0]).toBe(0);
+    expect(runs).toEqual([...runs].sort((a, b) => a - b));
+    expect(runs.at(-1)).toBeLessThan(agent.requests.length);
+    // Nothing is refused yet: the review ran past every limit.
+    expect(agent.requests.length).toBeGreaterThan(2);
+    expect(transport.requests.length).toBeGreaterThan(3);
+  });
+
+  it('leaves the review as it was with every limit 0, apart from the budget', async () => {
+    // Each review downloads into a cache of its own, so neither reuses the other's copies.
+    const otherCache = temporaryCacheDir();
+    const metered = await review(budgetMeter());
+    const plain = await review(undefined, otherCache);
+    await removeCopy(otherCache);
+
+    expect(plain.result).not.toHaveProperty('budget');
+    expect(plain.stages.every((stage) => stage.result.budget === undefined)).toBe(true);
+    const { budget, parseTimeMs: _metered, copies: meteredCopies, ...meteredRest } = metered.result;
+    const { parseTimeMs: _plain, copies: plainCopies, ...plainRest } = plain.result;
+    expect(budget!.limits).toEqual({ agentRuns: 0, filesFetched: 0, downloadMiB: 0 });
+    expect(meteredRest).toEqual(plainRest);
+    expect(meteredCopies.head.path.replace(cacheDir, '')).toBe(plainCopies.head.path.replace(otherCache, ''));
+    expect({ ...meteredCopies.base, path: '' }).toEqual({ ...plainCopies.base, path: '' });
+    expect(metered.stages.map((stage) => stage.running)).toEqual(plain.stages.map((stage) => stage.running));
+    // The same agent runs, each with a fresh untrusted-block id of its own.
+    expect(metered.agent.requests.map((run) => run.instructions)).toEqual(plain.agent.requests.map((run) => run.instructions));
+    // The same downloads, in whatever order the copies race in.
+    const urls = (requests: { url: string }[]) => requests.map((request) => request.url).sort();
+    expect(urls(metered.transport.requests)).toEqual(urls(plain.transport.requests));
   });
 });

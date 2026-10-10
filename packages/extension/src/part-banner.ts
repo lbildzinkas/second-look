@@ -40,7 +40,7 @@ export function isBannerPartRef(value: unknown): value is BannerPartRef {
 
 /**
  * The only commands the banner's links run: the ones the part's context
- * menu offers, and the one its checkbox in the tree runs through.
+ * menu offers, and the one its checkbox in the side bar runs through.
  */
 export const BANNER_COMMANDS: readonly string[] = [
   MARK_REVIEWED_COMMAND,
@@ -53,11 +53,11 @@ export const BANNER_COMMANDS: readonly string[] = [
  * The banner's body, as Markdown in which only the companion's own words
  * are markup, in the order the reviewing surface gives it: the part's
  * importance — or its noise label, or that it is not ranked yet — where
- * it sits in the tree's reading order, and its reviewed checkbox; then
+ * it sits in the side bar's reading order, and its reviewed checkbox; then
  * the importance's one-line reason, or the noise label's blind spot; the
  * signals the reason cites, with which ranking is shown; and the asks,
  * with the rest of what the part's context menu offers. Every link runs
- * the same command the context menu or the tree checkbox does, carrying
+ * the same command the context menu or the side bar's checkbox does, carrying
  * the part by where it starts. The reason, the signals and the labels
  * came from the engine and the agent, so each is escaped.
  */

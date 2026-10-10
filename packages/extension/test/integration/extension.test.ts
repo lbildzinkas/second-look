@@ -33,15 +33,16 @@ import { SEND_REVIEW_VIEW_TYPE } from '../../src/send-page.js';
 import { claimsResult, criteriaResult, docLinksResult, fetchedResult, judgedResult, mixedResult, offeredResult, storyResult, unexplainedResult } from '../results.js';
 import { changePieces, markedPart } from '@second-look/engine';
 import { OVERVIEW_VIEW_TYPE } from '../../src/overview.js';
+import type { SideBarProvider } from '../../src/side-bar/provider.js';
+import { anchorOf, type TreePart } from '../../src/tree.js';
 import {
   Position,
   Range,
-  TreeItemCheckboxState,
   stub,
   stubContext,
   workspace,
-  type StubTreeView,
   type StubWebviewPanel,
+  type StubWebviewView,
 } from '../vscode-stub.js';
 
 const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.meta.url));
@@ -110,8 +111,8 @@ function registeredCommands(): Map<string, (...args: unknown[]) => unknown> {
   return new Map(stub.commands.map((command) => [command.id, command.handler]));
 }
 
-/** Activates the extension against a fake engine and returns its tree view. */
-async function reviewWithFakeEngine(options: FakeEngineOptions): Promise<StubTreeView> {
+/** Activates the extension against a fake engine and returns its side bar. */
+async function reviewWithFakeEngine(options: FakeEngineOptions): Promise<SideBarView> {
   activate(stubContext() as unknown as vscode.ExtensionContext, {
     spawnEngine: () => fakeEngine(options),
   });
@@ -142,65 +143,83 @@ async function reviewWithFakeEngine(options: FakeEngineOptions): Promise<StubTre
   stub.session = { accessToken: TOKEN };
   await registeredCommands().get(REVIEW_COMMAND)!() as Promise<void>;
 
-  expect(stub.treeViews).toHaveLength(1);
-  return stub.treeViews[0]!;
+  return sideBar();
 }
 
-interface TestProvider {
-  getChildren(node?: unknown): unknown[];
-  getTreeItem(node: unknown): {
-    label?: string;
-    description?: string;
-    tooltip?: string;
-    contextValue?: string;
-    command?: { command: string; title: string; arguments?: unknown[] };
+/** The side bar the activation registered: its provider, its page, the line above the parts and the badge. */
+interface SideBarView {
+  provider: SideBarProvider;
+  page: StubWebviewView;
+  readonly message: string | undefined;
+  readonly badge: { value: number; tooltip: string } | undefined;
+}
+
+/** The side bar, resolved the way opening the Second Look container does. */
+function sideBar(): SideBarView {
+  expect(stub.webviewViewProviders.map((entry) => entry.id)).toEqual([REVIEW_TREE_VIEW]);
+  const entry = stub.webviewViewProviders[0]!;
+  const page = entry.views.at(-1) ?? entry.resolve();
+  const provider = entry.provider as unknown as SideBarProvider;
+  return {
+    provider,
+    page,
+    get message() {
+      return provider.current.message;
+    },
+    get badge() {
+      return page.badge;
+    },
   };
 }
 
-function providerOf(view: StubTreeView): TestProvider {
-  return view.provider as TestProvider;
+/** The tree's sections and parts as the side bar draws them, the shape the native tree once rendered. */
+function renderedTree(view: SideBarView): { label: string; description?: string; tooltip?: string; contextValue?: string }[] {
+  return view.provider.current.sections.flatMap((section) => [
+    { label: section.label, tooltip: section.tooltip },
+    ...section.parts.map((node) => ({
+      label: node.label,
+      ...(node.description !== undefined ? { description: node.description } : {}),
+      ...(node.tooltip !== undefined ? { tooltip: node.tooltip } : {}),
+      contextValue: node.kind,
+    })),
+  ]);
 }
 
-/** The tree's nodes, as the view renders them. */
-function renderedTree(view: StubTreeView): { label: string; description?: string; tooltip?: string; contextValue?: string }[] {
-  const provider = providerOf(view);
-  const rendered: { label: string; description?: string; tooltip?: string; contextValue?: string }[] = [];
-  for (const node of provider.getChildren()) {
-    const item = provider.getTreeItem(node);
-    rendered.push({
-      label: item.label ?? '',
-      description: item.description,
-      tooltip: item.tooltip,
-      contextValue: item.contextValue,
-    });
-    for (const child of provider.getChildren(node)) {
-      const childItem = provider.getTreeItem(child);
-      rendered.push({
-        label: childItem.label ?? '',
-        description: childItem.description,
-        tooltip: childItem.tooltip,
-        contextValue: childItem.contextValue,
-      });
-    }
-  }
-  return rendered;
+/** The side bar's row for the part with this label. */
+function sideBarPart(view: SideBarView, label: string): TreePart | undefined {
+  return view.provider.current.sections
+    .flatMap((section) => section.parts)
+    .find((node): node is TreePart => node.kind !== 'comment' && node.label === label);
 }
 
-/** The tree node with this label, the argument clicking it passes on. */
+/** What pressing a part's row in the side bar runs: the open-part command, with the part. */
 function partClick(
-  view: StubTreeView,
+  view: SideBarView,
   label: string,
 ): { command: string; arguments: unknown[] } | undefined {
-  const provider = providerOf(view);
-  for (const node of provider.getChildren()) {
-    for (const child of provider.getChildren(node)) {
-      const item = provider.getTreeItem(child);
-      if (item.label === label && item.command !== undefined) {
-        return { command: item.command.command, arguments: item.command.arguments ?? [] };
-      }
-    }
-  }
-  return undefined;
+  const part = sideBarPart(view, label)?.part;
+  return part === undefined ? undefined : { command: OPEN_PART_COMMAND, arguments: [part] };
+}
+
+/** Delivers a press as the side bar's script reports it, and waits for the commands it ran. */
+async function press(view: SideBarView, message: unknown): Promise<void> {
+  const before = stub.commandRuns.length;
+  view.page.webview.receive(message);
+  await Promise.all(stub.commandRuns.slice(before));
+}
+
+/** Ticks or clears a part's reviewed checkbox in the side bar. */
+async function tick(view: SideBarView, label: string, reviewed: boolean): Promise<void> {
+  const part = sideBarPart(view, label)?.part;
+  expect(part).toBeDefined();
+  await press(view, { type: 'mark', anchor: anchorOf(part!), reviewed });
+}
+
+/** What a part row's context menu passes its command: the webview's context, carrying the part by where it starts. */
+function partNode(view: SideBarView, label: string): unknown {
+  const part = sideBarPart(view, label)?.part;
+  expect(part).toBeDefined();
+  return { webview: REVIEW_TREE_VIEW, webviewSection: 'part', anchor: anchorOf(part!), preventDefaultContextMenuItems: true };
 }
 
 /** An editor the double can show, recording what the extension did to it. */
@@ -233,7 +252,7 @@ beforeEach(() => {
 });
 
 describe('activating the companion', () => {
-  it('registers the review commands and the review tree, and serves the change read-only', () => {
+  it('registers the review commands and the side bar, and serves the change read-only', () => {
     activate(stubContext() as unknown as vscode.ExtensionContext, {
       spawnEngine: () => {
         throw new Error('no review ran');
@@ -262,20 +281,32 @@ describe('activating the companion', () => {
       MARK_REVIEWED_COMMAND,
       CHOOSE_AGENT_COMMAND,
     ]);
-    expect(stub.treeViews.map((view) => view.id)).toEqual([REVIEW_TREE_VIEW]);
+    expect(stub.treeViews).toEqual([]);
+    expect(stub.webviewViewProviders.map((entry) => entry.id)).toEqual([REVIEW_TREE_VIEW]);
     expect(stub.fileSystemProviders.map((entry) => entry.scheme)).toEqual(['second-look-change']);
     expect(stub.fileSystemProviders[0]!.options?.isReadonly).toBeInstanceOf(Object);
     expect(stub.commentControllers.map((controller) => controller.id)).toEqual(['second-look', 'second-look.findings', 'second-look.part']);
   });
 
-  it('leaves the tree empty before any review ran, so the view shows its welcome button', () => {
+  it("shows the eight steps before any review ran, step 2's card open on its Review a pull request button", async () => {
     activate(stubContext() as unknown as vscode.ExtensionContext, {
       spawnEngine: () => {
         throw new Error('no review ran');
       },
     });
 
-    expect(providerOf(stub.treeViews[0]!).getChildren()).toEqual([]);
+    const view = sideBar();
+    expect(renderedTree(view)).toEqual([]);
+    expect(view.badge).toBeUndefined();
+    expect(view.page.webview.options).toEqual({ enableScripts: true, enableCommandUris: false, localResourceRoots: [] });
+    expect(view.page.webview.html.match(/<li class="step /g)).toHaveLength(8);
+    expect(view.page.webview.html).toContain('<li class="step current" id="step-2" aria-current="step">');
+
+    // The button runs the existing review command, which asks for the URL.
+    stub.inputBoxResult = undefined;
+    await press(view, { type: 'command', command: 'review' });
+    expect(stub.executedCommands).toEqual([{ id: REVIEW_COMMAND, args: [] }]);
+    expect(stub.inputBoxes).toHaveLength(1);
   });
 });
 
@@ -339,7 +370,6 @@ describe('the review command, end to end against a fake engine', () => {
         contextValue: 'noise',
       },
     ]);
-    expect(view.revealed).toHaveLength(1);
     expect(stub.errorMessages).toEqual([]);
 
     // The engine, a separate process, got the handshake first and then
@@ -355,7 +385,7 @@ describe('the review command, end to end against a fake engine', () => {
     });
   });
 
-  it('opens the Second Look side bar when the review starts, before the tree fills', async () => {
+  it('opens the Second Look side bar when the review starts, with step 2 running until the parts fill it', async () => {
     activate(stubContext() as unknown as vscode.ExtensionContext, {
       spawnEngine: () => fakeEngine({ result: mixedResult(), answerDelayMs: 300, logName: 'open-container.log' }),
     });
@@ -363,18 +393,20 @@ describe('the review command, end to end against a fake engine', () => {
     stub.session = { accessToken: TOKEN };
 
     const reviewed = registeredCommands().get(REVIEW_COMMAND)!() as Promise<void>;
-    const view = stub.treeViews[0]!;
+    const view = sideBar();
 
-    // The side bar opens with the review itself, so the tree is visible
-    // before its first section is revealed into it.
+    // The side bar opens with the review itself, so step 2 shows the
+    // review running before its parts arrive.
     await until('the Second Look side bar to open', () =>
       stub.executedCommands.some((command) => command.id === OPEN_REVIEW_CONTAINER_COMMAND),
     );
-    expect(view.revealed).toEqual([]);
+    await until('the review to run', () => view.provider.current.reviewing);
+    expect(renderedTree(view)).toEqual([]);
 
     await reviewed;
     expect(stub.executedCommands).toEqual([{ id: OPEN_REVIEW_CONTAINER_COMMAND, args: [] }]);
-    expect(view.revealed).toHaveLength(1);
+    expect(view.provider.current.reviewing).toBe(false);
+    expect(renderedTree(view)[0]).toEqual({ label: 'Must review', tooltip: 'The parts to read first.' });
   });
 
   it('asks for the URL when the tree title button forwards the view context', async () => {
@@ -394,7 +426,7 @@ describe('the review command, end to end against a fake engine', () => {
     }) as Promise<void>;
 
     expect(stub.inputBoxes).toHaveLength(1);
-    expect(renderedTree(stub.treeViews[0]!)[0]).toEqual({ label: 'Must review', tooltip: 'The parts to read first.' });
+    expect(renderedTree(sideBar())[0]).toEqual({ label: 'Must review', tooltip: 'The parts to read first.' });
     expect(stub.executedCommands).toEqual([{ id: OPEN_REVIEW_CONTAINER_COMMAND, args: [] }]);
     expect(stub.errorMessages).toEqual([]);
   });
@@ -416,12 +448,15 @@ describe('the review command, end to end against a fake engine', () => {
     );
   });
 
-  it('carries the agent, model, effort and account the settings choose with the review request', async () => {
+  it("carries the agent, model, effort and account the settings choose, and the budget's limits, with the review request", async () => {
     stub.configuration = {
       'second-look.agent': 'claude-code',
       'second-look.agentModel': ' sonnet ',
       'second-look.agentEffort': ' high ',
       'second-look.agentAccount': ' Claude Max (work) ',
+      'second-look.budget.agentRuns': 30,
+      'second-look.budget.filesFetched': 500,
+      'second-look.budget.downloadMiB': 256,
     };
     await reviewWithFakeEngine({ result: mixedResult(), logName: 'agent-settings.log' });
 
@@ -432,11 +467,13 @@ describe('the review command, end to end against a fake engine', () => {
     const review = requests.find((request) => request.method === 'review');
     // The settings' choice — trimmed as read — travels with the request,
     // so the engine runs every agent pass on the chosen agent, model,
-    // effort and account without restarting.
+    // effort and account without restarting, and meters the review
+    // against the budget's limits.
     expect(review!.params).toEqual({
       url: PR_URL,
       token: TOKEN,
       agent: { agent: 'claude-code', model: 'sonnet', effort: 'high', account: 'Claude Max (work)' },
+      budget: { agentRuns: 30, filesFetched: 500, downloadMiB: 256 },
     });
   });
 
@@ -462,7 +499,7 @@ describe('the review command, end to end against a fake engine', () => {
     expect(stub.sessionRequests).toEqual([]);
     expect(stub.progressTitles).toEqual([]);
     expect(stub.executedCommands).toEqual([]);
-    expect(renderedTree(stub.treeViews[0]!)).toEqual([]);
+    expect(renderedTree(sideBar())).toEqual([]);
   });
 
   it('asks again later when the reviewer is not signed in', async () => {
@@ -501,7 +538,7 @@ async function until(what: string, condition: () => boolean): Promise<void> {
 }
 
 describe('a review arriving in stages', () => {
-  it('shows the plain tree first, names the running stage, then regroups in place keeping the selected part', async () => {
+  it('shows the plain parts first, names the running stage, then regroups in place', async () => {
     const plain = mixedResult();
     const [retry, settings, ...rest] = plain.parts;
     const { name: _name, signals: _signals, rank: _rank, ...settingsFile } = settings!;
@@ -534,20 +571,13 @@ describe('a review arriving in stages', () => {
     stub.inputBoxResult = PR_URL;
     stub.session = { accessToken: TOKEN };
     const reviewed = registeredCommands().get(REVIEW_COMMAND)!() as Promise<void>;
-    const view = stub.treeViews[0]!;
+    const view = sideBar();
 
     // The plain tree shows before any agent result, with the stage named.
     await until('the plain tree', () => partClick(view, 'src/settings.ts') !== undefined);
     expect(view.message).toBe('Plain parts shown; grouping related hunks with pi…');
-    expect(view.revealed).toHaveLength(1);
-
-    // The reviewer is on the settings part when the agent's parts arrive.
-    const provider = providerOf(view);
-    const settingsNode = provider
-      .getChildren()
-      .flatMap((section) => provider.getChildren(section))
-      .find((node) => provider.getTreeItem(node).label === 'src/settings.ts');
-    view.selection = [settingsNode];
+    // The steps whose results are still arriving show as running.
+    expect(view.page.webview.posted.at(-1)).toMatchObject({ type: 'render' });
     await reviewed;
 
     expect(renderedTree(view).map((node) => node.label)).toContain('send, with the retry settings it reads');
@@ -555,10 +585,6 @@ describe('a review arriving in stages', () => {
     expect(view.message).toBe(
       'Grouped by pi · zai/glm-4.6 · default effort (grouping prompt v1): every hunk was placed by the agent.',
     );
-    // The part now holding the settings change is selected, without taking focus.
-    expect(view.revealed).toHaveLength(2);
-    expect(view.revealed[1]!.options).toEqual({ select: true, focus: false });
-    expect(provider.getTreeItem(view.selection[0]).label).toBe('send, with the retry settings it reads');
     expect(stub.errorMessages).toEqual([]);
 
     // Clicking the regrouped part opens both of its files.
@@ -611,7 +637,7 @@ describe('the agent ranking arriving', () => {
     stub.inputBoxResult = PR_URL;
     stub.session = { accessToken: TOKEN };
     const reviewed = registeredCommands().get(REVIEW_COMMAND)!() as Promise<void>;
-    const view = stub.treeViews[0]!;
+    const view = sideBar();
 
     await until('the plain tree', () => partClick(view, 'src/settings.ts') !== undefined);
     expect(view.message).toBe('Plain parts shown; ranking the parts with pi…');
@@ -645,7 +671,7 @@ describe('reading a part in the multi-file diff', () => {
   const head = (path: string) => changeUri('head', copies().head.commit, path);
 
   /** Clicks the tree row for a part, the way selecting it does. */
-  async function clickPart(view: StubTreeView, label: string): Promise<void> {
+  async function clickPart(view: SideBarView, label: string): Promise<void> {
     const click = partClick(view, label);
     expect(click?.command).toBe(OPEN_PART_COMMAND);
     await registeredCommands().get(OPEN_PART_COMMAND)!(...(click?.arguments ?? [])) as Promise<void>;
@@ -787,15 +813,6 @@ describe('the overview', () => {
     return panels[0]!;
   }
 
-  /** The tree's node for a part, the element its inline action passes. */
-  function partNode(view: StubTreeView, label: string): unknown {
-    const provider = providerOf(view);
-    return provider
-      .getChildren()
-      .flatMap((section) => provider.getChildren(section))
-      .find((node) => provider.getTreeItem(node).label === label);
-  }
-
   it('opens with the review: the story linking its parts, and the description with its hidden comment flagged', async () => {
     await reviewWithFakeEngine({ result: storyResult(), logName: 'overview.log' });
 
@@ -806,7 +823,7 @@ describe('the overview', () => {
     expect(page.webview.html).not.toMatch(/<img|<a[\s>]/);
   });
 
-  it("opens the story at a part from the part's why this matters in the tree", async () => {
+  it("opens the story at a part from the part's why this matters in the side bar", async () => {
     const view = await reviewWithFakeEngine({ result: storyResult(), logName: 'why.log' });
 
     await registeredCommands().get(WHY_THIS_MATTERS_COMMAND)!(partNode(view, 'src/settings.ts'));
@@ -897,7 +914,7 @@ describe('the overview', () => {
     expect(html).toContain('<li class="answer focus"><div class="where"><b>Verify this claim</b> · ');
     // The review shown now holds the judged claim, as the engine's latest review does.
     expect(html).toContain('<div class="why">the change itself: A 404 is retried like any other status.</div>');
-    expect(html).toContain('<span class="verdict finding">refuted</span>');
+    expect(html).toContain('<span class="pl tone-bad"><span class="ic" aria-hidden="true">✕</span>refuted</span>');
   });
 
   it("verifies the text selected on the head side of the part's diff, with no claim to pick", async () => {
@@ -943,7 +960,7 @@ describe('the overview', () => {
         '<span class="hidden" data-kind="html comment"><span class="flag">hidden HTML comment</span>',
     );
     expect(page.webview.html).toContain('<button type="button" class="pt issue" data-issue="0">#30 in example-org/example-repo</button>');
-    expect(page.webview.html).toContain('<span class="verdict">not checked</span>');
+    expect(page.webview.html).toContain('<span class="pl tone-mut"><span class="ic" aria-hidden="true">○</span>not checked</span>');
 
     page.webview.receive({ type: 'openIssue', issue: 1 });
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -980,7 +997,7 @@ describe('the overview', () => {
       [head('src/retry.py').toString(), 8, 'Unverifiable claim'],
       [head('src/settings.ts').toString(), undefined, 'Unverifiable claim'],
     ]);
-    expect(overview().webview.html).toContain('<span class="verdict finding">refuted</span>');
+    expect(overview().webview.html).toContain('<span class="pl tone-bad"><span class="ic" aria-hidden="true">✕</span>refuted</span>');
   });
 
   it("fetches a finding's library only when pressed, then shows the claim judged against it and opens the cited library file read-only", async () => {
@@ -1384,17 +1401,12 @@ describe('the pending review and sending it', () => {
     expect(renderedTree(view)[0]).toEqual({ label: 'Must review', tooltip: 'The parts to read first.' });
   });
 
-  it('starts a part comment from the context menu, which passes the tree element', async () => {
+  it("starts a part comment from a side bar row's context menu, which passes the webview's context", async () => {
     const view = await reviewWithFakeEngine({ result: mixedResult(), logName: 'context-part.log' });
 
-    // The view's context menu hands the command the tree's element — the
-    // node carrying the part — rather than the part itself.
-    const provider = providerOf(view);
-    const node = provider
-      .getChildren()
-      .flatMap((section) => provider.getChildren(section))
-      .find((child) => provider.getTreeItem(child).label === 'src/retry.py');
-    await registeredCommands().get(COMMENT_ON_PART_COMMAND)!(node);
+    // The row's context menu hands the command the webview's context —
+    // carrying the part by where it starts — rather than the part itself.
+    await registeredCommands().get(COMMENT_ON_PART_COMMAND)!(partNode(view, 'src/retry.py'));
 
     const thread = stub.commentControllers[0]!.threads.at(-1)!;
     expect(thread.uri.toString()).toBe(head('src/retry.py').toString());
@@ -1678,15 +1690,12 @@ describe('the pending review and sending it', () => {
 });
 
 describe('reviewed marks', () => {
-  /** The tree's parts, each with the item the view renders for it. */
-  function partNodes(view: StubTreeView): { node: unknown; label?: string; checkboxState?: number }[] {
-    const provider = providerOf(view);
-    return provider
-      .getChildren()
-      .flatMap((section) => provider.getChildren(section))
-      .map((node) => ({ node, item: provider.getTreeItem(node) as ReturnType<TestProvider['getTreeItem']> & { checkboxState?: number } }))
-      .filter(({ item }) => item.contextValue === 'part' || item.contextValue === 'noise')
-      .map(({ node, item }) => ({ node, label: item.label, checkboxState: item.checkboxState }));
+  /** The side bar's parts, each with whether its checkbox is ticked. */
+  function partNodes(view: SideBarView): { label: string; checked: boolean }[] {
+    return view.provider.current.sections
+      .flatMap((section) => section.parts)
+      .filter((node): node is TreePart => node.kind !== 'comment')
+      .map((node) => ({ label: node.label, checked: node.reviewed === 'reviewed' }));
   }
 
   function loggedRequests(logName: string): { method: string; params?: Record<string, unknown> }[] {
@@ -1700,15 +1709,17 @@ describe('reviewed marks', () => {
     const view = await reviewWithFakeEngine({ result: mixedResult(), logName: 'marks.log' });
     const parts = partNodes(view);
 
-    expect(view.options).toMatchObject({ manageCheckboxStateManually: true });
     expect(parts).toHaveLength(7);
-    expect(parts.every((each) => each.checkboxState === TreeItemCheckboxState.Unchecked)).toBe(true);
+    expect(parts.every((each) => !each.checked)).toBe(true);
     expect(view.badge).toEqual({ value: 7, tooltip: '7 of 7 parts left to review' });
 
-    view.fireCheckboxChange([[parts[0]!.node, TreeItemCheckboxState.Checked]]);
+    // Ticking the checkbox runs the mark-reviewed command, as the banner's does.
+    await tick(view, 'src/retry.py', true);
     await until('the mark to be kept', () => view.badge?.value === 6);
 
-    expect(partNodes(view)[0]).toMatchObject({ label: 'src/retry.py', checkboxState: TreeItemCheckboxState.Checked });
+    expect(stub.executedCommands.at(-1)).toEqual({ id: MARK_REVIEWED_COMMAND, args: [{ anchor: anchorOf(mixedResult().parts[0]!) }, true] });
+    expect(partNodes(view)[0]).toEqual({ label: 'src/retry.py', checked: true });
+    expect(view.page.webview.posted.at(-1)).toEqual({ type: 'render', body: expect.stringContaining('aria-label="Reviewed: src/retry.py" checked>') });
     const marks = loggedRequests('marks.log').filter((request) => request.method === 'markReviewed');
     expect(marks.map((request) => request.params)).toEqual([
       { url: PR_URL, part: { name: markedPart(mixedResult().parts[0]!).name, pieces: [expect.stringMatching(/^[0-9a-f]{64}$/)] }, reviewed: true },
@@ -1717,9 +1728,9 @@ describe('reviewed marks', () => {
     expect(loggedRequests('marks.log').map((request) => request.method)).not.toContain('markViewed');
     expect(stub.sessionRequests).toHaveLength(1);
 
-    view.fireCheckboxChange([[partNodes(view)[0]!.node, TreeItemCheckboxState.Unchecked]]);
+    await tick(view, 'src/retry.py', false);
     await until('the mark to be cleared', () => view.badge?.value === 7);
-    expect(partNodes(view)[0]!.checkboxState).toBe(TreeItemCheckboxState.Unchecked);
+    expect(partNodes(view)[0]!.checked).toBe(false);
     expect(stub.errorMessages).toEqual([]);
   });
 
@@ -1727,23 +1738,90 @@ describe('reviewed marks', () => {
     stub.configuration['second-look.mirrorViewedToGitHub'] = true;
     const view = await reviewWithFakeEngine({ result: mixedResult(), logName: 'mirror.log' });
 
-    view.fireCheckboxChange([[partNodes(view)[0]!.node, TreeItemCheckboxState.Checked]]);
+    await tick(view, 'src/retry.py', true);
     await until('the file to be mirrored', () => loggedRequests('mirror.log').some((request) => request.method === 'markViewed'));
 
     const viewed = loggedRequests('mirror.log').filter((request) => request.method === 'markViewed');
     expect(viewed.map((request) => request.params)).toEqual([{ url: PR_URL, token: TOKEN, paths: ['src/retry.py'] }]);
     expect(stub.sessionRequests.at(-1)).toEqual({ id: 'github', scopes: ['repo'], createIfNone: false });
 
-    view.fireCheckboxChange([[partNodes(view)[0]!.node, TreeItemCheckboxState.Unchecked]]);
+    await tick(view, 'src/retry.py', false);
     await until('the mark to be cleared', () => view.badge?.value === 7);
     expect(loggedRequests('mirror.log').filter((request) => request.method === 'markViewed')).toHaveLength(1);
     expect(stub.errorMessages).toEqual([]);
   });
 });
 
+describe('the side bar', () => {
+  /** Which step's card is open: the current step's. */
+  function currentStep(view: SideBarView): string | undefined {
+    return /data-current="(\d)"/.exec(String((view.page.webview.posted.at(-1) as { body?: string } | undefined)?.body ?? view.page.webview.html))?.[1];
+  }
+
+  it('follows the review from step to step, each button running the existing command, and counts the badge down', async () => {
+    const result = mixedResult();
+    const view = await reviewWithFakeEngine({ result, logName: 'side-bar.log' });
+    expect(currentStep(view)).toBe('3');
+    stub.executedCommands = [];
+
+    // Open the overview ticks the story, so the parts' card opens.
+    await press(view, { type: 'command', command: 'overview' });
+    expect(stub.executedCommands).toEqual([{ id: OPEN_OVERVIEW_COMMAND, args: [] }]);
+    expect(currentStep(view)).toBe('4');
+
+    // Ticking a part counts the badge down, and Open next part opens the next one in reading order.
+    await tick(view, 'src/retry.py', true);
+    await until('the mark to be kept', () => view.badge?.value === 6);
+    stub.executedCommands = [];
+    await press(view, { type: 'command', command: 'nextPart' });
+    expect(stub.executedCommands.slice(0, 2)).toEqual([
+      { id: OPEN_PART_COMMAND, args: [result.parts[1]] },
+      { id: 'vscode.changes', args: ['src/settings.ts', [[changeUri('head', result.copies.head.commit, 'src/settings.ts'), changeUri('base', result.copies.base.commit, 'src/settings.ts'), changeUri('head', result.copies.head.commit, 'src/settings.ts')]]] },
+    ]);
+
+    // Pressing a part's name opens it; All in order opens the whole change.
+    stub.executedCommands = [];
+    await press(view, { type: 'openPart', anchor: anchorOf(result.parts[0]!) });
+    expect(stub.executedCommands[0]).toEqual({ id: OPEN_PART_COMMAND, args: [result.parts[0]] });
+    stub.executedCommands = [];
+    await press(view, { type: 'command', command: 'allParts' });
+    expect(stub.executedCommands[0]).toEqual({ id: OPEN_ALL_PARTS_COMMAND, args: [] });
+
+    // Every part reviewed: the badge goes, and the claims' card opens next.
+    for (const part of result.parts.slice(1)) await press(view, { type: 'mark', anchor: anchorOf(part), reviewed: true });
+    await until('every mark to be kept', () => view.badge === undefined);
+    expect(currentStep(view)).toBe('5');
+
+    // Step 8 opens the Send review page.
+    await press(view, { type: 'command', command: 'send' });
+    expect(stub.webviewPanels.map((panel) => panel.viewType)).toContain(SEND_REVIEW_VIEW_TYPE);
+    expect(stub.errorMessages).toEqual([]);
+  });
+
+  it("ticks the story step when All in order opens the whole change, as opening one part does", async () => {
+    const view = await reviewWithFakeEngine({ result: mixedResult(), logName: 'all-parts-story.log' });
+    expect(currentStep(view)).toBe('3');
+    stub.executedCommands = [];
+
+    await press(view, { type: 'command', command: 'allParts' });
+
+    expect(stub.executedCommands.map(({ id }) => id)).toEqual([OPEN_ALL_PARTS_COMMAND, 'vscode.changes']);
+    expect(currentStep(view)).toBe('4');
+  });
+
+  it('shows the new agent settings on the setup line as soon as they change', async () => {
+    const view = await reviewWithFakeEngine({ result: mixedResult(), logName: 'side-bar-settings.log' });
+    expect(view.provider.current.settings).toMatchObject({ agent: 'pi', model: '', effort: '' });
+
+    stub.configuration = { 'second-look.agent': 'claude-code', 'second-look.agentModel': 'sonnet', 'second-look.agentEffort': 'high' };
+    stub.fireConfigurationChange();
+    expect(String((view.page.webview.posted.at(-1) as { body: string }).body)).toContain('<span class="summary">Claude Code · sonnet · effort high</span>');
+  });
+});
+
 describe('since your last look', () => {
   /** The labels of the tree's parts, as the view renders them. */
-  function partLabels(view: StubTreeView): string[] {
+  function partLabels(view: SideBarView): string[] {
     return renderedTree(view)
       .filter((node) => node.contextValue === 'part' || node.contextValue === 'noise')
       .map((node) => node.label);
@@ -1844,17 +1922,12 @@ describe('the banner above a part\'s diff', () => {
       .map((line) => JSON.parse(line) as { method: string; params?: Record<string, unknown> });
   }
 
-  /** The checkbox the tree shows for the part with this label. */
-  function checkbox(view: StubTreeView, label: string): number | undefined {
-    const provider = providerOf(view);
-    const node = provider
-      .getChildren()
-      .flatMap((section) => provider.getChildren(section))
-      .find((child) => provider.getTreeItem(child).label === label);
-    return (provider.getTreeItem(node) as { checkboxState?: number }).checkboxState;
+  /** Whether the side bar ticks the checkbox of the part with this label. */
+  function checkbox(view: SideBarView, label: string): boolean {
+    return sideBarPart(view, label)?.reviewed === 'reviewed';
   }
 
-  async function openFromTree(view: StubTreeView, label: string): Promise<void> {
+  async function openFromTree(view: SideBarView, label: string): Promise<void> {
     const click = partClick(view, label)!;
     await registeredCommands().get(click.command)!(...click.arguments);
   }
@@ -1888,35 +1961,30 @@ describe('the banner above a part\'s diff', () => {
     expect((bannerThread()[0]!.comments[0]!.body as { value: string }).value).toMatch(/^\*\*Worth reviewing\*\* · part 2 of 7/);
   });
 
-  it('marks the part reviewed from the banner exactly as its tree checkbox does, and each shows the other\'s tick', async () => {
+  it('marks the part reviewed from the banner exactly as its side bar checkbox does, and each shows the other\'s tick', async () => {
     const view = await reviewWithFakeEngine({ result: mixedResult(), logName: 'banner-marks.log' });
     await openFromTree(view, 'src/retry.py');
 
     await press('Mark reviewed');
     await until('the mark to be kept', () => view.badge?.value === 6);
-    expect(checkbox(view, 'src/retry.py')).toBe(TreeItemCheckboxState.Checked);
+    expect(checkbox(view, 'src/retry.py')).toBe(true);
     expect(bannerLinks()[0]!.text).toBe('Clear the reviewed mark');
     expect(engineLog('banner-marks.log').filter((request) => request.method === 'markReviewed').map((request) => request.params)).toEqual([
       { url: PR_URL, part: markedPart(mixedResult().parts[0]!), reviewed: true },
     ]);
 
-    // Clearing the tree's checkbox empties the banner's.
-    const provider = providerOf(view);
-    const node = provider
-      .getChildren()
-      .flatMap((section) => provider.getChildren(section))
-      .find((child) => provider.getTreeItem(child).label === 'src/retry.py');
-    view.fireCheckboxChange([[node, TreeItemCheckboxState.Unchecked]]);
+    // Clearing the side bar's checkbox empties the banner's.
+    await tick(view, 'src/retry.py', false);
     await until('the mark to be cleared', () => view.badge?.value === 7);
     expect(bannerLinks()[0]!.text).toBe('Mark reviewed');
 
-    // And the tree's tick shows in the banner, which clears it again.
-    view.fireCheckboxChange([[node, TreeItemCheckboxState.Checked]]);
+    // And the side bar's tick shows in the banner, which clears it again.
+    await tick(view, 'src/retry.py', true);
     await until('the mark to be kept again', () => view.badge?.value === 6);
     expect((bannerThread()[0]!.comments[0]!.body as { value: string }).value).toContain('☑ Reviewed');
     await press('Clear the reviewed mark');
     await until('the mark to be cleared again', () => view.badge?.value === 7);
-    expect(checkbox(view, 'src/retry.py')).toBe(TreeItemCheckboxState.Unchecked);
+    expect(checkbox(view, 'src/retry.py')).toBe(false);
     expect(engineLog('banner-marks.log').filter((request) => request.method === 'markReviewed').map((request) => request.params?.['reviewed'])).toEqual([true, false, true, false]);
     expect(stub.errorMessages).toEqual([]);
     expect(stub.warningMessages).toEqual([]);

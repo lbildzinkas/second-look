@@ -1,11 +1,13 @@
 import { DEFAULT_AGENT_SETTINGS, type AgentSettings } from './agent.js';
 import { AGENT_NAMES, agentAdapter, isAgentName, modelAndEffortProblem } from './agents.js';
+import { budgetMeter, budgetOf } from './budget.js';
 import { defaultCacheDir } from './cache.js';
 import { readFile } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import type { ClaudeCodeAdapterOptions } from './claude-code.js';
 import type { PiAdapterOptions } from './pi.js';
 import { runAgentProbe } from './probe.js';
+import type { Budget } from './protocol.js';
 import { reviewPullRequest } from './review.js';
 import { readPackagePdbs } from './symbols.js';
 import { runRpcServer, type RpcAgentDeps, type RpcServerDeps } from './server.js';
@@ -90,6 +92,10 @@ It keeps read-only copies of the base and head versions, downloaded as
 archives, in a per-pull-request cache: --cache-dir, else the
 SECOND_LOOK_CACHE_DIR environment variable, else the platform's per-user
 cache folder. Nothing is checked out and nothing from the pull request runs.
+
+The result's budget counts what the review used — every agent run it
+started, a retry included, every file it fetched and the bytes downloaded
+— and the review's last line on stderr says the same; nothing is limited.
 
 The review also reads the issues the pull request links — the closing
 references GitHub returns, which cover the description's closing keywords
@@ -321,11 +327,13 @@ export async function runCli(
     }
   }
 
+  const meter = budgetMeter();
   try {
     const result = await reviewPullRequest(url, {
       token,
       fetch: deps.fetch,
       cacheDir: cacheDirFlag ?? defaultCacheDir(env),
+      budget: meter,
       ...(criteriaHeading !== undefined ? { criteriaHeading } : {}),
       ...(agentFlags['--agent'] !== undefined
         ? {
@@ -341,6 +349,7 @@ export async function runCli(
         : {}),
     });
     streams.out.write(`${JSON.stringify(result, null, 2)}\n`);
+    streams.err.write(`second-look-engine: ${budgetUseLine(budgetOf(meter))}\n`);
     return 0;
   } catch (error) {
     const message = redactToken(
@@ -350,6 +359,11 @@ export async function runCli(
     streams.err.write(`second-look-engine: ${message}\n`);
     return 1;
   }
+}
+
+/** What a review used, in one line: its agent runs, the files it fetched and the bytes downloaded. */
+function budgetUseLine({ used }: Budget): string {
+  return `used ${used.agentRuns} agent runs, ${used.filesFetched} files fetched, ${used.downloadBytes} bytes downloaded`;
 }
 
 /** Reads the agent settings from their flags; a string is the problem with them. */

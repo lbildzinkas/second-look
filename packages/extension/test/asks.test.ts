@@ -20,14 +20,11 @@ describe('the asks in the manifest', () => {
     expect(askCommand('explain')).toBe('second-look.ask.explain');
   });
 
-  it("offers each ask in a part's context menu, a noise part's too, and hides it from the Command Palette", () => {
+  it("offers each ask in a part row's context menu in the side bar, and hides it from the Command Palette", () => {
     const { menus } = MANIFEST.contributes;
     for (const kind of ASK_KINDS) {
-      const entries = menus['view/item/context']!.filter((entry) => entry.command === askCommand(kind));
-      expect(entries.map((entry) => entry.when)).toEqual([
-        'view == second-look.reviewTree && viewItem == part',
-        'view == second-look.reviewTree && viewItem == noise',
-      ]);
+      const entries = menus['webview/context']!.filter((entry) => entry.command === askCommand(kind));
+      expect(entries.map((entry) => entry.when)).toEqual(["webviewId == 'second-look.reviewTree' && webviewSection == 'part'"]);
       expect(menus['commandPalette']).toContainEqual({ command: askCommand(kind), when: 'false' });
     }
   });

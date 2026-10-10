@@ -31,7 +31,7 @@
 import type { AgentProbe } from './agent.js';
 import type { AgentName } from './agents.js';
 import type { AskKind } from './asks.js';
-import type { AskAnswer, AskedClaim, DraftComment, FindingRef, PendingReview, ReviewedMarks, ReviewResult, SentReview, ViewedFiles } from './protocol.js';
+import type { AskAnswer, AskedClaim, BudgetLimits, DraftComment, FindingRef, PendingReview, ReviewedMarks, ReviewResult, SentReview, ViewedFiles } from './protocol.js';
 import type { MarkedPart } from './reviewed-marks.js';
 
 /** Version of the JSON-RPC protocol between the extension and the engine. */
@@ -172,6 +172,13 @@ export interface ReviewParams {
    * non-empty string: an empty or blank one is refused.
    */
   criteriaHeading?: string;
+  /**
+   * The budget's limits, mirroring the editor's settings, each 0 for no
+   * limit; absent limits nothing. The engine meters the review against
+   * them — counting only, nothing is refused yet — and the result carries
+   * the use so far.
+   */
+  budget?: BudgetLimits;
 }
 
 /** The review request's result: the engine's typed, versioned review result. */

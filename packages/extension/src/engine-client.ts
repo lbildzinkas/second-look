@@ -19,6 +19,7 @@ import {
   type AskedClaim,
   type AskKind,
   type AgentPaths,
+  type BudgetLimits,
   type DraftComment,
   type FindingRef,
   type InitializeResult,
@@ -251,9 +252,10 @@ export class EngineClient {
 
   /**
    * Sends one review request with the token VS Code's GitHub sign-in gave
-   * for it, the agent choice the settings picked and the heading the
-   * acceptance criteria checklist sits under: the agent, model, effort,
-   * account and heading travel with this request only; the client keeps no
+   * for it, the agent choice the settings picked, the heading the
+   * acceptance criteria checklist sits under and the budget's limits: the
+   * agent, model, effort, account, heading and limits travel with this
+   * request only; the client keeps no
    * copy of the token. Rejects with the engine's plain message when the engine
    * fails.
    *
@@ -267,6 +269,7 @@ export class EngineClient {
     agent?: ReviewAgentChoice,
     onStage?: (stage: ReviewStageUpdate) => void,
     criteriaHeading?: string,
+    budget?: BudgetLimits,
   ): Promise<ReviewResult> {
     if (!this.handshaken) {
       throw new Error('the engine has not completed its handshake yet');
@@ -281,6 +284,7 @@ export class EngineClient {
         token,
         ...(agent !== undefined ? { agent } : {}),
         ...(heading !== undefined && heading !== '' ? { criteriaHeading: heading } : {}),
+        ...(budget !== undefined ? { budget } : {}),
       },
       REVIEW_TIMEOUT_MS,
       onStage,
