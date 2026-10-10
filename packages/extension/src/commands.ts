@@ -91,3 +91,15 @@ export const DRAFT_COMMENT_CONTEXT = 'second-look-draft' as const;
 export function askCommand(kind: AskKind): string {
   return `second-look.ask.${kind}`;
 }
+
+/**
+ * Marks one part reviewed, or clears its mark: the banner above the part's
+ * diff runs it, through the same path as the part's checkbox in the tree.
+ */
+export const MARK_REVIEWED_COMMAND = 'second-look.markReviewed' as const;
+
+/** The id of the comment controller that shows the banner above the selected part's diff. */
+export const PART_BANNER_CONTROLLER_ID = 'second-look.part' as const;
+
+/** The context value the banner's thread carries. */
+export const PART_BANNER_CONTEXT = 'second-look-part-banner' as const;

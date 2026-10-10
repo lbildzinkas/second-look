@@ -4,9 +4,11 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import * as vscode from 'vscode';
+import { markedPart } from '@second-look/engine';
 import {
   ADD_COMMENT_COMMAND,
   CHANGE_SCHEME,
+  MARK_REVIEWED_COMMAND,
   OPEN_ALL_PARTS_COMMAND,
   OPEN_PART_COMMAND,
   REVIEW_COMMAND,
@@ -363,6 +365,33 @@ export async function run(): Promise<void> {
       }),
       'the diff scrolled to the first hunk',
     );
+
+    // The banner above the part's diff (ADR 0007) marks the part reviewed
+    // through the same path as its checkbox in the tree, carrying the part
+    // by where it starts: the engine keeps the mark, and clearing it from
+    // the banner clears it there too. The request carries the part as the
+    // store records it — the same identity the tree's checkbox sends.
+    const [firstHunk] = review.parts[0]!.hunks;
+    const bannerRef = { anchor: { path: 'src/retry.py', hunk: { oldStart: firstHunk!.oldStart, newStart: firstHunk!.newStart } } };
+    const markRequests = (): EngineRequest[] =>
+      readFileSync(join(workDir, 'engine.log'), 'utf8')
+        .split('\n')
+        .filter((line) => line !== '')
+        .map((line) => JSON.parse(line) as EngineRequest)
+        .filter((request) => request.method === 'markReviewed');
+    for (const reviewed of [true, false]) {
+      await withTimeout(
+        vscode.commands.executeCommand(MARK_REVIEWED_COMMAND, bannerRef, reviewed),
+        'the banner\'s mark-reviewed command',
+      );
+      const marked = await withTimeout(
+        waitFor('the mark in the engine log', () => markRequests().find((request) => (request.params as { reviewed?: boolean }).reviewed === reviewed)),
+        'the mark in the engine log',
+      );
+      // The store's part identity: its name with its files and entity
+      // kinds, not the part's plain name.
+      deepStrictEqual((marked.params as { part: unknown }).part, markedPart(review.parts[0]!));
+    }
 
     // The copies serve the pull request's content, read-only: the head
     // side holds the new retry logic, the base side the old one, and a
