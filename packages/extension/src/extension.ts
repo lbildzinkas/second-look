@@ -290,9 +290,9 @@ class ReviewSession {
     return this.result;
   }
 
-  async reviewPullRequest(urlArg?: string): Promise<void> {
+  async reviewPullRequest(urlArg?: unknown): Promise<void> {
     const url =
-      urlArg !== undefined && urlArg.trim() !== ''
+      typeof urlArg === 'string' && urlArg.trim() !== ''
         ? urlArg
         : await vscode.window.showInputBox({
             prompt: 'GitHub pull request URL',

@@ -372,6 +372,28 @@ describe('the review command, end to end against a fake engine', () => {
     expect(view.revealed).toHaveLength(1);
   });
 
+  it('asks for the URL when the tree title button forwards the view context', async () => {
+    activate(stubContext() as unknown as vscode.ExtensionContext, {
+      spawnEngine: () => fakeEngine({ result: mixedResult(), logName: 'title-review-button.log' }),
+    });
+    stub.inputBoxResult = PR_URL;
+    stub.session = { accessToken: TOKEN };
+
+    // The Review pull request button in the tree's title bar runs the
+    // command with the view-pane context object as its first argument;
+    // that is no URL, so the command asks for one, and the review starts.
+    await registeredCommands().get(REVIEW_COMMAND)!({
+      $treeViewId: REVIEW_TREE_VIEW,
+      $focusedTreeItem: true,
+      $selectedTreeItems: true,
+    }) as Promise<void>;
+
+    expect(stub.inputBoxes).toHaveLength(1);
+    expect(renderedTree(stub.treeViews[0]!)[0]).toEqual({ label: 'Must review', tooltip: 'The parts to read first.' });
+    expect(stub.executedCommands).toEqual([{ id: OPEN_REVIEW_CONTAINER_COMMAND, args: [] }]);
+    expect(stub.errorMessages).toEqual([]);
+  });
+
   it("answers a hover on a library name on the head side of a part with the review's documentation links", async () => {
     const result = docLinksResult();
     await reviewWithFakeEngine({ result, logName: 'doc-links.log' });
