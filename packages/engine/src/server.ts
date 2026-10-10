@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { DEFAULT_AGENT_SETTINGS, type AgentAdapter, type AgentSettings } from './agent.js';
 import { AGENT_NAMES, isAgentName, modelAndEffortProblem, type AgentName } from './agents.js';
 import { ASK_KINDS, ASKS, askAboutPart, isAskKind } from './asks.js';
-import { NO_BUDGET_LIMITS, budgetLimitsProblem, budgetMeter, meteredFetch, withBudget, type BudgetMeter } from './budget.js';
+import { NO_BUDGET_LIMITS, budgetLimitsProblem, budgetMeter, limitReason, limitedFetch, spentLimit, withBudget, type BudgetMeter } from './budget.js';
 import { pullRequestCacheDir } from './cache.js';
 import { draftComment, draftFinding, isFindingRef } from './draft-comment.js';
 import { GitHubClient, parsePullRequestUrl } from './github.js';
@@ -154,7 +154,9 @@ export interface RpcServerDeps {
  * bytes is counted, and every stage notification and the response carry
  * the use so far. The meter stays beside the pull request's latest result,
  * so its later library fetches, asks and drafts add to the same use.
- * Nothing is refused yet.
+ * The review stops at its limits, and a library fetch pressed once a
+ * limit is reached is refused with a plain message naming it; asks and
+ * drafts are only counted.
  */
 export async function runRpcServer(
   source: RpcLineSource,
@@ -310,9 +312,9 @@ function agentRunSettings(
   return settings;
 }
 
-/** The fetch a request downloads with: the server's, counted on the review's budget meter when there is one. */
+/** The fetch a request downloads with: the server's, counted on the review's budget meter when there is one, and refused past its file or size limit. */
 function reviewFetch(deps: RpcServerDeps, meter: BudgetMeter | undefined): typeof fetch | undefined {
-  return meter ? meteredFetch(deps.fetch ?? fetch, meter) : deps.fetch;
+  return meter ? limitedFetch(deps.fetch ?? fetch, meter) : deps.fetch;
 }
 
 async function review(
@@ -402,7 +404,9 @@ async function review(
  * it. A fetch fails
  * with a plain message when the review is unknown, the claim offers no
  * fetch, the download does not match the hash it is checked against, or
- * the agent gives no usable answer, or a decompile finds no decompiler.
+ * the agent gives no usable answer, or a decompile finds no decompiler,
+ * and is refused, naming the limit, once the review has reached one of its
+ * budget limits or when the download passes one.
  */
 async function fetchLibrary(
   params: unknown,
@@ -435,6 +439,11 @@ async function fetchLibrary(
     return;
   }
   const meter = meters.get(url);
+  const spent = meter === undefined ? undefined : spentLimit(meter);
+  if (spent !== undefined) {
+    respond(sink, failure(id, ENGINE_FAILED_CODE, `this library fetch is refused: ${limitReason(meter!, spent, 'fetch it')}`));
+    return;
+  }
   const fetchImpl = reviewFetch(deps, meter);
   try {
     const judging = await pressLibraryFetch(result.parts, claim, {
@@ -442,7 +451,7 @@ async function fetchLibrary(
       librariesDir: join(pullRequestCacheDir(deps.cacheDir, ref), 'libraries'),
       ...(fetchImpl ? { fetch: fetchImpl } : {}),
       adapter: deps.agent.adapterFor(choice?.agent ?? deps.agent.defaultAgent),
-      settings: agentRunSettings(deps.agent, choice, meter),
+      settings: { ...agentRunSettings(deps.agent, choice, meter), stopAtBudget: true },
     });
     if (judging.outcome === 'fell back') throw new Error(`the library was fetched, but ${judging.detail}`);
     // Another fetch or a new review may have landed meanwhile: the new

@@ -148,7 +148,7 @@ describe('runRpcServer', () => {
 
     expect(responses[0]!.result).toEqual({ protocolVersion: ENGINE_PROTOCOL_VERSION });
     const first = responses[1]!.result as { version: number; parts: unknown[] };
-    expect(first.version).toBe(19);
+    expect(first.version).toBe(20);
     expect(first.parts).toHaveLength(11);
     const second = responses[2]!.result as { parts: unknown[] };
     expect(second.parts).toHaveLength(11);
@@ -391,7 +391,7 @@ describe('runRpcServer with an agent', () => {
         id: 2,
         running: 'grouping related hunks with fake',
         timeoutMs: 660_000,
-        result: { version: 19, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
+        result: { version: 20, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
       },
     });
     // The fake agent has no tested ranking, so the story stage follows the grouping.
@@ -825,7 +825,7 @@ describe('runRpcServer fetching a library', () => {
     });
     expect(pypiBeforeFetch).toBe(0);
     expect(answer(3).result).toMatchObject({
-      version: 19,
+      version: 20,
       claims: {
         claims: [
           {
@@ -852,7 +852,7 @@ describe('runRpcServer fetching a library', () => {
     const { answer } = await serveInTurn(
       [
         request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
-        request('review', { url: PR_7_URL, token: TOKEN, budget: { agentRuns: 1, filesFetched: 1, downloadMiB: 0.001 } }, 2),
+        request('review', { url: PR_7_URL, token: TOKEN, budget: { agentRuns: 0, filesFetched: 0, downloadMiB: 0 } }, 2),
         request('ask', { url: PR_7_URL, ask: 'explain', part: 0 }, 3),
         request('draftComment', { url: PR_7_URL, finding: { kind: 'claim', index: 0 } }, 4),
         request('fetchLibrary', { url: PR_7_URL, claim: 0 }, 5),
@@ -867,15 +867,55 @@ describe('runRpcServer fetching a library', () => {
     const fetched = (answer(5).result as ReviewResult).budget!;
     expect(answer(3).error).toBeUndefined();
     expect(answer(4).error).toBeUndefined();
-    expect(fetched.limits).toEqual({ agentRuns: 1, filesFetched: 1, downloadMiB: 0.001 });
     // The ask, the draft and the fetch's judging each ran the agent once
-    // more, and the fetch downloaded PyPI's release and the wheel, past
-    // every limit: nothing is refused yet.
+    // more, and the fetch downloaded PyPI's release and the wheel.
     expect(fetched.used.agentRuns).toBe(reviewed.used.agentRuns + 3);
     expect(fetched.used.agentRuns).toBe(agent.requests.length);
     expect(fetched.used.filesFetched).toBe(reviewed.used.filesFetched + state.pypi.requests.length);
     expect(state.pypi.requests).toHaveLength(2);
     expect(fetched.used.downloadBytes - reviewed.used.downloadBytes).toBeGreaterThan(WHEEL.length);
+  });
+
+  it('refuses a library fetch pressed past any limit, naming it, while asks and drafts are only counted', async () => {
+    // How many runs the review uses with no limit: a limit of exactly that leaves it whole.
+    state = transports();
+    const { answer: unlimited } = await serveInTurn(
+      [request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }), request('review', { url: PR_7_URL, token: TOKEN }, 2)],
+      state.fetch,
+    );
+    const runs = (unlimited(2).result as ReviewResult).budget!.used.agentRuns;
+
+    for (const [budget, reason] of [
+      [{ agentRuns: runs, filesFetched: 0, downloadMiB: 0 }, `the review used its ${runs} agent runs; raise \`second-look.budget.agentRuns\` to fetch it`],
+      [{ agentRuns: 0, filesFetched: 1, downloadMiB: 0 }, 'the review fetched its 1 file; raise `second-look.budget.filesFetched` to fetch it'],
+      [{ agentRuns: 0, filesFetched: 0, downloadMiB: 0.001 }, 'the review downloaded its 0.001 MiB; raise `second-look.budget.downloadMiB` to fetch it'],
+    ] as const) {
+      state = transports();
+      const agent = libraryAgent();
+      const { answer } = await serveInTurn(
+        [
+          request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+          request('review', { url: PR_7_URL, token: TOKEN, budget }, 2),
+          request('ask', { url: PR_7_URL, ask: 'explain', part: 0 }, 3),
+          request('draftComment', { url: PR_7_URL, finding: { kind: 'claim', index: 0 } }, 4),
+          request('fetchLibrary', { url: PR_7_URL, claim: 0 }, 5),
+        ],
+        state.fetch,
+        undefined,
+        true,
+        agent,
+      );
+
+      // The review's own reads passed the file and size limits, and its
+      // claim was listed and judged within the run limit.
+      const reviewed = answer(2).result as ReviewResult;
+      expect(reviewed.claims!.claims[0]).toMatchObject({ quote: CLAIM, verdict: { kind: 'unverifiable', libraryFetch: { library: 'httpx' } } });
+      expect(answer(3).error).toBeUndefined();
+      expect(answer(4).error).toBeUndefined();
+      expect(answer(5).error).toEqual({ code: ENGINE_FAILED_CODE, message: `this library fetch is refused: ${reason}` });
+      expect(state.pypi.requests).toHaveLength(0);
+      expect(agent.requests).toHaveLength(reviewed.budget!.used.agentRuns + 2);
+    }
   });
 
   it('answers a .NET fetch that finds no exact source with the claim offering its decompile, and keeps it for the next press', async () => {
@@ -910,7 +950,7 @@ describe('runRpcServer fetching a library', () => {
 
     expect(answer(3).error).toBeUndefined();
     expect(answer(3).result).toMatchObject({
-      version: 19,
+      version: 20,
       claims: {
         claims: [
           {

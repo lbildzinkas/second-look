@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import {
   DEFAULT_AGENT_SETTINGS,
+  agentRunLimitReason,
   runAgentTasks,
   type AgentAdapter,
   type AgentSettings,
@@ -340,7 +341,9 @@ export interface CriteriaMappingOptions {
  * each citation against the head copy and finds each manual check in the
  * description, and returns the criteria with their verdicts, in the same
  * order, and the mapping's outcome. A rejected answer is retried once and
- * then reported, and every criterion stays not checked.
+ * then reported, and every criterion stays not checked — with the reason,
+ * naming the limit, when the agent-run limit kept the mapping or its
+ * retry from running.
  */
 export async function mapCriteria(
   parts: readonly Part[],
@@ -365,7 +368,12 @@ export async function mapCriteria(
   const base = { promptVersion: CRITERIA_MAPPING_PROMPT_VERSION, stamp: result.stamp };
   if (!result.ok) {
     const detail = `the agent gave no usable answer (${result.reason}: ${result.message})`;
-    return { criteria: [...criteria.criteria], mapping: { ...base, outcome: 'fell back', detail } };
+    const reason = agentRunLimitReason(result, options.settings ?? DEFAULT_AGENT_SETTINGS, 'check it');
+    const left =
+      reason === undefined
+        ? [...criteria.criteria]
+        : criteria.criteria.map((criterion): AcceptanceCriterion => (criterion.verdict.kind === 'not checked' ? { ...criterion, verdict: { kind: 'not checked', reason } } : criterion));
+    return { criteria: left, mapping: { ...base, outcome: 'fell back', detail } };
   }
   const read = copyReader(options.root);
   const byId = new Map((result.answer as CriteriaMappingAnswer).criteria.map((answered) => [answered.id, answered]));

@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { deflateSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
+import { budgetMeter, limitedFetch } from '../src/budget.js';
 import { DOTNET_XREF_MAP, findDocLinks, pythonDocsUrls, pythonImports, sphinxInventoryUrls } from '../src/doc-links.js';
 import {
   DOC_LINKS_INSTRUCTIONS,
@@ -108,6 +109,36 @@ describe('findDocLinks for Python', () => {
     const links = await findDocLinks([added('app/model.py', MODEL)], { headRoot, fetch: recordedFetch({ 'https://pypi.org/pypi/attrs/23.1.0/json': 404 }).fetch });
     expect(links.links).toEqual([]);
     expect(links.notes).toEqual(['attrs 23.1.0: PyPI has no release attrs 23.1.0']);
+  });
+
+  it('keeps the APIs unlinked, with the limit as the reason, when a budget limit refuses the inventory', async () => {
+    const headRoot = headCopy({ 'requirements.txt': 'attrs==23.1.0\n', 'app/model.py': MODEL });
+    const unlinked = [
+      ['attrs.define', '23.1.0'],
+      ['attrs.field', '23.1.0'],
+    ];
+    // The file limit lets PyPI's record through and refuses the inventory after it.
+    const files = recordedFetch(ATTRS_23_1);
+    const byFiles = await findDocLinks([added('app/model.py', MODEL)], {
+      headRoot,
+      fetch: limitedFetch(files.fetch, budgetMeter({ agentRuns: 0, filesFetched: 1, downloadMiB: 0 })),
+    });
+    expect(byFiles.links).toEqual([]);
+    expect(byFiles.unlinked.map((api) => [api.api, api.version])).toEqual(unlinked);
+    expect(byFiles.notes).toEqual([
+      'attrs 23.1.0: its documentation could not be looked for: the review fetched its 1 file; raise `second-look.budget.filesFetched` to download more',
+    ]);
+    expect(files.requests.map((each) => each.url)).toEqual(['https://pypi.org/pypi/attrs/23.1.0/json']);
+
+    // The size limit fails PyPI's record as it passes the limit.
+    const bySize = await findDocLinks([added('app/model.py', MODEL)], {
+      headRoot,
+      fetch: limitedFetch(recordedFetch(ATTRS_23_1).fetch, budgetMeter({ agentRuns: 0, filesFetched: 0, downloadMiB: 0.0001 })),
+    });
+    expect(bySize.unlinked.map((api) => [api.api, api.version])).toEqual(unlinked);
+    expect(bySize.notes).toEqual([
+      'attrs 23.1.0: its documentation could not be looked for: the review downloaded its 0.0001 MiB; raise `second-look.budget.downloadMiB` to download more',
+    ]);
   });
 
   it('names how many APIs are left out when a change uses more than the cap lists', async () => {

@@ -11,7 +11,7 @@ import type { AgentStamp } from './agent.js';
 import type { AskKind } from './asks.js';
 
 /** Version of the review result schema. */
-export const REVIEW_RESULT_VERSION = 19 as const;
+export const REVIEW_RESULT_VERSION = 20 as const;
 
 /**
  * Version 2 added the head commit's SHA and each part's noise assessment;
@@ -51,7 +51,8 @@ export const REVIEW_RESULT_VERSION = 19 as const;
  * inventories first, then the agent's suggestions, labelled as such;
  * version 19 added the review's budget: the limits the reviewer's
  * settings set and what the review and its later fetches, asks and drafts
- * have used so far.
+ * have used so far; version 20 added the reason a claim or acceptance
+ * criterion is not checked, when a budget limit left it so.
  */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
@@ -367,7 +368,9 @@ export interface ReviewResult {
 
 /**
  * The limits of a review's budget, as the reviewer's settings set them;
- * 0 is no limit. They are only counted against: nothing is refused yet.
+ * 0 is no limit. The review stops at them: an agent stage starts only
+ * while a run is left, and a download past the file or size limit is
+ * refused, apart from the review's own reads of the pull request.
  */
 export interface BudgetLimits {
   /** Agent runs: every started attempt, a retry included. */
@@ -525,7 +528,11 @@ export interface ManualCheck {
  * the description reports, each a quote the engine found there.
  */
 export type CriterionVerdict =
-  | { kind: 'not checked' }
+  | {
+      kind: 'not checked';
+      /** Why it was not mapped, when a budget limit kept the agent from it, naming the limit. */
+      reason?: string;
+    }
   | {
       kind: CriterionVerdictKind;
       /** One plain line saying why the criterion has this verdict. */
@@ -888,7 +895,11 @@ export interface Citation {
  * and its reason.
  */
 export type ClaimVerdict =
-  | { kind: 'not checked' }
+  | {
+      kind: 'not checked';
+      /** Why it was not judged, when a budget limit kept the agent from it, naming the limit. */
+      reason?: string;
+    }
   | {
       kind: CheckedVerdictKind;
       /** Where the evidence came from; the model's memory never yields verified. */

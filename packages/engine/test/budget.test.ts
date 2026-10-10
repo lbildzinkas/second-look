@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { runAgentTasks, type AgentTask } from '../src/agent.js';
-import { NO_BUDGET_LIMITS, budgetLimitsProblem, budgetMeter, budgetOf, meteredFetch } from '../src/budget.js';
+import { agentRunLimitReason, runAgentTasks, type AgentTask } from '../src/agent.js';
+import {
+  BudgetLimitError,
+  NO_BUDGET_LIMITS,
+  budgetLimitsProblem,
+  budgetMeter,
+  budgetOf,
+  hasAgentRunLeft,
+  limitReason,
+  limitedFetch,
+  meteredFetch,
+  spentLimit,
+} from '../src/budget.js';
 import { scriptedAgent } from './helpers.js';
 
 /** A fetch that answers each request with the given body chunks, recording the requests. */
@@ -103,8 +114,51 @@ describe('runAgentTasks on a budget', () => {
     expect(results.map((result) => result.attempts)).toEqual([1, 2]);
     expect(agent.requests).toHaveLength(3);
     expect(meter.used.agentRuns).toBe(3);
-    // Nothing is refused yet: the limit of one run only counts.
+    // Settings that do not stop at the budget only count, as for the reviewer's asks and drafts.
     expect(results.every((result) => result.ok)).toBe(true);
+  });
+
+  it('starts a task only while a run is left, and its retry only while another is, saying which limit stopped it', async () => {
+    const meter = budgetMeter({ agentRuns: 1, filesFetched: 0, downloadMiB: 0 });
+    const agent = scriptedAgent(['not json', '{"ok":true}']);
+    const settings = { timeoutMs: 1000, concurrency: 1, budget: meter, stopAtBudget: true };
+    const { results } = await runAgentTasks(agent, [task, task], settings);
+
+    expect(agent.requests).toHaveLength(1);
+    expect(meter.used.agentRuns).toBe(1);
+    expect(results[0]).toMatchObject({
+      ok: false,
+      reason: 'budget-limit',
+      attempts: 1,
+      message:
+        'the answer was invalid (the answer is not a single JSON value) and was not retried: the review used its 1 agent run; raise `second-look.budget.agentRuns` to retry it',
+      stamp: { agent: 'fake', model: 'fake/model' },
+    });
+    expect(results[1]).toMatchObject({
+      ok: false,
+      reason: 'budget-limit',
+      attempts: 0,
+      message: 'the agent was not run: the review used its 1 agent run; raise `second-look.budget.agentRuns` to run it',
+      stamp: { agent: 'fake', agentVersion: '1.2.3', model: null },
+    });
+    expect(agentRunLimitReason(results[1]!, settings, 'check it')).toBe('the review used its 1 agent run; raise `second-look.budget.agentRuns` to check it');
+  });
+
+  it('lets no two tasks running at once take the same last run', async () => {
+    const meter = budgetMeter({ agentRuns: 3, filesFetched: 0, downloadMiB: 0 });
+    const agent = scriptedAgent(['{"ok":true}', '{"ok":true}', '{"ok":true}']);
+    const { results } = await runAgentTasks(agent, [task, task, task, task], { timeoutMs: 1000, concurrency: 4, budget: meter, stopAtBudget: true });
+
+    expect(agent.requests).toHaveLength(3);
+    expect(results.filter((result) => result.ok)).toHaveLength(3);
+    expect(results.filter((result) => !result.ok && result.reason === 'budget-limit')).toHaveLength(1);
+  });
+
+  it('has no limit to stop at when the limit is 0', async () => {
+    const meter = budgetMeter();
+    const agent = scriptedAgent(['not json', '{"ok":true}']);
+    const { results } = await runAgentTasks(agent, [task], { timeoutMs: 1000, concurrency: 1, budget: meter, stopAtBudget: true });
+    expect(results[0]).toMatchObject({ ok: true, attempts: 2 });
   });
 
   it('counts a run that times out, and no run for an agent it never started', async () => {
@@ -116,6 +170,74 @@ describe('runAgentTasks on a budget', () => {
     const unusable = scriptedAgent([], { usable: false, reason: 'too old' });
     await runAgentTasks(unusable, [task, task], { timeoutMs: 1000, concurrency: 1, budget: meter });
     expect(meter.used.agentRuns).toBe(1);
+  });
+});
+
+describe('the limits', () => {
+  it('says which limit is reached, agent runs first, and nothing while every one has room', () => {
+    const meter = budgetMeter({ agentRuns: 2, filesFetched: 3, downloadMiB: 1 });
+    expect(spentLimit(meter)).toBeUndefined();
+    meter.used.downloadBytes = 1024 * 1024;
+    expect(spentLimit(meter)).toBe('downloadMiB');
+    meter.used.filesFetched = 3;
+    expect(spentLimit(meter)).toBe('filesFetched');
+    meter.used.agentRuns = 2;
+    expect(hasAgentRunLeft(meter)).toBe(false);
+    expect(spentLimit(meter)).toBe('agentRuns');
+    // A limit of 0 is never reached.
+    expect(spentLimit({ limits: NO_BUDGET_LIMITS, used: { agentRuns: 99, filesFetched: 99, downloadBytes: 1e9 } })).toBeUndefined();
+  });
+
+  it('names the limit and the setting that raises it', () => {
+    const meter = budgetMeter({ agentRuns: 12, filesFetched: 1, downloadMiB: 2.5 });
+    expect(limitReason(meter, 'agentRuns', 'check it')).toBe('the review used its 12 agent runs; raise `second-look.budget.agentRuns` to check it');
+    expect(limitReason(meter, 'filesFetched', 'fetch it')).toBe('the review fetched its 1 file; raise `second-look.budget.filesFetched` to fetch it');
+    expect(limitReason(meter, 'downloadMiB', 'download more')).toBe('the review downloaded its 2.5 MiB; raise `second-look.budget.downloadMiB` to download more');
+  });
+});
+
+describe('limitedFetch', () => {
+  it('counts like the metering fetch while every limit has room', async () => {
+    const meter = budgetMeter({ agentRuns: 0, filesFetched: 2, downloadMiB: 1 });
+    const transport = chunkedFetch(['abc', 'defgh']);
+    expect(await (await limitedFetch(transport.fetch, meter)('https://example.com/a')).text()).toBe('abcdefgh');
+    expect(meter.used).toEqual({ agentRuns: 0, filesFetched: 1, downloadBytes: 8 });
+  });
+
+  it('starts no download once the files fetched reach their limit, naming it', async () => {
+    const meter = budgetMeter({ agentRuns: 0, filesFetched: 1, downloadMiB: 0 });
+    const transport = chunkedFetch(['abc']);
+    const fetchImpl = limitedFetch(transport.fetch, meter);
+    await (await fetchImpl('https://example.com/a')).text();
+
+    const refused = fetchImpl('https://example.com/b');
+    await expect(refused).rejects.toBeInstanceOf(BudgetLimitError);
+    await expect(refused).rejects.toMatchObject({
+      limit: 'filesFetched',
+      message: 'the review fetched its 1 file; raise `second-look.budget.filesFetched` to download more',
+    });
+    expect(transport.urls).toEqual(['https://example.com/a']);
+    expect(meter.used.filesFetched).toBe(1);
+  });
+
+  it('starts no download once the bytes reach the size limit, and fails a body as it passes it', async () => {
+    const meter = budgetMeter({ agentRuns: 0, filesFetched: 0, downloadMiB: 8 / (1024 * 1024) });
+    const transport = chunkedFetch(['abcde', 'fghij', 'klm']);
+    const fetchImpl = limitedFetch(transport.fetch, meter);
+
+    const passing = (await fetchImpl('https://example.com/a')).text();
+    await expect(passing).rejects.toMatchObject({ limit: 'downloadMiB', message: expect.stringContaining('raise `second-look.budget.downloadMiB` to download more') });
+    // The chunk that passed the limit is counted, and nothing after it is read.
+    expect(meter.used.downloadBytes).toBe(10);
+    await expect(fetchImpl('https://example.com/b')).rejects.toMatchObject({ limit: 'downloadMiB' });
+    expect(transport.urls).toEqual(['https://example.com/a']);
+  });
+
+  it('refuses nothing with no limits', async () => {
+    const meter = budgetMeter();
+    meter.used = { agentRuns: 0, filesFetched: 500, downloadBytes: 1e9 };
+    const transport = chunkedFetch(['abc']);
+    expect(await (await limitedFetch(transport.fetch, meter)('https://example.com/a')).text()).toBe('abc');
   });
 });
 

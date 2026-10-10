@@ -5,15 +5,42 @@
  * beside the pull request's latest result, so the reviewer's later
  * library fetches, asks and drafts add to the same review's use.
  *
- * The meter only counts: nothing is refused yet, whatever the limits say.
- * A limit of 0 is no limit.
+ * A limit of 0 is no limit. Agent runs are counted where each attempt
+ * starts, a retry included (see `runAgentTasks`); files and bytes by
+ * {@link meteredFetch}, a wrapper around the fetch a review is given,
+ * which counts each response as one file and its bytes as they stream.
  *
- * Agent runs are counted where each attempt starts, a retry included (see
- * `runAgentTasks`); files and bytes by {@link meteredFetch}, a wrapper
- * around the fetch a review is given, which counts each response as one
- * file and its bytes as they stream.
+ * The limits stop the review (issue 113): an agent stage, or its retry,
+ * starts only while a run is left, and {@link limitedFetch} refuses a
+ * download past the file or size limit. The review's own reads — the pull
+ * request, its diff, both copies, CI and the linked issues — are counted
+ * and never refused, and the reviewer's asks and drafts are only counted.
+ * Whatever a limit leaves says which limit, with {@link limitReason}.
  */
 import type { Budget, BudgetLimits, ReviewResult } from './protocol.js';
+
+/** One of a budget's three limits. */
+export type BudgetLimit = keyof BudgetLimits;
+
+/** The setting each limit mirrors, which the reviewer raises to go further. */
+const LIMIT_SETTINGS: Record<BudgetLimit, string> = {
+  agentRuns: 'second-look.budget.agentRuns',
+  filesFetched: 'second-look.budget.filesFetched',
+  downloadMiB: 'second-look.budget.downloadMiB',
+};
+
+const MIB = 1024 * 1024;
+
+/** A download refused because the review reached one of its limits; the message says which, in plain words. */
+export class BudgetLimitError extends Error {
+  constructor(
+    message: string,
+    readonly limit: BudgetLimit,
+  ) {
+    super(message);
+    this.name = 'BudgetLimitError';
+  }
+}
 
 /** Limits that limit nothing: every one 0. */
 export const NO_BUDGET_LIMITS: BudgetLimits = { agentRuns: 0, filesFetched: 0, downloadMiB: 0 };
@@ -32,6 +59,40 @@ export function budgetMeter(limits: BudgetLimits = NO_BUDGET_LIMITS): BudgetMete
 /** Counts one started agent run. */
 export function countAgentRun(meter: BudgetMeter): void {
   meter.used.agentRuns += 1;
+}
+
+/** True while another agent run fits the meter's limit: it has none, or the runs used are under it. */
+export function hasAgentRunLeft(meter: BudgetMeter): boolean {
+  return meter.limits.agentRuns === 0 || meter.used.agentRuns < meter.limits.agentRuns;
+}
+
+/** The download limit the meter has reached — files first, then size — or undefined while another download fits. */
+export function spentDownloadLimit(meter: BudgetMeter): 'filesFetched' | 'downloadMiB' | undefined {
+  const { limits, used } = meter;
+  if (limits.filesFetched > 0 && used.filesFetched >= limits.filesFetched) return 'filesFetched';
+  if (limits.downloadMiB > 0 && used.downloadBytes >= limits.downloadMiB * MIB) return 'downloadMiB';
+  return undefined;
+}
+
+/** The limit the meter has reached — agent runs, then files, then size — or undefined while none is. */
+export function spentLimit(meter: BudgetMeter): BudgetLimit | undefined {
+  return hasAgentRunLeft(meter) ? spentDownloadLimit(meter) : 'agentRuns';
+}
+
+/**
+ * Why something was left at a limit, naming the limit and the setting
+ * that raises it, such as "the review used its 12 agent runs; raise
+ * `second-look.budget.agentRuns` to check it".
+ */
+export function limitReason(meter: BudgetMeter, limit: BudgetLimit, toDo: string): string {
+  const value = meter.limits[limit];
+  const spent =
+    limit === 'agentRuns'
+      ? `used its ${value} agent run${value === 1 ? '' : 's'}`
+      : limit === 'filesFetched'
+        ? `fetched its ${value} file${value === 1 ? '' : 's'}`
+        : `downloaded its ${value} MiB`;
+  return `the review ${spent}; raise \`${LIMIT_SETTINGS[limit]}\` to ${toDo}`;
 }
 
 /** The meter as it stands now, copied so later counting leaves it be. */
@@ -53,25 +114,47 @@ export function meteredFetch(fetchImpl: typeof fetch, meter: BudgetMeter): typeo
   return async (input, init) => {
     const response = await fetchImpl(input, init);
     meter.used.filesFetched += 1;
-    if (response.body === null) return response;
-    const counting = new TransformStream<Uint8Array, Uint8Array>({
-      transform(chunk, controller) {
-        meter.used.downloadBytes += chunk.byteLength;
-        controller.enqueue(chunk);
-      },
+    return throughBody(response, (chunk, controller) => {
+      meter.used.downloadBytes += chunk.byteLength;
+      controller.enqueue(chunk);
     });
-    const metered = new Response(response.body.pipeThrough(counting), {
-      status: response.status,
-      statusText: response.statusText,
-      headers: response.headers,
-    });
-    // A response built here would forget where it came from.
-    Object.defineProperties(metered, {
-      url: { value: response.url },
-      redirected: { value: response.redirected },
-    });
-    return metered;
   };
+}
+
+/**
+ * A metering fetch that also refuses what passes a download limit: a
+ * download is not started once the files or bytes used reach their limit,
+ * and a body that passes the size limit as it streams fails there. Each
+ * refusal is a {@link BudgetLimitError} naming the limit. For anything but
+ * the review's own reads, which {@link meteredFetch} only counts.
+ */
+export function limitedFetch(fetchImpl: typeof fetch, meter: BudgetMeter): typeof fetch {
+  const metered = meteredFetch(fetchImpl, meter);
+  const refusal = (limit: BudgetLimit) => new BudgetLimitError(limitReason(meter, limit, 'download more'), limit);
+  return async (input, init) => {
+    const spent = spentDownloadLimit(meter);
+    if (spent !== undefined) throw refusal(spent);
+    return throughBody(await metered(input, init), (chunk, controller) => {
+      if (meter.limits.downloadMiB > 0 && meter.used.downloadBytes > meter.limits.downloadMiB * MIB) controller.error(refusal('downloadMiB'));
+      else controller.enqueue(chunk);
+    });
+  };
+}
+
+/** The response with its body passed through the given transform, keeping its status, headers, URL and redirect flag. */
+function throughBody(response: Response, transform: (chunk: Uint8Array, controller: TransformStreamDefaultController<Uint8Array>) => void): Response {
+  if (response.body === null) return response;
+  const passed = new Response(response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({ transform })), {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+  // A response built here would forget where it came from.
+  Object.defineProperties(passed, {
+    url: { value: response.url },
+    redirected: { value: response.redirected },
+  });
+  return passed;
 }
 
 function isWholeNumber(value: unknown): boolean {
