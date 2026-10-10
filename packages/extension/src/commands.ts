@@ -6,6 +6,9 @@ export const REVIEW_COMMAND = 'second-look.reviewPullRequest' as const;
 /** The side-bar tree view that ranks the parts. */
 export const REVIEW_TREE_VIEW = 'second-look.reviewTree' as const;
 
+/** The editor's own command that opens the Activity Bar container the review tree lives in. */
+export const OPEN_REVIEW_CONTAINER_COMMAND = 'workbench.view.extension.second-look' as const;
+
 /** Opens one part's files in the multi-file diff editor. */
 export const OPEN_PART_COMMAND = 'second-look.openPart' as const;
 

@@ -18,6 +18,7 @@ import {
   OPEN_LIBRARY_EVIDENCE_COMMAND,
   OPEN_OVERVIEW_COMMAND,
   OPEN_PART_COMMAND,
+  OPEN_REVIEW_CONTAINER_COMMAND,
   REVIEW_COMMAND,
   REVIEW_TREE_VIEW,
   SUBMIT_REVIEW_COMMAND,
@@ -79,6 +80,7 @@ export {
   OPEN_LIBRARY_EVIDENCE_COMMAND,
   OPEN_OVERVIEW_COMMAND,
   OPEN_PART_COMMAND,
+  OPEN_REVIEW_CONTAINER_COMMAND,
   REVIEW_COMMAND,
   REVIEW_TREE_VIEW,
   SUBMIT_REVIEW_COMMAND,
@@ -92,12 +94,6 @@ export interface ExtensionDeps {
   /** The extension host's environment; tests inject one carrying an API key. */
   env?: NodeJS.ProcessEnv;
 }
-
-/** The one node the tree shows before the first review. */
-const EMPTY_TREE_PLACEHOLDER: TreePart = {
-  label: 'Review a pull request to see its parts here, ranked by importance.',
-  kind: 'part',
-};
 
 /** A tree node: a section, a part inside it, or a pending comment. */
 type TreeNode = TreeSection | TreePart | TreeComment;
@@ -194,7 +190,9 @@ class ReviewTreeProvider implements vscode.TreeDataProvider<TreeNode> {
 
   getChildren(node?: TreeNode): TreeNode[] {
     if (node === undefined) {
-      return this.sections.length > 0 ? this.sections : [EMPTY_TREE_PLACEHOLDER];
+      // Empty before the first review, so the view shows its welcome
+      // content: the button that starts one.
+      return this.sections;
     }
     return isSection(node) ? node.parts : [];
   }
@@ -292,9 +290,9 @@ class ReviewSession {
     return this.result;
   }
 
-  async reviewPullRequest(urlArg?: string): Promise<void> {
+  async reviewPullRequest(urlArg?: unknown): Promise<void> {
     const url =
-      urlArg !== undefined && urlArg.trim() !== ''
+      typeof urlArg === 'string' && urlArg.trim() !== ''
         ? urlArg
         : await vscode.window.showInputBox({
             prompt: 'GitHub pull request URL',
@@ -318,6 +316,7 @@ class ReviewSession {
       return;
     }
     const accessToken = session.accessToken;
+    await vscode.commands.executeCommand(OPEN_REVIEW_CONTAINER_COMMAND);
 
     // A new review replaces one still running: stopping the engine drops
     // the old request, and the next request starts a fresh engine.
