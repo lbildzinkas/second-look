@@ -261,7 +261,7 @@ describe('runRpcServer', () => {
     expect(responses[0]!.id).toBeNull();
     expect(responses[0]!.error!.message).toContain('not JSON');
     expect(responses[1]!.error!.message).toContain('unknown method: start');
-    expect(responses[1]!.error!.message).toContain('initialize, agents/probe, review, fetchLibrary, draftComment, ask, sendReview, reviewedMarks, markReviewed, markViewed and pullRequests/list');
+    expect(responses[1]!.error!.message).toContain('initialize, agents/probe, agents/test, review, fetchLibrary, draftComment, ask, sendReview, reviewedMarks, markReviewed, markViewed and pullRequests/list');
     expect(responses[2]!.result).toEqual({ protocolVersion: ENGINE_PROTOCOL_VERSION });
   });
 

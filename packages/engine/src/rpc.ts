@@ -26,9 +26,12 @@
  * review without restarting the engine. {@link PROBE_AGENTS_METHOD}
  * reports each agent the companion can drive as installed here, without
  * running a model, so the editor can offer only what will run.
+ * {@link TEST_AGENT_METHOD} runs the chosen agent once on a tiny locked-down
+ * test, only when the reviewer asks for it.
  */
 
 import type { AgentProbe } from './agent.js';
+import type { AgentTestResult } from './agent-test.js';
 import type { AgentName } from './agents.js';
 import type { AskKind } from './asks.js';
 import type { AskAnswer, AskedClaim, BudgetLimits, DraftComment, FindingRef, PendingReview, ReviewedMarks, ReviewResult, SentReview, ViewedFiles } from './protocol.js';
@@ -126,6 +129,23 @@ export interface ProbeAgentsParams {
 export interface ProbeAgentsRpcResult {
   agents: (AgentProbe & { agent: AgentName })[];
 }
+
+/**
+ * The request that tests an agent (issue 132), sent only when the reviewer
+ * asks for it: the chosen agent, model and effort run once, locked down
+ * exactly as a review runs them, in an empty temporary read-only folder
+ * that is removed afterwards, on a fixed tiny prompt that asks for a
+ * one-field JSON answer. Nothing sends it automatically.
+ */
+export const TEST_AGENT_METHOD = 'agents/test' as const;
+
+/** One test request: the agent, model, effort, account and path to test; see {@link ReviewAgentChoice}. */
+export interface TestAgentParams {
+  agent: ReviewAgentChoice;
+}
+
+/** The test request's result: ok with the run's stamp, or the failure in plain words with whatever stamp the run had. */
+export type TestAgentRpcResult = AgentTestResult;
 
 /** The request that reviews one pull request. */
 export const REVIEW_METHOD = 'review' as const;
