@@ -9,20 +9,20 @@ interface Manifest {
     commands: { command: string; icon?: string }[];
     menus: Record<string, { command: string; when: string; group?: string }[]>;
     viewsContainers: Record<string, { id: string; title: string; icon: string }[]>;
-    views: Record<string, { id: string; name: string }[]>;
-    viewsWelcome: { view: string; contents: string }[];
+    views: Record<string, { type?: string; id: string; name: string }[]>;
+    viewsWelcome?: unknown;
   };
 }
 
 const MANIFEST = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')) as Manifest;
 
-describe('the review tree in the Activity Bar', () => {
+describe('the side bar in the Activity Bar', () => {
   it('lives in its own Second Look container, and nowhere in the Explorer', () => {
     const { viewsContainers, views } = MANIFEST.contributes;
     expect(viewsContainers['activitybar']).toEqual([
       { id: 'second-look', title: 'Second Look', icon: 'media/second-look.svg' },
     ]);
-    expect(views['second-look']).toEqual([{ id: REVIEW_TREE_VIEW, name: 'Second Look' }]);
+    expect(views['second-look']).toEqual([{ type: 'webview', id: REVIEW_TREE_VIEW, name: 'Second Look' }]);
     expect(views['explorer']).toBeUndefined();
   });
 
@@ -35,14 +35,9 @@ describe('the review tree in the Activity Bar', () => {
     expect(svg.match(/(?:fill|stroke)="(?!none|currentColor)[^"]*"/g)).toBeNull();
   });
 
-  it('starts a review from the empty view and from the title bar, with no Command Palette', () => {
+  it("starts a review from the title bar, with no Command Palette; step 2's card carries the button, so the view needs no welcome content", () => {
     const { commands, menus, viewsWelcome } = MANIFEST.contributes;
-    expect(viewsWelcome).toEqual([
-      {
-        view: REVIEW_TREE_VIEW,
-        contents: `Review a pull request to see its parts here, ranked by importance.\n[Review a pull request](command:${REVIEW_COMMAND})`,
-      },
-    ]);
+    expect(viewsWelcome).toBeUndefined();
     expect(menus['view/title']).toContainEqual({
       command: REVIEW_COMMAND,
       when: `view == ${REVIEW_TREE_VIEW}`,

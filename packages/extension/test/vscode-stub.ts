@@ -113,7 +113,7 @@ export interface StubWebview {
   /** The HTML the extension set for the page. */
   html: string;
   /** The options the extension created the panel with. */
-  options: { enableScripts?: boolean };
+  options: { enableScripts?: boolean; enableCommandUris?: boolean; localResourceRoots?: unknown[] };
   /** The messages the extension posted to the page, in order. */
   posted: unknown[];
   /** Delivers a message as the page's own script would send it. */
@@ -137,6 +137,26 @@ export interface StubWebviewPanel extends StubDisposable {
   reveal(): void;
 }
 
+/** A webview view the editor resolved for the extension, as the slice the companion uses. */
+export interface StubWebviewView extends StubDisposable {
+  readonly viewType: string;
+  webview: StubWebview;
+  /** The badge the extension shows on the view. */
+  badge?: { value: number; tooltip: string };
+  /** Registers a listener for the view's closing, as the editor fires it. */
+  onDidDispose(listener: () => void): StubDisposable;
+}
+
+/** A webview view provider the extension registered, which a test resolves the way opening the view does. */
+export interface StubWebviewViewProvider {
+  id: string;
+  provider: { resolveWebviewView(view: unknown, context: unknown, token: unknown): void | Thenable<void> };
+  /** The views resolved so far, newest last. */
+  views: StubWebviewView[];
+  /** Resolves a view, as the editor does when the reviewer opens the container. */
+  resolve(): StubWebviewView;
+}
+
 /** A theme colour the extension asked for, by its id. */
 export class ThemeColor {
   constructor(readonly id: string) {}
@@ -151,6 +171,8 @@ export class StubMarkdownString {
 export interface StubState {
   commands: StubCommand[];
   executedCommands: StubExecutedCommand[];
+  /** What each executed command's run settles with, in the order of executedCommands. */
+  commandRuns: Promise<unknown>[];
   treeViews: StubTreeView[];
   fileSystemProviders: StubFileSystemProvider[];
   decorationTypes: StubDecorationType[];
@@ -158,6 +180,8 @@ export interface StubState {
   commentControllers: StubCommentController[];
   /** The webview panels the extension created, in order. */
   webviewPanels: StubWebviewPanel[];
+  /** The webview view providers the extension registered, in order. */
+  webviewViewProviders: StubWebviewViewProvider[];
   /** The hover providers the extension registered, with the documents each serves. */
   hoverProviders: { selector: { scheme?: string }; provider: unknown }[];
   /** The configuration values `getConfiguration` reads, keyed by `section.key`: the user settings. */
@@ -209,12 +233,14 @@ const configurationListeners = new Set<(event: StubConfigurationChangeEvent) => 
 export const stub: StubState = {
   commands: [],
   executedCommands: [],
+  commandRuns: [],
   treeViews: [],
   fileSystemProviders: [],
   decorationTypes: [],
   statusBarItems: [],
   commentControllers: [],
   webviewPanels: [],
+  webviewViewProviders: [],
   hoverProviders: [],
   configuration: {},
   workspaceConfiguration: {},
@@ -238,12 +264,14 @@ export const stub: StubState = {
   reset() {
     stub.commands = [];
     stub.executedCommands = [];
+    stub.commandRuns = [];
     stub.treeViews = [];
     stub.fileSystemProviders = [];
     stub.decorationTypes = [];
     stub.statusBarItems = [];
     stub.commentControllers = [];
     stub.webviewPanels = [];
+    stub.webviewViewProviders = [];
     stub.hoverProviders = [];
     stub.configuration = {};
     stub.workspaceConfiguration = {};
@@ -523,9 +551,39 @@ export const commands = {
   },
   executeCommand(id: string, ...args: unknown[]): PromiseLike<unknown> {
     stub.executedCommands.push({ id, args });
-    return Promise.resolve(undefined);
+    // The registry runs a command the extension registered; the editor's
+    // own commands only record that they ran.
+    const registered = stub.commands.find((command) => command.id === id);
+    const run = Promise.resolve(registered === undefined ? undefined : registered.handler(...args));
+    stub.commandRuns.push(run);
+    return run;
   },
 };
+
+/** A webview double, with the way to drop its listeners when its panel closes. */
+function stubWebview(options?: { enableScripts?: boolean }): { webview: StubWebview; clear(): void } {
+  const listeners = new Set<(message: unknown) => void>();
+  const webview: StubWebview = {
+    cspSource: 'https://second-look.test',
+    html: '',
+    options: options ?? {},
+    posted: [],
+    receive(message: unknown): void {
+      for (const listener of listeners) {
+        listener(message);
+      }
+    },
+    postMessage(message: unknown): Thenable<boolean> {
+      webview.posted.push(message);
+      return Promise.resolve(true);
+    },
+    onDidReceiveMessage(listener: (message: unknown) => void): StubDisposable {
+      listeners.add(listener);
+      return { dispose: () => listeners.delete(listener) };
+    },
+  };
+  return { webview, clear: () => listeners.clear() };
+}
 
 export const window = {
   get activeTextEditor(): unknown {
@@ -602,33 +660,41 @@ export const window = {
     stub.decorationTypes.push(type);
     return type;
   },
+  registerWebviewViewProvider(id: string, provider: StubWebviewViewProvider['provider']): StubDisposable {
+    const entry: StubWebviewViewProvider = {
+      id,
+      provider,
+      views: [],
+      resolve: (): StubWebviewView => {
+        const closing = new Set<() => void>();
+        const view: StubWebviewView = {
+          viewType: id,
+          webview: stubWebview({ enableScripts: false }).webview,
+          onDidDispose(listener: () => void): StubDisposable {
+            closing.add(listener);
+            return { dispose: () => closing.delete(listener) };
+          },
+          dispose: (): void => {
+            for (const listener of closing) listener();
+            closing.clear();
+          },
+        };
+        entry.views.push(view);
+        void provider.resolveWebviewView(view, { state: undefined }, {});
+        return view;
+      },
+    };
+    stub.webviewViewProviders.push(entry);
+    return { dispose: () => undefined };
+  },
   createWebviewPanel(
     viewType: string,
     title: string,
     _showOptions: number | { viewColumn: number },
     options?: { enableScripts?: boolean },
   ): StubWebviewPanel {
-    const listeners = new Set<(message: unknown) => void>();
+    const { webview, clear } = stubWebview(options);
     const closing = new Set<() => void>();
-    const webview: StubWebview = {
-      cspSource: 'https://second-look.test',
-      html: '',
-      options: options ?? {},
-      posted: [],
-      receive(message: unknown): void {
-        for (const listener of listeners) {
-          listener(message);
-        }
-      },
-      postMessage(message: unknown): Thenable<boolean> {
-        webview.posted.push(message);
-        return Promise.resolve(true);
-      },
-      onDidReceiveMessage(listener: (message: unknown) => void): StubDisposable {
-        listeners.add(listener);
-        return { dispose: () => listeners.delete(listener) };
-      },
-    };
     const panel: StubWebviewPanel = {
       viewType,
       title,
@@ -643,7 +709,7 @@ export const window = {
       },
       dispose: (): void => {
         stub.webviewPanels = stub.webviewPanels.filter((entry) => entry !== panel);
-        listeners.clear();
+        clear();
         for (const listener of closing) {
           listener();
         }
