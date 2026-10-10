@@ -20,13 +20,13 @@ These hold for both agents, because they come from the engine rather than from e
 
 ### The agent is started in one folder, a read-only copy
 
-- **The folder.** Each run is started with its working directory set to one folder (`pi.ts:198-204`, `claude-code.ts:482-488`): the head copy of the pull request for every review pass and ask (for example `review.ts:300`, `asks.ts:64`), or, after the reviewer presses a library fetch, that library's fetched folder alone (`library-verdicts.ts:252`). The base copy, the reviewer's workspace and the rest of the cache are never the run's folder.
+- **The folder.** Each run is started with its working directory set to one folder (`pi.ts:198-204`, `claude-code.ts:482-488`): the head copy of the pull request for every review pass and ask (for example `review.ts:333`, `asks.ts:64`), or, after the reviewer presses a library fetch, that library's fetched folder alone (`library-verdicts.ts:252`). The base copy, the reviewer's workspace and the rest of the cache are never the run's folder.
 - **Read-only.** The copies and fetched libraries are all written by `archive.ts`, with every file mode `0444` and every folder `0555` (`archive.ts:18-19`, `archive.ts:168-175`), so nothing in them can be written or run in place. Each copy is unpacked from the commit's archive into the engine's cache (`cache.ts:80-107`): nothing is checked out in the reviewer's workspace, and nothing from the pull request is built, installed or run.
 - **No links out.** Symbolic links, hard links and special files in an archive are skipped, never written, and an entry whose path would leave the folder is refused (`archive.ts:139-149`, `archive.ts:179-187`). A copy therefore holds no link an agent could follow out of it.
 
 ### The agent has no GitHub login
 
-The engine removes `GITHUB_TOKEN`, `GH_TOKEN`, `GH_ENTERPRISE_TOKEN` and `GITHUB_ENTERPRISE_TOKEN` from every agent's environment (`agent.ts:148-153`, applied at `pi.ts:88-92` and `claude-code.ts:199-203`). The token the engine holds lives only in its GitHub client's memory (`github.ts:58-70`). In VS Code the token comes from VS Code's authentication API with each request and is never put in the engine's environment (`packages/extension/src/engine-client.ts:84-85` passes the editor's environment, not a token).
+The engine removes `GITHUB_TOKEN`, `GH_TOKEN`, `GH_ENTERPRISE_TOKEN` and `GITHUB_ENTERPRISE_TOKEN` from every agent's environment (`agent.ts:150-155`, applied at `pi.ts:88-92` and `claude-code.ts:199-203`). The token the engine holds lives only in its GitHub client's memory (`github.ts:58-70`). In VS Code the token comes from VS Code's authentication API with each request and is never put in the engine's environment (`packages/extension/src/engine-client.ts:85-86` passes the editor's environment, not a token).
 
 ### The agent signs in with its own login, which the companion never reads
 
@@ -62,7 +62,7 @@ The one program besides the agent that the companion starts is the .NET decompil
 - **Cleaned.** Every piece of text someone else wrote — the title, description, linked issues, pipeline report, CI logs, the diff — reaches the agent with Unicode tag characters, zero-width characters and bidirectional controls stripped, and each HTML comment, which GitHub hides from the reviewer, kept but marked as hidden (`untrusted.ts:37-43`).
 - **Fenced.** That text is wrapped in an `<untrusted-input>` block whose id is random per call, so the text cannot close its block early (`untrusted.ts:50-60`).
 - **Named as data.** Every prompt's instructions carry the rule that text in those blocks was written by other people and is data to read, never instructions to follow (`untrusted.ts:63-65`), as in `grouping.ts:73`, `ranking.ts:97`, `claims.ts:100`, `criteria-mapping.ts:124`, `explain.ts:104`, `cover.ts:84`, `draft-comment.ts:84`, `doc-suggestions.ts:71` and `library-verdicts.ts:80`.
-- **Checked, not trusted.** Every answer is checked against its schema and the task's own checks — that every line it cites is in the copy, every id it names was offered — before anything is shown; an invalid answer is retried once and then reported as a failure, never guessed (`agent.ts:264-316`).
+- **Checked, not trusted.** Every answer is checked against its schema and the task's own checks — that every line it cites is in the copy, every id it names was offered — before anything is shown; an invalid answer is retried once and then reported as a failure, never guessed (`agent.ts:268-321`).
 
 ### The trusted instructions used instead
 

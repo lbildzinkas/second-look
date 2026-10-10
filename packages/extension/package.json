@@ -21,12 +21,15 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
-      "description": "In Restricted Mode a workspace cannot change the agent, model, effort or account: they are read from the user settings only.",
+      "description": "In Restricted Mode a workspace cannot change the agent, model, effort, account or budget: they are read from the user settings only.",
       "restrictedConfigurations": [
         "second-look.agent",
         "second-look.agentModel",
         "second-look.agentEffort",
-        "second-look.agentAccount"
+        "second-look.agentAccount",
+        "second-look.budget.agentRuns",
+        "second-look.budget.filesFetched",
+        "second-look.budget.downloadMiB"
       ]
     }
   },
@@ -375,6 +378,27 @@
           "type": "string",
           "default": "Acceptance criteria",
           "description": "The heading the acceptance criteria checklist sits under in the issues a pull request links. The companion reads every task-list item under it — closing references, sidebar links and issues in other repositories alike — and lists each one in the overview, quoted and not checked until the agent maps it to the change. The heading travels with each review request, so changing it and re-running a review reads the new checklist; GitHub returns no closing references for a pull request into a non-default branch, and the overview says so."
+        },
+        "second-look.budget.agentRuns": {
+          "type": "integer",
+          "scope": "application",
+          "minimum": 0,
+          "default": 0,
+          "description": "The most agent runs one review may start, its later library fetches, asks and drafts included; every attempt counts, a retry too. 0 is no limit, the default. The limit travels with each review request and the review's result shows the runs used so far; for now the companion only counts, and nothing is refused."
+        },
+        "second-look.budget.filesFetched": {
+          "type": "integer",
+          "scope": "application",
+          "minimum": 0,
+          "default": 0,
+          "description": "The most files one review may download, its later library fetches included: every download from GitHub, a package registry or a library's repository counts as one. 0 is no limit, the default. The limit travels with each review request and the review's result shows the files fetched so far; for now the companion only counts, and nothing is refused."
+        },
+        "second-look.budget.downloadMiB": {
+          "type": "number",
+          "scope": "application",
+          "minimum": 0,
+          "default": 0,
+          "description": "The most mebibytes one review may download across every file it fetches, its later library fetches included. 0 is no limit, the default. The limit travels with each review request and the review's result shows the bytes downloaded so far; for now the companion only counts, and nothing is refused."
         }
       }
     }

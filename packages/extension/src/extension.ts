@@ -52,6 +52,7 @@ import { AgentStatusBar } from './agent-status.js';
 import { chooseAgent } from './agent-picker.js';
 import { isBannerPartRef, PartBanner } from './part-banner.js';
 import { readAgentSettings, reviewAgentChoice, untestedModelWarning } from './agent-settings.js';
+import { readBudgetLimits } from './budget-settings.js';
 import {
   ASK_KINDS,
   ASKS,
@@ -1060,7 +1061,9 @@ class ReviewSession {
       .getConfiguration('second-look')
       .get<string>('criteriaHeading', '')
       .trim();
-    const reviewed = engine.review(url, token, reviewAgentChoice(readAgentSettings()), onStage, heading);
+    // The budget's limits travel the same way, and the engine meters the
+    // review against them.
+    const reviewed = engine.review(url, token, reviewAgentChoice(readAgentSettings()), onStage, heading, readBudgetLimits());
     onSent(engine);
     return reviewed;
   }

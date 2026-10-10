@@ -241,20 +241,23 @@ export async function run(): Promise<void> {
           token?: string;
           agent?: { agent?: string; model?: string; effort?: string; account?: string };
           criteriaHeading?: string;
+          budget?: { agentRuns?: number; filesFetched?: number; downloadMiB?: number };
         };
       });
     deepStrictEqual(requests.length, 3);
     ok(requests[0] && requests[0].method === 'initialize');
     ok(requests[1] && requests[1].method === 'review');
-    // The request carries the agent choice and the criteria heading the
-    // settings read — their defaults in this clean editor — beside the URL
-    // and the token, so the engine runs every agent pass with it and reads
-    // the criteria checklist under the configured heading.
+    // The request carries the agent choice, the criteria heading and the
+    // budget's limits the settings read — their defaults in this clean
+    // editor — beside the URL and the token, so the engine runs every
+    // agent pass with it, reads the criteria checklist under the
+    // configured heading and meters the review against no limit.
     deepStrictEqual(requests[1]?.params, {
       url: PR_URL,
       token: TOKEN,
       agent: { agent: 'pi', model: '', effort: '', account: '' },
       criteriaHeading: 'Acceptance criteria',
+      budget: { agentRuns: 0, filesFetched: 0, downloadMiB: 0 },
     });
     // The review's marks are read from the engine's local store as soon
     // as the review is under way, so the tree can show what the reviewer
