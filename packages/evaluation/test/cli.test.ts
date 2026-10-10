@@ -14,6 +14,7 @@ import {
   pull7,
   temporaryCacheDir,
 } from '../../engine/test/helpers.js';
+import { CLAUDE_GUARD, FAKE_CLAUDE, fakeClaude } from '../../engine/test/fake-claude.js';
 import { hasStamp } from '../src/baseline.js';
 import { loadCase, loadCases } from '../src/case.js';
 import { report, runCli } from '../src/cli.js';
@@ -155,13 +156,56 @@ describe('the run command', () => {
   });
 
   it.each([
-    [['--agent', 'codex'], '--agent codex is not supported; the one agent so far is pi'],
+    [['--agent', 'codex'], '--agent codex is not supported; choose pi or claude-code'],
     [['--agent', 'pi', '--model-free'], '--model-free runs no agent; leave out --agent'],
     [['--agent', 'pi', '--agent-timeout', '0'], '--agent-timeout needs a number of seconds above zero'],
   ])('refuses agent options %j it cannot honour', async (flags, message) => {
     const { code, err } = await cli(['run', ...flags, '--runs', join(scratch, 'runs')]);
     expect(err).toContain(message);
     expect(code).toBe(1);
+  });
+
+  it('names every agent it can drive in its help', async () => {
+    const { code, out } = await cli(['--help']);
+    expect(out).toContain('[--agent pi|claude-code [--model <model>]');
+    expect(out).toContain('With --agent pi or --agent\nclaude-code,');
+    expect(code).toBe(0);
+  });
+
+  it("drives the installed Claude Code with --agent claude-code, locked down, at the model and effort given", async () => {
+    const cases = join(scratch, 'cases');
+    cpSync(join(REPOSITORY_CASES, 'example-7'), join(cases, 'example-7'), { recursive: true });
+    const claude = fakeClaude({ version: '2.1.296', runs: [{ text: 'no JSON here', model: 'claude-sonnet-5-5' }] });
+    const out = new CaptureStream();
+    const code = await runCli(
+      ['run', '--cases', cases, '--agent', 'claude-code', '--model', 'claude-sonnet-5-5', '--effort', 'high', '--runs', join(scratch, 'runs')],
+      { PATH: process.env['PATH'], FAKE_CLAUDE_DIR: claude.dir },
+      { out, err: new CaptureStream() },
+      { agents: { claudeCode: { command: [process.execPath, FAKE_CLAUDE], guardPath: CLAUDE_GUARD } } },
+    );
+    expect(code).toBe(0);
+
+    // Every call of every prompt the case is tied to went through Claude
+    // Code's lockdown, asking for the model and effort given.
+    const runs = claude.calls().filter((call) => call.kind === 'run');
+    expect(runs.length).toBeGreaterThanOrEqual(3);
+    for (const call of runs) {
+      const flag = (name: string) => call.args[call.args.indexOf(name) + 1];
+      expect(flag('--model')).toBe('claude-sonnet-5-5');
+      expect(flag('--effort')).toBe('high');
+      expect(flag('--tools')).toBe('Read,Grep,Glob');
+      expect(flag('--permission-mode')).toBe('default');
+    }
+    const results = JSON.parse(readFileSync(join(runFolder(), 'results.json'), 'utf8')) as RunResults;
+    const agentRows = results.rows.filter((row) => row.agent !== NO_AGENT);
+    expect(new Set(agentRows.map((row) => row.name))).toEqual(
+      new Set(['coverage', 'grouping-agreement', 'rank-median', 'rank-top-3', 'story-must-review', 'story-order']),
+    );
+    for (const row of agentRows) {
+      expect(row).toMatchObject({ agent: 'claude-code', agentVersion: '2.1.296', model: 'claude-sonnet-5-5', effort: 'high' });
+    }
+    expect(new Set(results.fallbacks?.map((fallback) => fallback.prompt))).toEqual(new Set(['grouping', 'ranking', 'story']));
+    expect(out.text).toContain('TESTED claude-code 2.1.296 claude-sonnet-5-5 high');
   });
 
   it('selects no case when no prompt changed since the ref', async () => {

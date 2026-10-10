@@ -5403,6 +5403,3434 @@
       "model": "zai-coding-cn/glm-5.3",
       "effort": "default",
       "runDate": "2026-10-07T15:08:38.849Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "story-must-review",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "explain": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "story-order",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "explain": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "story-names",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "explain": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "claims-recall",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "explain": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "claims-precision",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "explain": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "explain-cites-part",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "explain": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "explain-names-in-change",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "explain": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "doc-links-on-site",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "explain": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "doc-links-checked",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "explain": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "verdict-accuracy",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "explain": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "false-verified",
+      "value": 0,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "explain": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "verify-accuracy",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "explain": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "verify-false-verified",
+      "value": 0,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "explain": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "verify-fetch-offered",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "explain": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "claims-found",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "explain": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "claims-verdict:refuted",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "explain": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "claims-evidence",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "explain": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-csharp",
+      "name": "claims-fetch-offered",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "explain": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "story-must-review",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "story-order",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "story-names",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "claims-recall",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "claims-precision",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "draft-cites-evidence",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "draft-no-new-claim",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "draft-under-cap",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "explain-cites-part",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "explain-names-in-change",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "cover-cites-checked",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "cover-none-found",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "doc-links-on-site",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "doc-links-checked",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "verdict-accuracy",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "false-verified",
+      "value": 0,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "verify-accuracy",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "verify-false-verified",
+      "value": 0,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "verify-fetch-offered",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "claims-found",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "claims-verdict:refuted",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "claims-verdict:verified",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "claims-evidence",
+      "value": 0.5,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "canary-python",
+      "name": "claims-fetch-offered",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "library-verdicts": "3",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1",
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "criteria-python",
+      "name": "criteria-accuracy",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "criteria-python",
+      "name": "criteria-false-met",
+      "value": 0,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "criteria-python",
+      "name": "criteria-code-recall",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "criteria-python",
+      "name": "criteria-tests-recall",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "criteria-python",
+      "name": "criteria-manual-recall",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "criteria-python",
+      "name": "draft-cites-evidence",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "criteria-python",
+      "name": "draft-no-new-claim",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "criteria-python",
+      "name": "draft-under-cap",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "criteria-python",
+      "name": "explain-cites-part",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "criteria-python",
+      "name": "explain-names-in-change",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "criteria-python",
+      "name": "cover-cites-checked",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "criteria-python",
+      "name": "cover-tests-recall",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "criteria-python",
+      "name": "cover-tests-precision",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "criteria-python",
+      "name": "cover-manual-recall",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1",
+        "draft-comment": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "criteria-typescript",
+      "name": "criteria-accuracy",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "criteria-typescript",
+      "name": "criteria-false-met",
+      "value": 0,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "criteria-typescript",
+      "name": "criteria-code-recall",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "criteria-typescript",
+      "name": "criteria-tests-recall",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "criteria-typescript",
+      "name": "criteria-manual-recall",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "criteria-typescript",
+      "name": "cover-cites-checked",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "criteria-typescript",
+      "name": "cover-tests-recall",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "criteria-typescript",
+      "name": "cover-tests-precision",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "criteria-typescript",
+      "name": "cover-manual-recall",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "coverage",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "grouping-agreement",
+      "value": 0.5555555555555556,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "story-must-review",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "story-order",
+      "value": 0,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "story-names",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "claims-recall",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "claims-precision",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "unexplained-recall",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "unexplained-precision",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "explain-cites-part",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "explain-names-in-change",
+      "value": 0.5,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "cover-cites-checked",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "cover-none-found",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "verdict-accuracy",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "rank-median",
+      "value": 1.5,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "encode-httpx-3690",
+      "name": "rank-top-3",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "example-7",
+      "name": "coverage",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "example-7",
+      "name": "grouping-agreement",
+      "value": 0.9523809523809523,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "example-7",
+      "name": "story-must-review",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "example-7",
+      "name": "story-order",
+      "value": 0,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "example-7",
+      "name": "story-names",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "example-7",
+      "name": "rank-median",
+      "value": 1.5,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "example-7",
+      "name": "rank-top-3",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "misstated-python",
+      "name": "draft-cites-evidence",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "verdicts": "5",
+        "draft-comment": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "misstated-python",
+      "name": "draft-no-new-claim",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "verdicts": "5",
+        "draft-comment": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "misstated-python",
+      "name": "draft-under-cap",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "verdicts": "5",
+        "draft-comment": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "misstated-python",
+      "name": "verdict-accuracy",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "verdicts": "5",
+        "draft-comment": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "misstated-python",
+      "name": "false-verified",
+      "value": 0,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "verdicts": "5",
+        "draft-comment": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "pallets-click-3781",
+      "name": "coverage",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "pallets-click-3781",
+      "name": "grouping-agreement",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "pallets-click-3781",
+      "name": "story-must-review",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "pallets-click-3781",
+      "name": "story-order",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "pallets-click-3781",
+      "name": "story-names",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "pallets-click-3781",
+      "name": "claims-recall",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "pallets-click-3781",
+      "name": "claims-precision",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "pallets-click-3781",
+      "name": "verdict-accuracy",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "pallets-click-3781",
+      "name": "rank-median",
+      "value": 1.5,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "pallets-click-3781",
+      "name": "rank-top-3",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "planted-click",
+      "name": "unexplained-recall",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "unexplained": "1",
+        "draft-comment": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "planted-click",
+      "name": "unexplained-precision",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "unexplained": "1",
+        "draft-comment": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "planted-click",
+      "name": "described-recall",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "unexplained": "1",
+        "draft-comment": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "planted-click",
+      "name": "described-precision",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "unexplained": "1",
+        "draft-comment": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "planted-click",
+      "name": "draft-cites-evidence",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "unexplained": "1",
+        "draft-comment": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "planted-click",
+      "name": "draft-no-new-claim",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "unexplained": "1",
+        "draft-comment": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "planted-click",
+      "name": "draft-under-cap",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "unexplained": "1",
+        "draft-comment": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "planted-typescript",
+      "name": "unexplained-recall",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "unexplained": "1",
+        "criteria-mapping": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "planted-typescript",
+      "name": "unexplained-precision",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "unexplained": "1",
+        "criteria-mapping": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "planted-typescript",
+      "name": "described-recall",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "unexplained": "1",
+        "criteria-mapping": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "planted-typescript",
+      "name": "described-precision",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "unexplained": "1",
+        "criteria-mapping": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "planted-typescript",
+      "name": "criteria-accuracy",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "unexplained": "1",
+        "criteria-mapping": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "planted-typescript",
+      "name": "criteria-false-met",
+      "value": 0,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "unexplained": "1",
+        "criteria-mapping": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "planted-typescript",
+      "name": "criteria-code-recall",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "unexplained": "1",
+        "criteria-mapping": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "planted-typescript",
+      "name": "criteria-tests-recall",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "unexplained": "1",
+        "criteria-mapping": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "seeded-csharp",
+      "name": "story-order",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "seeded-csharp",
+      "name": "story-names",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "seeded-csharp",
+      "name": "rank-median",
+      "value": 1,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "seeded-csharp",
+      "name": "rank-top-3",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "seeded-python",
+      "name": "story-order",
+      "value": 0,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "seeded-python",
+      "name": "story-names",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "seeded-python",
+      "name": "rank-median",
+      "value": 1,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "seeded-python",
+      "name": "rank-top-3",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "seeded-typescript",
+      "name": "story-order",
+      "value": 0,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "seeded-typescript",
+      "name": "story-names",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "seeded-typescript",
+      "name": "rank-median",
+      "value": 1,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "seeded-typescript",
+      "name": "rank-top-3",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1",
+        "story": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "sindresorhus-ky-880",
+      "name": "coverage",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "sindresorhus-ky-880",
+      "name": "grouping-agreement",
+      "value": 0.4,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "sindresorhus-ky-880",
+      "name": "story-must-review",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "sindresorhus-ky-880",
+      "name": "story-order",
+      "value": 0,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "sindresorhus-ky-880",
+      "name": "story-names",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "sindresorhus-ky-880",
+      "name": "claims-recall",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "sindresorhus-ky-880",
+      "name": "claims-precision",
+      "value": 0.5,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "sindresorhus-ky-880",
+      "name": "explain-cites-part",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "sindresorhus-ky-880",
+      "name": "explain-names-in-change",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "sindresorhus-ky-880",
+      "name": "cover-cites-checked",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "sindresorhus-ky-880",
+      "name": "cover-tests-recall",
+      "value": 0.5,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "sindresorhus-ky-880",
+      "name": "cover-tests-precision",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "sindresorhus-ky-880",
+      "name": "verdict-accuracy",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "sindresorhus-ky-880",
+      "name": "verify-accuracy",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "sindresorhus-ky-880",
+      "name": "rank-median",
+      "value": 1,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "sindresorhus-ky-880",
+      "name": "rank-top-3",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2",
+        "ranking": "1",
+        "story": "1",
+        "claims": "1",
+        "verdicts": "5",
+        "unexplained": "1",
+        "explain": "1",
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "coverage",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "grouping-agreement",
+      "value": 0.7946428571428571,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "grouping": "2"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "rank-median",
+      "value": 1,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "rank-top-3",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "ranking": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "story-must-review",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "story": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "story-order",
+      "value": 0.4444444444444444,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "story": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "story-names",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "story": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "claims-recall",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "claims": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "claims-precision",
+      "value": 0.95,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "claims": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "verdict-accuracy",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "verdicts": "5"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "false-verified",
+      "value": 0,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "verdicts": "5"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "unexplained-recall",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "unexplained": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "unexplained-precision",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "unexplained": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "described-recall",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "unexplained": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "described-precision",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "unexplained": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "criteria-accuracy",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "criteria-false-met",
+      "value": 0,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "criteria-code-recall",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "criteria-tests-recall",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "criteria-manual-recall",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "criteria-mapping": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "draft-cites-evidence",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "draft-comment": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "draft-no-new-claim",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "draft-comment": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "draft-under-cap",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "draft-comment": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "explain-cites-part",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "explain": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "explain-names-in-change",
+      "value": 0.8333333333333334,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "explain": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "verify-accuracy",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "verdicts": "5"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "verify-false-verified",
+      "value": 0,
+      "better": "lower",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "verdicts": "5"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "verify-fetch-offered",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "verdicts": "5"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "cover-cites-checked",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "cover-tests-recall",
+      "value": 0.8,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "cover-tests-precision",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "cover-manual-recall",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "cover-none-found",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "cover": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "doc-links-on-site",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
+    },
+    {
+      "case": "(all)",
+      "name": "doc-links-checked",
+      "value": 1,
+      "better": "higher",
+      "companionVersion": "0.1.0",
+      "promptVersions": {
+        "doc-links": "1"
+      },
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "runDate": "2026-10-10T14:26:15.320Z"
     }
   ],
   "failures": [],
@@ -5429,6 +8857,30 @@
       "ranked": {
         "rank-median": 1,
         "rank-top-3": 0.9
+      },
+      "verdict": "matches or beats the plain ranking"
+    },
+    {
+      "agent": "claude-code",
+      "agentVersion": "2.1.296",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "cases": [
+        "encode-httpx-3690",
+        "example-7",
+        "pallets-click-3781",
+        "seeded-csharp",
+        "seeded-python",
+        "seeded-typescript",
+        "sindresorhus-ky-880"
+      ],
+      "plain": {
+        "rank-median": 2,
+        "rank-top-3": 0.8
+      },
+      "ranked": {
+        "rank-median": 1,
+        "rank-top-3": 1
       },
       "verdict": "matches or beats the plain ranking"
     }

@@ -110,9 +110,10 @@ describe('untestedModelWarning', () => {
     expect(named).toContain('Reviews still run');
   });
 
-  it('reads the published list by default, which today tests Pi alone', () => {
+  it('reads the published list by default, which tests Pi and Claude Code', () => {
     expect(untestedModelWarning({ agent: 'pi', model: 'zai-coding-cn/glm-5.3', account: '' })).toBeUndefined();
-    expect(untestedModelWarning({ agent: 'claude-code', model: '', account: '' })).toContain('Claude Code');
+    expect(untestedModelWarning({ agent: 'claude-code', model: '', account: '' })).toBeUndefined();
+    expect(untestedModelWarning({ agent: 'claude-code', model: 'sonnet', account: '' })).toContain('Claude Code with sonnet');
   });
 });
 
@@ -162,12 +163,12 @@ describe('AgentStatusBar', () => {
   });
 
   it('carries the untested-combination warning in its tooltip, beside any API-key one', () => {
-    stub.configuration = { 'second-look.agent': 'claude-code' };
+    stub.configuration = { 'second-look.agent': 'claude-code', 'second-look.agentModel': 'sonnet' };
     const bar = new AgentStatusBar({ ANTHROPIC_API_KEY: 'sk-ant-inherited' });
     bar.refresh();
     const [item] = stub.statusBarItems;
     expect(item!.tooltip).toContain('overrides the Claude subscription');
-    expect(item!.tooltip).toContain('has not been tested with any model');
+    expect(item!.tooltip).toContain('Claude Code with sonnet has not been tested');
     bar.dispose();
   });
 });
@@ -176,10 +177,10 @@ describe('the untested-combination warning', () => {
   beforeEach(() => stub.reset());
 
   it('shows once at activation for the settings the reviewer arrives with', () => {
-    stub.configuration = { 'second-look.agent': 'claude-code' };
+    stub.configuration = { 'second-look.agent': 'claude-code', 'second-look.agentModel': 'sonnet' };
     activate(stubContext() as never, {});
     expect(stub.warningMessages).toHaveLength(1);
-    expect(stub.warningMessages[0]).toContain('Claude Code has not been tested with any model');
+    expect(stub.warningMessages[0]).toContain('Claude Code with sonnet has not been tested');
   });
 
   it('shows when the reviewer chooses an untested agent or model, and not again for the tested one', () => {
