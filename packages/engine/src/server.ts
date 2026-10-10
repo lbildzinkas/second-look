@@ -1,5 +1,6 @@
 import { isAbsolute, join } from 'node:path';
 import { DEFAULT_AGENT_SETTINGS, type AgentAdapter, type AgentSettings } from './agent.js';
+import { testAgent } from './agent-test.js';
 import { AGENT_NAMES, isAgentName, modelAndEffortProblem, type AgentName } from './agents.js';
 import { ASK_KINDS, ASKS, askAboutPart, isAskKind } from './asks.js';
 import { NO_BUDGET_LIMITS, budgetLimitsProblem, budgetMeter, limitReason, limitedFetch, spentLimit, withBudget, type BudgetMeter } from './budget.js';
@@ -33,6 +34,7 @@ import {
   REVIEW_METHOD,
   REVIEW_STAGE_METHOD,
   SEND_REVIEW_METHOD,
+  TEST_AGENT_METHOD,
   VERSION_MISMATCH_CODE,
   isRpcRequest,
   redactToken,
@@ -51,6 +53,8 @@ import {
   type RpcNotification,
   type RpcResponse,
   type SendReviewParams,
+  type TestAgentParams,
+  type TestAgentRpcResult,
 } from './rpc.js';
 import { LIST_PULL_REQUESTS_METHOD, type ListPullRequestsParams } from './rpc.js';
 /** Where the server reads its lines from: the engine's stdin. */
@@ -114,7 +118,9 @@ export interface RpcServerDeps {
  * before any other request, and a client speaking another protocol version
  * is refused with a plain message. `agents/probe` reports each agent the
  * companion can drive, started from the request's path settings, without
- * running a model. `review` then carries the pull request
+ * running a model. `agents/test` runs one chosen agent, model and effort
+ * once on a tiny locked-down test, only when the reviewer asks for it.
+ * `review` then carries the pull request
  * URL, the GitHub token and — when the client's settings chose one — the
  * agent, model, effort and account that run the review's agent passes; a request
  * without a choice runs the engine's serve-time default. Each review
@@ -212,6 +218,10 @@ export async function runRpcServer(
       running.push(probeAgents(value.params, value.id, sink, initialized, deps));
       continue;
     }
+    if (value.method === TEST_AGENT_METHOD) {
+      running.push(testAgentRequest(value.params, value.id, sink, initialized, deps));
+      continue;
+    }
     if (value.method === REVIEW_METHOD) {
       running.push(review(value.params, value.id, sink, initialized, deps, reviews, meters));
       continue;
@@ -253,7 +263,7 @@ export async function runRpcServer(
       failure(
         value.id,
         JSON_RPC_METHOD_NOT_FOUND,
-        `unknown method: ${value.method}; this engine speaks ${INITIALIZE_METHOD}, ${PROBE_AGENTS_METHOD}, ${REVIEW_METHOD}, ${FETCH_LIBRARY_METHOD}, ${DRAFT_COMMENT_METHOD}, ${ASK_METHOD}, ${SEND_REVIEW_METHOD}, ${REVIEWED_MARKS_METHOD}, ${MARK_REVIEWED_METHOD}, ${MARK_VIEWED_METHOD} and ${LIST_PULL_REQUESTS_METHOD}`,
+        `unknown method: ${value.method}; this engine speaks ${INITIALIZE_METHOD}, ${PROBE_AGENTS_METHOD}, ${TEST_AGENT_METHOD}, ${REVIEW_METHOD}, ${FETCH_LIBRARY_METHOD}, ${DRAFT_COMMENT_METHOD}, ${ASK_METHOD}, ${SEND_REVIEW_METHOD}, ${REVIEWED_MARKS_METHOD}, ${MARK_REVIEWED_METHOD}, ${MARK_VIEWED_METHOD} and ${LIST_PULL_REQUESTS_METHOD}`,
       ),
     );
   }
@@ -339,6 +349,43 @@ async function probeAgents(
       AGENT_NAMES.map(async (name) => ({ ...(await agent.adapterFor(name, paths[name] || undefined).probe()), agent: name })),
     );
     const result: ProbeAgentsRpcResult = { agents };
+    respond(sink, { jsonrpc: '2.0', id, result });
+  } catch (error) {
+    respond(sink, failure(id, ENGINE_FAILED_CODE, error instanceof Error ? error.message : String(error)));
+  }
+}
+
+/**
+ * Tests the request's agent, model and effort with one tiny run, locked
+ * down as a review's agent passes run, in an empty temporary read-only
+ * folder removed afterwards. It runs only because the reviewer asked; a
+ * failure of the run is an answer, in plain words, not a protocol error.
+ */
+async function testAgentRequest(
+  params: unknown,
+  id: number,
+  sink: RpcLineSink,
+  initialized: boolean,
+  deps: RpcServerDeps,
+): Promise<void> {
+  if (!initialized) {
+    respond(sink, failure(id, NOT_INITIALIZED_CODE, `the protocol starts with a version handshake: ${INITIALIZE_METHOD} before ${TEST_AGENT_METHOD}`));
+    return;
+  }
+  const { agent: choice } = (params ?? {}) as Partial<TestAgentParams>;
+  const problem = agentChoiceProblem(choice);
+  if (problem !== undefined || choice === undefined) {
+    const shape = `{ "agent": { "agent": "${AGENT_NAMES.join('" | "')}", "model"?: string, "effort"?: string, "account"?: string, "path"?: string } }`;
+    respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${TEST_AGENT_METHOD} needs params: ${shape}; ${problem}`));
+    return;
+  }
+  const agent = deps.agent;
+  if (agent === undefined) {
+    respond(sink, failure(id, ENGINE_FAILED_CODE, 'this engine runs no agent, so it has none to test'));
+    return;
+  }
+  try {
+    const result: TestAgentRpcResult = await testAgent(choiceAdapter(agent, choice), choice.agent, agentRunSettings(agent, choice));
     respond(sink, { jsonrpc: '2.0', id, result });
   } catch (error) {
     respond(sink, failure(id, ENGINE_FAILED_CODE, error instanceof Error ? error.message : String(error)));

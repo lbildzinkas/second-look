@@ -9,13 +9,13 @@
  * - **probe** asks the installed agent its version and what it supports,
  *   and says whether it can be run with the companion's lockdown at all.
  *   An agent that lacks any part of the lockdown is never run.
- * - **run** starts the agent once on a read-only copy of the change and
+ * - **run** starts the agent once in one read-only folder and
  *   returns its final text with the stamp of that run.
  *
  * Every run is locked down by the strongest mechanism the agent offers:
  * file-reading tools only, so no shell and no network; the agent's own
  * settings, extensions and context files from the pull request switched
- * off; every path confined to the read-only copy, with credential paths
+ * off; every path confined to the run's read-only folder, with credential paths
  * (SSH keys, cloud credentials, the GitHub login) refused by name — by
  * the companion's guard, inside Pi's process as an extension and before
  * every Claude Code tool call as a hook (see docs/agent-safety.md). The
@@ -96,7 +96,7 @@ export const AGENT_EFFORT_LEVELS: Record<'pi' | 'claude-code', readonly string[]
 
 /** One run of the agent. */
 export interface AgentRunRequest {
-  /** The read-only copy the agent works in; the only folder it may read. */
+  /** The read-only folder the agent works in; the only folder it may read. */
   root: string;
   /** The companion's own instructions, including the answer's schema. */
   instructions: string;

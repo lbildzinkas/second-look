@@ -144,6 +144,10 @@ settings, reports each agent the companion can drive as installed here —
 its version, whether it can run with the lockdown and why not, the effort
 levels its own help lists, and for Claude Code the login it would use —
 without running a model or reading a login.
+An agents/test request, sent only when the reviewer asks for it, runs the
+chosen agent, model and effort once, locked down as a review runs it, in an
+empty temporary read-only folder removed afterwards, on a fixed tiny prompt,
+and answers ok with the run's stamp or the failure in plain words.
 Each review arrives in stages: the plain result first, in a
 review/stage notification, then the result with the agent's grouping in
 another while the agent ranks, then the ranked result in another while
