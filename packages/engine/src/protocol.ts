@@ -11,7 +11,7 @@ import type { AgentStamp } from './agent.js';
 import type { AskKind } from './asks.js';
 
 /** Version of the review result schema. */
-export const REVIEW_RESULT_VERSION = 18 as const;
+export const REVIEW_RESULT_VERSION = 19 as const;
 
 /**
  * Version 2 added the head commit's SHA and each part's noise assessment;
@@ -48,7 +48,10 @@ export const REVIEW_RESULT_VERSION = 18 as const;
  * the ask alone, so its checked verdict stands even when the claims
  * pass's judging fell back; version 18 added the documentation links of
  * the library APIs the change uses, at the pinned version: from published
- * inventories first, then the agent's suggestions, labelled as such.
+ * inventories first, then the agent's suggestions, labelled as such;
+ * version 19 added the review's budget: the limits the reviewer's
+ * settings set and what the review and its later fetches, asks and drafts
+ * have used so far.
  */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
@@ -358,6 +361,35 @@ export interface ReviewResult {
   sinceLastLook?: SinceLastLook;
   /** The documentation links of the library APIs the change uses, at the pinned version; absent when none were looked for, such as an offline replay. */
   docLinks?: DocLinks;
+  /** The review's budget: its limits and what it has used so far; absent when the review was not metered, such as an offline replay. */
+  budget?: Budget;
+}
+
+/**
+ * The limits of a review's budget, as the reviewer's settings set them;
+ * 0 is no limit. They are only counted against: nothing is refused yet.
+ */
+export interface BudgetLimits {
+  /** Agent runs: every started attempt, a retry included. */
+  agentRuns: number;
+  /** Files fetched: every response the review downloads. */
+  filesFetched: number;
+  /** Mebibytes downloaded, across every file fetched. */
+  downloadMiB: number;
+}
+
+/** What a review has used: by the review itself and the reviewer's later fetches, asks and drafts. */
+export interface BudgetUse {
+  agentRuns: number;
+  filesFetched: number;
+  /** Bytes downloaded, counted as they stream. */
+  downloadBytes: number;
+}
+
+/** A review's budget: the limits set, and the use so far. */
+export interface Budget {
+  limits: BudgetLimits;
+  used: BudgetUse;
 }
 
 /** Where a library's documentation is looked for: a Python library on PyPI, a .NET package on nuget.org, or .NET's own APIs. */

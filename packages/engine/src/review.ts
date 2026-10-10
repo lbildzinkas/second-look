@@ -4,6 +4,7 @@ import {
   type AgentAdapter,
   type AgentSettings,
 } from './agent.js';
+import { meteredFetch, withBudget, type BudgetMeter } from './budget.js';
 import { ensureCopy } from './cache.js';
 import { readCi } from './ci.js';
 import { findClaims } from './claims.js';
@@ -55,6 +56,13 @@ export interface ReviewOptions {
   agentStage?: AgentStageOptions;
   /** True when the reviewer opened this review: it is compared with their last look, then recorded as the latest; see {@link lookSinceLastLook}. */
   lastLook?: boolean;
+  /**
+   * Counts what the review uses — every agent run it starts, every file it
+   * downloads and their bytes — and puts the use on the result and on
+   * every stage's result so far; nothing is refused. Absent, nothing is
+   * counted and the result carries no budget.
+   */
+  budget?: BudgetMeter;
 }
 
 /**
@@ -93,8 +101,33 @@ export async function reviewPullRequest(
   url: string,
   options: ReviewOptions,
 ): Promise<ReviewResult> {
-  const reviewed = await reviewChange(await fetchChange(url, options), options.agentStage);
-  return docLinksStage(reviewed, options);
+  const meter = options.budget;
+  const metered = meter ? meteredOptions(options, meter) : options;
+  const reviewed = await reviewChange(await fetchChange(url, metered), metered.agentStage);
+  const result = await docLinksStage(reviewed, metered);
+  return meter ? withBudget(result, meter) : result;
+}
+
+/**
+ * The options with the review's meter wired in: around the fetch, into
+ * every agent run's settings, and onto each stage's result so far.
+ */
+function meteredOptions(options: ReviewOptions, meter: BudgetMeter): ReviewOptions {
+  const agentStage = options.agentStage;
+  const onStage = agentStage?.onStage;
+  return {
+    ...options,
+    fetch: meteredFetch(options.fetch ?? fetch, meter),
+    ...(agentStage
+      ? {
+          agentStage: {
+            ...agentStage,
+            settings: { ...(agentStage.settings ?? DEFAULT_AGENT_SETTINGS), budget: meter },
+            ...(onStage ? { onStage: (stage: ReviewStage) => onStage({ ...stage, result: withBudget(stage.result, meter) }) } : {}),
+          },
+        }
+      : {}),
+  };
 }
 
 /**

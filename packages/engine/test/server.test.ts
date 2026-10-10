@@ -148,7 +148,7 @@ describe('runRpcServer', () => {
 
     expect(responses[0]!.result).toEqual({ protocolVersion: ENGINE_PROTOCOL_VERSION });
     const first = responses[1]!.result as { version: number; parts: unknown[] };
-    expect(first.version).toBe(18);
+    expect(first.version).toBe(19);
     expect(first.parts).toHaveLength(11);
     const second = responses[2]!.result as { parts: unknown[] };
     expect(second.parts).toHaveLength(11);
@@ -213,6 +213,38 @@ describe('runRpcServer', () => {
       'The flag is documented in the runbook',
     ]);
     expect(byId.get(3)!.error!.message).toContain('criteriaHeading must be a non-empty string');
+  });
+
+  it('meters each review against the budget its request carries, and refuses one that is no budget', async () => {
+    const transport = fixtureFetch();
+    const responses = await serve(
+      [
+        request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+        request('review', { url: PR_URL, token: TOKEN, budget: { agentRuns: 5, filesFetched: 3, downloadMiB: 0.25 } }, 2),
+        request('review', { url: PR_URL, token: TOKEN, budget: { agentRuns: -1, filesFetched: 0, downloadMiB: 0 } }, 3),
+        request('review', { url: PR_URL, token: TOKEN, budget: { agentRuns: 1, filesFetched: 2 } }, 4),
+      ],
+      transport.fetch,
+    );
+
+    const byId = new Map(responses.map((response) => [response.id, response]));
+    // Every GitHub answer and archive counts, and the review ran on past the
+    // limit of three files: nothing is refused yet.
+    const { budget } = byId.get(2)!.result as ReviewResult;
+    expect(budget!.limits).toEqual({ agentRuns: 5, filesFetched: 3, downloadMiB: 0.25 });
+    expect(budget!.used).toMatchObject({ agentRuns: 0, filesFetched: transport.requests.length });
+    expect(budget!.used.filesFetched).toBeGreaterThan(3);
+    expect(budget!.used.downloadBytes).toBeGreaterThan(0);
+    expect(byId.get(3)!.error).toMatchObject({ code: JSON_RPC_INVALID_PARAMS, message: expect.stringContaining('review: the budget must be') });
+    expect(byId.get(4)!.error).toMatchObject({ code: JSON_RPC_INVALID_PARAMS, message: expect.stringContaining('downloadMiB must be a number') });
+  });
+
+  it('meters a review that carries no budget against no limits', async () => {
+    const responses = await serve(
+      [request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }), request('review', { url: PR_URL, token: TOKEN }, 2)],
+      fixtureFetch().fetch,
+    );
+    expect((responses[1]!.result as ReviewResult).budget!.limits).toEqual({ agentRuns: 0, filesFetched: 0, downloadMiB: 0 });
   });
 
   it('answers an unknown method and a malformed line without stopping', async () => {
@@ -359,7 +391,7 @@ describe('runRpcServer with an agent', () => {
         id: 2,
         running: 'grouping related hunks with fake',
         timeoutMs: 660_000,
-        result: { version: 18, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
+        result: { version: 19, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
       },
     });
     // The fake agent has no tested ranking, so the story stage follows the grouping.
@@ -386,6 +418,14 @@ describe('runRpcServer with an agent', () => {
     });
     expect((final!['result'] as { parts: unknown[] }).parts).toHaveLength(2);
     expect(written.join('\n')).not.toContain(TOKEN);
+    // Every stage carries the review's use so far: no run before the
+    // grouping starts, and every run once the review is answered.
+    const used = [stage, storyStage, unexplainedStage, claimsStage].map(
+      (each) => ((each!['params'] as { result: ReviewResult }).result.budget!.used.agentRuns),
+    );
+    expect(used[0]).toBe(0);
+    expect(used).toEqual([...used].sort((a, b) => a - b));
+    expect((final!['result'] as ReviewResult).budget!.used.agentRuns).toBeGreaterThan(used.at(-1)!);
   });
 
   it('answers a send while a review is still running its agent stage', async () => {
@@ -785,7 +825,7 @@ describe('runRpcServer fetching a library', () => {
     });
     expect(pypiBeforeFetch).toBe(0);
     expect(answer(3).result).toMatchObject({
-      version: 18,
+      version: 19,
       claims: {
         claims: [
           {
@@ -804,6 +844,38 @@ describe('runRpcServer fetching a library', () => {
       'https://pypi.org/pypi/httpx/0.27.2/json',
       'https://files.pythonhosted.org/packages/ab/cd/httpx-0.27.2-py3-none-any.whl',
     ]);
+  });
+
+  it("adds the review's later asks, drafts and library fetches to the same review's use", async () => {
+    state = transports();
+    const agent = libraryAgent();
+    const { answer } = await serveInTurn(
+      [
+        request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+        request('review', { url: PR_7_URL, token: TOKEN, budget: { agentRuns: 1, filesFetched: 1, downloadMiB: 0.001 } }, 2),
+        request('ask', { url: PR_7_URL, ask: 'explain', part: 0 }, 3),
+        request('draftComment', { url: PR_7_URL, finding: { kind: 'claim', index: 0 } }, 4),
+        request('fetchLibrary', { url: PR_7_URL, claim: 0 }, 5),
+      ],
+      state.fetch,
+      undefined,
+      true,
+      agent,
+    );
+
+    const reviewed = (answer(2).result as ReviewResult).budget!;
+    const fetched = (answer(5).result as ReviewResult).budget!;
+    expect(answer(3).error).toBeUndefined();
+    expect(answer(4).error).toBeUndefined();
+    expect(fetched.limits).toEqual({ agentRuns: 1, filesFetched: 1, downloadMiB: 0.001 });
+    // The ask, the draft and the fetch's judging each ran the agent once
+    // more, and the fetch downloaded PyPI's release and the wheel, past
+    // every limit: nothing is refused yet.
+    expect(fetched.used.agentRuns).toBe(reviewed.used.agentRuns + 3);
+    expect(fetched.used.agentRuns).toBe(agent.requests.length);
+    expect(fetched.used.filesFetched).toBe(reviewed.used.filesFetched + state.pypi.requests.length);
+    expect(state.pypi.requests).toHaveLength(2);
+    expect(fetched.used.downloadBytes - reviewed.used.downloadBytes).toBeGreaterThan(WHEEL.length);
   });
 
   it('answers a .NET fetch that finds no exact source with the claim offering its decompile, and keeps it for the next press', async () => {
@@ -838,7 +910,7 @@ describe('runRpcServer fetching a library', () => {
 
     expect(answer(3).error).toBeUndefined();
     expect(answer(3).result).toMatchObject({
-      version: 18,
+      version: 19,
       claims: {
         claims: [
           {

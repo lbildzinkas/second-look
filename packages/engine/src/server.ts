@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { DEFAULT_AGENT_SETTINGS, type AgentAdapter, type AgentSettings } from './agent.js';
 import { AGENT_NAMES, isAgentName, modelAndEffortProblem, type AgentName } from './agents.js';
 import { ASK_KINDS, ASKS, askAboutPart, isAskKind } from './asks.js';
+import { NO_BUDGET_LIMITS, budgetLimitsProblem, budgetMeter, meteredFetch, withBudget, type BudgetMeter } from './budget.js';
 import { pullRequestCacheDir } from './cache.js';
 import { draftComment, draftFinding, isFindingRef } from './draft-comment.js';
 import { GitHubClient, parsePullRequestUrl } from './github.js';
@@ -147,6 +148,13 @@ export interface RpcServerDeps {
  * story, unexplained changes, judged claims, mapped criteria and
  * documentation links, or the plain parts and ranking with the reason
  * they stayed.
+ *
+ * Each review is metered against the budget limits its request carries,
+ * none when it carries none: every agent run and every download with its
+ * bytes is counted, and every stage notification and the response carry
+ * the use so far. The meter stays beside the pull request's latest result,
+ * so its later library fetches, asks and drafts add to the same use.
+ * Nothing is refused yet.
  */
 export async function runRpcServer(
   source: RpcLineSource,
@@ -157,6 +165,8 @@ export async function runRpcServer(
   const running: Promise<void>[] = [];
   /** Each pull request's latest review result, by its URL, for the fetches it offers. */
   const reviews = new Map<string, ReviewResult>();
+  /** The budget meter of each pull request's latest review, by its URL, which its later fetches, asks and drafts add to. */
+  const meters = new Map<string, BudgetMeter>();
   for (;;) {
     const line = await source.readLine();
     if (line === null) {
@@ -184,19 +194,19 @@ export async function runRpcServer(
       continue;
     }
     if (value.method === REVIEW_METHOD) {
-      running.push(review(value.params, value.id, sink, initialized, deps, reviews));
+      running.push(review(value.params, value.id, sink, initialized, deps, reviews, meters));
       continue;
     }
     if (value.method === FETCH_LIBRARY_METHOD) {
-      running.push(fetchLibrary(value.params, value.id, sink, initialized, deps, reviews));
+      running.push(fetchLibrary(value.params, value.id, sink, initialized, deps, reviews, meters));
       continue;
     }
     if (value.method === DRAFT_COMMENT_METHOD) {
-      running.push(draft(value.params, value.id, sink, initialized, deps, reviews));
+      running.push(draft(value.params, value.id, sink, initialized, deps, reviews, meters));
       continue;
     }
     if (value.method === ASK_METHOD) {
-      running.push(ask(value.params, value.id, sink, initialized, deps, reviews));
+      running.push(ask(value.params, value.id, sink, initialized, deps, reviews, meters));
       continue;
     }
     if (value.method === SEND_REVIEW_METHOD) {
@@ -281,13 +291,15 @@ function agentChoiceProblem(value: unknown): string | undefined {
  * The settings a review's agent passes run with: the engine's own, with
  * the request's model, effort and account replacing theirs when it
  * carries a choice — an empty model or effort asks for the agent's own
- * default, an empty account leaves the runs unlabelled.
+ * default, an empty account leaves the runs unlabelled — and the review's
+ * budget meter, when there is one, counting every run.
  */
 function agentRunSettings(
   agent: RpcAgentDeps,
   choice: ReviewAgentChoice | undefined,
+  meter?: BudgetMeter,
 ): AgentSettings {
-  const settings: AgentSettings = { ...DEFAULT_AGENT_SETTINGS, ...agent.settings };
+  const settings: AgentSettings = { ...DEFAULT_AGENT_SETTINGS, ...agent.settings, ...(meter ? { budget: meter } : {}) };
   if (choice === undefined) return settings;
   if (choice.model === undefined || choice.model === '') delete settings.model;
   else settings.model = choice.model;
@@ -298,6 +310,11 @@ function agentRunSettings(
   return settings;
 }
 
+/** The fetch a request downloads with: the server's, counted on the review's budget meter when there is one. */
+function reviewFetch(deps: RpcServerDeps, meter: BudgetMeter | undefined): typeof fetch | undefined {
+  return meter ? meteredFetch(deps.fetch ?? fetch, meter) : deps.fetch;
+}
+
 async function review(
   params: unknown,
   id: number,
@@ -305,6 +322,7 @@ async function review(
   initialized: boolean,
   deps: RpcServerDeps,
   reviews: Map<string, ReviewResult>,
+  meters: Map<string, BudgetMeter>,
 ): Promise<void> {
   if (!initialized) {
     respond(
@@ -317,7 +335,7 @@ async function review(
     );
     return;
   }
-  const { url, token, agent: choice, criteriaHeading } = (params ?? {}) as Partial<ReviewParams>;
+  const { url, token, agent: choice, criteriaHeading, budget } = (params ?? {}) as Partial<ReviewParams>;
   if (typeof url !== 'string' || url.length === 0 || typeof token !== 'string' || token.length === 0) {
     respond(
       sink,
@@ -340,11 +358,18 @@ async function review(
       return;
     }
   }
+  const budgetProblem = budget === undefined ? undefined : budgetLimitsProblem(budget);
+  if (budgetProblem !== undefined) {
+    respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${REVIEW_METHOD}: ${budgetProblem}`));
+    return;
+  }
+  const meter = budgetMeter(budget ?? NO_BUDGET_LIMITS);
   try {
     const result = await reviewPullRequest(url, {
       token,
       cacheDir: deps.cacheDir,
       lastLook: true,
+      budget: meter,
       ...(criteriaHeading !== undefined ? { criteriaHeading } : {}),
       ...(deps.fetch ? { fetch: deps.fetch } : {}),
       ...(deps.agent
@@ -359,6 +384,7 @@ async function review(
         : {}),
     });
     reviews.set(result.pullRequest.url, result);
+    meters.set(result.pullRequest.url, meter);
     respond(sink, { jsonrpc: '2.0', id, result });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -385,6 +411,7 @@ async function fetchLibrary(
   initialized: boolean,
   deps: RpcServerDeps,
   reviews: Map<string, ReviewResult>,
+  meters: Map<string, BudgetMeter>,
 ): Promise<void> {
   if (!initialized) {
     respond(sink, failure(id, NOT_INITIALIZED_CODE, `the protocol starts with a version handshake: ${INITIALIZE_METHOD} before ${FETCH_LIBRARY_METHOD}`));
@@ -407,13 +434,15 @@ async function fetchLibrary(
     respond(sink, failure(id, ENGINE_FAILED_CODE, `this engine has no reviewed claim ${index} of ${url}; review the pull request again`));
     return;
   }
+  const meter = meters.get(url);
+  const fetchImpl = reviewFetch(deps, meter);
   try {
     const judging = await pressLibraryFetch(result.parts, claim, {
       headRoot: result.copies.head.path,
       librariesDir: join(pullRequestCacheDir(deps.cacheDir, ref), 'libraries'),
-      ...(deps.fetch ? { fetch: deps.fetch } : {}),
+      ...(fetchImpl ? { fetch: fetchImpl } : {}),
       adapter: deps.agent.adapterFor(choice?.agent ?? deps.agent.defaultAgent),
-      settings: agentRunSettings(deps.agent, choice),
+      settings: agentRunSettings(deps.agent, choice, meter),
     });
     if (judging.outcome === 'fell back') throw new Error(`the library was fetched, but ${judging.detail}`);
     // Another fetch or a new review may have landed meanwhile: the new
@@ -423,10 +452,12 @@ async function fetchLibrary(
     if (latest === undefined || claims === undefined || claims.claims[index]?.quote !== claim.quote) {
       throw new Error('the review changed while the library was fetched; press the fetch again');
     }
-    const updated: ReviewResult = {
+    const judged: ReviewResult = {
       ...latest,
       claims: { ...claims, claims: claims.claims.map((each, at) => (at === index ? judging.claim : each)) },
     };
+    const latestMeter = meters.get(url);
+    const updated = latestMeter ? withBudget(judged, latestMeter) : judged;
     reviews.set(url, updated);
     respond(sink, { jsonrpc: '2.0', id, result: updated });
   } catch (error) {
@@ -451,6 +482,7 @@ async function draft(
   initialized: boolean,
   deps: RpcServerDeps,
   reviews: Map<string, ReviewResult>,
+  meters: Map<string, BudgetMeter>,
 ): Promise<void> {
   if (!initialized) {
     respond(sink, failure(id, NOT_INITIALIZED_CODE, `the protocol starts with a version handshake: ${INITIALIZE_METHOD} before ${DRAFT_COMMENT_METHOD}`));
@@ -482,7 +514,7 @@ async function draft(
   try {
     const drafted = await draftComment(finding, {
       adapter: deps.agent.adapterFor(choice?.agent ?? deps.agent.defaultAgent),
-      settings: agentRunSettings(deps.agent, choice),
+      settings: agentRunSettings(deps.agent, choice, meters.get(url)),
       root: result.copies.head.path,
     });
     if (drafted.body === undefined) throw new Error(`no comment was drafted: ${drafted.detail}`);
@@ -512,6 +544,7 @@ async function ask(
   initialized: boolean,
   deps: RpcServerDeps,
   reviews: Map<string, ReviewResult>,
+  meters: Map<string, BudgetMeter>,
 ): Promise<void> {
   if (!initialized) {
     respond(sink, failure(id, NOT_INITIALIZED_CODE, `the protocol starts with a version handshake: ${INITIALIZE_METHOD} before ${ASK_METHOD}`));
@@ -546,7 +579,7 @@ async function ask(
       result,
       part,
       adapter: deps.agent.adapterFor(choice?.agent ?? deps.agent.defaultAgent),
-      settings: agentRunSettings(deps.agent, choice),
+      settings: agentRunSettings(deps.agent, choice, meters.get(url)),
       ...(claim ? { claim } : {}),
     });
     if (answer.claim !== undefined) {

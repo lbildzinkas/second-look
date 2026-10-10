@@ -729,6 +729,32 @@ describe('isReviewResult for what changed since the last look', () => {
   });
 });
 
+describe('isReviewResult for the budget', () => {
+  const budget = {
+    limits: { agentRuns: 10, filesFetched: 200, downloadMiB: 0.5 },
+    used: { agentRuns: 3, filesFetched: 12, downloadBytes: 40_960 },
+  };
+
+  it('accepts a result with its budget, and one without, as an offline replay is', () => {
+    expect(isReviewResult({ ...sampleResult(), budget })).toBe(true);
+    expect(isReviewResult({ ...sampleResult(), budget: { ...budget, limits: { agentRuns: 0, filesFetched: 0, downloadMiB: 0 } } })).toBe(true);
+    expect(isReviewResult(sampleResult())).toBe(true);
+  });
+
+  it('rejects a budget without its limits or use, or with a count that is no count', () => {
+    const cases = [
+      { limits: budget.limits },
+      { used: budget.used },
+      { ...budget, limits: { ...budget.limits, agentRuns: -1 } },
+      { ...budget, limits: { ...budget.limits, downloadMiB: '1' } },
+      { ...budget, used: { ...budget.used, filesFetched: 1.5 } },
+      { ...budget, used: { agentRuns: 3, filesFetched: 12 } },
+      'unlimited',
+    ];
+    for (const each of cases) expect(isReviewResult({ ...sampleResult(), budget: each })).toBe(false);
+  });
+});
+
 describe('parseReviewResult', () => {
   it('reads the JSON the engine printed', () => {
     const result = parseReviewResult(JSON.stringify(sampleResult()));
@@ -744,6 +770,6 @@ describe('parseReviewResult', () => {
 
 describe('the versioned protocol is shared with the engine', () => {
   it('uses the same version constant', () => {
-    expect(REVIEW_RESULT_VERSION).toBe(18);
+    expect(REVIEW_RESULT_VERSION).toBe(19);
   });
 });
