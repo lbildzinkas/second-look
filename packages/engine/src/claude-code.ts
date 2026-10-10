@@ -7,6 +7,7 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { trackAgentChild } from './agent-children.js';
 import {
+  AGENT_EFFORT_LEVELS,
   GITHUB_TOKEN_VARIABLES,
   helpEffortLevels,
   type AgentAdapter,
@@ -95,9 +96,6 @@ const LOCKDOWN_FLAGS = [
   '--system-prompt',
   '--json-schema',
 ] as const;
-
-/** The effort levels Claude Code 2.1.296 lists, offered when its help lists none. */
-export const CLAUDE_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 
 export interface ClaudeCodeAdapterOptions {
   /** The command that starts Claude Code, with any leading arguments, such as the path the settings gave; `['claude']` by default. */
@@ -433,7 +431,7 @@ export function claudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}): Agent
     const help = await capture(command, ['--help'], quiet);
     const missing = LOCKDOWN_FLAGS.filter((flag) => !new RegExp(`(^|\\s)${flag}\\b`, 'm').test(help.stdout));
     const supports = { effort: /(^|\s)--effort\b/m.test(help.stdout) };
-    const effortLevels = supports.effort ? helpEffortLevels(help.stdout, '--effort', CLAUDE_EFFORT_LEVELS) : [];
+    const effortLevels = supports.effort ? helpEffortLevels(help.stdout, '--effort', AGENT_EFFORT_LEVELS['claude-code']) : [];
     if (missing.length > 0) {
       const reason = `Claude Code ${found} lacks ${missing.join(', ')}, which the companion's lockdown needs`;
       return { ...base, version: found, supports, effortLevels, usable: false, reason };

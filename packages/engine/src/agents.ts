@@ -1,4 +1,4 @@
-import type { AgentAdapter } from './agent.js';
+import { AGENT_EFFORT_LEVELS, type AgentAdapter } from './agent.js';
 import { claudeCodeAdapter, type ClaudeCodeAdapterOptions } from './claude-code.js';
 import { piAdapter, type PiAdapterOptions } from './pi.js';
 
@@ -32,15 +32,6 @@ export interface AgentAdapterOptions {
 export function isAgentName(value: string): value is AgentName {
   return (AGENT_NAMES as readonly string[]).includes(value);
 }
-
-/**
- * The effort levels each agent accepts, as its own help lists them:
- * Claude Code's `--effort` and Pi's `--thinking`.
- */
-export const AGENT_EFFORT_LEVELS: Record<AgentName, readonly string[]> = {
-  pi: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
-  'claude-code': ['low', 'medium', 'high', 'xhigh', 'max'],
-};
 
 /** A plain identifier: letters, digits, `.`, `_`, `-`, `/` and `:`, never starting with `-`. */
 const PLAIN_IDENTIFIER = /^[A-Za-z0-9._/:][A-Za-z0-9._/:-]*$/;

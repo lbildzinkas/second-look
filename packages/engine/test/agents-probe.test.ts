@@ -2,11 +2,9 @@ import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { AgentProbe } from '../src/agent.js';
+import { AGENT_EFFORT_LEVELS, type AgentProbe } from '../src/agent.js';
 import { agentAdapter } from '../src/agents.js';
 import { removeCopy } from '../src/cache.js';
-import { CLAUDE_EFFORT_LEVELS } from '../src/claude-code.js';
-import { PI_EFFORT_LEVELS } from '../src/pi.js';
 import { ENGINE_PROTOCOL_VERSION, JSON_RPC_INVALID_PARAMS, NOT_INITIALIZED_CODE } from '../src/rpc.js';
 import { runRpcServer, type RpcAgentDeps } from '../src/server.js';
 import { CLAUDE_GUARD, FAKE_CLAUDE, fakeClaude, type FakeClaudeScenario } from './fake-claude.js';
@@ -135,8 +133,8 @@ describe('agents/probe', () => {
     const answers = await serve([HANDSHAKE, request('agents/probe', {}, 2)], agents(env));
 
     const { pi, 'claude-code': claude } = probes(answers(2));
-    expect(pi!.effortLevels).toEqual([...PI_EFFORT_LEVELS]);
-    expect(claude!.effortLevels).toEqual([...CLAUDE_EFFORT_LEVELS]);
+    expect(pi!.effortLevels).toEqual([...AGENT_EFFORT_LEVELS.pi]);
+    expect(claude!.effortLevels).toEqual([...AGENT_EFFORT_LEVELS['claude-code']]);
   });
 
   it('says plainly that an agent is not on the PATH, while the other still reports', async () => {

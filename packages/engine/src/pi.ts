@@ -5,6 +5,7 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { trackAgentChild } from './agent-children.js';
 import {
+  AGENT_EFFORT_LEVELS,
   GITHUB_TOKEN_VARIABLES,
   helpEffortLevels,
   type AgentAdapter,
@@ -38,9 +39,6 @@ const LOCKDOWN_FLAGS = [
 
 /** The guard extension built next to this file. */
 export const PI_GUARD_PATH = fileURLToPath(new URL('./pi-guard.js', import.meta.url));
-
-/** The thinking levels Pi 0.86.1 lists, offered when its help lists none. */
-export const PI_EFFORT_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 
 export interface PiAdapterOptions {
   /** The command that starts Pi, with any leading arguments, such as the path the settings gave; `['pi']` by default. */
@@ -176,7 +174,7 @@ export function piAdapter(options: PiAdapterOptions = {}): AgentAdapter {
     const help = await capture(command, ['--help'], quiet);
     const missing = LOCKDOWN_FLAGS.filter((flag) => !new RegExp(`(^|\\s)${flag}\\b`, 'm').test(help.stdout));
     const supports = { effort: /(^|\s)--thinking\b/m.test(help.stdout) };
-    const effortLevels = supports.effort ? helpEffortLevels(help.stdout, '--thinking', PI_EFFORT_LEVELS) : [];
+    const effortLevels = supports.effort ? helpEffortLevels(help.stdout, '--thinking', AGENT_EFFORT_LEVELS.pi) : [];
     if (missing.length > 0) {
       const reason = `Pi ${found} lacks ${missing.join(', ')}, which the companion's lockdown needs`;
       return { ...base, version: found, supports, effortLevels, usable: false, reason };

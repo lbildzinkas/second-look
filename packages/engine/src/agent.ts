@@ -81,6 +81,17 @@ export function helpEffortLevels(help: string, flag: string, known: readonly str
   return listed ? listed[1]!.split(',').map((level) => level.trim()) : [...known];
 }
 
+/**
+ * The effort levels each agent accepts, as its own help lists them —
+ * Claude Code 2.1.296's `--effort` and Pi 0.86.1's `--thinking` — offered
+ * when an agent's help lists none, and the levels the engine accepts for
+ * each agent.
+ */
+export const AGENT_EFFORT_LEVELS: Record<'pi' | 'claude-code', readonly string[]> = {
+  pi: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+  'claude-code': ['low', 'medium', 'high', 'xhigh', 'max'],
+};
+
 /** One run of the agent. */
 export interface AgentRunRequest {
   /** The read-only copy the agent works in; the only folder it may read. */

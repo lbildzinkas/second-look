@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { AGENT_EFFORT_LEVELS, AGENT_NAMES, agentAdapter, isAgentName, modelAndEffortProblem } from '../src/agents.js';
+import { AGENT_EFFORT_LEVELS } from '../src/agent.js';
+import { AGENT_NAMES, agentAdapter, isAgentName, modelAndEffortProblem } from '../src/agents.js';
 import { CLAUDE_GUARD, FAKE_CLAUDE, fakeClaude } from './fake-claude.js';
 import { FAKE_PI, GUARD, fakePi } from './fake-pi.js';
 
