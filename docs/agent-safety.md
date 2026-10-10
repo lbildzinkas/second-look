@@ -30,7 +30,7 @@ The engine removes `GITHUB_TOKEN`, `GH_TOKEN`, `GH_ENTERPRISE_TOKEN` and `GITHUB
 
 ### The agent signs in with its own login, which the companion never reads
 
-The agent uses whatever login the reviewer gave it. The companion never opens, reads or stores it. For Claude Code it only checks which kind of login is present, by the names of environment variables, and stamps that on the run (`claude-code.ts:233-252`); an `ANTHROPIC_API_KEY` is checked for presence only.
+The agent uses whatever login the reviewer gave it. The companion never opens, reads or stores it. For Claude Code it only checks which kind of login is present, by the names of environment variables, and names that on each run's stamp and on the probe (`claude-code.ts:233-252`); an `ANTHROPIC_API_KEY` is checked for presence only.
 
 ### Agents never have network access; the companion does all fetching
 
