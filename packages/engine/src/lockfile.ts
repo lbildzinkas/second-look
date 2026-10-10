@@ -12,6 +12,14 @@
  * package-lock.json (package.json), NuGet packages.lock.json (the project
  * files beside it and Directory.Packages.props up the tree) and Cargo.lock
  * (Cargo.toml). A lock file of any other ecosystem keeps its claimed label.
+ *
+ * npm, uv and Cargo workspaces: the members are the directories the root
+ * manifest's own workspace declaration names, found by listing and reading
+ * files, and each member's manifest names direct dependencies too. The
+ * lock's own record of a project — the root or a member — mirrors that
+ * project's manifest rather than following from it, so it is explained
+ * only when the pull request changes that manifest and the record names
+ * no dependency the manifest does not declare.
  */
 
 import { readdir, readFile } from 'node:fs/promises';
@@ -59,23 +67,32 @@ function under(dir: string, name: string): string {
  * One lock file read by package name: the versions present (each with a
  * fingerprint of its whole entry, so a hand-edited hash is a change too),
  * the dependency edges the lock file itself records, fingerprints of the
- * entries no package name covers (npm's root entry and legacy mirror,
- * and NuGet's libraries section), and npm's workspace member records
- * with the keys their node_modules link stubs point at, which the pull
- * request's own file changes help explain.
+ * entries no package name covers (NuGet's libraries section), and the
+ * lock's own records of the workspace's projects by directory, which their manifests' changes explain.
  */
 interface LockIndex {
   versions: Map<string, Map<string, Set<string>>>;
   edges: Map<string, Set<string>>;
   roots: Map<string, string>;
-  members: Map<string, MemberRecord>;
-  links: Set<string>;
+  projects: Map<string, ProjectRecord>;
 }
 
-/** An npm workspace member's lock record, with the fields a member bump must not move. */
-interface MemberRecord {
+/**
+ * The lock's own record of one workspace project, keyed by its directory
+ * beside the lock file ('.' for the root): npm's folder record with the
+ * node_modules link stubs that point at it, or the uv or Cargo entry that
+ * records the project itself.
+ */
+interface ProjectRecord {
+  /** How a claimed label names the record. */
+  readonly display: string;
   readonly fingerprint: string;
-  readonly identity: string;
+  /** The package name the record carries, compared as the format compares names. */
+  readonly name: string | undefined;
+  /** The dependencies the record names. */
+  readonly edges: ReadonlySet<string>;
+  /** False when the record points anywhere but the project's own folder: a registry, a tarball or a hash. */
+  readonly local: boolean;
 }
 
 function emptyIndex(): LockIndex {
@@ -83,8 +100,7 @@ function emptyIndex(): LockIndex {
     versions: new Map(),
     edges: new Map(),
     roots: new Map(),
-    members: new Map(),
-    links: new Set(),
+    projects: new Map(),
   };
 }
 
@@ -111,17 +127,20 @@ function recordEdge(index: LockIndex, name: string, dependency: string): void {
   edges.add(dependency);
 }
 
+/** The keys a TOML lock entry fetches a package by, which a project's own entry never carries. */
+const TOML_REMOTE_KEYS = ['sdist', 'wheels', 'checksum'] as const;
+
 /**
  * Reads a `[[package]]`-shaped TOML lock file (uv, poetry, Cargo), with
  * each format contributing its own dependency edges and its own way of
- * naming the project's entry, which mirrors the manifest rather than
- * following from it. Undefined when the content is outside the format,
- * so the check never guesses.
+ * telling the workspace's projects' entries apart, by directory, which
+ * mirror their manifests rather than following from them. Undefined when
+ * the content is outside the format, so the check never guesses.
  */
 function readTomlPackages(
   text: string,
   edgesOf: (entry: TomlTable) => readonly string[] | undefined,
-  projectEntry?: (entry: TomlTable) => boolean,
+  projectOf?: (entry: TomlTable) => string | undefined,
 ): LockIndex | undefined {
   const doc = parseToml(text);
   if (doc === undefined) return undefined;
@@ -136,8 +155,19 @@ function readTomlPackages(
     const edges = edgesOf(entry);
     if (edges === undefined) return undefined;
     const normalized = pep503(name);
-    if (projectEntry !== undefined && projectEntry(entry)) {
-      index.roots.set(normalized, stableStringify(entry));
+    const dir = projectOf?.(entry);
+    if (dir !== undefined) {
+      // Two entries for one project is outside the format.
+      if (index.projects.has(dir)) return undefined;
+      index.projects.set(dir, {
+        display: `the ${normalized} entry`,
+        fingerprint: stableStringify(entry),
+        name: normalized,
+        edges: new Set(edges),
+        local: TOML_REMOTE_KEYS.every((key) => entry[key] === undefined),
+      });
+      // A member is a package the others may depend on, so the closure walks through it.
+      if (dir !== '.') for (const edge of edges) recordEdge(index, normalized, edge);
       continue;
     }
     recordEntry(index, normalized, typeof version === 'string' ? version : '', stableStringify(entry));
@@ -167,7 +197,6 @@ function npmNameFromKey(key: string): string | undefined {
 function recordNpmEntry(index: LockIndex, name: string, raw: Record<string, unknown>): void {
   const version = raw['version'];
   recordEntry(index, name, typeof version === 'string' ? version : '', stableStringify(raw));
-  if (raw['link'] === true && typeof raw['resolved'] === 'string') index.links.add(raw['resolved']);
   for (const table of NPM_LOCK_TABLES) {
     const dependencies = raw[table];
     if (!isRecord(dependencies)) continue;
@@ -175,8 +204,95 @@ function recordNpmEntry(index: LockIndex, name: string, raw: Record<string, unkn
   }
 }
 
-/** package-lock.json, in the `packages` form (v2 and v3) or the v1 form. */
-function readNpmLock(text: string): LockIndex | undefined {
+/** The keys an npm record fetches a package by, which a project's own folder record never carries. */
+const NPM_REMOTE_KEYS = ['link', 'resolved', 'integrity'] as const;
+
+/**
+ * One npm folder record — the root's or a workspace folder's — with the
+ * node_modules link stubs and the legacy mirror's own entries for it.
+ * Local only when the record itself fetches nothing, every stub is a
+ * bare link named after the package the folder holds, and every mirror
+ * entry fetches nothing either.
+ */
+function npmProjectRecord(
+  dir: string,
+  raw: Record<string, unknown>,
+  stubs: readonly (readonly [string, Record<string, unknown>])[],
+  mirrors: readonly (readonly [string, Record<string, unknown>])[],
+): ProjectRecord {
+  const name = typeof raw['name'] === 'string' ? raw['name'] : undefined;
+  const linkName = name ?? basename(dir);
+  const edges = new Set<string>();
+  for (const table of NPM_MANIFEST_TABLES) {
+    const dependencies = raw[table];
+    if (isRecord(dependencies)) for (const dependency of Object.keys(dependencies)) edges.add(dependency);
+  }
+  // The legacy mirror records a project's own dependencies under `requires`.
+  for (const [, mirror] of mirrors) {
+    const requires = mirror['requires'];
+    if (isRecord(requires)) for (const dependency of Object.keys(requires)) edges.add(dependency);
+  }
+  const sorted = [...stubs].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  const mirrored = [...mirrors].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return {
+    display: dir === '.' ? 'the root entry' : `the ${dir} entry`,
+    fingerprint: stableStringify([raw, sorted, mirrored]),
+    name,
+    edges,
+    local:
+      NPM_REMOTE_KEYS.every((key) => raw[key] === undefined) &&
+      sorted.every(
+        ([key, stub]) => Object.keys(stub).length === 2 && npmNameFromKey(key) === linkName,
+      ) &&
+      mirrored.every(([, mirror]) => NPM_REMOTE_KEYS.every((key) => mirror[key] === undefined)),
+  };
+}
+
+/**
+ * Walks one npm `dependencies` tree into per-name entries — the whole of
+ * a v1 lock, or the legacy mirror a lockfileVersion 2 lock writes beside
+ * `packages` — so a mirror-only addition or divergence is a named changed
+ * entry on its own. A declared member's own entry, whose version is
+ * `file:` naming its folder, mirrors that member's manifest like its
+ * folder record does, so it is collected for the project records the
+ * caller builds instead; the v1 form has no folder records, so nothing
+ * is ever collected for it. Returns the collected entries by folder.
+ */
+function walkNpmDependencies(
+  index: LockIndex,
+  entries: Record<string, unknown>,
+  memberDirs: ReadonlySet<string>,
+): Map<string, [string, Record<string, unknown>][]> {
+  const mirrors = new Map<string, [string, Record<string, unknown>][]>();
+  const walk = (entries: Record<string, unknown>): void => {
+    for (const [name, raw] of Object.entries(entries)) {
+      if (!isRecord(raw)) continue;
+      const version = raw['version'];
+      const dir =
+        typeof version === 'string' && version.startsWith('file:')
+          ? version.slice('file:'.length)
+          : undefined;
+      if (dir !== undefined && memberDirs.has(dir)) {
+        mirrors.set(dir, [...(mirrors.get(dir) ?? []), [name, raw]]);
+      } else {
+        recordNpmEntry(index, name, raw);
+      }
+      const nested = raw['dependencies'];
+      if (isRecord(nested)) walk(nested);
+    }
+  };
+  walk(entries);
+  return mirrors;
+}
+
+/**
+ * package-lock.json, in the `packages` form (v2 and v3) or the v1 form.
+ * In the `packages` form every folder record is a project record, a
+ * link stub pointing at a declared member's folder belongs to that
+ * member's record, and so does the member's own `file:` entry in the
+ * legacy mirror; any other link stays an entry like a package.
+ */
+function readNpmLock(text: string, members: readonly WorkspaceMember[]): LockIndex | undefined {
   let doc: unknown;
   try {
     doc = JSON.parse(text);
@@ -187,37 +303,47 @@ function readNpmLock(text: string): LockIndex | undefined {
   const index = emptyIndex();
   const packages = doc['packages'];
   if (isRecord(packages)) {
+    const memberDirs = new Set(members.map((member) => member.dir));
+    const folders = new Map<string, Record<string, unknown>>();
+    const stubs = new Map<string, [string, Record<string, unknown>][]>();
     for (const [key, raw] of Object.entries(packages)) {
       if (!isRecord(raw)) return undefined;
       const name = npmNameFromKey(key);
       if (name === undefined) {
-        if (key === '') {
-          index.roots.set(key, stableStringify(raw));
-        } else {
-          index.members.set(key, {
-            fingerprint: stableStringify(raw),
-            identity: stableStringify([raw['link'], raw['resolved'], raw['integrity']]),
-          });
-        }
+        const dir = key === '' ? '.' : key;
+        if (folders.has(dir)) return undefined;
+        folders.set(dir, raw);
+        continue;
+      }
+      const target = raw['resolved'];
+      if (raw['link'] === true && typeof target === 'string' && memberDirs.has(target)) {
+        stubs.set(target, [...(stubs.get(target) ?? []), [key, raw]]);
         continue;
       }
       recordNpmEntry(index, name, raw);
     }
     const mirror = doc['dependencies'];
-    if (isRecord(mirror)) index.roots.set('dependencies mirror', stableStringify(mirror));
+    const mirrors = isRecord(mirror)
+      ? walkNpmDependencies(index, mirror, memberDirs)
+      : new Map<string, [string, Record<string, unknown>][]>();
+    for (const [dir, raw] of folders) {
+      index.projects.set(dir, npmProjectRecord(dir, raw, stubs.get(dir) ?? [], mirrors.get(dir) ?? []));
+    }
+    // A stub, or a mirror entry, whose member folder has no record of its
+    // own stays an entry like a package.
+    for (const [target, linked] of stubs) {
+      if (folders.has(target)) continue;
+      for (const [key, raw] of linked) recordNpmEntry(index, npmNameFromKey(key)!, raw);
+    }
+    for (const [dir, mirrored] of mirrors) {
+      if (folders.has(dir)) continue;
+      for (const [name, raw] of mirrored) recordNpmEntry(index, name, raw);
+    }
     return index;
   }
   const dependencies = doc['dependencies'];
   if (isRecord(dependencies)) {
-    const walk = (entries: Record<string, unknown>): void => {
-      for (const [name, raw] of Object.entries(entries)) {
-        if (!isRecord(raw)) continue;
-        recordNpmEntry(index, name, raw);
-        const nested = raw['dependencies'];
-        if (isRecord(nested)) walk(nested);
-      }
-    };
-    walk(dependencies);
+    walkNpmDependencies(index, dependencies, new Set<string>());
     return index;
   }
   return undefined;
@@ -268,6 +394,33 @@ function readNpmManifests(texts: readonly string[]): Map<string, string> | undef
   return specs;
 }
 
+/** A package.json's parsed object; undefined when it is not one. */
+function parseNpmManifest(manifest: string): Record<string, unknown> | undefined {
+  try {
+    const doc: unknown = JSON.parse(manifest);
+    return isRecord(doc) ? doc : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** package.json's `workspaces`, as an array or a `packages` array, with `!` globs excluding. */
+function npmWorkspaceGlobs(manifest: string): WorkspaceGlobs | undefined {
+  const declared = parseNpmManifest(manifest)?.['workspaces'];
+  const globs = isRecord(declared) ? declared['packages'] : declared;
+  if (!isStringArray(globs)) return undefined;
+  return {
+    include: globs.filter((glob) => !glob.startsWith('!')),
+    exclude: globs.filter((glob) => glob.startsWith('!')).map((glob) => glob.slice(1)),
+  };
+}
+
+/** The name a package.json declares. */
+function npmProjectName(manifest: string): string | undefined {
+  const name = parseNpmManifest(manifest)?.['name'];
+  return typeof name === 'string' ? name : undefined;
+}
+
 /** uv.lock records dependencies as arrays of `{ name = ... }` tables, with optional and dev groups keyed by name. */
 function uvEdges(entry: TomlTable): readonly string[] | undefined {
   const edges: string[] = [];
@@ -299,11 +452,58 @@ function uvEdges(entry: TomlTable): readonly string[] | undefined {
   return edges;
 }
 
-/** uv.lock records the project itself with a virtual source or an editable path of ".". */
-function uvProjectEntry(entry: TomlTable): boolean {
-  const source = entry['source'];
-  if (!isTomlTable(source)) return false;
-  return source['virtual'] !== undefined || source['editable'] === '.';
+/**
+ * uv.lock records the project itself with a virtual or editable source
+ * of ".", and each workspace member with one of the member's directory.
+ */
+function uvProjectOf(members: readonly WorkspaceMember[]): (entry: TomlTable) => string | undefined {
+  const dirs = new Set(members.map((member) => member.dir));
+  return (entry) => {
+    const source = entry['source'];
+    if (!isTomlTable(source)) return undefined;
+    const path = source['editable'] ?? source['virtual'];
+    if (typeof path !== 'string') return undefined;
+    return path === '.' || dirs.has(path) ? path : undefined;
+  };
+}
+
+/** The table at a dotted path inside a TOML document; undefined when any step is missing or not a table. */
+function tomlTableAt(doc: TomlTable, path: readonly string[]): TomlTable | undefined {
+  let current: TomlTable = doc;
+  for (const key of path) {
+    const next = current[key];
+    if (!isTomlTable(next)) return undefined;
+    current = next;
+  }
+  return current;
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+/** A `members` and `exclude` pair of globs, the shape uv and Cargo both declare a workspace with. */
+function tomlWorkspaceGlobs(manifest: string, path: readonly string[]): WorkspaceGlobs | undefined {
+  const doc = parseToml(manifest);
+  if (doc === undefined) return undefined;
+  const workspace = tomlTableAt(doc, path);
+  if (workspace === undefined) return undefined;
+  const members = workspace['members'];
+  const exclude = workspace['exclude'] ?? [];
+  if (!isStringArray(members) || !isStringArray(exclude)) return undefined;
+  return { include: members, exclude };
+}
+
+/** pyproject.toml's [tool.uv.workspace] table. */
+function uvWorkspaceGlobs(manifest: string): WorkspaceGlobs | undefined {
+  return tomlWorkspaceGlobs(manifest, ['tool', 'uv', 'workspace']);
+}
+
+/** The PEP 503 name pyproject.toml's [project] table declares. */
+function pep621ProjectName(manifest: string): string | undefined {
+  const doc = parseToml(manifest);
+  const name = doc === undefined ? undefined : tomlTableAt(doc, ['project'])?.['name'];
+  return typeof name === 'string' ? pep503(name) : undefined;
 }
 
 /** A PEP 735 include-group reference, the one table a dependency group may hold. */
@@ -502,14 +702,35 @@ function cargoProjectNames(texts: readonly string[]): Set<string> {
   return names;
 }
 
-/** Cargo.lock records the project with no source, under its declared name. */
-function cargoProjectEntry(
-  names: ReadonlySet<string>,
-): (entry: TomlTable) => boolean {
+/**
+ * Cargo.lock records the project and each workspace member with no
+ * source and no path, under the name its own Cargo.toml declares.
+ */
+function cargoProjectOf(
+  manifests: readonly string[],
+  members: readonly WorkspaceMember[],
+): (entry: TomlTable) => string | undefined {
+  const dirs = new Map<string, string>();
+  for (const member of members) {
+    for (const name of cargoProjectNames([member.manifest])) dirs.set(name, member.dir);
+  }
+  for (const name of cargoProjectNames(manifests)) dirs.set(name, '.');
   return (entry) => {
     const name = entry['name'];
-    return entry['source'] === undefined && typeof name === 'string' && names.has(pep503(name));
+    if (entry['source'] !== undefined || typeof name !== 'string') return undefined;
+    return dirs.get(pep503(name));
   };
+}
+
+/** Cargo.toml's [workspace] table. */
+function cargoWorkspaceGlobs(manifest: string): WorkspaceGlobs | undefined {
+  return tomlWorkspaceGlobs(manifest, ['workspace']);
+}
+
+/** The one package name a Cargo.toml declares, normalized. */
+function cargoProjectName(manifest: string): string | undefined {
+  const [name] = cargoProjectNames([manifest]);
+  return name;
 }
 
 /** NuGet packages.lock.json lists direct and transitive entries per framework. */
@@ -550,6 +771,168 @@ const NUGET_PROJECT_PATTERN = /\.(?:csproj|vbproj|fsproj)$/;
 
 /** Lists a directory inside a copy; empty when it does not exist. */
 type ListDir = (relativeDir: string) => Promise<readonly string[]>;
+
+/** The member directories a workspace declaration names, as globs relative to the root manifest's directory. */
+interface WorkspaceGlobs {
+  readonly include: readonly string[];
+  readonly exclude: readonly string[];
+}
+
+/** How many workspace members one side reads before ignoring the rest, whose records then stay named. */
+const MAX_MEMBERS = 500;
+/** How deep a `**` glob walks below where it starts. */
+const MAX_GLOB_DEPTH = 8;
+
+/**
+ * A glob's path segments, `.` and empty ones dropped; undefined for an
+ * absolute glob or one that climbs out with `..`, so a member is always
+ * below the root.
+ */
+function globSegments(glob: string): readonly string[] | undefined {
+  if (glob.startsWith('/')) return undefined;
+  const segments = glob.split('/').filter((segment) => segment !== '' && segment !== '.');
+  return segments.includes('..') || segments.length === 0 ? undefined : segments;
+}
+
+/** True when one character matches a bracket class's body: characters and ranges, `!` or `^` negating. */
+function classMatches(body: string, char: string): boolean {
+  const negated = body.startsWith('!') || body.startsWith('^');
+  const items = negated ? body.slice(1) : body;
+  let matched = false;
+  for (let i = 0; i < items.length; i++) {
+    if (items[i + 1] === '-' && i + 2 < items.length) {
+      if (char >= items[i]! && char <= items[i + 2]!) matched = true;
+      i += 2;
+    } else if (items[i] === char) {
+      matched = true;
+    }
+  }
+  return matched !== negated;
+}
+
+/**
+ * How many pattern characters match the name's character at this
+ * position — one, or a whole bracket class — and 0 when it does not
+ * match; `*` is the caller's.
+ */
+function patternStep(pattern: string, at: number, char: string): number {
+  const token = pattern[at];
+  if (token === '?') return 1;
+  if (token === '[') {
+    const close = pattern.indexOf(']', at + 2);
+    if (close > at) return classMatches(pattern.slice(at + 1, close), char) ? close + 1 - at : 0;
+  }
+  return token === char ? 1 : 0;
+}
+
+/**
+ * True when a name matches one glob segment: `*`, `?` and bracket
+ * classes, never across a slash. Matched by backtracking only to the
+ * last `*`, so a hostile glob costs at most the product of the lengths.
+ */
+function segmentMatches(pattern: string, name: string): boolean {
+  let p = 0;
+  let n = 0;
+  let starP = -1;
+  let starN = 0;
+  while (n < name.length) {
+    if (pattern[p] === '*') {
+      starP = p++;
+      starN = n;
+      continue;
+    }
+    const step = p < pattern.length ? patternStep(pattern, p, name[n]!) : 0;
+    if (step > 0) {
+      p += step;
+      n++;
+      continue;
+    }
+    if (starP < 0) return false;
+    p = starP + 1;
+    n = ++starN;
+  }
+  while (pattern[p] === '*') p++;
+  return p === pattern.length;
+}
+
+/** True when a directory's segments match a glob's, `**` standing for any number of directories. */
+function pathMatches(glob: readonly string[], parts: readonly string[]): boolean {
+  const failed = new Set<string>();
+  const match = (g: number, p: number): boolean => {
+    if (g === glob.length) return p === parts.length;
+    if (failed.has(`${g},${p}`)) return false;
+    const matched =
+      glob[g] === '**'
+        ? match(g + 1, p) || (p < parts.length && match(g, p + 1))
+        : p < parts.length && segmentMatches(glob[g]!, parts[p]!) && match(g + 1, p + 1);
+    if (!matched) failed.add(`${g},${p}`);
+    return matched;
+  };
+  return match(0, 0);
+}
+
+/** True when a directory, or one it is inside, matches the glob: an excluded directory takes its subtree with it. */
+function matchesOrUnder(glob: readonly string[], dir: string): boolean {
+  const parts = dir.split('/');
+  return parts.some((_, i) => pathMatches(glob, parts.slice(0, i + 1)));
+}
+
+function joinDir(dir: string, name: string): string {
+  return dir === '' ? name : `${dir}/${name}`;
+}
+
+/** A directory relative to the lock file's, as a path in the copy. */
+function dirBeside(lockDir: string, dir: string): string {
+  return dir === '' ? lockDir : under(lockDir, dir);
+}
+
+/** Every directory at or below one, `node_modules` aside, down to the glob depth limit. */
+async function descendants(lockDir: string, dir: string, list: ListDir): Promise<string[]> {
+  const found = [dir];
+  let level = [dir];
+  for (let depth = 0; depth < MAX_GLOB_DEPTH && found.length < MAX_MEMBERS; depth++) {
+    const next: string[] = [];
+    for (const parent of level) {
+      for (const name of await list(dirBeside(lockDir, parent))) {
+        if (name !== 'node_modules') next.push(joinDir(parent, name));
+      }
+    }
+    found.push(...next);
+    level = next;
+  }
+  return found;
+}
+
+/**
+ * The paths a glob's segments name below the lock file's directory,
+ * walked one segment at a time: a plain segment is taken as named, a
+ * pattern matched against the directory's listing, and `**` expanded to
+ * every directory below. A path that is a file, or missing, is kept here
+ * and dropped later when no member manifest is found in it.
+ */
+async function expandGlob(
+  lockDir: string,
+  segments: readonly string[],
+  list: ListDir,
+): Promise<string[]> {
+  let current = [''];
+  for (const segment of segments) {
+    const next = new Set<string>();
+    for (const dir of current) {
+      if (segment === '**') {
+        for (const below of await descendants(lockDir, dir, list)) next.add(below);
+      } else if (!/[*?[]/.test(segment)) {
+        next.add(joinDir(dir, segment));
+      } else {
+        for (const name of await list(dirBeside(lockDir, dir))) {
+          if (segmentMatches(segment, name)) next.add(joinDir(dir, name));
+        }
+      }
+    }
+    current = [...next].slice(0, MAX_MEMBERS);
+  }
+  return current.filter((dir) => dir !== '');
+}
 
 /**
  * The NuGet manifests: every project file beside the lock file, then each
@@ -605,14 +988,25 @@ function readNugetManifests(texts: readonly string[]): Map<string, string> | und
 export interface LockfileFormat {
   /** The lock file's basename, as the reviewer knows it. */
   readonly name: string;
-  /** The manifest the check reads, named for blind spots. */
+  /** The manifest the check reads, named for blind spots; a workspace member's manifest has this name too. */
   readonly manifestName: string;
   /** What a confirmed label of this format cannot see. */
   readonly blindSpot: string;
-  /** Reads the lock file; the manifests' texts tell its own record of the project apart. */
-  readLock(text: string, manifests: readonly string[]): LockIndex | undefined;
+  /**
+   * Reads the lock file; the root manifests' texts and the declared
+   * members tell its own records of the workspace's projects apart.
+   */
+  readLock(
+    text: string,
+    manifests: readonly string[],
+    members: readonly WorkspaceMember[],
+  ): LockIndex | undefined;
   manifestsIn(lockDir: string, list: ListDir): Promise<readonly string[]>;
   readManifests(texts: readonly string[]): Map<string, string> | undefined;
+  /** The member globs the root manifest's own workspace declaration names; absent for a format with no workspaces. */
+  readonly workspaceGlobs?: (rootManifest: string) => WorkspaceGlobs | undefined;
+  /** The package name a manifest declares for its own project, compared as the lock file records it. */
+  readonly projectName?: (manifest: string) => string | undefined;
 }
 
 /** A manifest fixed beside the lock file, whatever directory it is in. */
@@ -623,22 +1017,29 @@ function manifestBeside(name: string): (lockDir: string) => Promise<readonly str
 const CLOSURE_BLIND_SPOT =
   'the closure follows package names through the lock file\u2019s own recorded edges, so an unrelated change inside the closure cannot be told apart';
 
+const WORKSPACE_BLIND_SPOT =
+  'workspace members are only the directories the root manifest\u2019s workspace declaration names, and the lock\u2019s own record of the root or a member is accepted only when the pull request also changes that project\u2019s manifest, the record names no dependency that manifest does not declare, and it points at no source but the project\u2019s own folder';
+
 const NPM_FORMAT: LockfileFormat = {
   name: 'package-lock.json',
   manifestName: 'package.json',
-  blindSpot: `Parse-only: the resolver is not re-run and hashes are not re-checked against the registry; a workspace member's record is accepted only when the pull request also changes that member's package.json, its own resolved and integrity stay put, and the lock's local link to it stays; ${CLOSURE_BLIND_SPOT}.`,
-  readLock: readNpmLock,
+  blindSpot: `Parse-only: the resolver is not re-run and hashes are not re-checked against the registry; ${WORKSPACE_BLIND_SPOT}; ${CLOSURE_BLIND_SPOT}.`,
+  readLock: (text, _manifests, members) => readNpmLock(text, members),
   manifestsIn: manifestBeside('package.json'),
   readManifests: readNpmManifests,
+  workspaceGlobs: npmWorkspaceGlobs,
+  projectName: npmProjectName,
 };
 
 const UV_FORMAT: LockfileFormat = {
   name: 'uv.lock',
   manifestName: 'pyproject.toml',
-  blindSpot: `Parse-only: the resolver is not re-run and hashes are not re-checked against the registry; ${CLOSURE_BLIND_SPOT}.`,
-  readLock: (text: string) => readTomlPackages(text, uvEdges, uvProjectEntry),
+  blindSpot: `Parse-only: the resolver is not re-run and hashes are not re-checked against the registry; ${WORKSPACE_BLIND_SPOT}; ${CLOSURE_BLIND_SPOT}.`,
+  readLock: (text, _manifests, members) => readTomlPackages(text, uvEdges, uvProjectOf(members)),
   manifestsIn: manifestBeside('pyproject.toml'),
   readManifests: readPep621Manifests,
+  workspaceGlobs: uvWorkspaceGlobs,
+  projectName: pep621ProjectName,
 };
 
 const POETRY_FORMAT: LockfileFormat = {
@@ -653,11 +1054,13 @@ const POETRY_FORMAT: LockfileFormat = {
 const CARGO_FORMAT: LockfileFormat = {
   name: 'Cargo.lock',
   manifestName: 'Cargo.toml',
-  blindSpot: `Parse-only: the resolver is not re-run and checksums are not re-checked against the registry; ${CLOSURE_BLIND_SPOT}.`,
-  readLock: (text: string, manifests: readonly string[]) =>
-    readTomlPackages(text, cargoEdges, cargoProjectEntry(cargoProjectNames(manifests))),
+  blindSpot: `Parse-only: the resolver is not re-run and checksums are not re-checked against the registry; ${WORKSPACE_BLIND_SPOT}; ${CLOSURE_BLIND_SPOT}.`,
+  readLock: (text, manifests, members) =>
+    readTomlPackages(text, cargoEdges, cargoProjectOf(manifests, members)),
   manifestsIn: manifestBeside('Cargo.toml'),
   readManifests: readCargoManifests,
+  workspaceGlobs: cargoWorkspaceGlobs,
+  projectName: cargoProjectName,
 };
 
 const NUGET_FORMAT: LockfileFormat = {
@@ -683,12 +1086,21 @@ export function lockfileFormatFor(path: string): LockfileFormat | undefined {
   return LOCKFILE_FORMATS[basename(path)];
 }
 
-/** One side of the lock file's story: its text and its manifests' texts. */
+/** One workspace member a side declares: its directory beside the lock file and its manifest's text. */
+export interface WorkspaceMember {
+  /** The member's directory, relative to the lock file's, in forward slashes. */
+  readonly dir: string;
+  readonly manifest: string;
+}
+
+/** One side of the lock file's story: its text, its manifests' texts and its workspace members. */
 export interface LockfileSide {
   /** The lock file's content; null when this side has no such file. */
   readonly lock: string | null;
-  /** The content of every manifest that side reads, in read order. */
+  /** The content of every root manifest that side reads, in read order. */
   readonly manifests: readonly string[];
+  /** The members the root manifest's workspace declaration names on that side, by directory. */
+  readonly members: readonly WorkspaceMember[];
 }
 
 /** The outcome of one lock file's parse-only check. */
@@ -782,7 +1194,7 @@ function changedEntries(oldIndex: LockIndex, newIndex: LockIndex): ChangedEntry[
   return changed;
 }
 
-/** Changed entries no package name covers: npm's root entry and legacy mirror, and NuGet's libraries section. */
+/** Changed entries no package name covers: NuGet's libraries section. */
 function changedRoots(oldIndex: LockIndex, newIndex: LockIndex): ChangedEntry[] {
   const keys = [...new Set([...oldIndex.roots.keys(), ...newIndex.roots.keys()])].sort();
   const changed: ChangedEntry[] = [];
@@ -790,40 +1202,67 @@ function changedRoots(oldIndex: LockIndex, newIndex: LockIndex): ChangedEntry[] 
     const before = oldIndex.roots.get(key);
     const after = newIndex.roots.get(key);
     if (before === after) continue;
-    const name = key === '' ? 'the root entry' : `the ${key} entry`;
+    const name = `the ${key} entry`;
     const note = before === undefined ? 'added' : after === undefined ? 'removed' : 'content changed';
     changed.push({ name, display: `${name} (${note})` });
   }
   return changed;
 }
 
+/** What one side's manifest of one workspace project tells the check. */
+interface ProjectManifest {
+  /** The manifest's text, compared across sides to tell whether the pull request changed it. */
+  readonly text: string;
+  /** Its direct dependencies' specs, by name. */
+  readonly specs: ReadonlyMap<string, string>;
+  /** The package name it declares for the project itself. */
+  readonly name: string | undefined;
+}
+
 /**
- * Changed npm workspace member records: one stays explained only when the
- * pull request also changes that member's package.json, its own link,
- * resolved and integrity did not change, and the lock still links it
- * locally through its node_modules stub.
+ * True when one side's record of a project follows from that side's
+ * manifest: the record is absent, or the manifest exists, the record is
+ * local, names only dependencies the manifest declares, and carries the
+ * manifest's own package name.
  */
-function changedMembers(
+function recordFollows(
+  record: ProjectRecord | undefined,
+  manifest: ProjectManifest | undefined,
+): boolean {
+  if (record === undefined) return true;
+  if (manifest === undefined || !record.local) return false;
+  if (![...record.edges].every((edge) => manifest.specs.has(edge))) return false;
+  return manifest.name === undefined || record.name === undefined || record.name === manifest.name;
+}
+
+/**
+ * Changed project records: one stays explained only when the pull request
+ * changes that project's manifest and each side's record follows from that
+ * side's manifest. A record of a directory no manifest is read for — not
+ * the root, and not a declared member — is never explained.
+ */
+function changedProjects(
   oldIndex: LockIndex,
   newIndex: LockIndex,
-  memberManifestChanged: (key: string) => boolean,
+  oldManifests: ReadonlyMap<string, ProjectManifest>,
+  newManifests: ReadonlyMap<string, ProjectManifest>,
 ): ChangedEntry[] {
-  const keys = [...new Set([...oldIndex.members.keys(), ...newIndex.members.keys()])].sort();
+  const dirs = [...new Set([...oldIndex.projects.keys(), ...newIndex.projects.keys()])].sort();
   const changed: ChangedEntry[] = [];
-  for (const key of keys) {
-    const before = oldIndex.members.get(key);
-    const after = newIndex.members.get(key);
+  for (const dir of dirs) {
+    const before = oldIndex.projects.get(dir);
+    const after = newIndex.projects.get(dir);
     if (before !== undefined && after !== undefined && before.fingerprint === after.fingerprint) {
       continue;
     }
+    const oldManifest = oldManifests.get(dir);
+    const newManifest = newManifests.get(dir);
     const explained =
-      before !== undefined &&
-      after !== undefined &&
-      newIndex.links.has(key) &&
-      before.identity === after.identity &&
-      memberManifestChanged(key);
+      oldManifest?.text !== newManifest?.text &&
+      recordFollows(before, oldManifest) &&
+      recordFollows(after, newManifest);
     if (explained) continue;
-    const name = `the ${key} entry`;
+    const name = (after ?? before)!.display;
     const note = before === undefined ? 'added' : after === undefined ? 'removed' : 'content changed';
     changed.push({ name, display: `${name} (${note})` });
   }
@@ -840,29 +1279,59 @@ function readSafely<T>(read: () => T): T | undefined {
 }
 
 /**
+ * One side's project manifests by directory: the root manifests at '.',
+ * when the side has any, and each declared member's manifest — or the
+ * first of them that did not parse.
+ */
+function projectManifests(
+  format: LockfileFormat,
+  side: LockfileSide,
+): { manifests: Map<string, ProjectManifest> } | { unreadable: string } {
+  const groups: [string, readonly string[], string][] = [];
+  if (side.manifests.length > 0) groups.push(['.', side.manifests, format.manifestName]);
+  for (const member of side.members) {
+    groups.push([member.dir, [member.manifest], `${member.dir}/${format.manifestName}`]);
+  }
+  const manifests = new Map<string, ProjectManifest>();
+  for (const [dir, texts, label] of groups) {
+    const specs = readSafely(() => format.readManifests(texts));
+    if (specs === undefined) return { unreadable: label };
+    const name = texts.length === 1 ? readSafely(() => format.projectName?.(texts[0]!)) : undefined;
+    manifests.set(dir, { text: texts.join('\0'), specs, name });
+  }
+  return { manifests };
+}
+
+/**
  * The parse-only check itself: every changed lock entry must belong to the
- * dependency closure of the changed manifest entries — the closure walked
- * through the lock file's own edges, on the side where the entry lives. A
- * change the manifest does not explain keeps the check's outcome at
- * `unexplained` with the entries named; a lock file or manifest outside
- * the format keeps it at `no check`.
+ * dependency closure of the changed manifest entries — each manifest, the
+ * root's and every workspace member's, compared with its own other side,
+ * and the closure walked through the lock file's own edges, on the side
+ * where the entry lives — and every changed record of a workspace project
+ * must follow from that project's changed manifest. A change the
+ * manifests do not explain keeps the check's outcome at `unexplained`
+ * with the entries named; a lock file or manifest outside the format
+ * keeps it at `no check`.
  */
 export function confirmLockfileChange(
   format: LockfileFormat,
   lockName: string,
   oldSide: LockfileSide,
   newSide: LockfileSide,
-  memberManifestChanged: (key: string) => boolean = () => false,
 ): LockfileCheck {
   const oldLock = oldSide.lock;
   const oldIndex =
-    oldLock === null ? emptyIndex() : readSafely(() => format.readLock(oldLock, oldSide.manifests));
+    oldLock === null
+      ? emptyIndex()
+      : readSafely(() => format.readLock(oldLock, oldSide.manifests, oldSide.members));
   if (oldIndex === undefined) {
     return { outcome: 'no check', blindSpot: `no check for this lockfile: the base ${lockName} did not parse` };
   }
   const newLock = newSide.lock;
   const newIndex =
-    newLock === null ? emptyIndex() : readSafely(() => format.readLock(newLock, newSide.manifests));
+    newLock === null
+      ? emptyIndex()
+      : readSafely(() => format.readLock(newLock, newSide.manifests, newSide.members));
   if (newIndex === undefined) {
     return { outcome: 'no check', blindSpot: `no check for this lockfile: the head ${lockName} did not parse` };
   }
@@ -872,28 +1341,36 @@ export function confirmLockfileChange(
       blindSpot: `no check for this lockfile: no ${format.manifestName} beside it names its dependencies`,
     };
   }
-  const oldSpecs = readSafely(() => format.readManifests(oldSide.manifests));
-  if (oldSpecs === undefined) {
-    return { outcome: 'no check', blindSpot: `no check for this lockfile: its ${format.manifestName} did not parse` };
+  const oldProjects = projectManifests(format, oldSide);
+  if ('unreadable' in oldProjects) {
+    return { outcome: 'no check', blindSpot: `no check for this lockfile: its ${oldProjects.unreadable} did not parse` };
   }
-  const newSpecs = readSafely(() => format.readManifests(newSide.manifests));
-  if (newSpecs === undefined) {
-    return { outcome: 'no check', blindSpot: `no check for this lockfile: its ${format.manifestName} did not parse` };
+  const newProjects = projectManifests(format, newSide);
+  if ('unreadable' in newProjects) {
+    return { outcome: 'no check', blindSpot: `no check for this lockfile: its ${newProjects.unreadable} did not parse` };
   }
-  const changedDirects = [...new Set([...oldSpecs.keys(), ...newSpecs.keys()])].filter(
-    (name) => oldSpecs.get(name) !== newSpecs.get(name),
-  );
+  const noSpecs = new Map<string, string>();
+  const changedDirects = new Set<string>();
+  for (const dir of new Set([...oldProjects.manifests.keys(), ...newProjects.manifests.keys()])) {
+    const oldSpecs = oldProjects.manifests.get(dir)?.specs ?? noSpecs;
+    const newSpecs = newProjects.manifests.get(dir)?.specs ?? noSpecs;
+    for (const name of new Set([...oldSpecs.keys(), ...newSpecs.keys()])) {
+      if (oldSpecs.get(name) !== newSpecs.get(name)) changedDirects.add(name);
+    }
+  }
   const explained = new Set<string>([
-    ...closureFrom(changedDirects, newIndex.edges),
-    ...closureFrom(changedDirects, oldIndex.edges),
+    ...closureFrom([...changedDirects], newIndex.edges),
+    ...closureFrom([...changedDirects], oldIndex.edges),
   ]);
   const unexplained = changedEntries(oldIndex, newIndex).filter(
     (entry) => !explained.has(entry.name),
   );
-  if (changedDirects.length === 0) {
+  if (changedDirects.size === 0) {
     unexplained.push(...changedRoots(oldIndex, newIndex));
   }
-  unexplained.push(...changedMembers(oldIndex, newIndex, memberManifestChanged));
+  unexplained.push(
+    ...changedProjects(oldIndex, newIndex, oldProjects.manifests, newProjects.manifests),
+  );
   if (unexplained.length === 0) {
     return { outcome: 'confirmed', blindSpot: format.blindSpot };
   }
@@ -916,6 +1393,16 @@ async function readTextOrNull(absolute: string): Promise<string | null> {
   }
 }
 
+/** Reads one file inside a copy by its path there; null when it is not there or would leave the copy. */
+type ReadText = (relativePath: string) => Promise<string | null>;
+
+function readTextIn(copyRoot: string): ReadText {
+  return async (relativePath) => {
+    const absolute = pathInCopy(copyRoot, relativePath);
+    return absolute === undefined ? null : await readTextOrNull(absolute);
+  };
+}
+
 /** Lists one directory inside a copy, dot files aside; a missing directory reads empty. */
 function listDirIn(copyRoot: string): ListDir {
   return async (relativeDir) => {
@@ -935,23 +1422,64 @@ function listDirIn(copyRoot: string): ListDir {
   };
 }
 
+/** One workspace member found inside a copy, with its manifest's path there. */
+interface FoundMember extends WorkspaceMember {
+  readonly path: string;
+}
+
+/**
+ * The workspace members the root manifest beside a lock file declares,
+ * inside one copy: its globs expanded by listing directories, the
+ * excluded ones and the root itself dropped, and each kept only where
+ * the member's manifest exists. Files are read and listed; nothing runs.
+ */
+async function workspaceMembers(
+  format: LockfileFormat,
+  lockDir: string,
+  rootManifests: readonly string[],
+  list: ListDir,
+  read: ReadText,
+): Promise<FoundMember[]> {
+  const rootManifest = rootManifests[0];
+  if (format.workspaceGlobs === undefined || rootManifest === undefined) return [];
+  const globs = readSafely(() => format.workspaceGlobs!(rootManifest));
+  if (globs === undefined) return [];
+  const excluded = globs.exclude.map(globSegments).filter((segments) => segments !== undefined);
+  const dirs = new Set<string>();
+  for (const glob of globs.include) {
+    const segments = globSegments(glob);
+    if (segments === undefined) continue;
+    for (const dir of await expandGlob(lockDir, segments, list)) {
+      if (dirs.size >= MAX_MEMBERS) break;
+      if (!excluded.some((exclude) => matchesOrUnder(exclude, dir))) dirs.add(dir);
+    }
+  }
+  const members: FoundMember[] = [];
+  for (const dir of [...dirs].sort()) {
+    const path = under(lockDir, `${dir}/${format.manifestName}`);
+    const manifest = await read(path);
+    if (manifest !== null) members.push({ dir, path, manifest });
+  }
+  return members;
+}
+
 /** Reads one side of a lock file's story inside one copy of the repository. */
 async function readSide(
   copyRoot: string,
   lockPath: string,
   format: LockfileFormat,
 ): Promise<LockfileSide> {
-  const lockAbsolute = pathInCopy(copyRoot, lockPath);
-  const lock = lockAbsolute === undefined ? null : await readTextOrNull(lockAbsolute);
+  const read = readTextIn(copyRoot);
   const list = listDirIn(copyRoot);
+  const lock = await read(lockPath);
+  const lockDir = dirname(lockPath);
   const manifests: string[] = [];
-  for (const relative of await format.manifestsIn(dirname(lockPath), list)) {
-    const absolute = pathInCopy(copyRoot, relative);
-    if (absolute === undefined) continue;
-    const text = await readTextOrNull(absolute);
+  for (const relative of await format.manifestsIn(lockDir, list)) {
+    const text = await read(relative);
     if (text !== null) manifests.push(text);
   }
-  return { lock, manifests };
+  const members = await workspaceMembers(format, lockDir, manifests, list, read);
+  return { lock, manifests, members: members.map(({ dir, manifest }) => ({ dir, manifest })) };
 }
 
 /** The assessment a check's outcome turns into, in place of the name rule's. */
@@ -960,9 +1488,8 @@ function assessmentFor(
   lockName: string,
   oldSide: LockfileSide,
   newSide: LockfileSide,
-  memberManifestChanged?: (key: string) => boolean,
 ): NoiseAssessment {
-  const check = confirmLockfileChange(format, lockName, oldSide, newSide, memberManifestChanged);
+  const check = confirmLockfileChange(format, lockName, oldSide, newSide);
   if (check.outcome === 'confirmed') {
     return {
       label: 'lockfile',
@@ -981,22 +1508,31 @@ function assessmentFor(
 
 /**
  * The manifest paths the lock file checks read beside the lock files
- * among `changedPaths`, as paths in one copy of the repository, so a
- * caller that copies what a review reads — seeding or recording a
- * case — carries them even when the change leaves the manifest itself
- * untouched.
+ * among `changedPaths` — the root manifests and the manifests of the
+ * workspace members they declare — as paths in one copy of the
+ * repository, so a caller that copies what a review reads — seeding or
+ * recording a case — carries them even when the change leaves the
+ * manifest itself untouched.
  */
 export async function lockfileManifests(
   changedPaths: readonly string[],
   copyRoot: string,
 ): Promise<readonly string[]> {
   const list = listDirIn(copyRoot);
+  const read = readTextIn(copyRoot);
   const manifests = new Set<string>();
   for (const path of changedPaths) {
     const format = lockfileFormatFor(path);
     if (format === undefined) continue;
-    for (const manifest of await format.manifestsIn(dirname(path), list)) {
+    const lockDir = dirname(path);
+    const roots: string[] = [];
+    for (const manifest of await format.manifestsIn(lockDir, list)) {
       manifests.add(manifest);
+      const text = await read(manifest);
+      if (text !== null) roots.push(text);
+    }
+    for (const member of await workspaceMembers(format, lockDir, roots, list, read)) {
+      manifests.add(member.path);
     }
   }
   return [...manifests].sort();
@@ -1004,22 +1540,18 @@ export async function lockfileManifests(
 
 /**
  * Runs the parse-only check on every part a check exists for, reading both
- * versions of the lock file and its manifests from the read-only copies —
- * never by running a package manager (the no-process tests prove it).
- * Returns the assessments by part path; the noise rules attach each one
- * only where the name rule's claim stands, so a renamed or
- * linguist-declared lock file keeps its own label.
+ * versions of the lock file, its manifests and its workspace members'
+ * manifests from the read-only copies — never by running a package
+ * manager (the no-process tests prove it). Returns the assessments by
+ * part path; the noise rules attach each one only where the name rule's
+ * claim stands, so a renamed or linguist-declared lock file keeps its own
+ * label.
  */
 export async function confirmLockfileNoise(
   parts: readonly Part[],
   copies: { readonly base: string; readonly head: string },
 ): Promise<Map<string, NoiseAssessment>> {
   const overrides = new Map<string, NoiseAssessment>();
-  const changedPaths = new Set<string>();
-  for (const part of parts) {
-    changedPaths.add(part.path);
-    changedPaths.add(part.previousPath ?? part.path);
-  }
   await Promise.all(
     parts
       .filter((part) => !part.isBinary && lockfileFormatFor(part.path) !== undefined)
@@ -1029,13 +1561,7 @@ export async function confirmLockfileNoise(
           readSide(copies.base, part.previousPath ?? part.path, format),
           readSide(copies.head, part.path, format),
         ]);
-        const lockDir = dirname(part.path);
-        overrides.set(
-          part.path,
-          assessmentFor(format, basename(part.path), oldSide, newSide, (key) =>
-            changedPaths.has(under(lockDir, `${key}/package.json`)),
-          ),
-        );
+        overrides.set(part.path, assessmentFor(format, basename(part.path), oldSide, newSide));
       }),
   );
   return overrides;

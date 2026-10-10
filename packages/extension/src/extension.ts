@@ -14,10 +14,12 @@ import {
   DRAFT_COMMENT_COMMAND,
   FETCH_LIBRARY_COMMAND,
   FILTER_CHANGED_COMMAND,
+  MARK_REVIEWED_COMMAND,
   OPEN_ALL_PARTS_COMMAND,
   OPEN_LIBRARY_EVIDENCE_COMMAND,
   OPEN_OVERVIEW_COMMAND,
   OPEN_PART_COMMAND,
+  OPEN_REVIEW_CONTAINER_COMMAND,
   REVIEW_COMMAND,
   REVIEW_TREE_VIEW,
   SUBMIT_REVIEW_COMMAND,
@@ -30,9 +32,11 @@ import {
   anchorOf,
   buildTree,
   findAnchor,
+  partAtAnchor,
   reviewBadge,
   treeMessage,
   pendingReviewSection,
+  type PartAnchor,
   type TreeComment,
   type TreePart,
   type TreeSection,
@@ -44,6 +48,7 @@ import { DocLinkHovers } from './doc-hover.js';
 import { OverviewPanel, claimWhere } from './overview.js';
 import { partClaims, selectionInPart } from './asked-claim.js';
 import { AgentStatusBar } from './agent-status.js';
+import { isBannerPartRef, PartBanner } from './part-banner.js';
 import { readAgentSettings, reviewAgentChoice, untestedModelWarning } from './agent-settings.js';
 import {
   ASK_KINDS,
@@ -75,10 +80,12 @@ export {
   DRAFT_COMMENT_COMMAND,
   FETCH_LIBRARY_COMMAND,
   FILTER_CHANGED_COMMAND,
+  MARK_REVIEWED_COMMAND,
   OPEN_ALL_PARTS_COMMAND,
   OPEN_LIBRARY_EVIDENCE_COMMAND,
   OPEN_OVERVIEW_COMMAND,
   OPEN_PART_COMMAND,
+  OPEN_REVIEW_CONTAINER_COMMAND,
   REVIEW_COMMAND,
   REVIEW_TREE_VIEW,
   SUBMIT_REVIEW_COMMAND,
@@ -92,12 +99,6 @@ export interface ExtensionDeps {
   /** The extension host's environment; tests inject one carrying an API key. */
   env?: NodeJS.ProcessEnv;
 }
-
-/** The one node the tree shows before the first review. */
-const EMPTY_TREE_PLACEHOLDER: TreePart = {
-  label: 'Review a pull request to see its parts here, ranked by importance.',
-  kind: 'part',
-};
 
 /** A tree node: a section, a part inside it, or a pending comment. */
 type TreeNode = TreeSection | TreePart | TreeComment;
@@ -194,7 +195,9 @@ class ReviewTreeProvider implements vscode.TreeDataProvider<TreeNode> {
 
   getChildren(node?: TreeNode): TreeNode[] {
     if (node === undefined) {
-      return this.sections.length > 0 ? this.sections : [EMPTY_TREE_PLACEHOLDER];
+      // Empty before the first review, so the view shows its welcome
+      // content: the button that starts one.
+      return this.sections;
     }
     return isSection(node) ? node.parts : [];
   }
@@ -227,7 +230,9 @@ class ReviewTreeProvider implements vscode.TreeDataProvider<TreeNode> {
  * tree, and follows every stage, as do the findings — the refuted and
  * unverifiable claims — shown as the companion's own threads on the diff.
  *
- * Each part's checkbox marks it reviewed in the engine's local store for
+ * Each part's checkbox — in the tree, or in the banner above the part's
+ * diff, which also carries its importance, signals and asks — marks it
+ * reviewed in the engine's local store for
  * the pull request, which outlives the editor; the tree view's badge
  * counts the parts left, and a part whose content changed since it was
  * marked is unmarked and says so. With the opt-in mirror setting on, a
@@ -261,6 +266,10 @@ class ReviewSession {
   );
   /** The review's findings, its refuted and unverifiable claims, as threads on the diff. */
   private readonly findings = new FindingThreads();
+  /** The banner above the diff of the part opened last, with its importance, signals, asks and reviewed checkbox. */
+  private readonly banner = new PartBanner();
+  /** Where the part opened last in the diff editor starts; absent while no single part is open. */
+  private opened: PartAnchor | undefined;
   /** The reviewed marks the engine's local store holds, with the pull request they belong to. */
   private stored: { url: string; marks: ReviewedMarks } | undefined;
   /** The files of parts marked while the review still runs, mirrored to GitHub once it finishes. */
@@ -292,9 +301,9 @@ class ReviewSession {
     return this.result;
   }
 
-  async reviewPullRequest(urlArg?: string): Promise<void> {
+  async reviewPullRequest(urlArg?: unknown): Promise<void> {
     const url =
-      urlArg !== undefined && urlArg.trim() !== ''
+      typeof urlArg === 'string' && urlArg.trim() !== ''
         ? urlArg
         : await vscode.window.showInputBox({
             prompt: 'GitHub pull request URL',
@@ -318,6 +327,7 @@ class ReviewSession {
       return;
     }
     const accessToken = session.accessToken;
+    await vscode.commands.executeCommand(OPEN_REVIEW_CONTAINER_COMMAND);
 
     // A new review replaces one still running: stopping the engine drops
     // the old request, and the next request starts a fresh engine.
@@ -401,6 +411,7 @@ class ReviewSession {
       this.comments.setReview(result);
       this.mirrorWaiting.clear();
       this.overview.clearAnswers();
+      this.opened = undefined;
       if (previous !== result.pullRequest.url) this.onlyChanged = false;
     }
     this.render();
@@ -434,14 +445,39 @@ class ReviewSession {
 
   /**
    * Shows the tree's sections, the line above them — what changed since
-   * the last look and the stage still running — and the badge counting
-   * the parts left to review.
+   * the last look and the stage still running — the badge counting the
+   * parts left to review, and the banner of the part open in the diff.
    */
   private render(): void {
     this.tree.setSections(this.sections());
+    this.showBanner();
     if (this.result === undefined) return;
     this.treeView.message = treeMessage(this.result, this.stage, { onlyChangedSinceLastLook: this.onlyChanged });
     this.treeView.badge = reviewBadge(this.result, this.marks());
+  }
+
+  /**
+   * Shows the banner above the diff of the part opened last, as the
+   * result shown and the reviewed marks now stand: after a regrouping, on
+   * the part that now holds its first hunk. No part open, no banner.
+   */
+  private showBanner(): void {
+    const part = this.result === undefined || this.opened === undefined ? undefined : partAtAnchor(this.result.parts, this.opened);
+    if (part === undefined) {
+      this.banner.clear();
+      return;
+    }
+    this.banner.show(this.result!, part, this.marks());
+  }
+
+  /**
+   * The part a command's argument carries: a banner's reference to one,
+   * found in the result shown by where it starts, or what the tree and
+   * the diff editor pass; see {@link carriedPart}.
+   */
+  private partOf(arg: unknown): Part | undefined {
+    if (!isBannerPartRef(arg)) return carriedPart(arg);
+    return this.result === undefined ? undefined : partAtAnchor(this.result.parts, arg.anchor);
   }
 
   /**
@@ -500,25 +536,47 @@ class ReviewSession {
     }
   }
 
-  /**
-   * Ticks or clears the reviewed checkboxes the reviewer changed, one part
-   * at a time, in the engine's local store, then shows the marks as they
-   * now stand and mirrors the whole files they complete when the setting
-   * asks for it. A review started meanwhile keeps its own marks.
-   */
+  /** Ticks or clears the reviewed checkboxes the reviewer changed in the tree; see {@link mark}. */
   async markParts(changes: readonly (readonly [TreeNode, vscode.TreeItemCheckboxState])[]): Promise<void> {
+    await this.mark(
+      changes.flatMap(([node, state]) =>
+        isSection(node) || node.kind === 'comment' || node.part === undefined
+          ? []
+          : [[node.part, state === vscode.TreeItemCheckboxState.Checked] as const],
+      ),
+    );
+  }
+
+  /**
+   * Ticks or clears one part's reviewed checkbox from the banner above
+   * its diff, the same way its checkbox in the tree does; see {@link mark}.
+   */
+  async markPart(arg?: unknown, reviewed?: unknown): Promise<void> {
+    const part = this.partOf(arg);
+    if (part === undefined || typeof reviewed !== 'boolean') {
+      vscode.window.showWarningMessage('Review a pull request first, then mark its parts reviewed.');
+      return;
+    }
+    await this.mark([[part, reviewed]]);
+  }
+
+  /**
+   * Ticks or clears reviewed marks, one part at a time, in the engine's
+   * local store, then shows the marks as they now stand — in the tree and
+   * in the banner — and mirrors the whole files they complete when the
+   * setting asks for it. A review started meanwhile keeps its own marks.
+   */
+  private async mark(changes: readonly (readonly [Part, boolean])[]): Promise<void> {
     const url = this.url;
     if (url === undefined) return;
     const review = this.reviews;
     try {
       const engine = await this.readyEngine();
-      for (const [node, state] of changes) {
-        if (isSection(node) || node.kind === 'comment' || node.part === undefined) continue;
-        const reviewed = state === vscode.TreeItemCheckboxState.Checked;
-        const marks = await engine.markReviewed(url, markedPart(node.part), reviewed);
+      for (const [part, reviewed] of changes) {
+        const marks = await engine.markReviewed(url, markedPart(part), reviewed);
         if (review !== this.reviews) return;
         this.stored = { url, marks };
-        if (reviewed) for (const file of filesOfPart(node.part)) this.mirrorWaiting.add(file.path);
+        if (reviewed) for (const file of filesOfPart(part)) this.mirrorWaiting.add(file.path);
       }
     } catch (error) {
       if (review === this.reviews) {
@@ -569,11 +627,16 @@ class ReviewSession {
     }
   }
 
-  /** Opens one part in the multi-file diff editor, read from the cached copies. */
+  /**
+   * Opens one part in the multi-file diff editor, read from the cached
+   * copies, with its banner above the diff.
+   */
   async openPart(part: Part): Promise<void> {
     if (this.result === undefined) {
       return;
     }
+    this.opened = anchorOf(part);
+    this.showBanner();
     try {
       await openPartInDiffEditor(part, this.result, this.marker);
     } catch (error) {
@@ -591,6 +654,9 @@ class ReviewSession {
       );
       return;
     }
+    // The whole change is no one part, so no banner stands above it.
+    this.opened = undefined;
+    this.banner.clear();
     try {
       await openWholeChangeInDiffEditor(this.result, this.marker);
     } catch (error) {
@@ -740,17 +806,18 @@ class ReviewSession {
 
   /**
    * Makes one ask about a part, the reviewer having picked it from the
-   * part's context menu: the engine has the agent the settings pick answer
-   * about the part of its latest review, checked before it arrives, and
-   * the overview shows the answer with its stamp. The tree passes its
-   * element, so the part is read out of whatever the argument carries,
-   * and found in the result shown by where it starts. Verify this claim
+   * part's context menu or the banner above its diff: the engine has the
+   * agent the settings pick answer about the part of its latest review,
+   * checked before it arrives, and the overview shows the answer with its
+   * stamp. The tree passes its element and the banner its reference, so
+   * the part is read out of whatever the argument carries, and found in
+   * the result shown by where it starts. Verify this claim
    * checks the text selected on the head side of the part's diff, or else
    * the claim the reviewer picks, and its judged claim joins the review
    * shown, as a finding with any library fetch it offers.
    */
   async ask(kind: AskKind, arg?: unknown): Promise<void> {
-    const part = carriedPart(arg);
+    const part = this.partOf(arg);
     const anchor = part === undefined ? undefined : JSON.stringify(anchorOf(part));
     const index = this.result?.parts.findIndex((each) => JSON.stringify(anchorOf(each)) === anchor) ?? -1;
     if (this.result === undefined || this.url === undefined || index < 0) {
@@ -821,11 +888,12 @@ class ReviewSession {
   /**
    * A part's "why this matters": opens the overview's story at the first
    * sentence that mentions the part, or says the story does not. The tree
-   * passes its element, so the part is read out of whatever the argument
-   * carries, and found in the result shown by where it starts.
+   * passes its element and the banner its reference, so the part is read
+   * out of whatever the argument carries, and found in the result shown
+   * by where it starts.
    */
   whyThisMatters(arg?: unknown): void {
-    const part = carriedPart(arg);
+    const part = this.partOf(arg);
     if (part === undefined || this.result === undefined) {
       vscode.window.showWarningMessage('Review a pull request first, then read why its parts matter.');
       return;
@@ -842,12 +910,13 @@ class ReviewSession {
 
   /**
    * Starts a comment on a whole part, gathered in the pending review.
-   * The editor's context menu passes the tree's element, so the part is
-   * read out of whatever the argument carries; with nothing usable, or
+   * The editor's context menu passes the tree's element and the banner
+   * its reference, so the part is read out of whatever the argument
+   * carries; with nothing usable, or
    * no review to comment on, the reviewer is told what is missing.
    */
   commentOnPart(arg?: unknown): void {
-    const part = carriedPart(arg);
+    const part = this.partOf(arg);
     if (part === undefined || this.result === undefined) {
       vscode.window.showWarningMessage(
         'Review a pull request first, then comment on its parts.',
@@ -1023,6 +1092,7 @@ class ReviewSession {
     this.page?.dispose();
     this.overview.dispose();
     this.findings.dispose();
+    this.banner.dispose();
   }
 }
 
@@ -1036,8 +1106,9 @@ class ReviewSession {
  * at one part as its "why this matters" — the commands that draft a
  * comment from a finding and add the draft to the pending review or
  * discard it, one command for each ask a part's context menu offers,
- * whose answer the overview shows, the parts' reviewed checkboxes, and the status bar entry
- * that shows the agent, model and effort in use.
+ * whose answer the overview shows, the parts' reviewed checkboxes and
+ * the command that ticks or clears one from the banner above its diff,
+ * and the status bar entry that shows the agent, model and effort in use.
  * Nothing here runs anything from the workspace — the engine is started
  * from the companion's own install, reads GitHub, and writes only the
  * one review the reviewer sends — and, only with the opt-in mirror
@@ -1123,6 +1194,7 @@ export function activate(
       isEditorComment(comment) ? session.discardDraft(comment) : undefined,
     ),
     ...ASK_KINDS.map((kind) => vscode.commands.registerCommand(askCommand(kind), (arg?: unknown) => session.ask(kind, arg))),
+    vscode.commands.registerCommand(MARK_REVIEWED_COMMAND, (part?: unknown, reviewed?: unknown) => session.markPart(part, reviewed)),
   );
   return tree;
 }

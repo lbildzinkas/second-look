@@ -163,6 +163,14 @@ export async function run(): Promise<void> {
       'deny',
       "the packaged Claude Code guard, run by the editor's binary as Node, refuses a read outside the copy",
     );
+    // The Activity Bar icon the manifest's view container names.
+    const containers = (extension.packageJSON as {
+      contributes: { viewsContainers: { activitybar: { id: string; icon: string }[] } };
+    }).contributes.viewsContainers.activitybar;
+    deepStrictEqual(containers.map((container) => container.id), ['second-look']);
+    for (const container of containers) {
+      ok(existsSync(join(installed, container.icon)), `the package carries the ${container.icon} icon`);
+    }
     for (const language of LANGUAGES) {
       ok(
         existsSync(
@@ -186,9 +194,9 @@ export async function run(): Promise<void> {
         typeof provider.getTreeItem === 'function',
       `the ${EXTENSION_ID} activation did not export the review tree's data provider`,
     );
-    deepStrictEqual(await renderedLabels(provider), [
-      'Review a pull request to see its parts here, ranked by importance.',
-    ]);
+    // Before the first review the tree is empty, so the view shows its
+    // welcome button.
+    deepStrictEqual(await renderedLabels(provider), []);
 
     // One full review round trip, against the fake engine fixture so no
     // network is touched: the command asks for the GitHub session, sends

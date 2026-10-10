@@ -14,10 +14,12 @@ import {
   DRAFT_COMMENT_COMMAND,
   FETCH_LIBRARY_COMMAND,
   FILTER_CHANGED_COMMAND,
+  MARK_REVIEWED_COMMAND,
   OPEN_ALL_PARTS_COMMAND,
   OPEN_LIBRARY_EVIDENCE_COMMAND,
   OPEN_OVERVIEW_COMMAND,
   OPEN_PART_COMMAND,
+  OPEN_REVIEW_CONTAINER_COMMAND,
   REVIEW_COMMAND,
   REVIEW_TREE_VIEW,
   SUBMIT_REVIEW_COMMAND,
@@ -132,6 +134,7 @@ async function reviewWithFakeEngine(options: FakeEngineOptions): Promise<StubTre
     askCommand('explain'),
     askCommand('verify'),
     askCommand('cover'),
+    MARK_REVIEWED_COMMAND,
   ]);
 
   stub.inputBoxResult = PR_URL;
@@ -255,26 +258,22 @@ describe('activating the companion', () => {
       askCommand('explain'),
       askCommand('verify'),
       askCommand('cover'),
+      MARK_REVIEWED_COMMAND,
     ]);
     expect(stub.treeViews.map((view) => view.id)).toEqual([REVIEW_TREE_VIEW]);
     expect(stub.fileSystemProviders.map((entry) => entry.scheme)).toEqual(['second-look-change']);
     expect(stub.fileSystemProviders[0]!.options?.isReadonly).toBeInstanceOf(Object);
-    expect(stub.commentControllers.map((controller) => controller.id)).toEqual(['second-look', 'second-look.findings']);
+    expect(stub.commentControllers.map((controller) => controller.id)).toEqual(['second-look', 'second-look.findings', 'second-look.part']);
   });
 
-  it('shows the placeholder before any review ran, with nothing to open', () => {
+  it('leaves the tree empty before any review ran, so the view shows its welcome button', () => {
     activate(stubContext() as unknown as vscode.ExtensionContext, {
       spawnEngine: () => {
         throw new Error('no review ran');
       },
     });
 
-    const provider = providerOf(stub.treeViews[0]!);
-    const placeholder = provider.getChildren()[0]!;
-    expect(provider.getTreeItem(placeholder).label).toBe(
-      'Review a pull request to see its parts here, ranked by importance.',
-    );
-    expect(provider.getTreeItem(placeholder).command).toBeUndefined();
+    expect(providerOf(stub.treeViews[0]!).getChildren()).toEqual([]);
   });
 });
 
@@ -354,6 +353,50 @@ describe('the review command, end to end against a fake engine', () => {
     });
   });
 
+  it('opens the Second Look side bar when the review starts, before the tree fills', async () => {
+    activate(stubContext() as unknown as vscode.ExtensionContext, {
+      spawnEngine: () => fakeEngine({ result: mixedResult(), answerDelayMs: 300, logName: 'open-container.log' }),
+    });
+    stub.inputBoxResult = PR_URL;
+    stub.session = { accessToken: TOKEN };
+
+    const reviewed = registeredCommands().get(REVIEW_COMMAND)!() as Promise<void>;
+    const view = stub.treeViews[0]!;
+
+    // The side bar opens with the review itself, so the tree is visible
+    // before its first section is revealed into it.
+    await until('the Second Look side bar to open', () =>
+      stub.executedCommands.some((command) => command.id === OPEN_REVIEW_CONTAINER_COMMAND),
+    );
+    expect(view.revealed).toEqual([]);
+
+    await reviewed;
+    expect(stub.executedCommands).toEqual([{ id: OPEN_REVIEW_CONTAINER_COMMAND, args: [] }]);
+    expect(view.revealed).toHaveLength(1);
+  });
+
+  it('asks for the URL when the tree title button forwards the view context', async () => {
+    activate(stubContext() as unknown as vscode.ExtensionContext, {
+      spawnEngine: () => fakeEngine({ result: mixedResult(), logName: 'title-review-button.log' }),
+    });
+    stub.inputBoxResult = PR_URL;
+    stub.session = { accessToken: TOKEN };
+
+    // The Review pull request button in the tree's title bar runs the
+    // command with the view-pane context object as its first argument;
+    // that is no URL, so the command asks for one, and the review starts.
+    await registeredCommands().get(REVIEW_COMMAND)!({
+      $treeViewId: REVIEW_TREE_VIEW,
+      $focusedTreeItem: true,
+      $selectedTreeItems: true,
+    }) as Promise<void>;
+
+    expect(stub.inputBoxes).toHaveLength(1);
+    expect(renderedTree(stub.treeViews[0]!)[0]).toEqual({ label: 'Must review', tooltip: 'The parts to read first.' });
+    expect(stub.executedCommands).toEqual([{ id: OPEN_REVIEW_CONTAINER_COMMAND, args: [] }]);
+    expect(stub.errorMessages).toEqual([]);
+  });
+
   it("answers a hover on a library name on the head side of a part with the review's documentation links", async () => {
     const result = docLinksResult();
     await reviewWithFakeEngine({ result, logName: 'doc-links.log' });
@@ -402,12 +445,7 @@ describe('the review command, end to end against a fake engine', () => {
     });
 
     expect(stub.errorMessages).toEqual(['GitHub is down']);
-    expect(renderedTree(view)).toEqual([
-      {
-        label: 'Review a pull request to see its parts here, ranked by importance.',
-        contextValue: 'part',
-      },
-    ]);
+    expect(renderedTree(view)).toEqual([]);
   });
 
   it('does nothing without a pull request URL', async () => {
@@ -421,12 +459,8 @@ describe('the review command, end to end against a fake engine', () => {
 
     expect(stub.sessionRequests).toEqual([]);
     expect(stub.progressTitles).toEqual([]);
-    expect(renderedTree(stub.treeViews[0]!)).toEqual([
-      {
-        label: 'Review a pull request to see its parts here, ranked by importance.',
-        contextValue: 'part',
-      },
-    ]);
+    expect(stub.executedCommands).toEqual([]);
+    expect(renderedTree(stub.treeViews[0]!)).toEqual([]);
   });
 
   it('asks again later when the reviewer is not signed in', async () => {
@@ -531,6 +565,7 @@ describe('a review arriving in stages', () => {
     const base = (path: string) => changeUri('base', plain.copies.base.commit, path);
     const head = (path: string) => changeUri('head', plain.copies.head.commit, path);
     expect(stub.executedCommands).toEqual([
+      { id: OPEN_REVIEW_CONTAINER_COMMAND, args: [] },
       {
         id: 'vscode.changes',
         args: [
@@ -620,6 +655,7 @@ describe('reading a part in the multi-file diff', () => {
     await clickPart(view, 'src/retry.py');
 
     expect(stub.executedCommands).toEqual([
+      { id: OPEN_REVIEW_CONTAINER_COMMAND, args: [] },
       {
         id: 'vscode.changes',
         args: [
@@ -698,6 +734,7 @@ describe('reading a part in the multi-file diff', () => {
     await registeredCommands().get(OPEN_ALL_PARTS_COMMAND)!() as Promise<void>;
 
     expect(stub.executedCommands).toEqual([
+      { id: OPEN_REVIEW_CONTAINER_COMMAND, args: [] },
       {
         id: 'vscode.changes',
         args: [
@@ -889,6 +926,7 @@ describe('the overview', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(stub.executedCommands).toEqual([
+      { id: OPEN_REVIEW_CONTAINER_COMMAND, args: [] },
       { id: 'vscode.changes', args: ['src/retry.py', [[head('src/retry.py'), base('src/retry.py'), head('src/retry.py')]]] },
     ]);
   });
@@ -923,6 +961,7 @@ describe('the overview', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(stub.executedCommands).toEqual([
+      { id: OPEN_REVIEW_CONTAINER_COMMAND, args: [] },
       { id: 'vscode.changes', args: ['src/settings.ts', [[head('src/settings.ts'), base('src/settings.ts'), head('src/settings.ts')]]] },
     ]);
   });
@@ -1766,5 +1805,170 @@ describe('since your last look', () => {
     await registeredCommands().get(REVIEW_COMMAND)!() as Promise<void>;
     expect(partLabels(view)).toHaveLength(7);
     expect(view.message).toBe('Since your last look at abcdef0 on 2026-10-01: 1 of 7 parts changed.');
+  });
+});
+
+describe('the banner above a part\'s diff', () => {
+  const copies = () => mixedResult().copies;
+  const head = (path: string) => changeUri('head', copies().head.commit, path);
+
+  /** The banner's thread, while one part is open. */
+  function bannerThread() {
+    return stub.commentControllers.find((controller) => controller.id === 'second-look.part')!.threads;
+  }
+
+  /** The banner's command links, each with its text, command and arguments. */
+  function bannerLinks(): { text: string; command: string; args: unknown[] }[] {
+    const [thread] = bannerThread();
+    const body = (thread!.comments[0]!.body as { value: string }).value;
+    return [...body.matchAll(/\[((?:\\.|[^\]\\])+)\]\(command:([^?]+)\?([^)]+)\)/g)].map(([, text, command, args]) => ({
+      text: text!.replace(/\\(.)/g, '$1'),
+      command: command!,
+      args: JSON.parse(decodeURIComponent(args!)) as unknown[],
+    }));
+  }
+
+  /** Presses the banner's link with this text, the way the editor runs a trusted command link. */
+  async function press(text: string): Promise<void> {
+    const link = bannerLinks().find((each) => each.text === text);
+    expect(link, text).toBeDefined();
+    await registeredCommands().get(link!.command)!(...link!.args);
+  }
+
+  function engineLog(logName: string): { method: string; params?: Record<string, unknown> }[] {
+    return readFileSync(join(workDir, logName), 'utf8')
+      .split('\n')
+      .filter((line) => line !== '')
+      .map((line) => JSON.parse(line) as { method: string; params?: Record<string, unknown> });
+  }
+
+  /** The checkbox the tree shows for the part with this label. */
+  function checkbox(view: StubTreeView, label: string): number | undefined {
+    const provider = providerOf(view);
+    const node = provider
+      .getChildren()
+      .flatMap((section) => provider.getChildren(section))
+      .find((child) => provider.getTreeItem(child).label === label);
+    return (provider.getTreeItem(node) as { checkboxState?: number }).checkboxState;
+  }
+
+  async function openFromTree(view: StubTreeView, label: string): Promise<void> {
+    const click = partClick(view, label)!;
+    await registeredCommands().get(click.command)!(...click.arguments);
+  }
+
+  it('shows the selected must-review part\'s importance, reason, signals, asks and reviewed checkbox above its diff', async () => {
+    const view = await reviewWithFakeEngine({ result: mixedResult(), logName: 'banner.log' });
+    expect(bannerThread()).toEqual([]);
+
+    await openFromTree(view, 'src/retry.py');
+
+    const [thread] = bannerThread();
+    expect(bannerThread()).toHaveLength(1);
+    expect(thread!.uri.toString()).toBe(head('src/retry.py').toString());
+    expect(thread!.range).toBeUndefined();
+    const body = (thread!.comments[0]!.body as { value: string }).value;
+    expect(body).toMatch(/^\*\*Must review\*\* · part 1 of 7 · ☐ \[Mark reviewed\]/);
+    expect(body).toContain('New code the send path now runs on every delivery\\.');
+    expect(body).toContain('Signals: new code · 2 callers · no tests before this pull request · Plain ranking');
+    expect(bannerLinks().map((link) => link.text)).toEqual([
+      'Mark reviewed',
+      'Explain this part',
+      'Verify this claim',
+      'What covers this?',
+      'Why this matters',
+      'Comment on this part…',
+    ]);
+
+    // Another part's click moves the banner to that part.
+    await openFromTree(view, 'src/settings.ts');
+    expect(bannerThread().map((each) => each.uri.toString())).toEqual([head('src/settings.ts').toString()]);
+    expect((bannerThread()[0]!.comments[0]!.body as { value: string }).value).toMatch(/^\*\*Worth reviewing\*\* · part 2 of 7/);
+  });
+
+  it('marks the part reviewed from the banner exactly as its tree checkbox does, and each shows the other\'s tick', async () => {
+    const view = await reviewWithFakeEngine({ result: mixedResult(), logName: 'banner-marks.log' });
+    await openFromTree(view, 'src/retry.py');
+
+    await press('Mark reviewed');
+    await until('the mark to be kept', () => view.badge?.value === 6);
+    expect(checkbox(view, 'src/retry.py')).toBe(TreeItemCheckboxState.Checked);
+    expect(bannerLinks()[0]!.text).toBe('Clear the reviewed mark');
+    expect(engineLog('banner-marks.log').filter((request) => request.method === 'markReviewed').map((request) => request.params)).toEqual([
+      { url: PR_URL, part: markedPart(mixedResult().parts[0]!), reviewed: true },
+    ]);
+
+    // Clearing the tree's checkbox empties the banner's.
+    const provider = providerOf(view);
+    const node = provider
+      .getChildren()
+      .flatMap((section) => provider.getChildren(section))
+      .find((child) => provider.getTreeItem(child).label === 'src/retry.py');
+    view.fireCheckboxChange([[node, TreeItemCheckboxState.Unchecked]]);
+    await until('the mark to be cleared', () => view.badge?.value === 7);
+    expect(bannerLinks()[0]!.text).toBe('Mark reviewed');
+
+    // And the tree's tick shows in the banner, which clears it again.
+    view.fireCheckboxChange([[node, TreeItemCheckboxState.Checked]]);
+    await until('the mark to be kept again', () => view.badge?.value === 6);
+    expect((bannerThread()[0]!.comments[0]!.body as { value: string }).value).toContain('☑ Reviewed');
+    await press('Clear the reviewed mark');
+    await until('the mark to be cleared again', () => view.badge?.value === 7);
+    expect(checkbox(view, 'src/retry.py')).toBe(TreeItemCheckboxState.Unchecked);
+    expect(engineLog('banner-marks.log').filter((request) => request.method === 'markReviewed').map((request) => request.params?.['reviewed'])).toEqual([true, false, true, false]);
+    expect(stub.errorMessages).toEqual([]);
+    expect(stub.warningMessages).toEqual([]);
+  });
+
+  it('makes an ask, reads why the part matters and starts a part comment from the banner, as the context menu does', async () => {
+    const result = storyResult();
+    const asked = result.parts[0]!;
+    const answer = {
+      ask: 'explain',
+      part: 0,
+      partName: asked.name ?? asked.path,
+      sections: [{ heading: 'What it does', text: 'Retries a transient error.' }],
+      cited: [],
+      promptVersion: '1',
+      stamp: { agent: 'pi', agentVersion: '0.86.1', model: 'zai/glm-4.6', effort: null, runAt: '2026-10-07T00:00:00.000Z' },
+    };
+    const view = await reviewWithFakeEngine({ result, askResult: answer, logName: 'banner-ask.log' });
+    await openFromTree(view, asked.name ?? asked.path);
+
+    await press('Explain this part');
+    expect(engineLog('banner-ask.log').filter((request) => request.method === 'ask').at(-1)).toMatchObject({ params: { url: PR_URL, ask: 'explain', part: 0 } });
+    const overview = stub.webviewPanels.find((panel) => panel.viewType === OVERVIEW_VIEW_TYPE)!;
+    expect(overview.webview.html).toContain('<li class="answer focus"><div class="where"><b>Explain this part</b> · ');
+
+    await press('Why this matters');
+    expect(overview.webview.html).toContain('<span class="sentence focus">');
+
+    await press('Comment on this part…');
+    const thread = stub.commentControllers[0]!.threads.at(-1)!;
+    expect(thread.uri.toString()).toBe(head('src/retry.py').toString());
+    expect(thread.label).toBe('src/retry.py (part)');
+    expect(stub.warningMessages).toEqual([]);
+  });
+
+  it('stands above no diff of the whole change, and goes with a new review', async () => {
+    const view = await reviewWithFakeEngine({ result: mixedResult(), logName: 'banner-gone.log' });
+
+    await openFromTree(view, 'src/retry.py');
+    expect(bannerThread()).toHaveLength(1);
+    await registeredCommands().get(OPEN_ALL_PARTS_COMMAND)!();
+    expect(bannerThread()).toEqual([]);
+
+    await openFromTree(view, 'src/retry.py');
+    await registeredCommands().get(REVIEW_COMMAND)!(PR_URL);
+    expect(bannerThread()).toEqual([]);
+  });
+
+  it('refuses a mark from a banner whose part the review no longer has', async () => {
+    await reviewWithFakeEngine({ result: mixedResult(), logName: 'banner-stale.log' });
+
+    await registeredCommands().get(MARK_REVIEWED_COMMAND)!({ anchor: { path: 'src/gone.py' } }, true);
+
+    expect(stub.warningMessages).toEqual(['Review a pull request first, then mark its parts reviewed.']);
+    expect(engineLog('banner-stale.log').map((request) => request.method)).not.toContain('markReviewed');
   });
 });

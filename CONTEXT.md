@@ -24,6 +24,10 @@ _Avoid_: Walkthrough, tour, summary
 A named group of related edits; every changed line belongs to exactly one part.
 _Avoid_: Chunk, section, group, file
 
+**Part banner**:
+A read-only banner above the selected part's diff, shown as a file comment at the top of the part's first file, carrying the part's importance with its one-line reason, the signals, the asks and the reviewed checkbox.
+_Avoid_: Header, toolbar, strip
+
 **Importance**:
 The level a part is given for review: **must review**, **worth reviewing**, or **context**, always with a one-line reason.
 _Avoid_: Priority, severity, critical
@@ -47,12 +51,16 @@ The outcome of checking a claim: **verified**, **refuted**, **unverifiable**, or
 _Avoid_: Result, status, score
 
 **Evidence source**:
-Where a verdict's evidence came from: the change itself, library source at the pinned version, a named repository (a library's repository at a tag the agent named, weaker than pinned source), decompiled library code (a pinned .NET package's assemblies decompiled where it has no exact source and that version's licence allows it, never its source), a CI log, the issue text, or the model's memory; model memory never yields **verified**.
+Where a verdict's evidence came from: the change itself, library source at the pinned version, a named repository (a library's repository at a tag the agent named, weaker than pinned source), decompiled library code (a pinned .NET package's assemblies decompiled where it has no exact source and that version's licence allows it, never its source), a sandboxed run, a CI log, the issue text, or the model's memory; model memory never yields **verified**.
 _Avoid_: Citation, reference
 
 **Library fetch**:
 A reviewer-started download of one library's source at the version the project pins — or, when nothing pins it, at a repository and tag the agent named — offered by the companion with its reason only when a claim cannot be checked without it. A .NET package with no exact source turns it into an offer to decompile, made only when that version's licence allows it.
 _Avoid_: Dependency sync, auto-fetch, install
+
+**Sandboxed run**:
+A run of the pull request's code at its head commit that the reviewer starts, inside a container with no access to the reviewer's machine, always labelled with the commit, the image and the command.
+_Avoid_: Execute, test run, CI
 
 **Documentation link**:
 A link from a library API the change uses to its documentation at the version the project pins: read from the library's published inventory, or suggested by the companion's agent and labelled as such, after every inventory link.

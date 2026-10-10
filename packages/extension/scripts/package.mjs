@@ -13,6 +13,7 @@
 //   node_modules/@second-look/engine/dist/pi-guard.js      Pi's guard, bundled
 //   node_modules/@second-look/engine/dist/claude-guard.js  Claude Code's guard, bundled
 //   node_modules/@vscode/tree-sitter-wasm/...      the WASM grammars
+//   media/second-look.svg                          the Activity Bar icon
 //
 // The engine's own JavaScript dependencies are inlined into its bundle;
 // only @vscode/tree-sitter-wasm stays a package, because its grammars
@@ -34,6 +35,7 @@ import {
   grammarFilesFor,
   stagedEngineManifest,
   stagedExtensionManifest,
+  viewContainerIconFiles,
 } from '../dist/packaging.js';
 
 const require = createRequire(import.meta.url);
@@ -130,6 +132,12 @@ async function main() {
       2,
     )}\n`,
   );
+  // The icons the manifest's view containers name, at the same paths, so
+  // the Activity Bar entry shows its icon once the package is installed.
+  for (const icon of viewContainerIconFiles(extensionManifest)) {
+    mkdirSync(dirname(join(stage, icon)), { recursive: true });
+    copyFileSync(join(extensionRoot, icon), join(stage, icon));
+  }
   copyFileSync(join(repoRoot, 'README.md'), join(stage, 'README.md'));
   copyFileSync(join(repoRoot, 'LICENSE'), join(stage, 'LICENSE'));
 

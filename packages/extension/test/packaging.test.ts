@@ -4,6 +4,7 @@ import {
   grammarFilesFor,
   stagedEngineManifest,
   stagedExtensionManifest,
+  viewContainerIconFiles,
 } from '../src/packaging.js';
 
 describe('grammarFilesFor', () => {
@@ -80,6 +81,29 @@ describe('stagedExtensionManifest', () => {
       contributes: { commands: [] },
       dependencies: { '@second-look/engine': '0.1.0', '@vscode/tree-sitter-wasm': '0.3.1' },
     });
+  });
+});
+
+describe('viewContainerIconFiles', () => {
+  it("names every view container's icon once, across locations, sorted", () => {
+    expect(
+      viewContainerIconFiles({
+        contributes: {
+          viewsContainers: {
+            activitybar: [
+              { id: 'second-look', title: 'Second Look', icon: 'media/second-look.svg' },
+              { id: 'other', title: 'Other', icon: 'media/other.svg' },
+            ],
+            panel: [{ id: 'again', title: 'Again', icon: 'media/second-look.svg' }],
+          },
+        },
+      }),
+    ).toEqual(['media/other.svg', 'media/second-look.svg']);
+  });
+
+  it('names nothing when the manifest contributes no view container', () => {
+    expect(viewContainerIconFiles({ contributes: { commands: [] } })).toEqual([]);
+    expect(viewContainerIconFiles({})).toEqual([]);
   });
 });
 

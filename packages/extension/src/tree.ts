@@ -85,7 +85,8 @@ export const NOISE = 'Noise';
 /** The title of the section the pending review gathers in, above the parts. */
 export const PENDING_REVIEW = 'Pending review';
 
-const SECTION_TITLES: Record<Importance, string> = {
+/** Each importance as the reviewer reads it: a section's title, and the banner's first word. */
+export const SECTION_TITLES: Record<Importance, string> = {
   'must review': 'Must review',
   'worth reviewing': 'Worth reviewing',
   context: 'Context',
@@ -234,8 +235,8 @@ function partLabel(part: Part): string {
   return part.name ?? part.path;
 }
 
-/** Which ranking a part's rank comes from, as its tooltip says. */
-function rankingLine(ranking: Ranking): string {
+/** Which ranking a part's rank comes from, as its tooltip and the banner above its diff say. */
+export function rankingLine(ranking: Ranking): string {
   const agent = ranking.agent;
   if (ranking.by === 'plain' || agent?.stamp === undefined) return 'Plain ranking';
   return `Agent ranking: ${agent.stamp.agent}${modelAndEffort(agent.stamp)} (ranking prompt v${agent.promptVersion})`;
@@ -485,6 +486,11 @@ function holdsAnchor(file: FileSlice, anchor: PartAnchor): boolean {
   const { hunk } = anchor;
   if (hunk === undefined) return file.hunks.length === 0;
   return file.hunks.some((each) => each.oldStart === hunk.oldStart && each.newStart === hunk.newStart);
+}
+
+/** The part of a result that holds the anchor's hunk, when one does. */
+export function partAtAnchor(parts: readonly Part[], anchor: PartAnchor): Part | undefined {
+  return parts.find((part) => filesOfPart(part).some((file) => holdsAnchor(file, anchor)));
 }
 
 /**

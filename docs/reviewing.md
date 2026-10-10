@@ -1,6 +1,6 @@
 # How a review works
 
-A review starts with the **Second Look: Review pull request** command and a GitHub pull request URL. The engine — a separate local process the extension starts — fetches the pull request from GitHub with your sign-in, keeps read-only copies of both sides of the change in its cache, and offers its result to the extension, which shows it as the ranked review tree in the Explorer side bar and the overview tab. Nothing is checked out into your workspace, and nothing from the pull request is built, installed or run.
+A review starts with the **Second Look: Review pull request** command — the **Review a pull request** button in the empty Second Look view, the pull request button in its title bar, or the Command Palette — and a GitHub pull request URL. The engine — a separate local process the extension starts — fetches the pull request from GitHub with your sign-in, keeps read-only copies of both sides of the change in its cache, and offers its result to the extension, which shows it as the ranked review tree in the Second Look side bar, opened from its own icon in the Activity Bar, and the overview tab. Nothing is checked out into your workspace, and nothing from the pull request is built, installed or run.
 
 This page follows one review from start to sent. The words are the project's [glossary](../CONTEXT.md) words: story, part, importance, noise, claim, verdict, evidence source, ask, finding.
 
@@ -46,7 +46,9 @@ Every section says who made it: the plain pass, or the agent with its model, eff
 
 Click a part and the multi-file diff editor opens with exactly that part's files, the base copy on the left and the head copy on the right, scrolled to the part's first hunk. The copies are read-only, so the editor refuses to edit them. The tree's title button **Open all parts in order** opens the whole change in one multi-file diff in the tree's order, noise last.
 
-Tick a part's checkbox in the tree to mark it reviewed: the mark is kept locally, per pull request, keyed by the part's content, so it survives restarts and clears itself when that content changes; the tree's badge counts the parts left.
+A banner at the top of the part's first file, above its diff, gathers what you need while reading it: the part's importance — or its noise label, or that it is not ranked yet — and where it sits in the tree's order, its reviewed checkbox, the one-line reason, the signals the reason cites with which ranking is shown, and the asks, **Why this matters** and **Comment on this part…**. Every link in it does exactly what the same entry in the tree does, and the banner follows the part you open; opening the whole change shows none. It is a read-only comment thread of the companion's own, so it is also listed in the Comments panel ([ADR 0007](adr/0007-part-banner-as-a-file-comment.md) says why).
+
+Tick a part's checkbox in the tree, or press **Mark reviewed** in its banner, to mark it reviewed: the mark is kept locally, per pull request, keyed by the part's content, so it survives restarts and clears itself when that content changes; the tree's badge counts the parts left, and the tree and the banner always show the same tick.
 
 ## Claims, verdicts and evidence sources
 
@@ -57,7 +59,7 @@ A **claim** is a statement about how the code or a library behaves, quoted as wr
 - **unverifiable** — nothing readable settles it;
 - **not checked** — not judged (yet).
 
-Every verdict names its **evidence source**: the change itself, library source at the pinned version, a named repository (a library's repository at a tag the agent named, weaker than pinned source), decompiled library code, a CI log, the issue text, or the model's memory — and the model's memory alone never yields **verified**. The engine re-reads every line a verdict cites before showing it: a citation that does not match drops the verdict to unverifiable and says why.
+Every verdict names its **evidence source**, from the [glossary](../CONTEXT.md)'s list — and the model's memory alone never yields **verified**. The engine re-reads every line a verdict cites before showing it: a citation that does not match drops the verdict to unverifiable and says why.
 
 A refuted or unverifiable claim is a **finding**, shown as the companion's own comment thread on the exact line that makes it, and badged on the part in the tree.
 
@@ -75,17 +77,17 @@ The comparison runs in both directions. A part neither the description nor a lin
 
 ## Asks
 
-An **ask** is a fixed, typed request about one part, never free chat. Right-click a part in the tree and its context menu offers:
+An **ask** is a fixed, typed request about one part, never free chat. Right-click a part in the tree, or use the banner above its diff, and you are offered:
 
 - **Explain this part** — what the part does and why it matters to the change, each line it cites a link that opens it read-only.
 - **Verify this claim** — judges the text you selected on the head side of the part's diff, or one of the part's claims you pick, and the verdict joins the review with its evidence.
 - **What covers this?** — the automated tests, in the change or anywhere in the head copy, that exercise the part, and the manual checks the description reports for it; none found is a valid answer that says where it looked.
 
-The answers open at the top of the overview with their stamp. Nothing of an ask reaches GitHub. (A banner above the diff that gathers the asks beside the importance and the reviewed checkbox is planned for v1.1, [issue #91](https://github.com/lbildzinkas/second-look/issues/91).)
+The answers open at the top of the overview with their stamp. Nothing of an ask reaches GitHub.
 
 ## Comments and sending the review
 
-Click the comment icon on any line a hunk covers — on either side of the diff — or right-click a part and choose **Comment on this part…**. Each comment joins the pending review, which gathers in its own section at the top of the tree with where every comment points; a comment can be discarded from its thread until it is sent. Nothing reaches GitHub while it waits.
+Click the comment icon on any line a hunk covers — on either side of the diff — or right-click a part, or use its banner, and choose **Comment on this part…**. Each comment joins the pending review, which gathers in its own section at the top of the tree with where every comment points; a comment can be discarded from its thread until it is sent. Nothing reaches GitHub while it waits.
 
 Any finding offers **Draft comment**: the agent writes a short draft from the finding and its evidence, citing where the evidence is; you edit it, then **Add to review** or **Discard draft**. A draft is never sent on its own.
 

@@ -37,7 +37,8 @@
       {
         "command": "second-look.reviewPullRequest",
         "title": "Review pull request",
-        "category": "Second Look"
+        "category": "Second Look",
+        "icon": "$(git-pull-request)"
       },
       {
         "command": "second-look.openPart",
@@ -126,10 +127,20 @@
         "command": "second-look.ask.cover",
         "title": "What covers this?",
         "category": "Second Look"
+      },
+      {
+        "command": "second-look.markReviewed",
+        "title": "Mark the part reviewed, or clear its mark",
+        "category": "Second Look"
       }
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "second-look.reviewPullRequest",
+          "when": "view == second-look.reviewTree",
+          "group": "navigation"
+        },
         {
           "command": "second-look.filterChangedSinceLastLook",
           "when": "view == second-look.reviewTree",
@@ -204,6 +215,10 @@
         },
         {
           "command": "second-look.ask.cover",
+          "when": "false"
+        },
+        {
+          "command": "second-look.markReviewed",
           "when": "false"
         }
       ],
@@ -285,14 +300,29 @@
         }
       ]
     },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "second-look",
+          "title": "Second Look",
+          "icon": "media/second-look.svg"
+        }
+      ]
+    },
     "views": {
-      "explorer": [
+      "second-look": [
         {
           "id": "second-look.reviewTree",
           "name": "Second Look"
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "second-look.reviewTree",
+        "contents": "Review a pull request to see its parts here, ranked by importance.\n[Review a pull request](command:second-look.reviewPullRequest)"
+      }
+    ],
     "configuration": {
       "title": "Second Look",
       "properties": {

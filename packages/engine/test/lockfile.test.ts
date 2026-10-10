@@ -4,8 +4,13 @@ import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import type { LockfileFormat } from '../src/lockfile.js';
-import { confirmLockfileChange, confirmLockfileNoise, lockfileFormatFor } from '../src/lockfile.js';
+import type { LockfileFormat, WorkspaceMember } from '../src/lockfile.js';
+import {
+  confirmLockfileChange,
+  confirmLockfileNoise,
+  lockfileFormatFor,
+  lockfileManifests,
+} from '../src/lockfile.js';
 import type { LockfileSide } from '../src/lockfile.js';
 import type { Part } from '../src/protocol.js';
 
@@ -16,8 +21,12 @@ function format(name: string): LockfileFormat {
 }
 
 /** Both sides of one lock file's story, from raw texts. */
-function side(lock: string | null, manifests: readonly string[] = []): LockfileSide {
-  return { lock, manifests };
+function side(
+  lock: string | null,
+  manifests: readonly string[] = [],
+  members: readonly WorkspaceMember[] = [],
+): LockfileSide {
+  return { lock, manifests, members };
 }
 
 function confirmed(
@@ -26,6 +35,53 @@ function confirmed(
   newSide: LockfileSide,
 ): ReturnType<typeof confirmLockfileChange> {
   return confirmLockfileChange(format, format.name, oldSide, newSide);
+}
+
+/** One side's copy of the repository, as the archive reader materializes it. */
+function copyWith(files: Record<string, string>): string {
+  const root = mkdtempSync(join(tmpdir(), 'second-look-copies-'));
+  for (const [relative, text] of Object.entries(files)) {
+    const absolute = join(root, ...relative.split('/'));
+    mkdirSync(dirname(absolute), { recursive: true });
+    writeFileSync(absolute, text);
+  }
+  return root;
+}
+
+/** A part the lock file checks read: only its path and text-ness matter. */
+function lockfilePart(path: string): Part {
+  return {
+    path,
+    changeKind: 'modification',
+    isBinary: false,
+    oldMissingFinalNewline: false,
+    newMissingFinalNewline: false,
+    hunks: [],
+    additions: 0,
+    deletions: 0,
+    syntax: { formattingOnly: { status: 'not-checked', reason: '' }, checksNotRun: [] },
+  };
+}
+
+
+/** Runs the copy-driven check on one lock file, both copies built from these files, and cleans up. */
+async function assessCopies(
+  lockPath: string,
+  baseFiles: Record<string, string>,
+  headFiles: Record<string, string>,
+): Promise<{ state: string; rule: string; blindSpot: string }> {
+  const base = copyWith(baseFiles);
+  const head = copyWith(headFiles);
+  try {
+    const assessment = (await confirmLockfileNoise([lockfilePart(lockPath)], { base, head })).get(lockPath);
+    if (assessment === undefined || assessment.label === 'none') {
+      throw new Error(`expected a labelled lockfile assessment for ${lockPath}`);
+    }
+    return { state: assessment.state, rule: assessment.rule, blindSpot: assessment.blindSpot };
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+    rmSync(head, { recursive: true, force: true });
+  }
 }
 
 describe('package-lock.json', () => {
@@ -201,7 +257,8 @@ describe('package-lock.json', () => {
       side(lockV2('9.9.9'), [manifest('^1.3.0')]),
     );
     expect(check.outcome).toBe('unexplained');
-    expect(check.blindSpot).toContain('the dependencies mirror entry (content changed)');
+    expect(check.blindSpot).toContain('left-pad@9.9.9');
+    expect(check.blindSpot).toContain('left-pad@1.3.0 (content changed)');
   });
 
   it('confirms a bump that regenerates the legacy mirror with it', () => {
@@ -234,6 +291,110 @@ describe('package-lock.json', () => {
     expect(check.outcome).toBe('confirmed');
   });
 
+  // The mirror npm 7/8 writes beside `packages`, with a workspace member:
+  // its own entry in the mirror carries `file:` naming its folder, and
+  // its dependencies under `requires`.
+  const memberMirrorLock = (
+    isEvenSpec: string,
+    isEvenVersion: string,
+    mirror: { withWeb?: boolean; smuggled?: boolean; smuggledRequire?: boolean } = {},
+  ): string =>
+    JSON.stringify({
+      name: 'app',
+      lockfileVersion: 2,
+      packages: {
+        '': { name: 'app', workspaces: ['packages/*'], dependencies: { 'left-pad': '^1.3.0' } },
+        ...(mirror.withWeb === false
+          ? {}
+          : {
+              'packages/web': { name: 'web', version: '1.0.0', dependencies: { 'is-even': isEvenSpec } },
+              'node_modules/web': { resolved: 'packages/web', link: true },
+            }),
+        'node_modules/is-even': { version: isEvenVersion },
+        'node_modules/left-pad': { version: '1.3.0' },
+      },
+      dependencies: {
+        'is-even': { version: isEvenVersion },
+        'left-pad': { version: '1.3.0' },
+        ...(mirror.withWeb === false
+          ? {}
+          : {
+              web: {
+                version: 'file:packages/web',
+                requires: {
+                  'is-even': isEvenSpec,
+                  ...(mirror.smuggledRequire === true ? { 'evil-pkg': '*' } : {}),
+                },
+              },
+            }),
+        ...(mirror.smuggled === true
+          ? {
+              'evil-pkg': {
+                version: '6.6.6',
+                resolved: 'https://evil.example/evil-pkg/-/evil-pkg-6.6.6.tgz',
+                integrity: 'sha512-evil',
+              },
+            }
+          : {}),
+      },
+    });
+  const evenWeb = (isEvenSpec: string): WorkspaceMember => ({
+    dir: 'packages/web',
+    manifest: JSON.stringify({
+      name: 'web',
+      version: '1.0.0',
+      dependencies: { 'is-even': isEvenSpec },
+    }),
+  });
+
+  it('confirms a member bump that regenerates the legacy mirror with it', () => {
+    const check = confirmed(
+      format('package-lock.json'),
+      side(memberMirrorLock('^1.0.0', '1.0.0'), [manifest('^1.3.0')], [evenWeb('^1.0.0')]),
+      side(memberMirrorLock('^2.0.0', '2.0.0'), [manifest('^1.3.0')], [evenWeb('^2.0.0')]),
+    );
+    expect(check.outcome).toBe('confirmed');
+  });
+
+  it('confirms adding a workspace member whose legacy mirror entry arrives with it', () => {
+    const check = confirmed(
+      format('package-lock.json'),
+      side(memberMirrorLock('^1.0.0', '1.0.0', { withWeb: false }), [manifest('^1.3.0')]),
+      side(memberMirrorLock('^1.0.0', '1.0.0'), [manifest('^1.3.0')], [evenWeb('^1.0.0')]),
+    );
+    expect(check.outcome).toBe('confirmed');
+  });
+
+  it('stays claimed and names a mirror-only entry smuggled in beside a member bump', () => {
+    const check = confirmed(
+      format('package-lock.json'),
+      side(memberMirrorLock('^1.0.0', '1.0.0'), [manifest('^1.3.0')], [evenWeb('^1.0.0')]),
+      side(
+        memberMirrorLock('^2.0.0', '2.0.0', { smuggled: true }),
+        [manifest('^1.3.0')],
+        [evenWeb('^2.0.0')],
+      ),
+    );
+    expect(check.outcome).toBe('unexplained');
+    expect(check.blindSpot).toContain('evil-pkg@6.6.6');
+    expect(check.blindSpot).not.toContain('is-even');
+    expect(check.blindSpot).not.toContain('packages/web');
+  });
+
+  it("stays claimed and names a dependency smuggled into the member's mirror entry", () => {
+    const check = confirmed(
+      format('package-lock.json'),
+      side(memberMirrorLock('^1.0.0', '1.0.0'), [manifest('^1.3.0')], [evenWeb('^1.0.0')]),
+      side(
+        memberMirrorLock('^2.0.0', '2.0.0', { smuggledRequire: true }),
+        [manifest('^1.3.0')],
+        [evenWeb('^2.0.0')],
+      ),
+    );
+    expect(check.outcome).toBe('unexplained');
+    expect(check.blindSpot).toContain('the packages/web entry (content changed)');
+  });
+
   const memberLock = (
     web: Record<string, unknown>,
     leftPadVersion: string,
@@ -250,52 +411,118 @@ describe('package-lock.json', () => {
       },
     });
 
+  const webManifest = (version: string): string => JSON.stringify({ name: 'web', version });
+  const web = (version: string): WorkspaceMember => ({
+    dir: 'packages/web',
+    manifest: webManifest(version),
+  });
+
   it('stays claimed and names a member record rewritten as a registry tarball', () => {
-    const check = confirmLockfileChange(
+    const check = confirmed(
       format('package-lock.json'),
-      'package-lock.json',
-      side(memberLock({ name: 'web', version: '1.0.0' }, '1.3.0', '^1.3.0'), [manifest('^1.3.0')]),
+      side(memberLock({ name: 'web', version: '1.0.0' }, '1.3.0', '^1.3.0'), [manifest('^1.3.0')], [web('1.0.0')]),
       side(
         memberLock(
           {
             name: 'web',
-            version: '1.0.0',
-            resolved: 'https://evil.example/web/-/web-1.0.0.tgz',
+            version: '1.1.0',
+            resolved: 'https://evil.example/web/-/web-1.1.0.tgz',
             integrity: 'sha512-evil',
           },
           '2.0.0',
           '^2.0.0',
         ),
         [manifest('^2.0.0')],
+        [web('1.1.0')],
       ),
-      () => true,
     );
     expect(check.outcome).toBe('unexplained');
     expect(check.blindSpot).toContain('the packages/web entry (content changed)');
   });
 
   it('confirms a member bump whose package.json this pull request also changes', () => {
-    const check = confirmLockfileChange(
+    const check = confirmed(
       format('package-lock.json'),
-      'package-lock.json',
-      side(memberLock({ name: 'web', version: '1.0.0' }, '1.3.0', '^1.3.0'), [manifest('^1.3.0')]),
-      side(memberLock({ name: 'web', version: '1.1.0' }, '1.3.0', '^1.3.0'), [manifest('^1.3.0')]),
-      (key) => key === 'packages/web',
+      side(memberLock({ name: 'web', version: '1.0.0' }, '1.3.0', '^1.3.0'), [manifest('^1.3.0')], [web('1.0.0')]),
+      side(memberLock({ name: 'web', version: '1.1.0' }, '1.3.0', '^1.3.0'), [manifest('^1.3.0')], [web('1.1.0')]),
     );
     expect(check.outcome).toBe('confirmed');
-    expect(check.blindSpot).toContain("member's package.json");
+    expect(check.blindSpot).toContain('workspace declaration names');
   });
 
   it('stays claimed and names a member record change without its package.json in the pull request', () => {
-    const check = confirmLockfileChange(
+    const check = confirmed(
       format('package-lock.json'),
-      'package-lock.json',
-      side(memberLock({ name: 'web', version: '1.0.0' }, '1.3.0', '^1.3.0'), [manifest('^1.3.0')]),
-      side(memberLock({ name: 'web', version: '9.9.9' }, '2.0.0', '^2.0.0'), [manifest('^2.0.0')]),
-      () => false,
+      side(memberLock({ name: 'web', version: '1.0.0' }, '1.3.0', '^1.3.0'), [manifest('^1.3.0')], [web('1.0.0')]),
+      side(memberLock({ name: 'web', version: '9.9.9' }, '2.0.0', '^2.0.0'), [manifest('^2.0.0')], [web('1.0.0')]),
     );
     expect(check.outcome).toBe('unexplained');
     expect(check.blindSpot).toContain('the packages/web entry (content changed)');
+  });
+
+  it('stays claimed and names a member record the workspace does not declare', () => {
+    const check = confirmed(
+      format('package-lock.json'),
+      side(memberLock({ name: 'web', version: '1.0.0' }, '1.3.0', '^1.3.0'), [manifest('^1.3.0')]),
+      side(memberLock({ name: 'web', version: '1.1.0' }, '1.3.0', '^1.3.0'), [manifest('^1.3.0')]),
+    );
+    expect(check.outcome).toBe('unexplained');
+    expect(check.blindSpot).toContain('the packages/web entry (content changed)');
+  });
+
+  it('stays claimed and names a member record naming a dependency its package.json does not declare', () => {
+    const check = confirmed(
+      format('package-lock.json'),
+      side(memberLock({ name: 'web', version: '1.0.0' }, '1.3.0', '^1.3.0'), [manifest('^1.3.0')], [web('1.0.0')]),
+      side(
+        memberLock({ name: 'web', version: '1.1.0', dependencies: { 'left-pad': '*' } }, '1.3.0', '^1.3.0'),
+        [manifest('^1.3.0')],
+        [web('1.1.0')],
+      ),
+    );
+    expect(check.outcome).toBe('unexplained');
+    expect(check.blindSpot).toContain('the packages/web entry (content changed)');
+  });
+
+  it('confirms a root metadata edit with no dependency change', () => {
+    const rootManifest = (license: string): string =>
+      JSON.stringify({ name: 'app', license, dependencies: { 'left-pad': '^1.3.0' } });
+    const rootLock = (license: string): string =>
+      JSON.stringify({
+        name: 'app',
+        lockfileVersion: 3,
+        packages: {
+          '': { name: 'app', license, dependencies: { 'left-pad': '^1.3.0' } },
+          'node_modules/left-pad': { version: '1.3.0' },
+        },
+      });
+    const check = confirmed(
+      format('package-lock.json'),
+      side(rootLock('ISC'), [rootManifest('ISC')]),
+      side(rootLock('MIT'), [rootManifest('MIT')]),
+    );
+    expect(check.outcome).toBe('confirmed');
+  });
+
+  it('stays claimed and names a root entry naming a dependency the package.json does not declare', () => {
+    const rootManifest = (license: string): string =>
+      JSON.stringify({ name: 'app', license, dependencies: { 'left-pad': '^1.3.0' } });
+    const rootLock = (license: string, extra: Record<string, string>): string =>
+      JSON.stringify({
+        name: 'app',
+        lockfileVersion: 3,
+        packages: {
+          '': { name: 'app', license, dependencies: { 'left-pad': '^1.3.0', ...extra } },
+          'node_modules/left-pad': { version: '1.3.0' },
+        },
+      });
+    const check = confirmed(
+      format('package-lock.json'),
+      side(rootLock('ISC', {}), [rootManifest('ISC')]),
+      side(rootLock('MIT', { 'evil-pkg': '*' }), [rootManifest('MIT')]),
+    );
+    expect(check.outcome).toBe('unexplained');
+    expect(check.blindSpot).toContain('the root entry (content changed)');
   });
 
   it('runs no check when adversarial nesting overflows the reader', () => {
@@ -618,10 +845,11 @@ name = "anyio"
 version = "${anyioVersion}"
 source = { registry = "https://pypi.org/simple" }
 `;
+    const withDev = (anyio: string): string => `${pyproject(anyio)}\n[dependency-groups]\ndev = ["pytest"]\n`;
     const check = confirmed(
       format('uv.lock'),
-      side(groupedLock('>=4.3', '4.3.0'), [pyproject('>=4.3')]),
-      side(groupedLock('>=4.4', '4.4.0'), [pyproject('>=4.4')]),
+      side(groupedLock('>=4.3', '4.3.0'), [withDev('>=4.3')]),
+      side(groupedLock('>=4.4', '4.4.0'), [withDev('>=4.4')]),
     );
     expect(check.outcome).toBe('confirmed');
   });
@@ -1307,32 +1535,6 @@ describe('manifest discovery inside the copies', () => {
 }
 `;
 
-  /** One side's copy of the repository, as the archive reader materializes it. */
-  function copyWith(files: Record<string, string>): string {
-    const root = mkdtempSync(join(tmpdir(), 'second-look-copies-'));
-    for (const [relative, text] of Object.entries(files)) {
-      const absolute = join(root, ...relative.split('/'));
-      mkdirSync(dirname(absolute), { recursive: true });
-      writeFileSync(absolute, text);
-    }
-    return root;
-  }
-
-  /** A part the lock file checks read: only its path and text-ness matter. */
-  function lockfilePart(path: string): Part {
-    return {
-      path,
-      changeKind: 'modification',
-      isBinary: false,
-      oldMissingFinalNewline: false,
-      newMissingFinalNewline: false,
-      hunks: [],
-      additions: 0,
-      deletions: 0,
-      syntax: { formattingOnly: { status: 'not-checked', reason: '' }, checksNotRun: [] },
-    };
-  }
-
   /** Runs the discovery-driven check on a central-version bump 13.0.1 → 13.0.3. */
   async function assess(lockPath: string): Promise<{ state: string; rule: string }> {
     const files = (json: string): Record<string, string> => ({
@@ -1365,5 +1567,483 @@ describe('manifest discovery inside the copies', () => {
     const assessment = await assess('packages.lock.json');
     expect(assessment.state).toBe('confirmed');
     expect(assessment.rule).toBe('lockfile-follows-manifest');
+  });
+});
+
+describe('workspace members', () => {
+  describe('package-lock.json', () => {
+    const root = JSON.stringify({
+      name: 'app',
+      private: true,
+      workspaces: ['packages/*', '!packages/legacy'],
+      dependencies: { 'left-pad': '^1.3.0' },
+    });
+    const api = (isEven: string): string =>
+      JSON.stringify({ name: 'api', version: '1.0.0', dependencies: { 'is-even': `^${isEven}` } });
+    const web = JSON.stringify({ name: 'web', version: '1.0.0', dependencies: { 'is-odd': '^3.0.1' } });
+    const legacy = (version: string): string => JSON.stringify({ name: 'legacy', version });
+    const lock = (options: {
+      isEven: string;
+      withWeb?: boolean;
+      smuggled?: boolean;
+      legacyVersion?: string;
+    }): string =>
+      JSON.stringify({
+        name: 'app',
+        lockfileVersion: 3,
+        packages: {
+          '': {
+            name: 'app',
+            workspaces: ['packages/*', '!packages/legacy'],
+            dependencies: { 'left-pad': '^1.3.0' },
+          },
+          'node_modules/api': { resolved: 'packages/api', link: true },
+          'node_modules/is-even': {
+            version: options.isEven,
+            resolved: `https://registry.npmjs.org/is-even/-/is-even-${options.isEven}.tgz`,
+            integrity: `sha512-is-even-${options.isEven}`,
+            ...(options.isEven === '1.0.0' ? {} : { dependencies: { 'is-number': '^7.0.0' } }),
+          },
+          ...(options.isEven === '1.0.0'
+            ? {}
+            : { 'node_modules/is-number': { version: '7.0.0', integrity: 'sha512-is-number' } }),
+          'node_modules/left-pad': { version: '1.3.0', integrity: 'sha512-left-pad' },
+          ...(options.withWeb === true
+            ? {
+                'node_modules/web': { resolved: 'packages/web', link: true },
+                'node_modules/is-odd': { version: '3.0.1', integrity: 'sha512-is-odd' },
+                'packages/web': { name: 'web', version: '1.0.0', dependencies: { 'is-odd': '^3.0.1' } },
+              }
+            : {}),
+          ...(options.smuggled === true
+            ? { 'node_modules/evil-pkg': { version: '6.6.6', integrity: 'sha512-evil' } }
+            : {}),
+          ...(options.legacyVersion === undefined
+            ? {}
+            : { 'packages/legacy': { name: 'legacy', version: options.legacyVersion } }),
+          'packages/api': { name: 'api', version: '1.0.0', dependencies: { 'is-even': '^1.0.0' } },
+        },
+      });
+    const files = (
+      lockText: string,
+      apiManifest: string,
+      extra: Record<string, string> = {},
+    ): Record<string, string> => ({
+      'package.json': root,
+      'package-lock.json': lockText,
+      'packages/api/package.json': apiManifest,
+      ...extra,
+    });
+
+    it('confirms adding a workspace member: its record, its link stub and its own dependencies', async () => {
+      const assessment = await assessCopies(
+        'package-lock.json',
+        files(lock({ isEven: '1.0.0' }), api('1.0.0')),
+        files(lock({ isEven: '1.0.0', withWeb: true }), api('1.0.0'), { 'packages/web/package.json': web }),
+      );
+      expect(assessment.state).toBe('confirmed');
+      expect(assessment.rule).toBe('lockfile-follows-manifest');
+    });
+
+    it('confirms a member bumping its own dependency', async () => {
+      const bumped = lock({ isEven: '1.1.0' }).replace('"is-even":"^1.0.0"}}}', '"is-even":"^1.1.0"}}}');
+      const assessment = await assessCopies(
+        'package-lock.json',
+        files(lock({ isEven: '1.0.0' }), api('1.0.0')),
+        files(bumped, api('1.1.0')),
+      );
+      expect(assessment.state).toBe('confirmed');
+    });
+
+    it('stays claimed and names an entry smuggled in beside a member bump', async () => {
+      const bumped = lock({ isEven: '1.1.0', smuggled: true }).replace(
+        '"is-even":"^1.0.0"}}}',
+        '"is-even":"^1.1.0"}}}',
+      );
+      const assessment = await assessCopies(
+        'package-lock.json',
+        files(lock({ isEven: '1.0.0' }), api('1.0.0')),
+        files(bumped, api('1.1.0')),
+      );
+      expect(assessment.state).toBe('claimed');
+      expect(assessment.rule).toBe('lockfile-unexplained');
+      expect(assessment.blindSpot).toContain('evil-pkg@6.6.6');
+      expect(assessment.blindSpot).not.toContain('is-even');
+      expect(assessment.blindSpot).not.toContain('packages/api');
+    });
+
+    it('stays claimed and names the record of a directory the workspace excludes', async () => {
+      const assessment = await assessCopies(
+        'package-lock.json',
+        files(lock({ isEven: '1.0.0', legacyVersion: '1.0.0' }), api('1.0.0'), {
+          'packages/legacy/package.json': legacy('1.0.0'),
+        }),
+        files(lock({ isEven: '1.0.0', legacyVersion: '2.0.0' }), api('1.0.0'), {
+          'packages/legacy/package.json': legacy('2.0.0'),
+        }),
+      );
+      expect(assessment.state).toBe('claimed');
+      expect(assessment.blindSpot).toContain('the packages/legacy entry (content changed)');
+    });
+  });
+
+  describe('uv.lock', () => {
+    const root = `
+[project]
+name = "app"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["anyio>=4.3"]
+
+[tool.uv.workspace]
+members = ["packages/*"]
+exclude = ["packages/scratch"]
+`;
+    const memberA = (httpx: string): string => `
+[project]
+name = "member-a"
+version = "0.1.0"
+dependencies = ["httpx>=${httpx}"]
+`;
+    const memberB = `
+[project]
+name = "Member_B"
+version = "0.1.0"
+dependencies = ["sniffio>=1.3"]
+`;
+    const registry = 'source = { registry = "https://pypi.org/simple" }';
+    const lock = (options: { httpx: string; withB?: boolean; smuggled?: boolean }): string => `
+version = 1
+requires-python = ">=3.11"
+
+[manifest]
+members = ["app", "member-a"${options.withB === true ? ', "member-b"' : ''}]
+
+[[package]]
+name = "anyio"
+version = "4.3.0"
+${registry}
+dependencies = [{ name = "idna" }]
+
+[[package]]
+name = "app"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [{ name = "anyio" }]
+
+[package.metadata]
+requires-dist = [{ name = "anyio", specifier = ">=4.3" }]
+
+[[package]]
+name = "httpx"
+version = "${options.httpx}.0"
+${registry}
+dependencies = [{ name = "anyio" }, { name = "idna" }]
+
+[[package]]
+name = "idna"
+version = "3.7"
+${registry}
+
+[[package]]
+name = "member-a"
+version = "0.1.0"
+source = { editable = "packages/member-a" }
+dependencies = [{ name = "httpx" }]
+
+[package.metadata]
+requires-dist = [{ name = "httpx", specifier = ">=${options.httpx}" }]
+${
+  options.withB === true
+    ? `
+[[package]]
+name = "member-b"
+version = "0.1.0"
+source = { editable = "packages/member-b" }
+dependencies = [{ name = "sniffio" }]
+
+[package.metadata]
+requires-dist = [{ name = "sniffio", specifier = ">=1.3" }]
+
+[[package]]
+name = "sniffio"
+version = "1.3.1"
+${registry}
+`
+    : ''
+}${options.smuggled === true ? `\n[[package]]\nname = "smuggled"\nversion = "1.0"\n${registry}\n` : ''}`;
+    const files = (lockText: string, httpx: string, extra: Record<string, string> = {}): Record<string, string> => ({
+      'pyproject.toml': root,
+      'uv.lock': lockText,
+      'packages/member-a/pyproject.toml': memberA(httpx),
+      ...extra,
+    });
+
+    it('confirms adding a workspace member and its own dependencies', async () => {
+      const assessment = await assessCopies(
+        'uv.lock',
+        files(lock({ httpx: '0.27' }), '0.27'),
+        files(lock({ httpx: '0.27', withB: true }), '0.27', { 'packages/member-b/pyproject.toml': memberB }),
+      );
+      expect(assessment.state).toBe('confirmed');
+    });
+
+    it('confirms a member bumping its own dependency, its own entry with it', async () => {
+      const assessment = await assessCopies(
+        'uv.lock',
+        files(lock({ httpx: '0.27' }), '0.27'),
+        files(lock({ httpx: '0.28' }), '0.28'),
+      );
+      expect(assessment.state).toBe('confirmed');
+    });
+
+    it('stays claimed and names an entry smuggled in beside a member bump', async () => {
+      const assessment = await assessCopies(
+        'uv.lock',
+        files(lock({ httpx: '0.27' }), '0.27'),
+        files(lock({ httpx: '0.28', smuggled: true }), '0.28'),
+      );
+      expect(assessment.state).toBe('claimed');
+      expect(assessment.blindSpot).toContain('smuggled@1.0');
+      expect(assessment.blindSpot).not.toContain('httpx');
+      expect(assessment.blindSpot).not.toContain('member-a');
+    });
+
+    it('stays claimed and names a member entry whose pyproject.toml the pull request leaves alone', async () => {
+      const assessment = await assessCopies(
+        'uv.lock',
+        files(lock({ httpx: '0.27' }), '0.27'),
+        files(lock({ httpx: '0.28' }), '0.27'),
+      );
+      expect(assessment.state).toBe('claimed');
+      expect(assessment.blindSpot).toContain('the member-a entry (content changed)');
+    });
+
+    it('reads no member from a directory the workspace excludes', async () => {
+      const scratch = lock({ httpx: '0.27', withB: true }).replaceAll('packages/member-b', 'packages/scratch');
+      const assessment = await assessCopies(
+        'uv.lock',
+        files(lock({ httpx: '0.27' }), '0.27'),
+        files(scratch, '0.27', { 'packages/scratch/pyproject.toml': memberB }),
+      );
+      expect(assessment.state).toBe('claimed');
+      expect(assessment.blindSpot).toContain('member-b@0.1.0');
+    });
+  });
+
+  describe('Cargo.lock', () => {
+    const root = `
+[workspace]
+members = ["crates/*"]
+exclude = ["crates/scratch"]
+resolver = "2"
+
+[workspace.dependencies]
+serde = "1.0"
+`;
+    const core = (itoa: string): string => `
+[package]
+name = "core-lib"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { workspace = true }
+itoa = "${itoa}"
+`;
+    const cli = `
+[package]
+name = "app-cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+core-lib = { path = "../core" }
+anyhow = "1.0"
+`;
+    const registry = 'source = "registry+https://github.com/rust-lang/crates.io-index"';
+    const lock = (options: { itoa: string; withCli?: boolean; smuggled?: boolean }): string => `
+# This file is automatically @generated by Cargo.
+version = 3
+${
+  options.withCli === true
+    ? `
+[[package]]
+name = "anyhow"
+version = "1.0.86"
+${registry}
+checksum = "anyhow-1.0.86"
+
+[[package]]
+name = "app-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "core-lib",
+]
+`
+    : ''
+}
+[[package]]
+name = "core-lib"
+version = "0.1.0"
+dependencies = [
+ "itoa",
+${options.smuggled === true ? ' "once_cell",\n' : ''} "serde",
+]
+
+[[package]]
+name = "itoa"
+version = "${options.itoa}"
+${registry}
+checksum = "itoa-${options.itoa}"
+${options.smuggled === true ? `\n[[package]]\nname = "once_cell"\nversion = "1.19.0"\n${registry}\nchecksum = "once-cell"\n` : ''}
+[[package]]
+name = "serde"
+version = "1.0.204"
+${registry}
+checksum = "serde-1.0.204"
+`;
+    const files = (lockText: string, itoa: string, extra: Record<string, string> = {}): Record<string, string> => ({
+      'Cargo.toml': root,
+      'Cargo.lock': lockText,
+      'crates/core/Cargo.toml': core(itoa),
+      ...extra,
+    });
+
+    it('confirms adding a workspace member, its own entry recorded with no path', async () => {
+      const assessment = await assessCopies(
+        'Cargo.lock',
+        files(lock({ itoa: '1.0.10' }), '1.0.10'),
+        files(lock({ itoa: '1.0.10', withCli: true }), '1.0.10', { 'crates/cli/Cargo.toml': cli }),
+      );
+      expect(assessment.state).toBe('confirmed');
+    });
+
+    it('confirms a member bumping its own dependency', async () => {
+      const assessment = await assessCopies(
+        'Cargo.lock',
+        files(lock({ itoa: '1.0.10' }), '1.0.10'),
+        files(lock({ itoa: '1.0.11' }), '1.0.11'),
+      );
+      expect(assessment.state).toBe('confirmed');
+    });
+
+    it('stays claimed and names a crate smuggled into a member entry beside a bump', async () => {
+      const assessment = await assessCopies(
+        'Cargo.lock',
+        files(lock({ itoa: '1.0.10' }), '1.0.10'),
+        files(lock({ itoa: '1.0.11', smuggled: true }), '1.0.11'),
+      );
+      expect(assessment.state).toBe('claimed');
+      expect(assessment.blindSpot).toContain('the core-lib entry (content changed)');
+      expect(assessment.blindSpot).toContain('once-cell@1.19.0');
+      expect(assessment.blindSpot).not.toContain('itoa');
+    });
+
+    it('reads no member from a directory the workspace excludes', async () => {
+      const scratch = cli.replace('app-cli', 'scratch');
+      const assessment = await assessCopies(
+        'Cargo.lock',
+        files(lock({ itoa: '1.0.10' }), '1.0.10'),
+        files(lock({ itoa: '1.0.10', withCli: true }).replace('"app-cli"', '"scratch"'), '1.0.10', {
+          'crates/scratch/Cargo.toml': scratch,
+        }),
+      );
+      expect(assessment.state).toBe('claimed');
+      expect(assessment.blindSpot).toContain('scratch@0.1.0');
+    });
+  });
+
+  it('expands nested globs and bracket classes', async () => {
+    const rootManifest = JSON.stringify({ name: 'app', workspaces: ['libs/**', 'apps/[a-m]*'] });
+    const lock = (withMembers: boolean): string =>
+      JSON.stringify({
+        name: 'app',
+        lockfileVersion: 3,
+        packages: {
+          '': { name: 'app', workspaces: ['libs/**', 'apps/[a-m]*'] },
+          ...(withMembers
+            ? {
+                'node_modules/ui': { resolved: 'libs/group/ui', link: true },
+                'libs/group/ui': { name: 'ui', version: '1.0.0' },
+                'node_modules/admin': { resolved: 'apps/admin', link: true },
+                'apps/admin': { name: 'admin', version: '1.0.0' },
+              }
+            : {}),
+        },
+      });
+    const base = { 'package.json': rootManifest, 'package-lock.json': lock(false) };
+    const assessment = await assessCopies('package-lock.json', base, {
+      ...base,
+      'package-lock.json': lock(true),
+      'libs/group/ui/package.json': JSON.stringify({ name: 'ui', version: '1.0.0' }),
+      'apps/admin/package.json': JSON.stringify({ name: 'admin', version: '1.0.0' }),
+    });
+    expect(assessment.state).toBe('confirmed');
+    const outside = await assessCopies('package-lock.json', base, {
+      ...base,
+      'package-lock.json': lock(true).replaceAll('apps/admin', 'apps/zeta'),
+      'libs/group/ui/package.json': JSON.stringify({ name: 'ui', version: '1.0.0' }),
+      'apps/zeta/package.json': JSON.stringify({ name: 'admin', version: '1.0.0' }),
+    });
+    expect(outside.state).toBe('claimed');
+    expect(outside.blindSpot).toContain('the apps/zeta entry (added)');
+  });
+
+  it('lists the member manifests among the manifests a case must carry', async () => {
+    const copy = copyWith({
+      'package.json': JSON.stringify({ name: 'app', workspaces: ['packages/*'] }),
+      'package-lock.json': '{}',
+      'packages/api/package.json': '{}',
+      'packages/notes.txt': '',
+    });
+    try {
+      expect(await lockfileManifests(['package-lock.json'], copy)).toEqual([
+        'package.json',
+        'packages/api/package.json',
+      ]);
+    } finally {
+      rmSync(copy, { recursive: true, force: true });
+    }
+  });
+
+  it('discovers members by reading files, never by starting a process', async () => {
+    const names = ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork'] as const;
+    const spies = names.map((name) =>
+      vi.spyOn(childProcess, name).mockImplementation(() => {
+        throw new Error(`the workspace discovery tried to start a process with ${name}`);
+      }),
+    );
+    syncBuiltinESMExports();
+    const workspaces: Record<string, Record<string, string>> = {
+      'package-lock.json': {
+        'package.json': JSON.stringify({ name: 'app', workspaces: ['packages/**'] }),
+        'packages/api/package.json': JSON.stringify({ name: 'api' }),
+      },
+      'uv.lock': {
+        'pyproject.toml': '[tool.uv.workspace]\nmembers = ["packages/*"]\n',
+        'packages/api/pyproject.toml': '[project]\nname = "api"\n',
+      },
+      'Cargo.lock': {
+        'Cargo.toml': '[workspace]\nmembers = ["crates/*"]\n',
+        'crates/api/Cargo.toml': '[package]\nname = "api"\n',
+      },
+    };
+    try {
+      for (const [lockPath, files] of Object.entries(workspaces)) {
+        await assessCopies(lockPath, { ...files, [lockPath]: '' }, { ...files, [lockPath]: '' });
+        const copy = copyWith(files);
+        try {
+          expect((await lockfileManifests([lockPath], copy)).length).toBe(2);
+        } finally {
+          rmSync(copy, { recursive: true, force: true });
+        }
+      }
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+      syncBuiltinESMExports();
+    }
+    for (const spy of spies) expect(spy).not.toHaveBeenCalled();
   });
 });
