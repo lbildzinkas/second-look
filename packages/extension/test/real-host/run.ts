@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import * as vscode from 'vscode';
+import { markedPart } from '@second-look/engine';
 import {
   ADD_COMMENT_COMMAND,
   CHANGE_SCHEME,
@@ -359,7 +360,8 @@ export async function run(): Promise<void> {
     // The banner above the part's diff (ADR 0007) marks the part reviewed
     // through the same path as its checkbox in the tree, carrying the part
     // by where it starts: the engine keeps the mark, and clearing it from
-    // the banner clears it there too.
+    // the banner clears it there too. The request carries the part as the
+    // store records it — the same identity the tree's checkbox sends.
     const [firstHunk] = review.parts[0]!.hunks;
     const bannerRef = { anchor: { path: 'src/retry.py', hunk: { oldStart: firstHunk!.oldStart, newStart: firstHunk!.newStart } } };
     const markRequests = (): EngineRequest[] =>
@@ -377,7 +379,9 @@ export async function run(): Promise<void> {
         waitFor('the mark in the engine log', () => markRequests().find((request) => (request.params as { reviewed?: boolean }).reviewed === reviewed)),
         'the mark in the engine log',
       );
-      deepStrictEqual((marked.params as { part: { name: string } }).part.name, 'src/retry.py');
+      // The store's part identity: its name with its files and entity
+      // kinds, not the part's plain name.
+      deepStrictEqual((marked.params as { part: unknown }).part, markedPart(review.parts[0]!));
     }
 
     // The copies serve the pull request's content, read-only: the head
