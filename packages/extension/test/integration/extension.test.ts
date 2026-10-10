@@ -371,10 +371,11 @@ describe('the review command, end to end against a fake engine', () => {
     );
   });
 
-  it('carries the agent, model and account the settings choose with the review request', async () => {
+  it('carries the agent, model, effort and account the settings choose with the review request', async () => {
     stub.configuration = {
       'second-look.agent': 'claude-code',
       'second-look.agentModel': ' sonnet ',
+      'second-look.agentEffort': ' high ',
       'second-look.agentAccount': ' Claude Max (work) ',
     };
     await reviewWithFakeEngine({ result: mixedResult(), logName: 'agent-settings.log' });
@@ -385,12 +386,12 @@ describe('the review command, end to end against a fake engine', () => {
       .map((line) => JSON.parse(line) as { method: string; params?: Record<string, unknown> });
     const review = requests.find((request) => request.method === 'review');
     // The settings' choice — trimmed as read — travels with the request,
-    // so the engine runs every agent pass on the chosen agent, model and
-    // account without restarting.
+    // so the engine runs every agent pass on the chosen agent, model,
+    // effort and account without restarting.
     expect(review!.params).toEqual({
       url: PR_URL,
       token: TOKEN,
-      agent: { agent: 'claude-code', model: 'sonnet', account: 'Claude Max (work)' },
+      agent: { agent: 'claude-code', model: 'sonnet', effort: 'high', account: 'Claude Max (work)' },
     });
   });
 

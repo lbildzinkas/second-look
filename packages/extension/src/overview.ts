@@ -377,10 +377,14 @@ function stageChips(state: OverviewState): string {
     .join('');
 }
 
-/** A result's stamp in the recorded design's words: agent · model · effort · prompt version. */
+/**
+ * A result's stamp in the recorded design's words: agent · model · effort ·
+ * prompt version. The effort always shows, named as the agent's default
+ * when the run asked for none.
+ */
 export function stampText(stamp: AgentStamp, prompt: string, promptVersion: string): string {
-  const effort = stamp.effort === null ? [] : [`effort ${stamp.effort}`];
-  return [stamp.agent, stamp.model ?? 'model unknown', ...effort, `${prompt} prompt v${promptVersion}`].join(' · ');
+  const effort = stamp.effort === null ? 'default effort' : `effort ${stamp.effort}`;
+  return [stamp.agent, stamp.model ?? 'model unknown', effort, `${prompt} prompt v${promptVersion}`].join(' · ');
 }
 
 function stampChip(text: string): string {

@@ -10,6 +10,7 @@ import {
   partsLeft,
   reviewedState,
   unexplainedReasons,
+  type AgentStamp,
   type ClaimJudging,
   type Claims,
   type Comment,
@@ -237,8 +238,13 @@ function partLabel(part: Part): string {
 function rankingLine(ranking: Ranking): string {
   const agent = ranking.agent;
   if (ranking.by === 'plain' || agent?.stamp === undefined) return 'Plain ranking';
-  const model = agent.stamp.model === null ? '' : ` · ${agent.stamp.model}`;
-  return `Agent ranking: ${agent.stamp.agent}${model} (ranking prompt v${agent.promptVersion})`;
+  return `Agent ranking: ${agent.stamp.agent}${modelAndEffort(agent.stamp)} (ranking prompt v${agent.promptVersion})`;
+}
+
+/** The model and the effort that answered, as a stamp's tail: the effort shows even when it was the agent's default. */
+function modelAndEffort(stamp: AgentStamp): string {
+  const model = stamp.model === null ? '' : ` · ${stamp.model}`;
+  return `${model} · ${stamp.effort === null ? 'default effort' : `effort ${stamp.effort}`}`;
 }
 
 /** A claim count in words, such as `2 claims`. */
@@ -445,16 +451,14 @@ function groupingLine(result: ReviewResult): string | undefined {
   const agent = result.grouping.agent;
   if (agent === undefined) return undefined;
   if (agent.outcome === 'fell back') return `Plain grouping kept: ${agent.detail}.`;
-  const model = agent.stamp.model === null ? '' : ` · ${agent.stamp.model}`;
-  return `Grouped by ${agent.stamp.agent}${model} (grouping prompt v${agent.promptVersion}): ${agent.detail}.`;
+  return `Grouped by ${agent.stamp.agent}${modelAndEffort(agent.stamp)} (grouping prompt v${agent.promptVersion}): ${agent.detail}.`;
 }
 
 function rankingStatus(result: ReviewResult): string | undefined {
   const agent = result.ranking.agent;
   if (agent === undefined) return undefined;
   if (result.ranking.by === 'plain' || agent.stamp === undefined) return `Plain ranking kept: ${agent.detail}.`;
-  const model = agent.stamp.model === null ? '' : ` · ${agent.stamp.model}`;
-  return `Ranked by ${agent.stamp.agent}${model} (ranking prompt v${agent.promptVersion}): ${agent.detail}.`;
+  return `Ranked by ${agent.stamp.agent}${modelAndEffort(agent.stamp)} (ranking prompt v${agent.promptVersion}): ${agent.detail}.`;
 }
 
 /**

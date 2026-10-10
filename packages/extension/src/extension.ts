@@ -1064,7 +1064,7 @@ export function activate(
   const agentStatusBar = new AgentStatusBar(deps.env);
   agentStatusBar.refresh();
   // The untested-combination warning (issue 3): once for the settings the
-  // reviewer arrives with, then whenever they choose an agent or model.
+  // reviewer arrives with, then whenever they choose an agent, model or effort.
   warnUntestedModelChoice();
   context.subscriptions.push(
     treeView,
@@ -1076,7 +1076,8 @@ export function activate(
     vscode.workspace.onDidChangeConfiguration((change) => {
       if (
         change.affectsConfiguration('second-look.agent') ||
-        change.affectsConfiguration('second-look.agentModel')
+        change.affectsConfiguration('second-look.agentModel') ||
+        change.affectsConfiguration('second-look.agentEffort')
       ) {
         warnUntestedModelChoice();
       }

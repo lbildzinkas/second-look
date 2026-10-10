@@ -479,7 +479,7 @@ describe('runRpcServer with an agent', () => {
         return {
           status: 'completed' as const,
           text: JSON.stringify(answer),
-          stamp: { agent, agentVersion: '1.2.3', model, effort: null, runAt: '2026-10-05T00:00:00.000Z' },
+          stamp: { agent, agentVersion: '1.2.3', model, effort: request.effort ?? null, runAt: '2026-10-05T00:00:00.000Z' },
         };
       },
     };
@@ -538,6 +538,40 @@ describe('runRpcServer with an agent', () => {
     expect(second.ranking).toMatchObject({ by: 'agent', agent: { stamp: { agent: 'claude-code', model: 'claude/model', account: 'Claude Max (work)' } } });
   });
 
+  it('runs every agent pass at the effort the request carries, an empty one keeping the agent default, and ranks only where that effort was tested', async () => {
+    const claude = namedAgent('claude-code', 'claude/model');
+    const answers = await serveWithAgent(
+      [
+        request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+        request('review', { url: PR_7_URL, token: TOKEN, agent: { agent: 'claude-code', model: 'claude/model', effort: 'high' } }, 2),
+        request('review', { url: PR_7_URL, token: TOKEN, agent: { agent: 'claude-code', model: 'claude/model', effort: '' } }, 3),
+      ],
+      {
+        adapterFor: () => claude,
+        defaultAgent: 'claude-code',
+        settings: { timeoutMs: 10_000, concurrency: 1, effort: 'low' },
+        testedRankings: [{ agent: 'claude-code', model: 'claude/model', effort: 'high' }],
+      },
+    );
+
+    // The first review ranked too (high is tested): six runs at high. The
+    // second asked for the agent default, which is not tested, so it kept
+    // the plain ranking: five runs, none asking for an effort. The two
+    // reviews' runs interleave, so only the counts are fixed.
+    const efforts = claude.requests.map((run) => run.effort);
+    expect(efforts.filter((effort) => effort === 'high')).toHaveLength(6);
+    expect(efforts.filter((effort) => effort === undefined)).toHaveLength(5);
+    expect(efforts).toHaveLength(11);
+    expect(answers(2).result).toMatchObject({
+      grouping: { by: 'agent', agent: { stamp: { effort: 'high' } } },
+      ranking: { by: 'agent', agent: { stamp: { effort: 'high' } } },
+    });
+    expect(answers(3).result).toMatchObject({
+      grouping: { by: 'agent', agent: { stamp: { effort: null } } },
+      ranking: { by: 'plain', agent: { outcome: 'not tested', detail: expect.stringContaining('at its default effort') } },
+    });
+  });
+
   it('runs the serve default when the request carries no choice', async () => {
     const pi = namedAgent('pi', 'pi/model');
     const claude = namedAgent('claude-code', 'claude/model');
@@ -573,6 +607,7 @@ describe('runRpcServer with an agent', () => {
         request('review', { url: PR_7_URL, token: TOKEN, agent: { agent: 'codex' } }, 2),
         request('review', { url: PR_7_URL, token: TOKEN, agent: { agent: 'pi', model: 3 } }, 3),
         request('review', { url: PR_7_URL, token: TOKEN, agent: { agent: 'claude-code' } }, 4),
+        request('review', { url: PR_7_URL, token: TOKEN, agent: { agent: 'pi', effort: 3 } }, 5),
       ],
       { adapterFor: () => namedAgent('pi', 'pi/model'), defaultAgent: 'pi' },
     );
@@ -581,8 +616,10 @@ describe('runRpcServer with an agent', () => {
     expect(answers(2).error!.message).toContain('choose pi or claude-code');
     expect(answers(3).error).toMatchObject({ code: JSON_RPC_INVALID_PARAMS });
     expect(answers(3).error!.message).toContain('model must be a string');
-    // A choice of only the agent is fine: model and account are optional.
+    // A choice of only the agent is fine: model, effort and account are optional.
     expect(answers(4).result).toMatchObject({ grouping: { by: 'agent' } });
+    expect(answers(5).error).toMatchObject({ code: JSON_RPC_INVALID_PARAMS });
+    expect(answers(5).error!.message).toContain('effort must be a string');
   });
 });
 

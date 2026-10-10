@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import {
   API_KEY_VARIABLE,
+  DEFAULT_EFFORT,
   TESTED_MODELS,
   isAgentName,
   isTestedModel,
@@ -11,8 +12,8 @@ import {
 
 /**
  * The agent settings (issue 27): which installed coding agent the companion
- * drives, the model it runs and the reviewer's label for the account or
- * subscription it bills. They are documented in their descriptions in the
+ * drives, the model it runs, the effort level it runs at (issue 121) and
+ * the reviewer's label for the account or subscription it bills. They are documented in their descriptions in the
  * extension's manifest, the status bar shows what they choose, and every
  * review request carries them so the engine runs its agent passes with
  * them and stamps the account label on their results. Choosing a
@@ -26,6 +27,8 @@ export interface AgentSettings {
   agent: AgentName;
   /** The model to ask for; empty is the agent's own default model. */
   model: string;
+  /** The effort level to ask for, one the agent accepts; empty is the agent's own default. */
+  effort: string;
   /** The reviewer's label for the account or subscription the agent bills; empty hides it. */
   account: string;
 }
@@ -40,18 +43,19 @@ export function readAgentSettings(): AgentSettings {
   return {
     agent: isAgentName(agent) ? agent : 'pi',
     model: configuration.get<string>('agentModel', '').trim(),
+    effort: configuration.get<string>('agentEffort', '').trim(),
     account: configuration.get<string>('agentAccount', '').trim(),
   };
 }
 
 /**
- * The agent choice a review request carries (issue 65): the agent, model
- * and account the settings chose, so the engine runs every agent pass
+ * The agent choice a review request carries (issue 65): the agent, model,
+ * effort and account the settings chose, so the engine runs every agent pass
  * with them. Switching the settings and re-running a review changes the
  * stamp on every agent-produced result.
  */
 export function reviewAgentChoice(settings: AgentSettings): ReviewAgentChoice {
-  return { agent: settings.agent, model: settings.model, account: settings.account };
+  return { agent: settings.agent, model: settings.model, effort: settings.effort, account: settings.account };
 }
 
 /**
@@ -70,11 +74,12 @@ export function apiKeyOverrideWarning(settings: AgentSettings, env: NodeJS.Proce
   );
 }
 
-/** What the status bar shows: the agent and model in use, and the account when labelled. */
+/** What the status bar shows: the agent, model and effort in use, and the account when labelled. */
 export function agentStatusBarText(settings: AgentSettings): string {
   const agent = settings.agent === 'claude-code' ? 'Claude Code' : 'Pi';
   const model = settings.model === '' ? 'default model' : settings.model;
-  const parts = settings.account === '' ? [agent, model] : [agent, model, settings.account];
+  const effort = settings.effort === '' ? 'default effort' : `effort ${settings.effort}`;
+  const parts = settings.account === '' ? [agent, model, effort] : [agent, model, effort, settings.account];
   return `Second Look: ${parts.join(' · ')}`;
 }
 
@@ -82,30 +87,33 @@ export function agentStatusBarText(settings: AgentSettings): string {
 const TESTED_MODELS_PAGE = "the repository's docs/tested-models.md";
 
 /**
- * The warning (issue 3) that the settings pick an agent and model the
- * companion's evaluation never tested: prompts behave differently on
+ * The warning (issue 3) that the settings pick an agent, model and effort
+ * the companion's evaluation never tested: prompts behave differently on
  * each model, so results from an untested combination say little about
  * the tested ones. Non-blocking — every review still runs, stamped with
  * who answered — and quiet when the choice is tested. With no model
  * chosen the agent's own default runs, and only the run's stamp tells
- * which, so an agent with a tested model stays quiet while one with
- * none warns whatever model runs.
+ * which, so an agent with a tested model at the chosen effort stays
+ * quiet while one with none warns whatever model runs. An empty effort
+ * is the agent's own default, which is how the evaluation records it.
  */
 export function untestedModelWarning(
   settings: AgentSettings,
   tested: readonly TestedModel[] = TESTED_MODELS,
 ): string | undefined {
   const name = settings.agent === 'claude-code' ? 'Claude Code' : 'Pi';
-  const tried = tested.filter((entry) => entry.agent === settings.agent);
+  const level = settings.effort === '' ? DEFAULT_EFFORT : settings.effort;
+  const at = level === DEFAULT_EFFORT ? 'at its default effort' : `at effort ${level}`;
+  const tried = tested.filter((entry) => entry.agent === settings.agent && entry.effort === level);
   const tail =
     `Reviews still run and every result is stamped with who answered. The tested combinations ` +
     `are published in ${TESTED_MODELS_PAGE}.`;
   if (settings.model === '') {
     if (tried.length > 0) return undefined;
-    return `${name} has not been tested with any model, so its results say little about the tested combinations. ${tail}`;
+    return `${name} ${at} has not been tested with any model, so its results say little about the tested combinations. ${tail}`;
   }
-  if (isTestedModel(tested, settings.agent, settings.model)) return undefined;
+  if (isTestedModel(tested, settings.agent, settings.model, level)) return undefined;
   const models = [...new Set(tried.map((entry) => entry.model))].join(', ');
-  const known = tried.length === 0 ? '' : `; it has been tested with ${models}`;
-  return `${name} with ${settings.model} has not been tested by the companion's evaluation${known}. ${tail}`;
+  const known = tried.length === 0 ? '' : `; ${at} it has been tested with ${models}`;
+  return `${name} with ${settings.model} ${at} has not been tested by the companion's evaluation${known}. ${tail}`;
 }
