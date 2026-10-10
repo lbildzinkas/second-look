@@ -9,6 +9,11 @@ export default defineConfig({
     // so no local run can launch anything that opens a VS Code window.
     include: ['packages/*/test/*.test.ts'],
     environment: 'node',
+    // The evaluation tests run whole recorded pull requests per test, so a
+    // test that takes under a second locally can take several on a CI
+    // runner slower than any dev machine; 30s keeps such a runner from
+    // timing out a passing suite while a genuinely hung test still fails.
+    testTimeout: 30_000,
   },
   resolve: {
     alias: {
