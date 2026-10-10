@@ -39,7 +39,7 @@ What each agent may read while it works, what it is denied and how each limit is
 
 One optional extra: when a review's finding offers to decompile a .NET package that has no exact source, the companion runs ILSpy's `ilspycmd` as you installed it. Install it with `dotnet tool install --global ilspycmd` if you want that route; it is looked for on the `PATH` and in `~/.dotnet/tools`, and it is run with the network cut on macOS and Linux — on Windows nothing is decompiled yet. Nothing else needs it.
 
-## Choosing the agent, model and account
+## Choosing the agent, model, effort and account
 
 The settings live under the `second-look` section (Settings, then search for "second look"):
 
@@ -47,13 +47,14 @@ The settings live under the `second-look` section (Settings, then search for "se
 | --- | --- | --- |
 | `second-look.agent` | The agent every agent pass of a review runs on: `pi` or `claude-code`. | `pi` |
 | `second-look.agentModel` | The model, in the agent's own naming — for example `anthropic/claude-sonnet-5` for Pi or `sonnet` for Claude Code. | empty: the agent's own default model |
+| `second-look.agentEffort` | The effort (thinking) level, one the agent accepts — for example `low`, `medium`, `high`, `xhigh` or `max` for Claude Code, or `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max` for Pi. | empty: the agent's own default effort |
 | `second-look.agentAccount` | A label for the account or subscription the agent bills, such as `Claude Max (work address)`. | empty: hidden |
 | `second-look.criteriaHeading` | The heading the acceptance criteria checklist sits under in the issues a pull request links. | `Acceptance criteria` |
 | `second-look.mirrorViewedToGitHub` | Whether reviewed marks are mirrored to GitHub's "Viewed" checkbox. Off by default, because the GitHub Pull Requests extension syncs the same field. | off |
 
-The agent, model and account travel with each review request, so switching them needs no restart: the next review runs its agent passes on the new choice, and every agent-produced result is stamped with it.
+The agent, model, effort and account travel with each review request, so switching them needs no restart: the next review runs its agent passes on the new choice, and every agent-produced result is stamped with it, the effort that answered included — shown as `default effort` when the run asked for none.
 
-The status bar shows what is in use, as `Second Look: Pi · default model` with the account label beside it when one is set. It warns when the chosen agent and model were never tested by the companion's evaluation — the warning blocks nothing, every review still runs and is stamped with who answered — and it names where the current list is published: [the tested models](tested-models.md). When Claude Code is the agent, it also warns when an `ANTHROPIC_API_KEY` inherited from the editor's environment silently overrides the subscription sign-in.
+The status bar shows what is in use, as `Second Look: Pi · default model · default effort` — or, say, `Second Look: Claude Code · claude-sonnet-5-5 · effort high` — with the account label beside it when one is set. It warns when the chosen agent, model and effort were never tested by the companion's evaluation — the warning blocks nothing, every review still runs and is stamped with who answered — and it names where the current list is published: [the tested models](tested-models.md). When Claude Code is the agent, it also warns when an `ANTHROPIC_API_KEY` inherited from the editor's environment silently overrides the subscription sign-in.
 
 ### Which passes the agent runs
 
@@ -61,7 +62,7 @@ The grouping pass always runs on the chosen agent, and the ranking pass runs on 
 
 ### Billing and subscriptions
 
-Every agent run bills the login the agent is signed in with — your subscription, your keys. The companion never reads, stores or copies that login: the account setting is only a label you give it, stamped on the results. Each run also carries a stamp — the agent, its version, the model, the run date, and the tokens and cost when the agent reports them — so you can always tell which agent and model said what.
+Every agent run bills the login the agent is signed in with — your subscription, your keys. The companion never reads, stores or copies that login: the account setting is only a label you give it, stamped on the results. Each run also carries a stamp — the agent, its version, the model, the effort, the run date, and the tokens and cost when the agent reports them — so you can always tell which agent, model and effort said what.
 
 ## Starting a review
 

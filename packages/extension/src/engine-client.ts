@@ -72,7 +72,7 @@ export function engineEntryPath(): string {
 /**
  * Starts the engine as a separate local process speaking JSON-RPC on stdio.
  *
- * The agent, model and account the settings choose travel with each
+ * The agent, model, effort and account the settings choose travel with each
  * review request over the protocol, never on the command line, so a
  * settings change reaches the next review without restarting the engine.
  *
@@ -225,9 +225,9 @@ export class EngineClient {
   /**
    * Sends one review request with the token VS Code's GitHub sign-in gave
    * for it, the agent choice the settings picked and the heading the
-   * acceptance criteria checklist sits under: the agent, model, account
-   * and heading travel with this request only; the client keeps no copy
-   * of the token. Rejects with the engine's plain message when the engine
+   * acceptance criteria checklist sits under: the agent, model, effort,
+   * account and heading travel with this request only; the client keeps no
+   * copy of the token. Rejects with the engine's plain message when the engine
    * fails.
    *
    * A review can arrive in stages: each stage notification hands its

@@ -40,7 +40,7 @@ The **Second Look: #… overview** tab opens with the review: the pull request's
 - **The description** in full — content GitHub hides, such as an HTML comment, is shown and flagged.
 - **The documentation links**, the inventory links first, then the agent's suggestions, each labelled as suggested and not checked.
 
-Every section says who made it: the plain pass, or the agent with its model and prompt version. Nothing in the overview renders as markup — no remote image and no link — under a content security policy that loads nothing but the page's own style and script.
+Every section says who made it: the plain pass, or the agent with its model, effort and prompt version. Nothing in the overview renders as markup — no remote image and no link — under a content security policy that loads nothing but the page's own style and script.
 
 ## Reading a part
 

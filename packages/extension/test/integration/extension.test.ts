@@ -414,10 +414,11 @@ describe('the review command, end to end against a fake engine', () => {
     );
   });
 
-  it('carries the agent, model and account the settings choose with the review request', async () => {
+  it('carries the agent, model, effort and account the settings choose with the review request', async () => {
     stub.configuration = {
       'second-look.agent': 'claude-code',
       'second-look.agentModel': ' sonnet ',
+      'second-look.agentEffort': ' high ',
       'second-look.agentAccount': ' Claude Max (work) ',
     };
     await reviewWithFakeEngine({ result: mixedResult(), logName: 'agent-settings.log' });
@@ -428,12 +429,12 @@ describe('the review command, end to end against a fake engine', () => {
       .map((line) => JSON.parse(line) as { method: string; params?: Record<string, unknown> });
     const review = requests.find((request) => request.method === 'review');
     // The settings' choice — trimmed as read — travels with the request,
-    // so the engine runs every agent pass on the chosen agent, model and
-    // account without restarting.
+    // so the engine runs every agent pass on the chosen agent, model,
+    // effort and account without restarting.
     expect(review!.params).toEqual({
       url: PR_URL,
       token: TOKEN,
-      agent: { agent: 'claude-code', model: 'sonnet', account: 'Claude Max (work)' },
+      agent: { agent: 'claude-code', model: 'sonnet', effort: 'high', account: 'Claude Max (work)' },
     });
   });
 
@@ -550,7 +551,7 @@ describe('a review arriving in stages', () => {
     expect(renderedTree(view).map((node) => node.label)).toContain('send, with the retry settings it reads');
     expect(renderedTree(view).map((node) => node.label)).not.toContain('src/settings.ts');
     expect(view.message).toBe(
-      'Grouped by pi · zai/glm-4.6 (grouping prompt v1): every hunk was placed by the agent.',
+      'Grouped by pi · zai/glm-4.6 · default effort (grouping prompt v1): every hunk was placed by the agent.',
     );
     // The part now holding the settings change is selected, without taking focus.
     expect(view.revealed).toHaveLength(2);
@@ -620,18 +621,18 @@ describe('the agent ranking arriving', () => {
       {
         label: 'src/settings.ts',
         description: 'changes the retry limit every caller reads',
-        tooltip: 'changed code\nAgent ranking: pi · zai/glm-4.6 (ranking prompt v1)',
+        tooltip: 'changed code\nAgent ranking: pi · zai/glm-4.6 · default effort (ranking prompt v1)',
         contextValue: 'part',
       },
       { label: 'Worth reviewing', tooltip: 'The parts worth a careful read.' },
       {
         label: 'src/retry.py',
         description: 'new loop around an unchanged send',
-        tooltip: 'new code\nAgent ranking: pi · zai/glm-4.6 (ranking prompt v1)',
+        tooltip: 'new code\nAgent ranking: pi · zai/glm-4.6 · default effort (ranking prompt v1)',
         contextValue: 'part',
       },
     ]);
-    expect(view.message).toBe('Ranked by pi · zai/glm-4.6 (ranking prompt v1): the validator accepted the ranking of 4 parts.');
+    expect(view.message).toBe('Ranked by pi · zai/glm-4.6 · default effort (ranking prompt v1): the validator accepted the ranking of 4 parts.');
     expect(stub.errorMessages).toEqual([]);
   });
 });
@@ -889,7 +890,7 @@ describe('the overview', () => {
     expect(stub.quickPicks).toHaveLength(1);
     expect(stub.quickPicks[0]!.title).toBe('Verify this claim');
     expect((stub.quickPicks[0]!.items as { index: number }[]).map((item) => item.index)).toEqual([0, 1, 2]);
-    expect(lastAsk('verify-pick.log')).toEqual({ url: PR_URL, ask: 'verify', part: 0, claim: { index: 2 }, agent: { agent: 'pi', model: '', account: '' } });
+    expect(lastAsk('verify-pick.log')).toEqual({ url: PR_URL, ask: 'verify', part: 0, claim: { index: 2 }, agent: { agent: 'pi', model: '', effort: '', account: '' } });
     const html = overview().webview.html;
     expect(html).toContain('<li class="answer focus"><div class="where"><b>Verify this claim</b> · ');
     // The review shown now holds the judged claim, as the engine's latest review does.
@@ -914,7 +915,7 @@ describe('the overview', () => {
       ask: 'verify',
       part: 0,
       claim: { selection: { path: 'src/retry.py', line: 9, endLine: 9, text: 'Never retries a 4xx.' } },
-      agent: { agent: 'pi', model: '', account: '' },
+      agent: { agent: 'pi', model: '', effort: '', account: '' },
     });
   });
 

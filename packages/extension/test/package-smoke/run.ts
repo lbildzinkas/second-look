@@ -239,7 +239,7 @@ export async function run(): Promise<void> {
         params?: {
           url?: string;
           token?: string;
-          agent?: { agent?: string; model?: string; account?: string };
+          agent?: { agent?: string; model?: string; effort?: string; account?: string };
           criteriaHeading?: string;
         };
       });
@@ -253,7 +253,7 @@ export async function run(): Promise<void> {
     deepStrictEqual(requests[1]?.params, {
       url: PR_URL,
       token: TOKEN,
-      agent: { agent: 'pi', model: '', account: '' },
+      agent: { agent: 'pi', model: '', effort: '', account: '' },
       criteriaHeading: 'Acceptance criteria',
     });
     // The review's marks are read from the engine's local store as soon

@@ -102,8 +102,8 @@ export const REVIEW_METHOD = 'review' as const;
 
 /**
  * The agent choice a review request carries: which installed agent runs
- * the review's agent passes, the model it runs and the reviewer's label
- * for the account it bills (issue 65). It mirrors the editor's agent
+ * the review's agent passes, the model it runs, the effort level it runs
+ * at (issue 121) and the reviewer's label for the account it bills (issue 65). It mirrors the editor's agent
  * settings; absent from a request, the engine's serve-time choice stands.
  */
 export interface ReviewAgentChoice {
@@ -111,6 +111,8 @@ export interface ReviewAgentChoice {
   agent: AgentName;
   /** The model to ask for; empty or absent is the agent's own default. */
   model?: string;
+  /** The effort level to ask for, one the agent accepts; empty or absent is the agent's own default. */
+  effort?: string;
   /** The reviewer's label for the account or subscription the runs bill; empty or absent when unlabelled. */
   account?: string;
 }
@@ -125,7 +127,7 @@ export interface ReviewParams {
    * request and never stores or echoes it.
    */
   token: string;
-  /** The agent, model and account the review's agent passes run with; see {@link ReviewAgentChoice}. */
+  /** The agent, model, effort and account the review's agent passes run with; see {@link ReviewAgentChoice}. */
   agent?: ReviewAgentChoice;
   /**
    * The heading the acceptance criteria checklist sits under in a linked
@@ -156,7 +158,7 @@ export interface FetchLibraryParams {
   url: string;
   /** The claim, by its index in the result's claims. */
   claim: number;
-  /** The agent, model and account that judge the claim again; see {@link ReviewAgentChoice}. */
+  /** The agent, model, effort and account that judge the claim again; see {@link ReviewAgentChoice}. */
   agent?: ReviewAgentChoice;
 }
 
@@ -178,7 +180,7 @@ export interface DraftCommentParams {
   /** The pull request's HTML URL, as the review result names it. */
   url: string;
   finding: FindingRef;
-  /** The agent, model and account that draft; see {@link ReviewAgentChoice}. */
+  /** The agent, model, effort and account that draft; see {@link ReviewAgentChoice}. */
   agent?: ReviewAgentChoice;
 }
 
@@ -202,7 +204,7 @@ export interface AskParams {
   part: number;
   /** The claim to verify, for an ask that takes one: one of the part's claims, or the reviewer's selection in its diff. */
   claim?: AskedClaim;
-  /** The agent, model and account that answer; see {@link ReviewAgentChoice}. */
+  /** The agent, model, effort and account that answer; see {@link ReviewAgentChoice}. */
   agent?: ReviewAgentChoice;
 }
 

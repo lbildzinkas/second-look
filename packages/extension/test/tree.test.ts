@@ -348,7 +348,7 @@ describe('reviewStatus', () => {
   it('says who grouped the parts, with the model and the prompt version', () => {
     const grouped = { ...mixedResult(), grouping: { by: 'agent' as const, agent: agentGrouping({}) } };
     expect(reviewStatus(grouped)).toBe(
-      'Grouped by pi · zai/glm-4.6 (grouping prompt v1): every hunk was placed by the agent.',
+      'Grouped by pi · zai/glm-4.6 · default effort (grouping prompt v1): every hunk was placed by the agent.',
     );
   });
 
@@ -366,14 +366,18 @@ describe('reviewStatus', () => {
   it('names the ranking stage after the grouping it ranks', () => {
     const grouped = { ...mixedResult(), grouping: { by: 'agent' as const, agent: agentGrouping({}) } };
     expect(reviewStatus(grouped, 'ranking the parts with pi')).toBe(
-      'Grouped by pi · zai/glm-4.6 (grouping prompt v1): every hunk was placed by the agent. Now ranking the parts with pi…',
+      'Grouped by pi · zai/glm-4.6 · default effort (grouping prompt v1): every hunk was placed by the agent. Now ranking the parts with pi…',
     );
   });
 
   it('says who ranked the parts, or why the plain ranking stayed', () => {
     const ranked = { ...mixedResult(), ranking: { by: 'agent' as const, agent: agentRanking({}) } };
     expect(reviewStatus(ranked)).toBe(
-      'Ranked by pi · zai/glm-4.6 (ranking prompt v1): the validator accepted the ranking of 4 parts.',
+      'Ranked by pi · zai/glm-4.6 · default effort (ranking prompt v1): the validator accepted the ranking of 4 parts.',
+    );
+    const high = { ...mixedResult(), ranking: { by: 'agent' as const, agent: agentRanking({ stamp: { ...STAMP, effort: 'high' } }) } };
+    expect(reviewStatus(high)).toBe(
+      'Ranked by pi · zai/glm-4.6 · effort high (ranking prompt v1): the validator accepted the ranking of 4 parts.',
     );
     const notTested = agentRanking({ outcome: 'not tested', detail: 'pi has none', stamp: undefined });
     expect(reviewStatus({ ...mixedResult(), ranking: { by: 'plain', agent: notTested } })).toBe(
@@ -388,7 +392,7 @@ describe('the ranking a tooltip names', () => {
     const mustReview = buildTree(ranked)[0]!;
 
     expect(mustReview.parts[0]!.tooltip).toBe(
-      'new code\n2 callers\nno tests before this pull request\nAgent ranking: pi · zai/glm-4.6 (ranking prompt v1)',
+      'new code\n2 callers\nno tests before this pull request\nAgent ranking: pi · zai/glm-4.6 · default effort (ranking prompt v1)',
     );
   });
 

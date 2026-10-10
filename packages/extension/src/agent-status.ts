@@ -8,13 +8,13 @@ import {
 } from './agent-settings.js';
 
 /**
- * The status bar entry for the agent in use: the agent and model the
- * settings choose, the account or subscription when labelled, and — for
+ * The status bar entry for the agent in use: the agent, model and effort
+ * the settings choose, each default named as such, the account or subscription when labelled, and — for
  * Claude Code started with an inherited Anthropic API key — the warning
  * that the key silently overrides the subscription, with the warning for
  * a combination the evaluation never tested in its tooltip. Every result
  * the companion shows is stamped with the same agent, version, model,
- * login and account label by the engine, so what the reviewer reads here
+ * effort, login and account label by the engine, so what the reviewer reads here
  * is what answered.
  */
 export class AgentStatusBar {
@@ -30,7 +30,7 @@ export class AgentStatusBar {
     });
   }
 
-  /** Rereads the settings and shows the agent and model in use. */
+  /** Rereads the settings and shows the agent, model and effort in use. */
   refresh(): void {
     const settings = readAgentSettings();
     const warning = apiKeyOverrideWarning(settings, this.env);
@@ -55,7 +55,7 @@ function tooltip(settings: AgentSettings, warnings: readonly (string | undefined
     '',
     'Second Look drives this agent, locked down, for its model work: file-reading tools only,',
     'on a read-only copy of the change. The agent signs in with its own login, which the',
-    'companion never reads. Every result is stamped with the agent, its version, the model,',
+    'companion never reads. Every result is stamped with the agent, its version, the model, the effort,',
     'the run date, the tokens and cost the agent reports, and the account label, when set.',
   ];
   if (settings.agent === 'claude-code') {

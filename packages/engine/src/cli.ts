@@ -142,11 +142,11 @@ then the result with the comparison in another while the agent lists
 the claims, then the result with the claims in another while the agent
 judges them, then the result with the verdicts in another while the agent
 maps the acceptance criteria, then the mapped result. Each review
-request may also carry the reviewer's agent choice — the agent, model and
-account from the editor's settings — which runs that review's agent passes
-and stamps the account label on their results, replacing this command's
---agent and --model for that review; a request without a choice runs the
-agent chosen here.`;
+request may also carry the reviewer's agent choice — the agent, model,
+effort and account from the editor's settings — which runs that review's
+agent passes and stamps the account label on their results, replacing
+this command's --agent, --model and --effort for that review; a request
+without a choice runs the agent chosen here.`;
 
 export interface WriteDestination {
   write(chunk: string): boolean;
