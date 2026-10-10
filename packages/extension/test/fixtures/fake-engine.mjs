@@ -31,7 +31,8 @@
 // The reviewed marks live in the fake's memory: markReviewed ticks or
 // clears a part by its name, reviewedMarks reads them back, and markViewed
 // answers with the paths it was asked to mark. loadProject writes nothing:
-// it answers with a project folder beside the review result's head copy.
+// it answers with a project folder beside the review result's head copy,
+// refusing a load at any other commit, like the engine.
 //
 // Every request it receives is appended to the log, so a test can prove
 // what reached the engine, including the token carried per request.
@@ -174,9 +175,17 @@ function handle(line) {
   }
   if (request.method === 'loadProject') {
     const head = (resultsByUrl?.[request.params.url] ?? reviewResult).copies.head;
+    if (projectError || request.params.commit !== head.commit) {
+      fail(
+        request.id,
+        -32002,
+        projectError ??
+          `this engine's latest finished review is at commit ${head.commit.slice(0, 7)}, not the confirmed ${String(request.params.commit ?? '').slice(0, 7)}; review the pull request again, then load it`,
+      );
+      return;
+    }
     const path = `${head.path.slice(0, head.path.lastIndexOf('/'))}/project/${head.commit}`;
-    if (projectError) fail(request.id, -32002, projectError);
-    else send({ jsonrpc: '2.0', id: request.id, result: { commit: head.commit, path, reused: false } });
+    send({ jsonrpc: '2.0', id: request.id, result: { commit: head.commit, path, reused: false } });
     return;
   }
   fail(request.id, -32601, `unknown method: ${request.method}`);

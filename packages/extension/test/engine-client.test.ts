@@ -304,20 +304,25 @@ describe('EngineClient against a fake engine', () => {
     failing.dispose();
   });
 
-  it('asks the engine to write the project loaded for navigation, and reads where it is', async () => {
+  it('asks the engine to write the project loaded for navigation at the confirmed commit, and reads where it is', async () => {
     const client = new EngineClient(() => fakeEngine({ result: mixedResult(), logName: 'load-project.log' }));
     await client.initialize();
 
     const { head } = mixedResult().copies;
-    expect(await client.loadProject(PR_URL)).toEqual({ commit: head.commit, path: `${head.path.slice(0, head.path.lastIndexOf('/'))}/project/${head.commit}`, reused: false });
+    expect(await client.loadProject(PR_URL, head.commit)).toEqual({ commit: head.commit, path: `${head.path.slice(0, head.path.lastIndexOf('/'))}/project/${head.commit}`, reused: false });
     const request = loggedRequests('load-project.log').find((each) => (each as { method: string }).method === 'loadProject') as { params: unknown };
-    expect(request.params).toEqual({ url: PR_URL });
+    expect(request.params).toEqual({ url: PR_URL, commit: head.commit });
     client.dispose();
 
     const failing = new EngineClient(() => fakeEngine({ result: mixedResult(), projectError: 'the disk is full' }));
     await failing.initialize();
-    await expect(failing.loadProject(PR_URL)).rejects.toThrow('the disk is full');
+    await expect(failing.loadProject(PR_URL, head.commit)).rejects.toThrow('the disk is full');
     failing.dispose();
+
+    const moved = new EngineClient(() => fakeEngine({ result: mixedResult() }));
+    await moved.initialize();
+    await expect(moved.loadProject(PR_URL, '0123456789abcdef0123456789abcdef01234567')).rejects.toThrow('review the pull request again, then load it');
+    moved.dispose();
   });
 
   it('refuses a load answer that is not a project with an absolute path', async () => {
@@ -326,7 +331,7 @@ describe('EngineClient against a fake engine', () => {
     const client = new EngineClient(() => fakeEngine({ result }));
     await client.initialize();
 
-    await expect(client.loadProject(PR_URL)).rejects.toThrow("the engine's answer is not the project loaded for navigation");
+    await expect(client.loadProject(PR_URL, mixedResult().copies.head.commit)).rejects.toThrow("the engine's answer is not the project loaded for navigation");
     client.dispose();
   });
 

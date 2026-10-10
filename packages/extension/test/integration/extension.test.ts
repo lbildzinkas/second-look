@@ -1811,6 +1811,14 @@ describe('loading the project for navigation', () => {
     const { head } = mixedResult().copies;
     const path = `${head.path.slice(0, head.path.lastIndexOf('/'))}/project/${head.commit}`;
     expect(loggedMethods('project-confirmed.log').filter((method) => method === 'loadProject')).toHaveLength(1);
+    // The request carries the head commit the warning named, so the engine
+    // writes nothing for a review at any other commit.
+    const load = readFileSync(join(workDir, 'project-confirmed.log'), 'utf8')
+      .split('\n')
+      .filter((line) => line !== '')
+      .map((line) => JSON.parse(line) as { method: string; params?: Record<string, unknown> })
+      .find((request) => request.method === 'loadProject');
+    expect(load!.params).toEqual({ url: PR_URL, commit: head.commit });
     expect(stub.executedCommands).toEqual([{ id: OPEN_FOLDER_COMMAND, args: [Uri.file(path), { forceNewWindow: true }] }]);
     expect(stub.errorMessages).toEqual([]);
   });

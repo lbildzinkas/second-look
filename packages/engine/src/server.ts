@@ -133,7 +133,8 @@ export interface RpcServerDeps {
  * the latest review that every mark covers "Viewed" on GitHub, only for
  * the reviewer's opt-in mirror. `loadProject` writes a writable copy of
  * that latest review's head copy for language extensions to navigate,
- * only once the reviewer confirmed it, and runs nothing in it.
+ * only once the reviewer confirmed its head commit, and runs nothing
+ * in it.
  *
  * With an agent, a review arrives in stages: as soon as the plain result
  * is ready the engine sends it in a {@link REVIEW_STAGE_METHOD}
@@ -734,9 +735,9 @@ async function markViewed(
 
 /**
  * Writes the project loaded for navigation from the pull request's latest
- * review: a writable copy of its head copy, beside the read-only copies,
- * which no agent run reads. The client asks only once the reviewer
- * confirmed; nothing in the copy is run here.
+ * finished review at the head commit the reviewer confirmed: a writable
+ * copy of its head copy, beside the read-only copies, which no agent run
+ * reads. Any other commit is refused, writing nothing; nothing here runs.
  */
 async function loadProject(
   params: unknown,
@@ -750,15 +751,19 @@ async function loadProject(
     respond(sink, failure(id, NOT_INITIALIZED_CODE, `the protocol starts with a version handshake: ${INITIALIZE_METHOD} before ${LOAD_PROJECT_METHOD}`));
     return;
   }
-  const { url } = (params ?? {}) as Partial<LoadProjectParams>;
+  const { url, commit } = (params ?? {}) as Partial<LoadProjectParams>;
   const ref = typeof url === 'string' ? parsePullRequestUrl(url) : null;
-  if (ref === null || typeof url !== 'string') {
-    respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${LOAD_PROJECT_METHOD} needs params: { "url": string }`));
+  if (ref === null || typeof url !== 'string' || typeof commit !== 'string') {
+    respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${LOAD_PROJECT_METHOD} needs params: { "url": string, "commit": string }`));
     return;
   }
   const result = reviews.get(url);
   if (result === undefined) {
     respond(sink, failure(id, ENGINE_FAILED_CODE, `this engine has no finished review of ${url} to load the project of; review the pull request again`));
+    return;
+  }
+  if (result.copies.head.commit !== commit) {
+    respond(sink, failure(id, ENGINE_FAILED_CODE, `this engine's latest finished review of ${url} is at commit ${result.copies.head.commit.slice(0, 7)}, not the confirmed ${commit.slice(0, 7)}; review the pull request again, then load it`));
     return;
   }
   try {
