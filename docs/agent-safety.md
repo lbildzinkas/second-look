@@ -18,9 +18,9 @@ The engine drives only the agents `AGENT_NAMES` lists, `pi` and `claude-code` (`
 
 These hold for both agents, because they come from the engine rather than from either adapter.
 
-### The agent is started in one folder, a read-only copy
+### The agent is started in one read-only folder
 
-- **The folder.** Each run is started with its working directory set to one folder (`pi.ts:213-219`, `claude-code.ts:504-510`): the head copy of the pull request for every review pass and ask (for example `review.ts:342`, `asks.ts:64`), or, after the reviewer presses a library fetch, that library's fetched folder alone (`library-verdicts.ts:252`). The base copy, the reviewer's workspace and the rest of the cache are never the run's folder.
+- **The folder.** Each run is started with its working directory set to one folder (`pi.ts:213-219`, `claude-code.ts:504-510`): the head copy of the pull request for every review pass and ask (for example `review.ts:342`, `asks.ts:64`), that library's fetched folder alone after the reviewer presses a library fetch (`library-verdicts.ts:252`), or, when the reviewer asks for an agent test, an empty temporary folder under the system's temporary folder, made read-only and removed after the one run (`agent-test.ts:78-80`, `agent-test.ts:105-106`). The base copy, the reviewer's workspace and the rest of the cache are never the run's folder.
 - **Read-only.** The copies and fetched libraries are all written by `archive.ts`, with every file mode `0444` and every folder `0555` (`archive.ts:18-19`, `archive.ts:168-175`), so nothing in them can be written or run in place. Each copy is unpacked from the commit's archive into the engine's cache (`cache.ts:80-107`): nothing is checked out in the reviewer's workspace, and nothing from the pull request is built, installed or run.
 - **No links out.** Symbolic links, hard links and special files in an archive are skipped, never written, and an entry whose path would leave the folder is refused (`archive.ts:139-149`, `archive.ts:179-187`). A copy therefore holds no link an agent could follow out of it.
 
@@ -77,7 +77,7 @@ Before any run, each adapter reads the installed agent's `--help` and refuses to
 
 ### What Pi can read
 
-Only files of the run's folder — the head copy, or a fetched library's folder — through the tools `read`, `grep`, `find` and `ls` (`pi-guard.ts:24`).
+Only files of the run's folder — the head copy, a fetched library's folder, or an agent test's empty temporary folder — through the tools `read`, `grep`, `find` and `ls` (`pi-guard.ts:24`).
 
 ### What Pi is denied, and how
 
@@ -116,7 +116,7 @@ The head copy is the pull request's own repository, so it can hold agent configu
 
 ### What Claude Code can read
 
-Only files of the run's folder — the head copy, or a fetched library's folder — through the tools `Read`, `Grep` and `Glob`, plus `StructuredOutput`, the tool Claude Code returns the schema-checked answer through, which touches no file (`claude-guard-check.ts:34-37`). The run is started with its working directory set to the run's folder (`claude-code.ts:504-510`). The companion's guard, a `PreToolUse` hook Claude Code runs before every tool call, confines each call to that folder (`claude-guard-check.ts:90-108`), and Claude Code's own working-directory check stands behind it, because the run's permission mode is pinned to `default` (`claude-code.ts:188-189`).
+Only files of the run's folder — the head copy, a fetched library's folder, or an agent test's empty temporary folder — through the tools `Read`, `Grep` and `Glob`, plus `StructuredOutput`, the tool Claude Code returns the schema-checked answer through, which touches no file (`claude-guard-check.ts:34-37`). The run is started with its working directory set to the run's folder (`claude-code.ts:504-510`). The companion's guard, a `PreToolUse` hook Claude Code runs before every tool call, confines each call to that folder (`claude-guard-check.ts:90-108`), and Claude Code's own working-directory check stands behind it, because the run's permission mode is pinned to `default` (`claude-code.ts:188-189`).
 
 ### What Claude Code is denied, and how
 
