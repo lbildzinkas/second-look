@@ -29,6 +29,7 @@ import {
   type ReviewResult,
   type SentReview,
   type SyntaxCheck,
+  type TestAgentRpcResult,
   type ViewedFiles,
 } from '@second-look/engine';
 
@@ -1023,6 +1024,28 @@ export function isAgentsProbe(value: unknown): value is ProbeAgentsRpcResult {
           (probe['login']['warning'] === undefined || isString(probe['login']['warning'])))) &&
       isStringList(probe['lockdown']),
   );
+}
+
+/** Error thrown when a test answer is not the agent test's result. */
+export class AgentTestProtocolError extends Error {
+  constructor() {
+    super(`the engine's answer is not the result of the agent test`);
+    this.name = 'AgentTestProtocolError';
+  }
+}
+
+/** The reasons an agent test can fail for, as the engine names them. */
+const AGENT_TEST_FAILURES = ['unusable', 'not-signed-in', 'unknown-model', 'timeout', 'failed', 'invalid-answer'] as const;
+
+/**
+ * Checks that a value read over the protocol is the agent test's result:
+ * ok with the run's stamp, or the failure's reason and plain message with
+ * whatever stamp the run had.
+ */
+export function isAgentTestResult(value: unknown): value is TestAgentRpcResult {
+  if (!isRecord(value) || !isAgentStamp(value['stamp'])) return false;
+  if (value['ok'] === true) return true;
+  return value['ok'] === false && isOneOf(value['reason'], AGENT_TEST_FAILURES) && isString(value['message']);
 }
 
 /** Checks that a value read over the protocol lists the files marked "Viewed" on GitHub. */

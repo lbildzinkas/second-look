@@ -39,7 +39,7 @@ export interface AgentSettings {
 }
 
 /** Each agent's path setting in the `second-look` section. */
-const AGENT_PATH_SETTINGS: Record<AgentName, string> = { pi: 'piPath', 'claude-code': 'claudeCodePath' };
+export const AGENT_PATH_SETTINGS: Record<AgentName, string> = { pi: 'piPath', 'claude-code': 'claudeCodePath' };
 
 /**
  * Reads each agent's path setting: the executable the engine starts in

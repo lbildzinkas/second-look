@@ -21,6 +21,7 @@ import {
   OPEN_OVERVIEW_COMMAND,
   OPEN_PART_COMMAND,
   OPEN_REVIEW_CONTAINER_COMMAND,
+  OPEN_SETUP_COMMAND,
   REVIEW_COMMAND,
   REVIEW_TREE_VIEW,
   SUBMIT_REVIEW_COMMAND,
@@ -40,6 +41,7 @@ import {
   type TreeSection,
 } from './tree.js';
 import { SideBarProvider } from './side-bar/provider.js';
+import { SetupForm } from './side-bar/setup-form.js';
 import type { SideBarState } from './side-bar/steps.js';
 import { draftTarget, ReviewComments } from './comments.js';
 import { escapeMarkdown, FindingThreads } from './findings.js';
@@ -183,6 +185,8 @@ class ReviewSession {
   private readonly comments: ReviewComments;
   private readonly spawnEngine: ExtensionDeps['spawnEngine'];
   private engine: EngineClient | undefined;
+  /** The handshake under way with the engine, which every request started meanwhile awaits. */
+  private handshake: { engine: EngineClient; done: Promise<void> } | undefined;
   private result: ReviewResult | undefined;
   /** Counts the reviews started, so a replaced review's late answers are dropped. */
   private reviews = 0;
@@ -1002,12 +1006,20 @@ class ReviewSession {
    * The engine, started and past its handshake. The agent, model, effort
    * and account the settings choose travel with each review request, so a
    * settings change needs no engine restart: the next review simply runs
-   * on the chosen agent, and its result is stamped accordingly.
+   * on the chosen agent, and its result is stamped accordingly. Step 1's
+   * setup form probes and tests the agents on it too.
    */
-  private async readyEngine(): Promise<EngineClient> {
+  async readyEngine(): Promise<EngineClient> {
     const engine = this.engine ?? (this.engine = new EngineClient(this.spawnEngine ?? spawnEngineProcess));
     if (!engine.initialized) {
-      await engine.initialize();
+      // The setup form's probe and a review can start together: one handshake serves both.
+      if (this.handshake?.engine !== engine) this.handshake = { engine, done: engine.initialize() };
+      const { done } = this.handshake;
+      try {
+        await done;
+      } finally {
+        if (this.handshake?.done === done) this.handshake = undefined;
+      }
     }
     return engine;
   }
@@ -1034,7 +1046,9 @@ class ReviewSession {
  * whose answer the overview shows, and the command that ticks or clears
  * a part's reviewed mark from the side bar or the banner above its diff,
  * the status bar entry that shows the agent, model and effort in use,
- * and the command it runs, which opens the quick pick that changes them.
+ * and the command it runs, which opens the quick pick that changes them,
+ * and step 1's setup form, which opens by itself on the first open and
+ * from the quick pick's last item.
  * Nothing here runs anything from the workspace — the engine is started
  * from the companion's own install, reads GitHub, and writes only the
  * one review the reviewer sends — and, only with the opt-in mirror
@@ -1048,7 +1062,12 @@ export function activate(
   context: vscode.ExtensionContext,
   deps: ExtensionDeps = {},
 ): SideBarProvider {
-  const sideBar = new SideBarProvider({ settings: readAgentSettings(), marks: NO_MARKS, sections: [], reviewing: false, storyRead: false });
+  const setup: SetupForm = new SetupForm({
+    engine: (): Promise<EngineClient> => session.readyEngine(),
+    globalState: context.globalState,
+    onChange: () => sideBar.redraw(),
+  });
+  const sideBar: SideBarProvider = new SideBarProvider({ settings: readAgentSettings(), marks: NO_MARKS, sections: [], reviewing: false, storyRead: false }, setup);
   const copies = new ChangeCopiesProvider();
   const marker = new PartMarker();
   const comments = new ReviewComments();
@@ -1117,6 +1136,10 @@ export function activate(
     ...ASK_KINDS.map((kind) => vscode.commands.registerCommand(askCommand(kind), (arg?: unknown) => session.ask(kind, arg))),
     vscode.commands.registerCommand(MARK_REVIEWED_COMMAND, (part?: unknown, reviewed?: unknown) => session.markPart(part, reviewed)),
     vscode.commands.registerCommand(CHOOSE_AGENT_COMMAND, () => chooseAgent()),
+    vscode.commands.registerCommand(OPEN_SETUP_COMMAND, async () => {
+      await vscode.commands.executeCommand(OPEN_REVIEW_CONTAINER_COMMAND);
+      setup.open();
+    }),
   );
   return sideBar;
 }

@@ -36,6 +36,7 @@ interface FakeEngineOptions {
   askResult?: unknown;
   askError?: string;
   probeResult?: unknown;
+  testResult?: unknown;
 }
 
 /** Starts the fake engine as a separate process, speaking real stdio. */
@@ -67,6 +68,7 @@ function fakeEngine(options: FakeEngineOptions = {}): ChildProcessWithoutNullStr
       ...(options.askResult !== undefined ? { FAKE_ENGINE_ASK_RESULT: JSON.stringify(options.askResult) } : {}),
       ...(options.askError !== undefined ? { FAKE_ENGINE_ASK_ERROR: options.askError } : {}),
       ...(options.probeResult !== undefined ? { FAKE_ENGINE_PROBE_RESULT: JSON.stringify(options.probeResult) } : {}),
+      ...(options.testResult !== undefined ? { FAKE_ENGINE_TEST_RESULT: JSON.stringify(options.testResult) } : {}),
     },
   });
 }
@@ -346,6 +348,33 @@ describe('EngineClient against a fake engine', () => {
     await odd.initialize();
     await expect(odd.probeAgents()).rejects.toThrow("the engine's answer is not the probe of the installed agents");
     odd.dispose();
+  });
+
+  it('tests the chosen agent, model and effort, answering a failed run as a result, and refuses an answer that is no test result', async () => {
+    const stamp = { agent: 'claude-code', agentVersion: '2.1.296', model: 'claude-sonnet-5-5', effort: 'high', runAt: '2026-10-10T00:00:00.000Z' };
+    const choice = { agent: 'claude-code' as const, model: 'claude-sonnet-5-5', effort: 'high', account: 'work' };
+    const client = new EngineClient(() => fakeEngine({ testResult: { ok: true, stamp }, logName: 'test.log' }));
+    await client.initialize();
+    expect(await client.testAgent(choice)).toEqual({ ok: true, stamp });
+    const request = loggedRequests('test.log').find((each) => (each as { method: string }).method === 'agents/test') as { params: unknown };
+    expect(request.params).toEqual({ agent: choice });
+    client.dispose();
+
+    const failed = { ok: false, reason: 'not-signed-in', message: 'Claude Code is not signed in: run claude login', stamp };
+    const signedOut = new EngineClient(() => fakeEngine({ testResult: failed }));
+    await signedOut.initialize();
+    expect(await signedOut.testAgent(choice)).toEqual(failed);
+    signedOut.dispose();
+
+    const odd = new EngineClient(() => fakeEngine({ testResult: { ok: false, reason: 'unplugged', message: 'x', stamp } }));
+    await odd.initialize();
+    await expect(odd.testAgent(choice)).rejects.toThrow("the engine's answer is not the result of the agent test");
+    odd.dispose();
+
+    const none = new EngineClient(() => fakeEngine());
+    await none.initialize();
+    await expect(none.testAgent(choice)).rejects.toThrow('this engine runs no agent, so it has none to test');
+    none.dispose();
   });
 
   it('refuses a marks answer that is not the reviewed marks', async () => {

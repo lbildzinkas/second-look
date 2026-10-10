@@ -8,7 +8,7 @@ import {
   testedAtText,
   type AgentSettings,
 } from './agent-settings.js';
-import { OPEN_REVIEW_CONTAINER_COMMAND } from './commands.js';
+import { OPEN_SETUP_COMMAND } from './commands.js';
 
 /**
  * The quick change of the agent settings (issue 134), opened by clicking
@@ -34,7 +34,7 @@ export async function chooseAgent(): Promise<void> {
   const picked = await vscode.window.showQuickPick(summaryItems(settings), { title: TITLE, placeHolder: 'Pick what to change' });
   if (picked === undefined) return;
   if (picked.field === undefined) {
-    await vscode.commands.executeCommand(OPEN_REVIEW_CONTAINER_COMMAND);
+    await vscode.commands.executeCommand(OPEN_SETUP_COMMAND);
     return;
   }
   if (picked.field === 'agent') return chooseAgentName(settings);
@@ -151,7 +151,7 @@ async function chooseAccount(settings: AgentSettings): Promise<void> {
  * Writes one agent setting to the user settings, and warns when a
  * workspace setting overrides it, so the choice would not take effect.
  */
-async function writeSetting(field: keyof typeof AGENT_SETTING_KEYS, value: string): Promise<void> {
+export async function writeSetting(field: keyof typeof AGENT_SETTING_KEYS, value: string): Promise<void> {
   await vscode.workspace.getConfiguration('second-look').update(AGENT_SETTING_KEYS[field], value, vscode.ConfigurationTarget.Global);
   if (overrideNote(field) === undefined) return;
   void vscode.window.showWarningMessage(

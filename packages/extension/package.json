@@ -149,6 +149,11 @@
         "command": "second-look.chooseAgent",
         "title": "Choose agent and model",
         "category": "Second Look"
+      },
+      {
+        "command": "second-look.openSetup",
+        "title": "Open the setup in the side bar",
+        "category": "Second Look"
       }
     ],
     "menus": {
@@ -236,6 +241,10 @@
         },
         {
           "command": "second-look.markReviewed",
+          "when": "false"
+        },
+        {
+          "command": "second-look.openSetup",
           "when": "false"
         }
       ],

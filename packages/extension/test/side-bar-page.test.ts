@@ -10,10 +10,11 @@ import {
   SUBMIT_REVIEW_COMMAND,
 } from '../src/commands.js';
 import { SideBarProvider } from '../src/side-bar/provider.js';
+import { SetupForm } from '../src/side-bar/setup-form.js';
 import type { SideBarState } from '../src/side-bar/steps.js';
 import { anchorOf, buildTree, pendingReviewSection } from '../src/tree.js';
 import { mixedResult } from './results.js';
-import { stub, window } from './vscode-stub.js';
+import { ConfigurationTarget, stub, stubContext, window } from './vscode-stub.js';
 
 /**
  * The page's own behaviour, driven end to end: the script the side bar ships
@@ -72,6 +73,17 @@ class Element {
 
   get checked(): boolean {
     return this.attributes.has('checked');
+  }
+
+  /** A text box's text: what the markup gave it, until typing replaces it. */
+  private typed: string | undefined;
+
+  get value(): string {
+    return this.typed ?? this.attributes.get('value') ?? '';
+  }
+
+  set value(value: string) {
+    this.typed = value;
   }
 
   /** Hides or shows the element, as assigning the hidden property does. */
@@ -290,8 +302,8 @@ class LoadedPage {
 }
 
 /** Loads the side bar the way the editor does: the provider resolved, then its page's script run. */
-function loadSideBar(initial: SideBarState): { provider: SideBarProvider; page: LoadedPage; view: (typeof stub.webviewViewProviders)[number] } {
-  const provider = new SideBarProvider(initial);
+function loadSideBar(initial: SideBarState, setup?: SetupForm): { provider: SideBarProvider; page: LoadedPage; view: (typeof stub.webviewViewProviders)[number] } {
+  const provider = new SideBarProvider(initial, setup);
   window.registerWebviewViewProvider(REVIEW_TREE_VIEW, provider);
   const entry = stub.webviewViewProviders[0]!;
   const view = entry.resolve();
@@ -423,5 +435,55 @@ describe("the side bar's page script", () => {
     expect(page.element('step-4-body').getAttribute('role')).toBe('region');
     expect(page.element('step-4-body').getAttribute('aria-labelledby')).toBe('step-4-title');
     expect(page.element('step-3-title').getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it("reports step 1's setup form changes and presses, keeping the text being typed across a redraw", async () => {
+    const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+    const engine = {
+      probeAgents: () => Promise.resolve({ agents: [] }),
+      testAgent: () => Promise.reject(new Error('not pressed')),
+    };
+    // The form redraws the side bar it sits in, which is loaded after it.
+    const drawn: { provider?: SideBarProvider } = {};
+    const setup = new SetupForm({ engine: () => Promise.resolve(engine), globalState: stubContext().globalState as never, onChange: () => drawn.provider?.redraw() });
+    const { provider, page, view } = loadSideBar({ settings: { agent: 'pi', model: '', effort: '', account: '' }, marks: NO_MARKS, sections: [], reviewing: false, storyRead: false }, setup);
+    drawn.provider = provider;
+    await settle();
+    page.render(postedBodies(view).at(-1)!);
+    expect(page.element('step-1').getAttribute('aria-current')).toBe('step');
+
+    // A choice is a radio button; its press changes the form.
+    page.click('setup-agent-claude-code');
+    page.render(postedBodies(view).at(-1)!);
+    expect(page.element('setup-agent-claude-code').getAttribute('aria-checked')).toBe('true');
+    expect(page.element('setup-effort-high').getAttribute('aria-checked')).toBe('true');
+
+    // Text being typed survives a redraw that arrives meanwhile, and keeps the keyboard.
+    page.element('setup-account').focus();
+    page.element('setup-account').value = 'Claude Max';
+    provider.redraw();
+    page.render(postedBodies(view).at(-1)!);
+    expect(page.element('setup-account').value).toBe('Claude Max');
+    expect(page.document.activeElement?.id).toBe('setup-account');
+
+    // Save carries the text as it stands.
+    page.click('setup-save');
+    await settle();
+    expect(stub.configurationUpdates.map(({ key, value, target }) => [key, value, target === ConfigurationTarget.Global])).toEqual([
+      ['second-look.agent', 'claude-code', true],
+      ['second-look.agentModel', 'claude-sonnet-5-5', true],
+      ['second-look.agentEffort', 'high', true],
+      ['second-look.agentAccount', 'Claude Max', true],
+    ]);
+    page.render(postedBodies(view).at(-1)!);
+    expect(page.element('step-1').hasAttribute('aria-current')).toBe(false);
+
+    // The change link opens the form again; a text box reports its change.
+    page.click('step-1-change');
+    await settle();
+    page.render(postedBodies(view).at(-1)!);
+    page.element('setup-account').value = 'personal';
+    page.element('setup-account').dispatch('change');
+    expect(setup.current.draft.account).toBe('personal');
   });
 });
