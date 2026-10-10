@@ -1,5 +1,5 @@
 import { DEFAULT_AGENT_SETTINGS, type AgentSettings } from './agent.js';
-import { AGENT_NAMES, agentAdapter, isAgentName } from './agents.js';
+import { AGENT_NAMES, agentAdapter, isAgentName, modelAndEffortProblem } from './agents.js';
 import { defaultCacheDir } from './cache.js';
 import { readFile } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
@@ -251,7 +251,12 @@ export async function runCli(
     return 1;
   }
   const adapter = agentAdapter(agentName, { pi: deps.pi, claudeCode: deps.claudeCode, env });
+  const tuningProblem = modelAndEffortProblem(agentName, settings);
   if (command === 'serve') {
+    if (tuningProblem) {
+      streams.err.write(`second-look-engine: ${tuningProblem}\n`);
+      return 1;
+    }
     const agent: RpcAgentDeps = {
       adapterFor: (name) => agentAdapter(name, { pi: deps.pi, claudeCode: deps.claudeCode, env }),
       defaultAgent: agentName,
@@ -273,6 +278,10 @@ export async function runCli(
       streams.err.write(`second-look-engine: ${tuning} tunes the agent; pass --agent to run one\n`);
       return 1;
     }
+  }
+  if (tuningProblem) {
+    streams.err.write(`second-look-engine: ${tuningProblem}\n`);
+    return 1;
   }
 
   const token = tokenFlag ?? env['GITHUB_TOKEN'] ?? env['GH_TOKEN'];
