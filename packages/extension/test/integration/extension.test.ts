@@ -27,7 +27,7 @@ import {
   activate,
 } from '../../src/extension.js';
 import { CHANGE_SCHEME, changeUri, libraryUri } from '../../src/change-copies.js';
-import { askCommand } from '../../src/commands.js';
+import { CHOOSE_AGENT_COMMAND, askCommand } from '../../src/commands.js';
 import { escapeMarkdown } from '../../src/findings.js';
 import { SEND_REVIEW_VIEW_TYPE } from '../../src/send-page.js';
 import { claimsResult, criteriaResult, docLinksResult, fetchedResult, judgedResult, mixedResult, offeredResult, storyResult, unexplainedResult } from '../results.js';
@@ -135,6 +135,7 @@ async function reviewWithFakeEngine(options: FakeEngineOptions): Promise<StubTre
     askCommand('verify'),
     askCommand('cover'),
     MARK_REVIEWED_COMMAND,
+    CHOOSE_AGENT_COMMAND,
   ]);
 
   stub.inputBoxResult = PR_URL;
@@ -259,6 +260,7 @@ describe('activating the companion', () => {
       askCommand('verify'),
       askCommand('cover'),
       MARK_REVIEWED_COMMAND,
+      CHOOSE_AGENT_COMMAND,
     ]);
     expect(stub.treeViews.map((view) => view.id)).toEqual([REVIEW_TREE_VIEW]);
     expect(stub.fileSystemProviders.map((entry) => entry.scheme)).toEqual(['second-look-change']);

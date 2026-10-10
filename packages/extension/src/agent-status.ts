@@ -2,17 +2,21 @@ import * as vscode from 'vscode';
 import {
   apiKeyOverrideWarning,
   agentStatusBarText,
+  isAgentChosen,
   readAgentSettings,
   untestedModelWarning,
   type AgentSettings,
 } from './agent-settings.js';
+import { CHOOSE_AGENT_COMMAND } from './commands.js';
 
 /**
  * The status bar entry for the agent in use: the agent, model and effort
  * the settings choose, each default named as such, the account or subscription when labelled, and — for
  * Claude Code started with an inherited Anthropic API key — the warning
- * that the key silently overrides the subscription, with the warning for
- * a combination the evaluation never tested in its tooltip. Every result
+ * that the key silently overrides the subscription. A beaker marks a
+ * combination the evaluation never tested, with the full warning in the
+ * tooltip, and a gear the defaults before the reviewer chose anything.
+ * Clicking it opens the quick pick that changes them (issue 134). Every result
  * the companion shows is stamped with the same agent, version, model,
  * effort, login and account label by the engine, so what the reviewer reads here
  * is what answered.
@@ -25,6 +29,7 @@ export class AgentStatusBar {
   constructor(env: NodeJS.ProcessEnv = process.env) {
     this.env = env;
     this.item = vscode.window.createStatusBarItem('second-look.agent', vscode.StatusBarAlignment.Left);
+    this.item.command = CHOOSE_AGENT_COMMAND;
     this.watchConfiguration = vscode.workspace.onDidChangeConfiguration((change) => {
       if (change.affectsConfiguration('second-look')) this.refresh();
     });
@@ -34,9 +39,11 @@ export class AgentStatusBar {
   refresh(): void {
     const settings = readAgentSettings();
     const warning = apiKeyOverrideWarning(settings, this.env);
-    const text = agentStatusBarText(settings);
-    this.item.text = warning === undefined ? text : `$(warning) ${text}`;
-    this.item.tooltip = tooltip(settings, [warning, untestedModelWarning(settings)]);
+    const untested = untestedModelWarning(settings);
+    const isChosen = isAgentChosen();
+    const icon = warning !== undefined ? '$(warning) ' : untested !== undefined ? '$(beaker) ' : isChosen ? '' : '$(settings-gear) ';
+    this.item.text = `${icon}${agentStatusBarText(settings)}`;
+    this.item.tooltip = tooltip(settings, isChosen, [warning, untested]);
     this.item.backgroundColor =
       warning === undefined ? undefined : new vscode.ThemeColor('statusBarItem.warningBackground');
     this.item.show();
@@ -48,9 +55,10 @@ export class AgentStatusBar {
   }
 }
 
-/** The tooltip: what the entry shows, the lockdown behind it, and any warnings. */
-function tooltip(settings: AgentSettings, warnings: readonly (string | undefined)[]): string {
+/** The tooltip: whether anything is chosen yet, what the entry shows, the lockdown behind it, and any warnings. */
+function tooltip(settings: AgentSettings, isChosen: boolean, warnings: readonly (string | undefined)[]): string {
   const lines = [
+    ...(isChosen ? [] : ['Not chosen yet, click to choose', '']),
     agentStatusBarText(settings),
     '',
     'Second Look drives this agent, locked down, for its model work: file-reading tools only,',

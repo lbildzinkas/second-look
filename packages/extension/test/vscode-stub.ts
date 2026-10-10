@@ -160,8 +160,12 @@ export interface StubState {
   webviewPanels: StubWebviewPanel[];
   /** The hover providers the extension registered, with the documents each serves. */
   hoverProviders: { selector: { scheme?: string }; provider: unknown }[];
-  /** The configuration values `getConfiguration` reads, keyed by `section.key`. */
+  /** The configuration values `getConfiguration` reads, keyed by `section.key`: the user settings. */
   configuration: Record<string, unknown>;
+  /** The workspace settings, keyed the same way, which override the user settings. */
+  workspaceConfiguration: Record<string, unknown>;
+  /** The settings the extension wrote, in order: the key, the value and the target. */
+  configurationUpdates: { key: string; value: unknown; target: unknown }[];
   /** The editors currently visible; tests set these and fire the change. */
   visibleTextEditors: unknown[];
   /** The editor that has focus, with its document and selection; none unless a test sets one. */
@@ -172,7 +176,10 @@ export interface StubState {
   inputBoxResult: string | undefined | Promise<string | undefined>;
   /** The input boxes shown: the title and value each opened with. */
   inputBoxes: { title?: string; value?: string }[];
-  /** What showQuickPick resolves with; undefined reads as dismissed. */
+  /**
+   * What showQuickPick resolves with; undefined reads as dismissed. A
+   * function picks from each quick pick's items in turn, for a flow of picks.
+   */
   quickPickResult: unknown;
   /** The quick picks shown: their titles and the items they offered. */
   quickPicks: { title: string; items: unknown[] }[];
@@ -210,6 +217,8 @@ export const stub: StubState = {
   webviewPanels: [],
   hoverProviders: [],
   configuration: {},
+  workspaceConfiguration: {},
+  configurationUpdates: [],
   visibleTextEditors: [],
   activeTextEditor: undefined,
   files: new Map(),
@@ -237,6 +246,8 @@ export const stub: StubState = {
     stub.webviewPanels = [];
     stub.hoverProviders = [];
     stub.configuration = {};
+    stub.workspaceConfiguration = {};
+    stub.configurationUpdates = [];
     stub.visibleTextEditors = [];
     stub.activeTextEditor = undefined;
     visibleEditorListeners.clear();
@@ -526,7 +537,8 @@ export const window = {
   },
   showQuickPick(items: unknown[], options?: { title?: string }): Promise<unknown> {
     stub.quickPicks.push({ title: options?.title ?? '', items });
-    return Promise.resolve(stub.quickPickResult);
+    const result = stub.quickPickResult;
+    return Promise.resolve(typeof result === 'function' ? (result as (items: unknown[]) => unknown)(items) : result);
   },
   showWarningMessage(message: string): Promise<void> {
     stub.warningMessages.push(message);
@@ -754,11 +766,45 @@ export const env = {
   },
 };
 
+/** Where a settings write lands, as the editor numbers them. */
+export const ConfigurationTarget = {
+  Global: 1,
+  Workspace: 2,
+  WorkspaceFolder: 3,
+} as const;
+
+/** The kinds of quick pick item: a separator, or an item to pick. */
+export const QuickPickItemKind = {
+  Separator: -1,
+  Default: 0,
+} as const;
+
+/** The configuration a section reads: its values, where each is set, and writes to the user settings. */
+export interface StubConfiguration {
+  get<T>(key: string, defaultValue?: T): T | undefined;
+  inspect(key: string): { key: string; globalValue?: unknown; workspaceValue?: unknown; workspaceFolderValue?: unknown };
+  update(key: string, value: unknown, target?: unknown): Promise<void>;
+}
+
 export const workspace = {
-  getConfiguration(section: string): { get<T>(key: string, defaultValue?: T): T | undefined } {
+  getConfiguration(section: string): StubConfiguration {
     return {
       get: <T,>(key: string, defaultValue?: T): T | undefined =>
-        (stub.configuration[`${section}.${key}`] as T | undefined) ?? defaultValue,
+        (stub.workspaceConfiguration[`${section}.${key}`] as T | undefined) ??
+        (stub.configuration[`${section}.${key}`] as T | undefined) ??
+        defaultValue,
+      inspect: (key: string) => ({
+        key: `${section}.${key}`,
+        globalValue: stub.configuration[`${section}.${key}`],
+        workspaceValue: stub.workspaceConfiguration[`${section}.${key}`],
+      }),
+      update: (key: string, value: unknown, target?: unknown): Promise<void> => {
+        stub.configurationUpdates.push({ key: `${section}.${key}`, value, target });
+        const settings = target === ConfigurationTarget.Global ? stub.configuration : stub.workspaceConfiguration;
+        settings[`${section}.${key}`] = value;
+        stub.fireConfigurationChange();
+        return Promise.resolve();
+      },
     };
   },
   onDidChangeConfiguration(

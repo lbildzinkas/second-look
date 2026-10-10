@@ -8,6 +8,7 @@ import {
 import {
   ADD_COMMENT_COMMAND,
   ADD_DRAFT_COMMAND,
+  CHOOSE_AGENT_COMMAND,
   COMMENT_ON_PART_COMMAND,
   DISCARD_COMMENT_COMMAND,
   DISCARD_DRAFT_COMMAND,
@@ -48,6 +49,7 @@ import { DocLinkHovers } from './doc-hover.js';
 import { OverviewPanel, claimWhere } from './overview.js';
 import { partClaims, selectionInPart } from './asked-claim.js';
 import { AgentStatusBar } from './agent-status.js';
+import { chooseAgent } from './agent-picker.js';
 import { isBannerPartRef, PartBanner } from './part-banner.js';
 import { readAgentSettings, reviewAgentChoice, untestedModelWarning } from './agent-settings.js';
 import {
@@ -1108,7 +1110,8 @@ class ReviewSession {
  * discard it, one command for each ask a part's context menu offers,
  * whose answer the overview shows, the parts' reviewed checkboxes and
  * the command that ticks or clears one from the banner above its diff,
- * and the status bar entry that shows the agent, model and effort in use.
+ * the status bar entry that shows the agent, model and effort in use,
+ * and the command it runs, which opens the quick pick that changes them.
  * Nothing here runs anything from the workspace — the engine is started
  * from the companion's own install, reads GitHub, and writes only the
  * one review the reviewer sends — and, only with the opt-in mirror
@@ -1195,6 +1198,7 @@ export function activate(
     ),
     ...ASK_KINDS.map((kind) => vscode.commands.registerCommand(askCommand(kind), (arg?: unknown) => session.ask(kind, arg))),
     vscode.commands.registerCommand(MARK_REVIEWED_COMMAND, (part?: unknown, reviewed?: unknown) => session.markPart(part, reviewed)),
+    vscode.commands.registerCommand(CHOOSE_AGENT_COMMAND, () => chooseAgent()),
   );
   return tree;
 }
