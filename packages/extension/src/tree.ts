@@ -377,7 +377,7 @@ export function treeMessage(result: ReviewResult, running?: string, filter: Tree
 }
 
 /**
- * The tree view's badge: how many parts are left to review, with its
+ * The side bar view's badge: how many parts are left to review, with its
  * tooltip; absent once every part is reviewed.
  */
 export function reviewBadge(result: ReviewResult, marks: ReviewedMarks): { value: number; tooltip: string } | undefined {

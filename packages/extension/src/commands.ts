@@ -1,18 +1,22 @@
 import type { AskKind } from '@second-look/engine';
 
-/** The commands the companion contributes, and the tree view it fills. */
+/** The commands the companion contributes, and the side bar view it fills. */
 export const REVIEW_COMMAND = 'second-look.reviewPullRequest' as const;
 
-/** The side-bar tree view that ranks the parts. */
+/**
+ * The side bar: one webview view carrying the review path's eight steps
+ * (ADR 0008). Its id is the one the native tree had, so the view's focus
+ * command, title buttons and progress keep their place.
+ */
 export const REVIEW_TREE_VIEW = 'second-look.reviewTree' as const;
 
-/** The editor's own command that opens the Activity Bar container the review tree lives in. */
+/** The editor's own command that opens the Activity Bar container the side bar lives in. */
 export const OPEN_REVIEW_CONTAINER_COMMAND = 'workbench.view.extension.second-look' as const;
 
 /** Opens one part's files in the multi-file diff editor. */
 export const OPEN_PART_COMMAND = 'second-look.openPart' as const;
 
-/** Toggles the tree between every part and only the parts changed since the reviewer's last look. */
+/** Toggles the side bar between every part and only the parts changed since the reviewer's last look. */
 export const FILTER_CHANGED_COMMAND = 'second-look.filterChangedSinceLastLook' as const;
 
 /** Opens the whole change in the multi-file diff editor, in ranked order. */
@@ -46,7 +50,7 @@ export const PENDING_THREAD_CONTEXT = 'second-look-pending' as const;
 /** Opens the review's overview: the story, the description and who made each result. */
 export const OPEN_OVERVIEW_COMMAND = 'second-look.openOverview' as const;
 
-/** Opens the overview's story at one part: the tree's "why this matters" on each part. */
+/** Opens the overview's story at one part: the side bar's "why this matters" on each part. */
 export const WHY_THIS_MATTERS_COMMAND = 'second-look.whyThisMatters' as const;
 
 /** The id of the comment controller the companion shows its findings with. */
@@ -85,7 +89,7 @@ export const DRAFT_COMMENT_CONTEXT = 'second-look-draft' as const;
 
 /**
  * The command that makes one ask (the glossary's ask) about a part, from
- * the part's context menu in the tree: one command for each kind in the
+ * the part's context menu in the side bar: one command for each kind in the
  * engine's ask registry, which the manifest declares with the ask's title.
  */
 export function askCommand(kind: AskKind): string {
@@ -93,8 +97,8 @@ export function askCommand(kind: AskKind): string {
 }
 
 /**
- * Marks one part reviewed, or clears its mark: the banner above the part's
- * diff runs it, through the same path as the part's checkbox in the tree.
+ * Marks one part reviewed, or clears its mark: the part's checkbox in the
+ * side bar and the banner above the part's diff both run it.
  */
 export const MARK_REVIEWED_COMMAND = 'second-look.markReviewed' as const;
 

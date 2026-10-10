@@ -41,21 +41,19 @@ function withTimeout<T>(work: PromiseLike<T>, what: string): Promise<T> {
   ]).finally(() => clearTimeout(timer));
 }
 
-function labelOf(item: vscode.TreeItem): string {
-  const label = item.label;
-  return typeof label === 'string' ? label : label?.label ?? '';
+/** What the activation exports: the side bar's provider, with the sections it draws its parts from. */
+interface SideBarExport {
+  current: { sections: readonly { label: string; parts: readonly { label: string }[] }[] };
 }
 
-/** The tree's row labels, in the order the view renders them. */
-async function renderedLabels(provider: vscode.TreeDataProvider<unknown>): Promise<string[]> {
-  const labels: string[] = [];
-  for (const node of (await provider.getChildren()) ?? []) {
-    labels.push(labelOf(await provider.getTreeItem(node)));
-    for (const child of (await provider.getChildren(node)) ?? []) {
-      labels.push(labelOf(await provider.getTreeItem(child)));
-    }
-  }
-  return labels;
+function isSideBarExport(value: unknown): value is SideBarExport {
+  const current = (value as { current?: { sections?: unknown } } | undefined)?.current;
+  return current !== undefined && Array.isArray(current.sections);
+}
+
+/** The side bar's section and part labels, in the order it draws them. */
+function renderedLabels(provider: SideBarExport): string[] {
+  return provider.current.sections.flatMap((section) => [section.label, ...section.parts.map((row) => row.label)]);
 }
 
 /** One line the JSON-RPC engine sent back, as the client reads it. */
@@ -185,23 +183,18 @@ export async function run(): Promise<void> {
     const answer = await packagedEngineHandshake(engineDist);
     deepStrictEqual(answer.result, { protocolVersion: ENGINE_PROTOCOL_VERSION });
 
-    // The activation exported the review tree's data provider, the tree
-    // the command fills.
-    const provider = extension.exports as vscode.TreeDataProvider<unknown> | undefined;
-    ok(
-      provider !== undefined &&
-        typeof provider.getChildren === 'function' &&
-        typeof provider.getTreeItem === 'function',
-      `the ${EXTENSION_ID} activation did not export the review tree's data provider`,
-    );
-    // Before the first review the tree is empty, so the view shows its
-    // welcome button.
-    deepStrictEqual(await renderedLabels(provider), []);
+    // The activation exported the side bar's provider, whose parts the
+    // command fills.
+    const provider: unknown = extension.exports;
+    ok(isSideBarExport(provider), `the ${EXTENSION_ID} activation did not export the side bar's provider`);
+    // Before the first review the side bar has no parts: step 2's card
+    // offers the button that starts one.
+    deepStrictEqual(renderedLabels(provider), []);
 
     // One full review round trip, against the fake engine fixture so no
     // network is touched: the command asks for the GitHub session, sends
     // the handshake and the review to the engine it spawned, and fills
-    // the tree with the ranked parts it got back.
+    // the side bar with the ranked parts it got back.
     const baseDir = join(workDir, 'base');
     const headDir = join(workDir, 'head');
     mkdirSync(baseDir, { recursive: true });
@@ -216,7 +209,7 @@ export async function run(): Promise<void> {
       'the review command',
     );
 
-    deepStrictEqual(await renderedLabels(provider), [
+    deepStrictEqual(renderedLabels(provider), [
       'Must review',
       'src/retry.py',
       'Worth reviewing',
@@ -260,7 +253,7 @@ export async function run(): Promise<void> {
       budget: { agentRuns: 0, filesFetched: 0, downloadMiB: 0 },
     });
     // The review's marks are read from the engine's local store as soon
-    // as the review is under way, so the tree can show what the reviewer
+    // as the review is under way, so the side bar can show what the reviewer
     // had already marked — the round trip's third and last request, and
     // nothing else reaches the engine.
     ok(requests[2] && requests[2].method === 'reviewedMarks');

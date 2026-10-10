@@ -20,14 +20,14 @@ import { mixedResult } from '../results.js';
  * The extension's real-host test: the same review run the stub-based
  * integration test drives, but inside a real VS Code, through the real
  * API — the real activation, the real command registry, the real
- * authentication API, real tree items — and still against the fake
+ * authentication API, the real webview view registration — and still against the fake
  * engine fixture, a plain Node child process, so nothing touches the
  * network. Only CI runs it.
  *
  * The editor activates the extension exactly once, on its own terms, and
  * the registry rejects registering the review command a second time, so
- * this test rides that one activation: it reads the tree through the data
- * provider the activation exported and substitutes the fake engine for
+ * this test rides that one activation: it reads the side bar's parts
+ * through the provider the activation exported and substitutes the fake engine for
  * the real one through the environment, which the extension host already
  * passes to the engine child process it spawns.
  */
@@ -43,7 +43,7 @@ const require = createRequire(import.meta.url);
 const EXTENSION_ROOT = dirname(require.resolve('second-look-extension/package.json'));
 const FAKE_ENGINE = join(EXTENSION_ROOT, 'test', 'fixtures', 'fake-engine.mjs');
 
-/** A tree node as the view renders it. */
+/** A section or a part as the side bar draws it, in the shape the native tree rendered. */
 interface Rendered {
   label: string;
   description?: string;
@@ -72,33 +72,37 @@ function withTimeout<T>(work: PromiseLike<T>, what: string): Promise<T> {
   ]).finally(() => clearTimeout(timer));
 }
 
-function labelOf(item: vscode.TreeItem): string {
-  const label = item.label;
-  return typeof label === 'string' ? label : label?.label ?? '';
+/** One row of the side bar's sections: a part, or a pending comment. */
+interface SideBarRow {
+  label: string;
+  description?: string;
+  tooltip?: string;
+  kind: string;
+  part?: { path: string };
 }
 
-async function renderedItem<T>(
-  provider: vscode.TreeDataProvider<T>,
-  node: T,
-): Promise<Rendered> {
-  const item = await provider.getTreeItem(node);
-  const rendered: Rendered = { label: labelOf(item) };
-  if (typeof item.description === 'string') rendered.description = item.description;
-  if (typeof item.tooltip === 'string') rendered.tooltip = item.tooltip;
-  if (item.contextValue !== undefined) rendered.contextValue = item.contextValue;
-  return rendered;
+/** What the activation exports: the side bar's provider, with the sections it draws its parts from. */
+interface SideBarExport {
+  current: { sections: readonly { label: string; tooltip: string; parts: readonly SideBarRow[] }[] };
 }
 
-/** The tree's nodes, in the order the view renders them. */
-async function renderedTree<T>(provider: vscode.TreeDataProvider<T>): Promise<Rendered[]> {
-  const rendered: Rendered[] = [];
-  for (const node of (await provider.getChildren()) ?? []) {
-    rendered.push(await renderedItem(provider, node));
-    for (const child of (await provider.getChildren(node)) ?? []) {
-      rendered.push(await renderedItem(provider, child));
-    }
-  }
-  return rendered;
+function isSideBarExport(value: unknown): value is SideBarExport {
+  const current = (value as { current?: { sections?: unknown } } | undefined)?.current;
+  return current !== undefined && Array.isArray(current.sections);
+}
+
+/** The side bar's sections and parts, in the order it draws them. */
+function renderedTree(provider: SideBarExport): Rendered[] {
+  return provider.current.sections.flatMap((section) => [
+    { label: section.label, tooltip: section.tooltip },
+    ...section.parts.map((row) => {
+      const rendered: Rendered = { label: row.label };
+      if (row.description !== undefined) rendered.description = row.description;
+      if (row.tooltip !== undefined) rendered.tooltip = row.tooltip;
+      rendered.contextValue = row.kind;
+      return rendered;
+    }),
+  ]);
 }
 
 /** Polls until a probe finds what it waits for, or the test times out. */
@@ -262,30 +266,25 @@ export async function run(): Promise<void> {
     ok(extension, `the ${EXTENSION_ID} extension is not installed in the development host`);
     await withTimeout(extension.activate(), `activation of ${EXTENSION_ID}`);
 
-    // The activation exported the review tree's data provider, the tree
-    // the command fills.
-    const provider = extension.exports as vscode.TreeDataProvider<unknown> | undefined;
-    ok(
-      provider !== undefined &&
-        typeof provider.getChildren === 'function' &&
-        typeof provider.getTreeItem === 'function',
-      `the ${EXTENSION_ID} activation did not export the review tree's data provider`,
-    );
+    // The activation exported the side bar's provider, whose parts the
+    // command fills.
+    const provider: unknown = extension.exports;
+    ok(isSideBarExport(provider), `the ${EXTENSION_ID} activation did not export the side bar's provider`);
 
-    // Before the first review the tree is empty, so the view shows its
-    // welcome button.
-    deepStrictEqual(await renderedTree(provider), []);
+    // Before the first review the side bar has no parts: step 2's card
+    // offers the button that starts one.
+    deepStrictEqual(renderedTree(provider), []);
 
-    // The review tree lives in its own Activity Bar container: the
-    // container opens, and the tree focuses, through the commands the
-    // editor derives from the manifest.
+    // The side bar lives in its own Activity Bar container: the container
+    // opens, and the side bar focuses, through the commands the editor
+    // derives from the manifest.
     await withTimeout(
       vscode.commands.executeCommand('workbench.view.extension.second-look'),
       'opening the Second Look container',
     );
     await withTimeout(
       vscode.commands.executeCommand('second-look.reviewTree.focus'),
-      'focusing the review tree',
+      'focusing the side bar',
     );
 
     await withTimeout(
@@ -293,7 +292,7 @@ export async function run(): Promise<void> {
       'the review command',
     );
 
-    deepStrictEqual(await renderedTree(provider), EXPECTED_TREE);
+    deepStrictEqual(renderedTree(provider), EXPECTED_TREE);
 
     ok(
       sessionsRequested.some((scopes) => scopes?.includes('repo') === true),
@@ -319,7 +318,7 @@ export async function run(): Promise<void> {
       budget: { agentRuns: 0, filesFetched: 0, downloadMiB: 0 },
     });
     // The review's marks are read from the engine's local store as soon
-    // as the review is under way, so the tree can show what the reviewer
+    // as the review is under way, so the side bar can show what the reviewer
     // had already marked — the round trip's third and last request, and
     // nothing else reaches the engine.
     ok(requests[2] && requests[2].method === 'reviewedMarks');
@@ -328,13 +327,10 @@ export async function run(): Promise<void> {
     // Reading a part: clicking it opens the multi-file diff with exactly
     // its files, read-only from the cached copies, scrolled to the part's
     // first hunk.
-    const sections = (await provider.getChildren()) as unknown as {
-      parts?: { label: string; part?: { path: string } }[];
-    }[];
-    const retry = sections
-      .flatMap((section) => section.parts ?? [])
+    const retry = provider.current.sections
+      .flatMap((section) => section.parts)
       .find((row) => row.label === 'src/retry.py')?.part;
-    ok(retry, 'the tree row for src/retry.py carries its part');
+    ok(retry, 'the side bar row for src/retry.py carries its part');
 
     await withTimeout(
       vscode.commands.executeCommand(OPEN_PART_COMMAND, retry),
@@ -370,10 +366,10 @@ export async function run(): Promise<void> {
     );
 
     // The banner above the part's diff (ADR 0007) marks the part reviewed
-    // through the same path as its checkbox in the tree, carrying the part
+    // through the same path as its checkbox in the side bar, carrying the part
     // by where it starts: the engine keeps the mark, and clearing it from
     // the banner clears it there too. The request carries the part as the
-    // store records it — the same identity the tree's checkbox sends.
+    // store records it — the same identity the side bar's checkbox sends.
     const [firstHunk] = review.parts[0]!.hunks;
     const bannerRef = { anchor: { path: 'src/retry.py', hunk: { oldStart: firstHunk!.oldStart, newStart: firstHunk!.newStart } } };
     const markRequests = (): EngineRequest[] =>
@@ -418,7 +414,7 @@ export async function run(): Promise<void> {
         () => undefined,
       );
 
-    // The whole change opens in one multi-file diff, in the tree's order.
+    // The whole change opens in one multi-file diff, in the side bar's order.
     // The host names a multi-file diff editor's tab after its title plus the
     // number of files it holds, so the label settling on every part's count
     // is the whole change reading as one diff.
@@ -457,7 +453,7 @@ export async function run(): Promise<void> {
       'the add-comment command',
     );
     ok(thread.comments.length === 1, 'the comment shows in its thread');
-    const withPending = await renderedTree(provider);
+    const withPending = renderedTree(provider);
     deepStrictEqual(withPending[0], {
       label: 'Pending review',
       tooltip: 'The comments you wrote, sent to GitHub as one review on submit.',
@@ -521,7 +517,7 @@ export async function run(): Promise<void> {
         ],
       },
     });
-    deepStrictEqual(await renderedTree(provider), EXPECTED_TREE);
+    deepStrictEqual(renderedTree(provider), EXPECTED_TREE);
   } finally {
     delete process.env['SECOND_LOOK_ENGINE_ENTRY'];
     delete process.env['FAKE_ENGINE_RESULT'];

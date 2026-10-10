@@ -262,55 +262,30 @@
           "group": "inline@2"
         }
       ],
-      "view/item/context": [
+      "webview/context": [
         {
           "command": "second-look.commentOnPart",
-          "when": "view == second-look.reviewTree && viewItem == part",
-          "group": "navigation"
-        },
-        {
-          "command": "second-look.commentOnPart",
-          "when": "view == second-look.reviewTree && viewItem == noise",
+          "when": "webviewId == 'second-look.reviewTree' && webviewSection == 'part'",
           "group": "navigation"
         },
         {
           "command": "second-look.whyThisMatters",
-          "when": "view == second-look.reviewTree && viewItem == part",
-          "group": "inline"
-        },
-        {
-          "command": "second-look.whyThisMatters",
-          "when": "view == second-look.reviewTree && viewItem == noise",
-          "group": "inline"
+          "when": "webviewId == 'second-look.reviewTree' && webviewSection == 'part'",
+          "group": "navigation"
         },
         {
           "command": "second-look.ask.explain",
-          "when": "view == second-look.reviewTree && viewItem == part",
-          "group": "asks"
-        },
-        {
-          "command": "second-look.ask.explain",
-          "when": "view == second-look.reviewTree && viewItem == noise",
+          "when": "webviewId == 'second-look.reviewTree' && webviewSection == 'part'",
           "group": "asks"
         },
         {
           "command": "second-look.ask.verify",
-          "when": "view == second-look.reviewTree && viewItem == part",
-          "group": "asks"
-        },
-        {
-          "command": "second-look.ask.verify",
-          "when": "view == second-look.reviewTree && viewItem == noise",
+          "when": "webviewId == 'second-look.reviewTree' && webviewSection == 'part'",
           "group": "asks"
         },
         {
           "command": "second-look.ask.cover",
-          "when": "view == second-look.reviewTree && viewItem == part",
-          "group": "asks"
-        },
-        {
-          "command": "second-look.ask.cover",
-          "when": "view == second-look.reviewTree && viewItem == noise",
+          "when": "webviewId == 'second-look.reviewTree' && webviewSection == 'part'",
           "group": "asks"
         }
       ]
@@ -327,17 +302,12 @@
     "views": {
       "second-look": [
         {
+          "type": "webview",
           "id": "second-look.reviewTree",
           "name": "Second Look"
         }
       ]
     },
-    "viewsWelcome": [
-      {
-        "view": "second-look.reviewTree",
-        "contents": "Review a pull request to see its parts here, ranked by importance.\n[Review a pull request](command:second-look.reviewPullRequest)"
-      }
-    ],
     "configuration": {
       "title": "Second Look",
       "properties": {
