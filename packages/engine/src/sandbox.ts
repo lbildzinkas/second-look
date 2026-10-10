@@ -80,10 +80,13 @@ export function imageProblem(image: string): string | undefined {
 /** The longest output one run keeps: its last few KiB. */
 const OUTPUT_TAIL_CHARS = 8 * 1024;
 
-/** How long the version query, the pull and the kill may take. */
+/** How long the version query and the pull may take, and how long one stop may keep retrying its kill. */
 const VERSION_TIMEOUT_MS = 15_000;
 const PULL_TIMEOUT_MS = 10 * 60 * 1000;
 const KILL_TIMEOUT_MS = 15_000;
+
+/** How often a stop retries its kill, while the container is still being created. */
+const KILL_RETRY_MS = 250;
 
 /** How the reviewer gets a runtime, as a missing or silent one's message says. */
 const INSTALL_HINT =
@@ -420,9 +423,10 @@ export interface SandboxRunRequest {
  * Runs a command in the head copy inside a locked-down container. The
  * pinned image is pulled first, as a step of its own; the copy then
  * streams in as a tar archive on stdin. The container is stopped by its
- * name — `docker kill` or `podman kill` — when the time limit passes or
- * the engine is told to stop. Refuses an image without a digest, and an
- * empty command, before anything runs.
+ * name — `docker kill` or `podman kill`, retried while the container is
+ * still being created — when the time limit passes or the engine is
+ * told to stop. Refuses an image without a digest, and an empty
+ * command, before anything runs.
  */
 export async function runSandboxed(request: SandboxRunRequest, deps: Pick<SandboxDeps, 'env' | 'start'> = {}): Promise<SandboxRun> {
   const { runtime, image, copy } = request;
@@ -439,14 +443,36 @@ export async function runSandboxed(request: SandboxRunRequest, deps: Pick<Sandbo
   }
 
   const startedAt = new Date();
-  let killing: Promise<void> | undefined;
-  const kill = (): Promise<void> =>
-    (killing ??= runToEnd(start, runtime.path, ['kill', name], env, KILL_TIMEOUT_MS).then(() => undefined));
-  const child = trackAgentChild(start(runtime.path, args, env), kill);
+  let stopReason: string | undefined;
+  let killedByStop = false;
+  let closed = false;
+  /**
+   * The one stop of the run, shared by the time limit and the engine's
+   * exit: a kill by the container's name, retried while the container is
+   * still being created, until the run CLI has closed or the stop's own
+   * time limit has passed.
+   */
+  let stopping: Promise<void> | undefined;
+  const stopContainer = (): Promise<void> =>
+    (stopping ??= new Promise<void>((resolve) => {
+      const deadline = Date.now() + KILL_TIMEOUT_MS;
+      const attempt = (): void => {
+        if (closed) {
+          resolve();
+          return;
+        }
+        void runToEnd(start, runtime.path, ['kill', name], env, Math.max(deadline - Date.now(), 0)).then(({ code }) => {
+          if (code === 0) killedByStop = true;
+          if (killedByStop || closed || Date.now() >= deadline) resolve();
+          else setTimeout(attempt, KILL_RETRY_MS);
+        });
+      };
+      attempt();
+    }));
+  const child = trackAgentChild(start(runtime.path, args, env), stopContainer);
 
   return new Promise<SandboxRun>((resolve, reject) => {
     let output = '';
-    let stoppedBy: string | undefined;
     const keep = (chunk: string): void => {
       output = (output + chunk).slice(-OUTPUT_TAIL_CHARS);
     };
@@ -463,8 +489,8 @@ export async function runSandboxed(request: SandboxRunRequest, deps: Pick<Sandbo
     if (child.stdin) archive.pipe(child.stdin);
 
     const timer = setTimeout(() => {
-      stoppedBy = `stopped after the time limit of ${Math.round(limits.timeoutMs / 1000)} s`;
-      void kill();
+      stopReason = `stopped after the time limit of ${Math.round(limits.timeoutMs / 1000)} s`;
+      void stopContainer();
     }, limits.timeoutMs);
     child.once('error', (error) => {
       clearTimeout(timer);
@@ -472,19 +498,24 @@ export async function runSandboxed(request: SandboxRunRequest, deps: Pick<Sandbo
       reject(new Error(`${runtime.name} could not be started: ${error.message}`));
     });
     child.once('close', (code) => {
+      closed = true;
       clearTimeout(timer);
       archive.destroy();
-      if (stoppedBy === undefined && killing !== undefined) stoppedBy = 'stopped because the engine was told to stop';
-      resolve({
-        runtime: runtime.name,
-        runtimeVersion: runtime.version,
-        image,
-        commit: copy.commit,
-        argv,
-        exitCode: stoppedBy === undefined ? code : null,
-        output: stoppedBy === undefined ? output : `${output}\n(${stoppedBy})`.slice(-OUTPUT_TAIL_CHARS),
-        startedAt: startedAt.toISOString(),
-        durationMs: Date.now() - startedAt.getTime(),
+      // A stop still working holds the verdict on whether the run was
+      // stopped or had already ended on its own.
+      void (stopping ?? Promise.resolve()).then(() => {
+        const stopped = killedByStop ? (stopReason ?? 'stopped because the engine was told to stop') : undefined;
+        resolve({
+          runtime: runtime.name,
+          runtimeVersion: runtime.version,
+          image,
+          commit: copy.commit,
+          argv,
+          exitCode: stopped === undefined ? code : null,
+          output: stopped === undefined ? output : `${output}\n(${stopped})`.slice(-OUTPUT_TAIL_CHARS),
+          startedAt: startedAt.toISOString(),
+          durationMs: Date.now() - startedAt.getTime(),
+        });
       });
     });
   });

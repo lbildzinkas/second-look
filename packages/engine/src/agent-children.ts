@@ -14,7 +14,8 @@ const running = new Map<ChildProcess, (() => Promise<void>) | undefined>();
 /**
  * Remembers one agent child the engine started, until it closes. `stop`
  * replaces the request to stop with SIGTERM, for a child that a signal
- * would not stop, such as a container's runtime CLI.
+ * would not stop, such as a container's runtime CLI; it is waited for to
+ * its end, so it bounds its own stopping.
  */
 export function trackAgentChild<T extends ChildProcess>(child: T, stop?: () => Promise<void>): T {
   running.set(child, stop);
@@ -24,33 +25,33 @@ export function trackAgentChild<T extends ChildProcess>(child: T, stop?: () => P
 
 /**
  * Stops every agent child the engine has running. Each is asked to stop
- * with SIGTERM, or its own way, whatever is still running after `graceMs`
- * is killed outright, and the returned promise settles once every child
- * is going down: when they have all closed and every stop of their own
- * has finished, or right after the kills at the latest.
+ * with SIGTERM, or its own way — a stop of its own is waited for to its
+ * end, within the bound it keeps itself — and whatever is still running
+ * `graceMs` after that is killed outright. The returned promise settles
+ * once every child is going down: closed, or killed outright at the
+ * latest.
  */
 export function stopAgentChildren(graceMs = 2000): Promise<void> {
   const children = [...running];
   running.clear();
   if (children.length === 0) return Promise.resolve();
-  const stops = children.map(([child, stop]) => {
-    if (stop) return stop().catch(() => undefined);
-    child.kill('SIGTERM');
-    return Promise.resolve();
-  });
-  return new Promise<void>((resolve) => {
-    const stragglers = setTimeout(() => {
-      for (const [child] of children) child.kill('SIGKILL');
-      resolve();
-    }, graceMs);
-    void Promise.all([
-      ...stops,
-      ...children.map(([child]) => new Promise<void>((closed) => child.once('close', () => closed()))),
-    ]).then(() => {
-      clearTimeout(stragglers);
-      resolve();
-    });
-  });
+  return Promise.all(
+    children.map(async ([child, stop]) => {
+      const closed = new Promise<void>((resolve) => child.once('close', () => resolve()));
+      if (stop) await stop().catch(() => undefined);
+      else child.kill('SIGTERM');
+      await new Promise<void>((resolve) => {
+        const straggler = setTimeout(() => {
+          child.kill('SIGKILL');
+          resolve();
+        }, graceMs);
+        void closed.then(() => {
+          clearTimeout(straggler);
+          resolve();
+        });
+      });
+    }),
+  ).then(() => undefined);
 }
 
 /**

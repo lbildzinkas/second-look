@@ -16,7 +16,7 @@ import {
   tarCopy,
   type SandboxRuntime,
 } from '../src/sandbox.js';
-import { answering, fakeRuntime, type FakeChild } from './fake-runtime.js';
+import { answering, fakeRuntime, type FakeCall, type FakeChild } from './fake-runtime.js';
 
 const IMAGE = `node@sha256:${'ab'.repeat(32)}`;
 const RUNTIME: SandboxRuntime = { name: 'docker', path: '/usr/local/bin/docker', version: '29.1.3' };
@@ -311,6 +311,90 @@ describe('runSandboxed', () => {
     expect(runtime.calls[1]!.child.killed).toEqual([]);
     expect(run.exitCode).toBeNull();
     expect(run.output).toContain('(stopped because the engine was told to stop)');
+  });
+
+  /** A runtime whose container is created only after a first kill has missed it. */
+  function createdLate(): ReturnType<typeof fakeRuntime> {
+    let run: FakeCall | undefined;
+    let kills = 0;
+    return fakeRuntime((call) => {
+      if (call.args[0] === 'run') {
+        run = call;
+        return;
+      }
+      if (call.args[0] === 'kill') {
+        kills += 1;
+        if (kills > 1) {
+          run!.child.finish(137, 'killed\n');
+          call.child.finish(0);
+          return;
+        }
+        call.child.finish(1, `Error response from daemon: No such container: ${call.args[1]}`);
+        return;
+      }
+      call.child.finish(0);
+    });
+  }
+
+  it('kills a container still being created, once it exists, when the engine is told to stop', async () => {
+    const copy = readOnlyCopy(copyFiles);
+    const runtime = createdLate();
+    const running = runSandboxed(
+      { runtime: RUNTIME, image: IMAGE, copy: { commit: COMMIT, path: copy }, argv: ['sleep', '600'] },
+      { start: runtime.start, env: {} },
+    );
+    while (runtime.calls.length < 2) await new Promise((resolve) => setImmediate(resolve));
+
+    await stopAgentChildren(1000);
+    const run = await running;
+
+    const name = runtime.calls[1]!.args[runtime.calls[1]!.args.indexOf('--name') + 1];
+    expect(runtime.calls.filter((call) => call.args[0] === 'kill').map((call) => call.args)).toEqual([
+      ['kill', name],
+      ['kill', name],
+    ]);
+    expect(runtime.calls[1]!.child.killed).toEqual([]);
+    expect(run.exitCode).toBeNull();
+    expect(run.output).toContain('(stopped because the engine was told to stop)');
+  });
+
+  /** A runtime whose container has already exited and been removed when the kill arrives. */
+  function exitedBeforeKill(): ReturnType<typeof fakeRuntime> {
+    let run: FakeCall | undefined;
+    let kills = 0;
+    return fakeRuntime((call) => {
+      if (call.args[0] === 'run') {
+        run = call;
+        return;
+      }
+      if (call.args[0] === 'kill') {
+        kills += 1;
+        call.child.finish(1, `Error response from daemon: No such container: ${call.args[1]}`);
+        if (kills === 1) run!.child.finish(0, 'done\n');
+        return;
+      }
+      call.child.finish(0);
+    });
+  }
+
+  it('reports the run’s real exit code when the container already ended before the kill', async () => {
+    const copy = readOnlyCopy(copyFiles);
+    const runtime = exitedBeforeKill();
+    const run = await runSandboxed(
+      {
+        runtime: RUNTIME,
+        image: IMAGE,
+        copy: { commit: COMMIT, path: copy },
+        argv: ['sleep', '600'],
+        limits: { ...DEFAULT_SANDBOX_LIMITS, timeoutMs: 50 },
+      },
+      { start: runtime.start, env: {} },
+    );
+
+    expect(runtime.calls.some((call) => call.args[0] === 'kill')).toBe(true);
+    expect(runtime.calls[1]!.child.killed).toEqual([]);
+    expect(run.exitCode).toBe(0);
+    expect(run.output).toBe('done\n');
   });
 });
 
