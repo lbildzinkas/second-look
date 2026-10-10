@@ -693,6 +693,66 @@ describe('runRpcServer with an agent', () => {
     expect(pi.requests).toHaveLength(0);
     expect(claude.requests).toHaveLength(0);
   });
+
+  it('checks the served effort against the agent that would run it, never passing on one it does not accept', async () => {
+    const pi = namedAgent('pi', 'pi/model');
+    const claude = namedAgent('claude-code', 'claude/model');
+    // Served with an effort Pi accepts and Claude Code does not.
+    const deps: RpcAgentDeps = {
+      adapterFor: (name) => (name === 'pi' ? pi : claude),
+      defaultAgent: 'pi',
+      settings: { timeoutMs: 10_000, concurrency: 1, effort: 'minimal' },
+    };
+    const switched = await serveWithAgent(
+      [
+        request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+        request('review', { url: PR_7_URL, token: TOKEN, agent: { agent: 'claude-code' } }, 2),
+      ],
+      deps,
+    );
+    // Served with that effort for Claude Code, without the command line's check.
+    const unchecked = await serveWithAgent(
+      [
+        request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+        request('review', { url: PR_7_URL, token: TOKEN }, 2),
+        request('draftComment', { url: PR_7_URL, finding: { kind: 'claim', index: 0 } }, 3),
+      ],
+      { ...deps, defaultAgent: 'claude-code' },
+    );
+
+    // Switching agents without an effort asks for the new agent's own default.
+    expect(switched(2).result).toBeDefined();
+    expect(claude.requests.length).toBeGreaterThan(0);
+    expect(claude.requests.every((run) => run.effort === undefined)).toBe(true);
+    const ran = claude.requests.length;
+    expect(unchecked(2).error).toMatchObject({ code: JSON_RPC_INVALID_PARAMS });
+    expect(unchecked(2).error!.message).toBe(
+      'review: claude-code does not accept the effort "minimal": choose low, medium, high, xhigh, max, or leave it empty for the agent\'s own default',
+    );
+    expect(unchecked(3).error).toMatchObject({ code: JSON_RPC_INVALID_PARAMS });
+    expect(unchecked(3).error!.message).toContain('claude-code does not accept the effort "minimal"');
+    expect(claude.requests).toHaveLength(ran);
+    expect(pi.requests).toHaveLength(0);
+  });
+
+  it('refuses a model or effort the test run would take that is not a plain identifier, before any agent starts', async () => {
+    const pi = namedAgent('pi', 'pi/model');
+    const deps: RpcAgentDeps = { adapterFor: () => pi, defaultAgent: 'pi', settings: { timeoutMs: 10_000, concurrency: 1 } };
+    const answers = await serveWithAgent(
+      [
+        request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+        request('agents/test', { agent: { agent: 'pi', model: '--help' } }, 2),
+        request('agents/test', { agent: { agent: 'pi', effort: 'turbo' } }, 3),
+      ],
+      deps,
+    );
+
+    expect(answers(2).error).toMatchObject({ code: JSON_RPC_INVALID_PARAMS });
+    expect(answers(2).error!.message).toContain('the model "--help" is not a plain name');
+    expect(answers(3).error).toMatchObject({ code: JSON_RPC_INVALID_PARAMS });
+    expect(answers(3).error!.message).toContain('pi does not accept the effort "turbo"');
+    expect(pi.requests).toHaveLength(0);
+  });
 });
 
 describe('runRpcServer fetching a library', () => {
