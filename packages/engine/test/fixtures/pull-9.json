@@ -1,0 +1,29 @@
+{
+  "url": "https://api.github.com/repos/example-org/example-repo/pulls/9",
+  "id": 123456009,
+  "html_url": "https://github.com/example-org/example-repo/pull/9",
+  "number": 9,
+  "state": "open",
+  "locked": false,
+  "title": "Bump left-pad for the workspace",
+  "user": {
+    "login": "reviewer-login",
+    "id": 1000,
+    "type": "User"
+  },
+  "body": "Bumps left-pad for the workspace root and refreshes the lock file.",
+  "created_at": "2026-10-01T09:00:00Z",
+  "updated_at": "2026-10-01T09:30:00Z",
+  "head": {
+    "ref": "bump-left-pad",
+    "sha": "9999999999999999999999999999999999999999"
+  },
+  "base": {
+    "ref": "master",
+    "sha": "5555555555555555555555555555555555555555"
+  },
+  "mergeable": true,
+  "additions": 5,
+  "deletions": 5,
+  "changed_files": 2
+}

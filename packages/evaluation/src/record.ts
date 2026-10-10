@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import {
   fetchChange,
   filesNaming,
+  lockfileManifests,
   parsePullRequestUrl,
   pathInCopy,
   reviewChange,
@@ -57,6 +58,20 @@ export async function recordCase(url: string, options: RecordOptions): Promise<s
   const names = new Set(live.parts.flatMap((part) => part.signals?.references.names ?? []));
   for (const naming of (await filesNaming(head.path, names)).values()) {
     for (const path of naming) headPaths.add(path);
+  }
+  // A pull request may touch a lock file while leaving the manifests
+  // that explain it — its own, and its workspace members' — out of the
+  // diff; the review reads them beside the lock file, so the case
+  // carries them on both sides and the replay assesses the lock file
+  // exactly as the live review did.
+  const changedPaths = [
+    ...new Set(live.parts.flatMap((part) => [part.path, part.previousPath ?? part.path])),
+  ];
+  for (const copy of [base.path, head.path]) {
+    for (const manifest of await lockfileManifests(changedPaths, copy)) {
+      basePaths.add(manifest);
+      headPaths.add(manifest);
+    }
   }
   try {
     await copyFiles(base.path, join(folder, 'base'), basePaths);

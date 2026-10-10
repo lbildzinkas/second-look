@@ -257,7 +257,8 @@ describe('package-lock.json', () => {
       side(lockV2('9.9.9'), [manifest('^1.3.0')]),
     );
     expect(check.outcome).toBe('unexplained');
-    expect(check.blindSpot).toContain('the dependencies mirror entry (content changed)');
+    expect(check.blindSpot).toContain('left-pad@9.9.9');
+    expect(check.blindSpot).toContain('left-pad@1.3.0 (content changed)');
   });
 
   it('confirms a bump that regenerates the legacy mirror with it', () => {
@@ -288,6 +289,110 @@ describe('package-lock.json', () => {
       side(regenerated('2.0.0'), [manifest('^2.0.0')]),
     );
     expect(check.outcome).toBe('confirmed');
+  });
+
+  // The mirror npm 7/8 writes beside `packages`, with a workspace member:
+  // its own entry in the mirror carries `file:` naming its folder, and
+  // its dependencies under `requires`.
+  const memberMirrorLock = (
+    isEvenSpec: string,
+    isEvenVersion: string,
+    mirror: { withWeb?: boolean; smuggled?: boolean; smuggledRequire?: boolean } = {},
+  ): string =>
+    JSON.stringify({
+      name: 'app',
+      lockfileVersion: 2,
+      packages: {
+        '': { name: 'app', workspaces: ['packages/*'], dependencies: { 'left-pad': '^1.3.0' } },
+        ...(mirror.withWeb === false
+          ? {}
+          : {
+              'packages/web': { name: 'web', version: '1.0.0', dependencies: { 'is-even': isEvenSpec } },
+              'node_modules/web': { resolved: 'packages/web', link: true },
+            }),
+        'node_modules/is-even': { version: isEvenVersion },
+        'node_modules/left-pad': { version: '1.3.0' },
+      },
+      dependencies: {
+        'is-even': { version: isEvenVersion },
+        'left-pad': { version: '1.3.0' },
+        ...(mirror.withWeb === false
+          ? {}
+          : {
+              web: {
+                version: 'file:packages/web',
+                requires: {
+                  'is-even': isEvenSpec,
+                  ...(mirror.smuggledRequire === true ? { 'evil-pkg': '*' } : {}),
+                },
+              },
+            }),
+        ...(mirror.smuggled === true
+          ? {
+              'evil-pkg': {
+                version: '6.6.6',
+                resolved: 'https://evil.example/evil-pkg/-/evil-pkg-6.6.6.tgz',
+                integrity: 'sha512-evil',
+              },
+            }
+          : {}),
+      },
+    });
+  const evenWeb = (isEvenSpec: string): WorkspaceMember => ({
+    dir: 'packages/web',
+    manifest: JSON.stringify({
+      name: 'web',
+      version: '1.0.0',
+      dependencies: { 'is-even': isEvenSpec },
+    }),
+  });
+
+  it('confirms a member bump that regenerates the legacy mirror with it', () => {
+    const check = confirmed(
+      format('package-lock.json'),
+      side(memberMirrorLock('^1.0.0', '1.0.0'), [manifest('^1.3.0')], [evenWeb('^1.0.0')]),
+      side(memberMirrorLock('^2.0.0', '2.0.0'), [manifest('^1.3.0')], [evenWeb('^2.0.0')]),
+    );
+    expect(check.outcome).toBe('confirmed');
+  });
+
+  it('confirms adding a workspace member whose legacy mirror entry arrives with it', () => {
+    const check = confirmed(
+      format('package-lock.json'),
+      side(memberMirrorLock('^1.0.0', '1.0.0', { withWeb: false }), [manifest('^1.3.0')]),
+      side(memberMirrorLock('^1.0.0', '1.0.0'), [manifest('^1.3.0')], [evenWeb('^1.0.0')]),
+    );
+    expect(check.outcome).toBe('confirmed');
+  });
+
+  it('stays claimed and names a mirror-only entry smuggled in beside a member bump', () => {
+    const check = confirmed(
+      format('package-lock.json'),
+      side(memberMirrorLock('^1.0.0', '1.0.0'), [manifest('^1.3.0')], [evenWeb('^1.0.0')]),
+      side(
+        memberMirrorLock('^2.0.0', '2.0.0', { smuggled: true }),
+        [manifest('^1.3.0')],
+        [evenWeb('^2.0.0')],
+      ),
+    );
+    expect(check.outcome).toBe('unexplained');
+    expect(check.blindSpot).toContain('evil-pkg@6.6.6');
+    expect(check.blindSpot).not.toContain('is-even');
+    expect(check.blindSpot).not.toContain('packages/web');
+  });
+
+  it("stays claimed and names a dependency smuggled into the member's mirror entry", () => {
+    const check = confirmed(
+      format('package-lock.json'),
+      side(memberMirrorLock('^1.0.0', '1.0.0'), [manifest('^1.3.0')], [evenWeb('^1.0.0')]),
+      side(
+        memberMirrorLock('^2.0.0', '2.0.0', { smuggledRequire: true }),
+        [manifest('^1.3.0')],
+        [evenWeb('^2.0.0')],
+      ),
+    );
+    expect(check.outcome).toBe('unexplained');
+    expect(check.blindSpot).toContain('the packages/web entry (content changed)');
   });
 
   const memberLock = (

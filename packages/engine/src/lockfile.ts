@@ -67,9 +67,8 @@ function under(dir: string, name: string): string {
  * One lock file read by package name: the versions present (each with a
  * fingerprint of its whole entry, so a hand-edited hash is a change too),
  * the dependency edges the lock file itself records, fingerprints of the
- * entries no package name covers (npm's legacy mirror and NuGet's
- * libraries section), and the lock's own records of the workspace's
- * projects by directory, which their manifests' changes explain.
+ * entries no package name covers (NuGet's libraries section), and the
+ * lock's own records of the workspace's projects by directory, which their manifests' changes explain.
  */
 interface LockIndex {
   versions: Map<string, Map<string, Set<string>>>;
@@ -210,14 +209,16 @@ const NPM_REMOTE_KEYS = ['link', 'resolved', 'integrity'] as const;
 
 /**
  * One npm folder record — the root's or a workspace folder's — with the
- * node_modules link stubs that point at it. Local only when the record
- * itself fetches nothing and every stub is a bare link named after the
- * package the folder holds.
+ * node_modules link stubs and the legacy mirror's own entries for it.
+ * Local only when the record itself fetches nothing, every stub is a
+ * bare link named after the package the folder holds, and every mirror
+ * entry fetches nothing either.
  */
 function npmProjectRecord(
   dir: string,
   raw: Record<string, unknown>,
   stubs: readonly (readonly [string, Record<string, unknown>])[],
+  mirrors: readonly (readonly [string, Record<string, unknown>])[],
 ): ProjectRecord {
   const name = typeof raw['name'] === 'string' ? raw['name'] : undefined;
   const linkName = name ?? basename(dir);
@@ -226,25 +227,70 @@ function npmProjectRecord(
     const dependencies = raw[table];
     if (isRecord(dependencies)) for (const dependency of Object.keys(dependencies)) edges.add(dependency);
   }
+  // The legacy mirror records a project's own dependencies under `requires`.
+  for (const [, mirror] of mirrors) {
+    const requires = mirror['requires'];
+    if (isRecord(requires)) for (const dependency of Object.keys(requires)) edges.add(dependency);
+  }
   const sorted = [...stubs].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  const mirrored = [...mirrors].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   return {
     display: dir === '.' ? 'the root entry' : `the ${dir} entry`,
-    fingerprint: stableStringify([raw, sorted]),
+    fingerprint: stableStringify([raw, sorted, mirrored]),
     name,
     edges,
     local:
       NPM_REMOTE_KEYS.every((key) => raw[key] === undefined) &&
       sorted.every(
         ([key, stub]) => Object.keys(stub).length === 2 && npmNameFromKey(key) === linkName,
-      ),
+      ) &&
+      mirrored.every(([, mirror]) => NPM_REMOTE_KEYS.every((key) => mirror[key] === undefined)),
   };
 }
 
 /**
+ * Walks one npm `dependencies` tree into per-name entries — the whole of
+ * a v1 lock, or the legacy mirror a lockfileVersion 2 lock writes beside
+ * `packages` — so a mirror-only addition or divergence is a named changed
+ * entry on its own. A declared member's own entry, whose version is
+ * `file:` naming its folder, mirrors that member's manifest like its
+ * folder record does, so it is collected for the project records the
+ * caller builds instead; the v1 form has no folder records, so nothing
+ * is ever collected for it. Returns the collected entries by folder.
+ */
+function walkNpmDependencies(
+  index: LockIndex,
+  entries: Record<string, unknown>,
+  memberDirs: ReadonlySet<string>,
+): Map<string, [string, Record<string, unknown>][]> {
+  const mirrors = new Map<string, [string, Record<string, unknown>][]>();
+  const walk = (entries: Record<string, unknown>): void => {
+    for (const [name, raw] of Object.entries(entries)) {
+      if (!isRecord(raw)) continue;
+      const version = raw['version'];
+      const dir =
+        typeof version === 'string' && version.startsWith('file:')
+          ? version.slice('file:'.length)
+          : undefined;
+      if (dir !== undefined && memberDirs.has(dir)) {
+        mirrors.set(dir, [...(mirrors.get(dir) ?? []), [name, raw]]);
+      } else {
+        recordNpmEntry(index, name, raw);
+      }
+      const nested = raw['dependencies'];
+      if (isRecord(nested)) walk(nested);
+    }
+  };
+  walk(entries);
+  return mirrors;
+}
+
+/**
  * package-lock.json, in the `packages` form (v2 and v3) or the v1 form.
- * In the `packages` form every folder record is a project record, and a
+ * In the `packages` form every folder record is a project record, a
  * link stub pointing at a declared member's folder belongs to that
- * member's record; any other link stays an entry like a package.
+ * member's record, and so does the member's own `file:` entry in the
+ * legacy mirror; any other link stays an entry like a package.
  */
 function readNpmLock(text: string, members: readonly WorkspaceMember[]): LockIndex | undefined {
   let doc: unknown;
@@ -276,27 +322,28 @@ function readNpmLock(text: string, members: readonly WorkspaceMember[]): LockInd
       }
       recordNpmEntry(index, name, raw);
     }
-    for (const [dir, raw] of folders) index.projects.set(dir, npmProjectRecord(dir, raw, stubs.get(dir) ?? []));
-    // A stub whose member folder has no record of its own stays an entry like a package.
+    const mirror = doc['dependencies'];
+    const mirrors = isRecord(mirror)
+      ? walkNpmDependencies(index, mirror, memberDirs)
+      : new Map<string, [string, Record<string, unknown>][]>();
+    for (const [dir, raw] of folders) {
+      index.projects.set(dir, npmProjectRecord(dir, raw, stubs.get(dir) ?? [], mirrors.get(dir) ?? []));
+    }
+    // A stub, or a mirror entry, whose member folder has no record of its
+    // own stays an entry like a package.
     for (const [target, linked] of stubs) {
       if (folders.has(target)) continue;
       for (const [key, raw] of linked) recordNpmEntry(index, npmNameFromKey(key)!, raw);
     }
-    const mirror = doc['dependencies'];
-    if (isRecord(mirror)) index.roots.set('dependencies mirror', stableStringify(mirror));
+    for (const [dir, mirrored] of mirrors) {
+      if (folders.has(dir)) continue;
+      for (const [name, raw] of mirrored) recordNpmEntry(index, name, raw);
+    }
     return index;
   }
   const dependencies = doc['dependencies'];
   if (isRecord(dependencies)) {
-    const walk = (entries: Record<string, unknown>): void => {
-      for (const [name, raw] of Object.entries(entries)) {
-        if (!isRecord(raw)) continue;
-        recordNpmEntry(index, name, raw);
-        const nested = raw['dependencies'];
-        if (isRecord(nested)) walk(nested);
-      }
-    };
-    walk(dependencies);
+    walkNpmDependencies(index, dependencies, new Set<string>());
     return index;
   }
   return undefined;
@@ -1147,7 +1194,7 @@ function changedEntries(oldIndex: LockIndex, newIndex: LockIndex): ChangedEntry[
   return changed;
 }
 
-/** Changed entries no package name covers: npm's legacy mirror and NuGet's libraries section. */
+/** Changed entries no package name covers: NuGet's libraries section. */
 function changedRoots(oldIndex: LockIndex, newIndex: LockIndex): ChangedEntry[] {
   const keys = [...new Set([...oldIndex.roots.keys(), ...newIndex.roots.keys()])].sort();
   const changed: ChangedEntry[] = [];

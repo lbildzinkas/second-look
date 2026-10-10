@@ -1,0 +1,10 @@
+{
+  "name": "example-app",
+  "version": "1.0.0",
+  "workspaces": [
+    "packages/*"
+  ],
+  "dependencies": {
+    "left-pad": "^2.0.0"
+  }
+}
