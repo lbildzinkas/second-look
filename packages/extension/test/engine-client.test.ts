@@ -35,6 +35,7 @@ interface FakeEngineOptions {
   viewedError?: string;
   askResult?: unknown;
   askError?: string;
+  probeResult?: unknown;
 }
 
 /** Starts the fake engine as a separate process, speaking real stdio. */
@@ -65,6 +66,7 @@ function fakeEngine(options: FakeEngineOptions = {}): ChildProcessWithoutNullStr
       ...(options.viewedError !== undefined ? { FAKE_ENGINE_VIEWED_ERROR: options.viewedError } : {}),
       ...(options.askResult !== undefined ? { FAKE_ENGINE_ASK_RESULT: JSON.stringify(options.askResult) } : {}),
       ...(options.askError !== undefined ? { FAKE_ENGINE_ASK_ERROR: options.askError } : {}),
+      ...(options.probeResult !== undefined ? { FAKE_ENGINE_PROBE_RESULT: JSON.stringify(options.probeResult) } : {}),
     },
   });
 }
@@ -300,6 +302,34 @@ describe('EngineClient against a fake engine', () => {
     await failing.initialize();
     await expect(failing.markViewed(PR_URL, TOKEN, ['web/cart.ts'])).rejects.toThrow('GitHub refused');
     failing.dispose();
+  });
+
+  it('probes the installed agents with the path settings, and refuses an answer that is no probe', async () => {
+    const agents = [
+      { agent: 'pi', installed: false, version: '', usable: false, reason: 'Pi was not found at /opt/pi/bin/pi', supports: { effort: false }, effortLevels: [], lockdown: [] },
+      {
+        agent: 'claude-code',
+        installed: true,
+        version: '2.1.296',
+        usable: true,
+        supports: { effort: true },
+        effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+        login: { source: 'the stored Claude subscription sign-in' },
+        lockdown: ['tool allowlist: Read, Grep, Glob'],
+      },
+    ];
+    const client = new EngineClient(() => fakeEngine({ probeResult: { agents }, logName: 'probe.log' }));
+    await client.initialize();
+
+    expect(await client.probeAgents({ pi: '/opt/pi/bin/pi' })).toEqual({ agents });
+    const request = loggedRequests('probe.log').find((each) => (each as { method: string }).method === 'agents/probe') as { params: unknown };
+    expect(request.params).toEqual({ paths: { pi: '/opt/pi/bin/pi' } });
+    client.dispose();
+
+    const odd = new EngineClient(() => fakeEngine({ probeResult: { agents: [{ ...agents[1], effortLevels: 'high' }] } }));
+    await odd.initialize();
+    await expect(odd.probeAgents()).rejects.toThrow("the engine's answer is not the probe of the installed agents");
+    odd.dispose();
   });
 
   it('refuses a marks answer that is not the reviewed marks', async () => {

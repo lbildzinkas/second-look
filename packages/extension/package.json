@@ -350,6 +350,18 @@
           "default": "",
           "description": "A label for the account or subscription the agent bills, such as `Claude Max (work address)` or `Pi personal key`, stamped on every agent-produced result of a review and shown in the status bar beside the agent, model and effort. The companion never reads the agent's login: this label is what you tell it. For Claude Code, the status bar warns when an inherited ANTHROPIC_API_KEY overrides the Claude subscription."
         },
+        "second-look.claudeCodePath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "The absolute path of the Claude Code executable the companion starts in place of the `claude` command, for a Claude Code that is not on the PATH VS Code started with. Empty finds `claude` on that PATH. The path travels with each request, so the probe of the installed agents and every review use it; a path that holds no executable is reported in plain words. Set it in your user settings: a workspace cannot change it."
+        },
+        "second-look.piPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "The absolute path of the Pi executable the companion starts in place of the `pi` command, for a Pi that is not on the PATH VS Code started with. Empty finds `pi` on that PATH. The path travels with each request, so the probe of the installed agents and every review use it; a path that holds no executable is reported in plain words. Set it in your user settings: a workspace cannot change it."
+        },
         "second-look.mirrorViewedToGitHub": {
           "type": "boolean",
           "default": false,

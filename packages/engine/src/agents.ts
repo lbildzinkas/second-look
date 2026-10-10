@@ -8,7 +8,8 @@ import { piAdapter, type PiAdapterOptions } from './pi.js';
  * settings offer the same names, so the reviewer switches agents in one
  * place and every result's stamp says which one answered. An adapter for a
  * name that is not installed, or a version too old for the lockdown, is
- * never run: its probe says so in plain words.
+ * never run: its probe says so in plain words. The reviewer's path setting
+ * for an agent, when it names one, replaces the command the adapter starts.
  */
 
 /** The agents the companion can drive, in the order the settings offer them. */
@@ -33,11 +34,14 @@ export function isAgentName(value: string): value is AgentName {
 }
 
 /**
- * Starts the named agent's adapter. An unknown name throws a plain error
- * naming the choices, so a typo never silently picks another agent.
+ * Starts the named agent's adapter, running the executable at `path` in
+ * place of its command when a path is given. An unknown name throws a
+ * plain error naming the choices, so a typo never silently picks another
+ * agent.
  */
-export function agentAdapter(name: string, options: AgentAdapterOptions = {}): AgentAdapter {
-  if (name === 'pi') return piAdapter({ ...options.pi, env: options.env });
-  if (name === 'claude-code') return claudeCodeAdapter({ ...options.claudeCode, env: options.env });
+export function agentAdapter(name: string, options: AgentAdapterOptions = {}, path?: string): AgentAdapter {
+  const command = path ? { command: [path] } : {};
+  if (name === 'pi') return piAdapter({ ...options.pi, ...command, env: options.env });
+  if (name === 'claude-code') return claudeCodeAdapter({ ...options.claudeCode, ...command, env: options.env });
   throw new Error(`unknown agent "${name}": choose ${AGENT_NAMES.join(' or ')}`);
 }

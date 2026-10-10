@@ -29,7 +29,7 @@ if (args[0] === '--version') {
 }
 if (args[0] === '--help') {
   const missing = new Set(scenario.missingFlags ?? []);
-  const lines = FLAGS.filter((flag) => !missing.has(flag)).map((flag) => `  ${flag} <value>   A flag`);
+  const lines = FLAGS.filter((flag) => !missing.has(flag)).map((flag) => `  ${flag} <value>   ${scenario.flagHelp?.[flag] ?? 'A flag'}`);
   process.stdout.write(`claude - fake\n\nOptions:\n${lines.join('\n')}\n`);
   process.exit(0);
 }
