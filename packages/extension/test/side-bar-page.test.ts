@@ -114,10 +114,8 @@ class Element {
   closest(selector: string): Element | null {
     const match = (element: Element): boolean =>
       selector.startsWith('.') ? element.classList.contains(selector.slice(1)) : element.tagName === selector;
-    for (let node: Element | undefined = this; node !== undefined; node = node.parent) {
-      if (match(node)) return node;
-    }
-    return null;
+    if (match(this)) return this;
+    return this.parent?.closest(selector) ?? null;
   }
 
   /** The first descendant the selector names, or none. */
@@ -154,10 +152,9 @@ class Element {
   }
 
   /** Fires the event on this element, as a bubbling press reaches the root. */
-  dispatch(type: string): void {
-    for (let node: Element | undefined = this; node !== undefined; node = node.parent) {
-      for (const listener of node.listeners.get(type) ?? []) listener({ target: this });
-    }
+  dispatch(type: string, target: Element = this): void {
+    for (const listener of this.listeners.get(type) ?? []) listener({ target });
+    this.parent?.dispatch(type, target);
   }
 
   focus(): void {
