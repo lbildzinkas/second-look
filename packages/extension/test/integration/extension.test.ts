@@ -1793,6 +1793,17 @@ describe('the side bar', () => {
     expect(stub.errorMessages).toEqual([]);
   });
 
+  it("ticks the story step when All in order opens the whole change, as opening one part does", async () => {
+    const view = await reviewWithFakeEngine({ result: mixedResult(), logName: 'all-parts-story.log' });
+    expect(currentStep(view)).toBe('3');
+    stub.executedCommands = [];
+
+    await press(view, { type: 'command', command: 'allParts' });
+
+    expect(stub.executedCommands.map(({ id }) => id)).toEqual([OPEN_ALL_PARTS_COMMAND, 'vscode.changes']);
+    expect(currentStep(view)).toBe('4');
+  });
+
   it('shows the new agent settings on the setup line as soon as they change', async () => {
     const view = await reviewWithFakeEngine({ result: mixedResult(), logName: 'side-bar-settings.log' });
     expect(view.provider.current.settings).toMatchObject({ agent: 'pi', model: '', effort: '' });

@@ -575,6 +575,7 @@ class ReviewSession {
     }
     // The whole change is no one part, so no banner stands above it.
     this.opened = undefined;
+    this.moveOnFromStory();
     this.banner.clear();
     try {
       await openWholeChangeInDiffEditor(this.result, this.marker);
@@ -743,6 +744,7 @@ class ReviewSession {
       vscode.window.showWarningMessage('Review a pull request first, then ask about its parts.');
       return;
     }
+    this.moveOnFromStory();
     const review = this.reviews;
     const asked = this.result.parts[index]!;
     const claim = ASKS[kind].takesClaim ? await this.claimToVerify(this.result, index) : undefined;
@@ -852,6 +854,7 @@ class ReviewSession {
       );
       return;
     }
+    this.moveOnFromStory();
     this.comments.commentOnPart(part);
   }
 
