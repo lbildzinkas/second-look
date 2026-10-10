@@ -268,6 +268,9 @@ function agentChoiceProblem(value: unknown): string | undefined {
   if (choice['model'] !== undefined && typeof choice['model'] !== 'string') {
     return 'the agent choice model must be a string';
   }
+  if (choice['effort'] !== undefined && typeof choice['effort'] !== 'string') {
+    return 'the agent choice effort must be a string';
+  }
   if (choice['account'] !== undefined && typeof choice['account'] !== 'string') {
     return 'the agent choice account must be a string';
   }
@@ -276,9 +279,9 @@ function agentChoiceProblem(value: unknown): string | undefined {
 
 /**
  * The settings a review's agent passes run with: the engine's own, with
- * the request's model and account replacing theirs when it carries a
- * choice — an empty model asks for the agent's own default, an empty
- * account leaves the runs unlabelled.
+ * the request's model, effort and account replacing theirs when it
+ * carries a choice — an empty model or effort asks for the agent's own
+ * default, an empty account leaves the runs unlabelled.
  */
 function agentRunSettings(
   agent: RpcAgentDeps,
@@ -288,6 +291,8 @@ function agentRunSettings(
   if (choice === undefined) return settings;
   if (choice.model === undefined || choice.model === '') delete settings.model;
   else settings.model = choice.model;
+  if (choice.effort === undefined || choice.effort === '') delete settings.effort;
+  else settings.effort = choice.effort;
   if (choice.account === undefined || choice.account === '') delete settings.account;
   else settings.account = choice.account;
   return settings;

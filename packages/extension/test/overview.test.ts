@@ -108,7 +108,7 @@ describe('overviewHtml', () => {
       '<h1>Retry failed webhook sends</h1>',
       '<div class="meta">example-org/example-repo #42 · reviewer-login · retry-webhooks → master · head f00dcaf</div>',
       '<div class="stages"><span class="stg done">parts</span><span class="stg done">noise checks</span><span class="stg done">story</span></div>',
-      '<h2>Story <span class="stamp">pi · zai/glm-4.6 · story prompt v1</span></h2>',
+      '<h2>Story <span class="stamp">pi · zai/glm-4.6 · default effort · story prompt v1</span></h2>',
       '<div class="story">',
       '<h2>Pull request description</h2>',
       '<h2>How these results were made</h2>',
@@ -207,7 +207,7 @@ describe('overviewHtml', () => {
     );
     expect(html).toContain('<li><b>Parts</b> plain grouping kept: the answer was invalid twice</li>');
     expect(html).toContain('<li><b>Ranking</b> ranked by pi · zai/glm-4.6 · effort high · ranking prompt v1: the validator accepted it</li>');
-    expect(html).toContain('<li><b>Story</b> written by pi · zai/glm-4.6 · story prompt v1: the checks accepted the story');
+    expect(html).toContain('<li><b>Story</b> written by pi · zai/glm-4.6 · default effort · story prompt v1: the checks accepted the story');
     expect(html).toContain('<span class="stg done">plain grouping kept</span><span class="stg done">ranked by the agent</span>');
     expect(overviewHtml({ result: mixedResult() }, 'N')).toContain('<li><b>Parts</b> grouped by the plain pass</li><li><b>Ranking</b> ranked by the plain rule</li>');
   });
@@ -285,9 +285,9 @@ describe('the verdicts on the overview', () => {
     expect(html).toContain('<span class="verdict finding">refuted</span>');
     expect(html).toContain('<div class="why">needs the source of requests, which the companion does not have</div>');
     expect(html).toContain('<div class="why">dropped to unverifiable: the model&#39;s memory never yields verified</div>');
-    expect(html).toContain('Each is judged against the change, its read-only copy and any failed check&#39;s CI log by pi · zai/glm-4.6 · verdicts prompt v1;');
+    expect(html).toContain('Each is judged against the change, its read-only copy and any failed check&#39;s CI log by pi · zai/glm-4.6 · default effort · verdicts prompt v1;');
     expect(html).toContain('<span class="stg done">claims</span><span class="stg done">verdicts</span>');
-    expect(html).toContain('<li><b>Verdicts</b> judged by pi · zai/glm-4.6 · verdicts prompt v1: every citation was re-read in the head copy</li>');
+    expect(html).toContain('<li><b>Verdicts</b> judged by pi · zai/glm-4.6 · default effort · verdicts prompt v1: every citation was re-read in the head copy</li>');
   });
 
   it('labels a verdict judged in a named repository weaker than pinned source, and says plainly why no fetch is offered', () => {
@@ -427,7 +427,7 @@ describe('the claims on the overview', () => {
 
     expect(html.indexOf('<section id="story">')).toBeLessThan(html.indexOf('<section id="claims">'));
     expect(html.indexOf('<section id="claims">')).toBeLessThan(html.indexOf('<section id="description">'));
-    expect(html).toContain('<h2>Claims <span class="stamp">pi · zai/glm-4.6 · claims prompt v1</span></h2>');
+    expect(html).toContain('<h2>Claims <span class="stamp">pi · zai/glm-4.6 · default effort · claims prompt v1</span></h2>');
     expect(html).toContain(
       '<li><q class="quote">Gives up after three attempts, whatever the status.</q><div class="where">docstring · src/retry.py:3–4 · ' +
         '<button type="button" class="pt" data-part="0">src/retry.py</button> · <span class="verdict">not checked</span></div></li>',
@@ -436,7 +436,7 @@ describe('the claims on the overview', () => {
     expect(html).toContain('<div class="where">comment · src/retry.py:9 · <button');
     expect(html).toContain('<div class="where">the companion&#39;s story, sentence 2 · <button type="button" class="pt" data-part="1">src/settings.ts</button>');
     expect(html).toContain('<span class="stg done">story</span><span class="stg done">claims</span>');
-    expect(html).toContain('<li><b>Claims</b> listed by pi · zai/glm-4.6 · claims prompt v1: every quote was found in its source');
+    expect(html).toContain('<li><b>Claims</b> listed by pi · zai/glm-4.6 · default effort · claims prompt v1: every quote was found in its source');
   });
 
   it('renders a quote as escaped text, its hidden content flagged, never as markup', () => {
@@ -490,6 +490,10 @@ describe('the claims on the overview', () => {
 describe('stampText', () => {
   it("reads as the recorded design's stamp, saying when the model is unknown", () => {
     expect(stampText({ ...STAMP, model: null, effort: 'low' }, 'story', '1')).toBe('pi · model unknown · effort low · story prompt v1');
+  });
+
+  it("always shows the effort, naming the agent's default when the run asked for none", () => {
+    expect(stampText(STAMP, 'story', '1')).toBe('pi · zai/glm-4.6 · default effort · story prompt v1');
   });
 });
 
@@ -571,7 +575,7 @@ describe('the criteria verdicts on the overview', () => {
   it('gives each mapped criterion its verdict and reason, its code and tests as buttons that open the line, and the manual checks reported', () => {
     const html = overviewHtml({ result: mappedCriteriaResult() }, 'N');
 
-    expect(html).toContain('<h2>Acceptance criteria <span class="stamp">1 not met · 1 met</span> <span class="stamp">pi · zai/glm-4.6 · criteria-mapping prompt v1</span></h2>');
+    expect(html).toContain('<h2>Acceptance criteria <span class="stamp">1 not met · 1 met</span> <span class="stamp">pi · zai/glm-4.6 · default effort · criteria-mapping prompt v1</span></h2>');
     expect(html).toContain('<span class="verdict">met</span></div><div class="why">The send loop retries three times, and a test proves it.</div>');
     expect(html).toContain(
       '<span class="label">Code</span><span><button type="button" class="pt cite" data-criterion="0" data-evidence="code" data-index="0">src/retry.ts:7</button>' +
@@ -591,9 +595,9 @@ describe('the criteria verdicts on the overview', () => {
     expect(html).not.toContain('data-draft="criterion" data-index="0"');
     expect(html).toContain('<span class="label">Tests</span><span><span class="none">none</span></span>');
     expect(html).toContain('<span class="label">Manual check</span><span><span class="cited">none reported in the pull request</span></span>');
-    expect(html).toContain('Each is judged against the change, its read-only copy and the manual checks the description reports, by pi · zai/glm-4.6 · criteria-mapping prompt v1');
+    expect(html).toContain('Each is judged against the change, its read-only copy and the manual checks the description reports, by pi · zai/glm-4.6 · default effort · criteria-mapping prompt v1');
     expect(html).toContain('<span class="stg done">criteria mapped</span>');
-    expect(html).toContain('<li><b>Acceptance criteria</b> mapped by pi · zai/glm-4.6 · criteria-mapping prompt v1: every citation was re-read');
+    expect(html).toContain('<li><b>Acceptance criteria</b> mapped by pi · zai/glm-4.6 · default effort · criteria-mapping prompt v1: every citation was re-read');
   });
 
   it('makes each reported manual check a link the reviewer follows to the description it names', () => {
@@ -685,7 +689,7 @@ describe('the unexplained changes on the overview', () => {
 
     expect(html.indexOf('<section id="criteria">')).toBeLessThan(html.indexOf('<section id="unexplained">'));
     expect(html.indexOf('<section id="unexplained">')).toBeLessThan(html.indexOf('<section id="claims">'));
-    expect(html).toContain('<h2>Unexplained changes <span class="stamp">pi · zai/glm-4.6 · unexplained prompt v1</span></h2>');
+    expect(html).toContain('<h2>Unexplained changes <span class="stamp">pi · zai/glm-4.6 · default effort · unexplained prompt v1</span></h2>');
     expect(html).toContain(
       '<li><span class="verdict finding">in the code, not explained</span> <button type="button" class="pt" data-part="1">src/settings.ts</button>' +
         ' <button type="button" class="pt draft" data-draft="unexplained part" data-index="0">Draft comment</button><div class="why">Raises the timeout from 10 to 30 seconds, which &lt;b&gt;nothing&lt;/b&gt; mentions.</div></li>',
@@ -702,7 +706,7 @@ describe('the unexplained changes on the overview', () => {
         ' <button type="button" class="pt draft" data-draft="described change" data-index="1">Draft comment</button></div>',
     );
     expect(html).toContain('<span class="stg done">unexplained changes</span>');
-    expect(html).toContain('<li><b>Unexplained changes</b> compared by pi · zai/glm-4.6 · unexplained prompt v1: compared with the description and 2 linked issues;');
+    expect(html).toContain('<li><b>Unexplained changes</b> compared by pi · zai/glm-4.6 · default effort · unexplained prompt v1: compared with the description and 2 linked issues;');
   });
 
   it('says the comparison is still coming, why there is none, or that everything is explained', () => {
@@ -880,7 +884,7 @@ describe('OverviewPanel', () => {
     expect(html.indexOf('<section id="asks">')).toBeLessThan(html.indexOf('<section id="story">'));
     expect(html).toContain('<li class="answer focus"><div class="where"><b>Explain this part</b> · ');
     expect(html).toContain(`<button type="button" class="pt" data-part="0">${escapeHtml(result.parts[0]!.name!)}</button>`);
-    expect(html).toContain('<span class="stamp">pi · zai/glm · explain prompt v1</span>');
+    expect(html).toContain('<span class="stamp">pi · zai/glm · default effort · explain prompt v1</span>');
     expect(html).toContain('<div class="why"><b>What it does</b> It retries <code>send</code> up to <code>MAX_ATTEMPTS</code> times.</div>');
     expect(html).toContain('<button type="button" class="pt asked" data-answer="0" data-index="0">web/cart.ts:2 (base)</button> <span class="cited">return 1;</span>');
     expect(html).toContain('<button type="button" class="pt asked" data-answer="0" data-index="1">web/cart.ts:3</button>');
@@ -906,7 +910,7 @@ describe('OverviewPanel', () => {
 
     expect(html).toContain('every line it cites is one the part shows or the engine re-read in the head copy.');
     expect(html).toContain('<b>Verify this claim</b> · ');
-    expect(html).toContain('<span class="stamp">pi · zai/glm · verdicts prompt v5</span>');
+    expect(html).toContain('<span class="stamp">pi · zai/glm · default effort · verdicts prompt v5</span>');
     expect(html).toContain('<b>What covers this?</b> · ');
     expect(html).toContain('<div class="why"><b>None found</b> No test calls <code>total</code>; I searched <code>test</code>.</div>');
   });

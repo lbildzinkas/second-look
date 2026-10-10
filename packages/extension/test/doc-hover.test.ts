@@ -76,7 +76,7 @@ describe('the documentation section', () => {
   it('lists the inventory links, then the suggestions flagged as not checked, then what has no link and what was read', () => {
     const html = overviewHtml({ result: docLinksResult() }, 'nonce');
     const section = html.slice(html.indexOf('<section id="docs">'), html.indexOf('<section id="pipeline">'));
-    expect(section).toContain('<h2>Documentation <span class="stamp">pi · zai/glm-4.6 · doc-links prompt v1</span></h2>');
+    expect(section).toContain('<h2>Documentation <span class="stamp">pi · zai/glm-4.6 · default effort · doc-links prompt v1</span></h2>');
     const read = section.indexOf('data-doc="0"');
     const suggested = section.indexOf('data-doc="1"');
     expect(read).toBeGreaterThan(0);
