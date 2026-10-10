@@ -392,6 +392,30 @@ export class GitHubClient {
     }
     return null; // Symlinks, directories, or files too large to inline.
   }
+
+  /**
+   * Runs one GitHub search for open pull requests, through GraphQL, and
+   * answers with the signed-in reviewer's login and the pull requests it
+   * found, as GitHub returned them, up to {@link MAX_LISTED_PULL_REQUESTS}.
+   * With `waiting`, each carries the review requests its timeline shows,
+   * so the list can say how long the reviewer kept it waiting. A search
+   * GitHub does not answer within {@link SEARCH_TIMEOUT_MS} is abandoned.
+   * Nothing is written.
+   */
+  async searchPullRequests(search: string, waiting: boolean): Promise<{ viewer: string; nodes: unknown[] }> {
+    const response: { data: unknown } = await this.octokit.request('POST /graphql', {
+      query: SEARCH_PULL_REQUESTS_QUERY,
+      variables: { search, first: MAX_LISTED_PULL_REQUESTS, waiting },
+      request: { signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS) },
+    });
+    const answer = graphqlData(response.data, 'pull-request search') as {
+      viewer?: { login?: unknown } | null;
+      search?: { nodes?: unknown } | null;
+    };
+    const login = answer.viewer?.login;
+    const nodes = answer.search?.nodes;
+    return { viewer: typeof login === 'string' ? login : '', nodes: Array.isArray(nodes) ? nodes : [] };
+  }
 }
 
 /** The most annotations the companion reads of one check run. */
@@ -547,3 +571,34 @@ const SUBMIT_EVENTS: Record<SubmitKind, 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES
   approve: 'APPROVE',
   'request changes': 'REQUEST_CHANGES',
 };
+
+/** The most pull requests one search lists; a group with more lists none beyond these. */
+export const MAX_LISTED_PULL_REQUESTS = 50;
+
+/** How long one pull-request search waits for GitHub before it counts GitHub as out of reach, in milliseconds. */
+export const SEARCH_TIMEOUT_MS = 30_000;
+
+/**
+ * The query one group of the reviewer's pull-request list runs: who the
+ * signed-in reviewer is, and each open pull request the search finds with
+ * what the list shows of it — its description, its review state from each
+ * reviewer's latest opinion, its size and its head commit, which the
+ * last-look flag compares with — and, for the review-requested group, the
+ * review requests its timeline shows.
+ */
+const SEARCH_PULL_REQUESTS_QUERY = `query($search: String!, $first: Int!, $waiting: Boolean!) {
+  viewer { login }
+  search(type: ISSUE, query: $search, first: $first) {
+    nodes {
+      ... on PullRequest {
+        url number title body createdAt updatedAt isDraft additions deletions changedFiles headRefOid
+        repository { nameWithOwner }
+        author { login }
+        latestOpinionatedReviews(first: 100) { nodes { state } }
+        timelineItems(last: 20, itemTypes: REVIEW_REQUESTED_EVENT) @include(if: $waiting) {
+          nodes { ... on ReviewRequestedEvent { createdAt requestedReviewer { __typename ... on User { login } } } }
+        }
+      }
+    }
+  }
+}`;

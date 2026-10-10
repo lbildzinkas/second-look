@@ -1,0 +1,42 @@
+{
+  "data": {
+    "viewer": { "login": "reviewer" },
+    "search": {
+      "nodes": [
+        {
+          "url": "https://github.com/example-org/example-repo/pull/42",
+          "number": 42,
+          "title": "Retry failed webhook sends",
+          "body": "",
+          "createdAt": "2026-09-28T08:00:00Z",
+          "updatedAt": "2026-10-09T16:20:00Z",
+          "isDraft": false,
+          "additions": 84,
+          "deletions": 12,
+          "changedFiles": 5,
+          "headRefOid": "4242424242424242424242424242424242424242",
+          "repository": { "nameWithOwner": "example-org/example-repo" },
+          "author": { "login": "maria-k" },
+          "latestOpinionatedReviews": { "nodes": [] }
+        },
+        {},
+        {
+          "url": "https://github.com/example-org/example-repo/pull/8",
+          "number": 8,
+          "title": "Bump the lockfiles",
+          "body": "Updates the npm, yarn and poetry lockfiles.",
+          "createdAt": "2026-10-01T10:00:00Z",
+          "updatedAt": "2026-10-06T10:00:00Z",
+          "isDraft": false,
+          "additions": 210,
+          "deletions": 198,
+          "changedFiles": 6,
+          "headRefOid": "8888888888888888888888888888888888888888",
+          "repository": { "nameWithOwner": "example-org/example-repo" },
+          "author": { "login": "dependency-bot" },
+          "latestOpinionatedReviews": { "nodes": [{ "state": "APPROVED" }] }
+        }
+      ]
+    }
+  }
+}

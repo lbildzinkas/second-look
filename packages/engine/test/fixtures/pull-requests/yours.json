@@ -1,0 +1,25 @@
+{
+  "data": {
+    "viewer": { "login": "reviewer" },
+    "search": {
+      "nodes": [
+        {
+          "url": "https://github.com/example-org/example-repo/pull/7",
+          "number": 7,
+          "title": "Add the fresh-start helper",
+          "body": "Adds `fresh.py` with its test, and reformats the cart and checkout modules.",
+          "createdAt": "2026-10-09T13:00:00Z",
+          "updatedAt": "2026-10-10T08:40:00Z",
+          "isDraft": true,
+          "additions": 381,
+          "deletions": 2,
+          "changedFiles": 4,
+          "headRefOid": "7777777777777777777777777777777777777777",
+          "repository": { "nameWithOwner": "example-org/example-repo" },
+          "author": { "login": "reviewer" },
+          "latestOpinionatedReviews": { "nodes": [] }
+        }
+      ]
+    }
+  }
+}
