@@ -96,7 +96,8 @@ export interface AgentLogin {
 
 /**
  * Who answered and at what cost: stamped on every result, successful or
- * not, so the reviewer can always tell which agent and model said what.
+ * not, so the reviewer can always tell which agent, model and effort
+ * said what.
  */
 export interface AgentStamp {
   agent: string;

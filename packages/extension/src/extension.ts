@@ -211,7 +211,7 @@ class ReviewTreeProvider implements vscode.TreeDataProvider<TreeNode> {
  * GitHub login, and hands the request to the engine with the token from
  * that sign-in and the agent choice the settings carry — both travel with
  * the request, the token is never stored, and the engine runs every agent
- * pass on the chosen agent, model and account. Progress shows while the
+ * pass on the chosen agent, model, effort and account. Progress shows while the
  * engine works, and an engine failure reads as its plain message.
  *
  * A review arrives in stages: the tree shows the plain parts first, with
@@ -1037,7 +1037,7 @@ class ReviewSession {
  * comment from a finding and add the draft to the pending review or
  * discard it, one command for each ask a part's context menu offers,
  * whose answer the overview shows, the parts' reviewed checkboxes, and the status bar entry
- * that shows the agent and model in use.
+ * that shows the agent, model and effort in use.
  * Nothing here runs anything from the workspace — the engine is started
  * from the companion's own install, reads GitHub, and writes only the
  * one review the reviewer sends — and, only with the opt-in mirror
@@ -1134,7 +1134,7 @@ export function deactivate(): void {
 }
 
 /**
- * Warns (issue 3) that the settings pick an agent and model the
+ * Warns (issue 3) that the settings pick an agent, model and effort the
  * companion's evaluation never tested, without blocking anything: shown
  * when the reviewer chooses the combination, and once here for the
  * settings they arrive with. Quiet when the choice is tested.

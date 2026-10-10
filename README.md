@@ -2,7 +2,7 @@
 
 Second Look is a VS Code companion for human pull request review: it ranks the change by what matters, checks its claims against real code, and lets the reviewer send comments to GitHub.
 
-- [docs/getting-started.md](docs/getting-started.md) — the user documentation's entry: installing the extension and the engine, choosing the agent, model and account, and what each agent needs installed.
+- [docs/getting-started.md](docs/getting-started.md) — the user documentation's entry: installing the extension and the engine, choosing the agent, model, effort and account, and what each agent needs installed.
 - [docs/reviewing.md](docs/reviewing.md) — how a review works: the parts, their importance, the noise, the claims and their verdicts, the asks and the comments.
 - [docs/privacy.md](docs/privacy.md) — what the companion keeps on the machine, what it sends to GitHub, and what reaches the model provider.
 - [CONTEXT.md](CONTEXT.md) — the project glossary: the shared words and what they mean.
@@ -168,7 +168,7 @@ The two agents reach that lockdown differently. Pi has no sandbox of its own, so
 
 Each Claude Code run's stamp reports which login it used — the stored subscription sign-in, an OAuth token or cloud credentials from the environment — and warns when an inherited `ANTHROPIC_API_KEY` silently overrides the subscription. The key itself is never read, printed or copied: only its presence is checked. Anthropic's terms are unclear on third-party tools driving a reviewer's own Claude Code (ADR 0004).
 
-In VS Code, the settings pick the agent, the model and the account label; [getting started](docs/getting-started.md) documents the settings, the status bar and their warnings. Every result is stamped, so the reviewer can always tell which agent and model said what.
+In VS Code, the settings pick the agent, the model, the effort and the account label; [getting started](docs/getting-started.md) documents the settings, the status bar and their warnings. Every result is stamped, so the reviewer can always tell which agent, model and effort said what.
 
 Pull request text reaches the agent inside a marked untrusted block, with Unicode tag characters, zero-width characters and bidirectional controls stripped. HTML comments, which GitHub hides from the reviewer, are kept but delimited. Each answer is checked against its schema. An invalid answer is retried once, then reported as a failure, never guessed. Every result is stamped with the agent, its version, the model, the effort, the run date, the tokens and cost when the agent reports them, and the reviewer's account label when the settings gave one. Runs have a timeout and a concurrency limit, and a run that times out keeps what it wrote.
 
@@ -195,6 +195,6 @@ Malformed input — a Windows PDB, a truncated file, corrupt compressed data —
 
 ## Reviewing a pull request in VS Code
 
-The extension adds a **Second Look: Review pull request** command and a review tree in the Explorer side bar. Installing the companion and choosing its agent, model and account is [getting started](docs/getting-started.md). What a review shows — the ranked tree and the stages it arrives in, the overview, reading a part, the claims and their verdicts, the asks, and how a comment becomes a GitHub review — is [how a review works](docs/reviewing.md). What stays on the machine and what is sent to GitHub is [the privacy page](docs/privacy.md).
+The extension adds a **Second Look: Review pull request** command and a review tree in the Explorer side bar. Installing the companion and choosing its agent, model, effort and account is [getting started](docs/getting-started.md). What a review shows — the ranked tree and the stages it arrives in, the overview, reading a part, the claims and their verdicts, the asks, and how a comment becomes a GitHub review — is [how a review works](docs/reviewing.md). What stays on the machine and what is sent to GitHub is [the privacy page](docs/privacy.md).
 
 To try the extension from source instead, build first (`npm run build`), then open the repository in VS Code and press F5 (the "Run the companion extension" configuration starts a development host with the extension loaded) and run the command in the development host.

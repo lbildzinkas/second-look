@@ -72,7 +72,7 @@ export interface RpcAgentDeps {
   adapterFor: (name: AgentName) => AgentAdapter;
   /** The agent that reviews when a request carries no choice. */
   defaultAgent: AgentName;
-  /** The settings the passes run with; a request's choice replaces their model and account. */
+  /** The settings the passes run with; a request's choice replaces their model, effort and account. */
   settings?: AgentSettings;
   /** Where the agent ranking is the default; the engine's tested rankings when absent. */
   testedRankings?: readonly TestedRanking[];
@@ -107,7 +107,7 @@ export interface RpcServerDeps {
  * before any other request, and a client speaking another protocol version
  * is refused with a plain message. `review` then carries the pull request
  * URL, the GitHub token and — when the client's settings chose one — the
- * agent, model and account that run the review's agent passes; a request
+ * agent, model, effort and account that run the review's agent passes; a request
  * without a choice runs the engine's serve-time default. Each review
  * compares the change with the reviewer's last look and records this one
  * in the pull request's local store. `sendReview`

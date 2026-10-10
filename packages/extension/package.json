@@ -308,7 +308,7 @@
         "second-look.agentModel": {
           "type": "string",
           "default": "",
-          "description": "The model the selected agent runs for every agent pass of a review, in the agent's own naming: for example `anthropic/claude-sonnet-5` for Pi or `sonnet` for Claude Code. Empty uses the agent's own default model. The model is stamped on every agent-produced result, and the status bar shows the model in use. Choosing an agent and model the companion's evaluation never tested shows a non-blocking warning naming the tested combinations; the current list is published as docs/tested-models.md in the repository."
+          "description": "The model the selected agent runs for every agent pass of a review, in the agent's own naming: for example `anthropic/claude-sonnet-5` for Pi or `sonnet` for Claude Code. Empty uses the agent's own default model. The model is stamped on every agent-produced result, and the status bar shows the model in use. Choosing an agent, model and effort the companion's evaluation never tested shows a non-blocking warning naming the tested combinations; the current list is published as docs/tested-models.md in the repository."
         },
         "second-look.agentEffort": {
           "type": "string",
@@ -318,7 +318,7 @@
         "second-look.agentAccount": {
           "type": "string",
           "default": "",
-          "description": "A label for the account or subscription the agent bills, such as `Claude Max (work address)` or `Pi personal key`, stamped on every agent-produced result of a review and shown in the status bar beside the agent and model. The companion never reads the agent's login: this label is what you tell it. For Claude Code, the status bar warns when an inherited ANTHROPIC_API_KEY overrides the Claude subscription."
+          "description": "A label for the account or subscription the agent bills, such as `Claude Max (work address)` or `Pi personal key`, stamped on every agent-produced result of a review and shown in the status bar beside the agent, model and effort. The companion never reads the agent's login: this label is what you tell it. For Claude Code, the status bar warns when an inherited ANTHROPIC_API_KEY overrides the Claude subscription."
         },
         "second-look.mirrorViewedToGitHub": {
           "type": "boolean",

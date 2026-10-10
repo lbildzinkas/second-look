@@ -72,7 +72,7 @@ export function engineEntryPath(): string {
 /**
  * Starts the engine as a separate local process speaking JSON-RPC on stdio.
  *
- * The agent, model and account the settings choose travel with each
+ * The agent, model, effort and account the settings choose travel with each
  * review request over the protocol, never on the command line, so a
  * settings change reaches the next review without restarting the engine.
  *
