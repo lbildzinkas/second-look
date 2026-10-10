@@ -24,6 +24,10 @@ _Avoid_: Walkthrough, tour, summary
 A named group of related edits; every changed line belongs to exactly one part.
 _Avoid_: Chunk, section, group, file
 
+**Part banner**:
+A read-only banner above the selected part's diff, shown as a file comment at the top of the part's first file, carrying the part's importance with its one-line reason, the signals, the asks and the reviewed checkbox.
+_Avoid_: Header, toolbar, strip
+
 **Importance**:
 The level a part is given for review: **must review**, **worth reviewing**, or **context**, always with a one-line reason.
 _Avoid_: Priority, severity, critical
