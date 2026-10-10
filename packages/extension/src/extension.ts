@@ -817,12 +817,13 @@ class ReviewSession {
    * Loads the project for navigation, the reviewer having asked for it:
    * a modal warning first names what restoring the project and language
    * servers may run, and only its confirm button goes on — dismissing it
-   * writes and opens nothing. Then the engine writes a writable copy of
-   * the finished review's head copy, beside the read-only copies the
-   * agents read, and the editor opens it in a new window, where workspace
-   * trust leaves it untrusted unless the reviewer trusts it; the
-   * companion never trusts it for them. The agents' locked-down posture
-   * is unchanged: no agent run reads that folder.
+   * writes and opens nothing. The request then carries the head commit
+   * the warning named; the engine writes a writable copy of the finished
+   * review's head copy at it — or refuses, writing nothing — and the
+   * editor opens it in a new window, where workspace trust leaves it
+   * untrusted unless the reviewer trusts it; the companion never trusts
+   * it for them. The agents' locked-down posture is unchanged: no agent
+   * run reads that folder.
    */
   async loadProject(): Promise<void> {
     const result = this.result;
@@ -843,7 +844,7 @@ class ReviewSession {
     try {
       const project = await vscode.window.withProgress(
         { location: { viewId: REVIEW_TREE_VIEW }, title: 'Writing the project for navigation…' },
-        async () => (await this.readyEngine()).loadProject(url),
+        async () => (await this.readyEngine()).loadProject(url, result.copies.head.commit),
       );
       // A review started meanwhile replaces this one; nothing is opened for it.
       if (review !== this.reviews) return;

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -1205,6 +1205,8 @@ describe('runRpcServer keeping reviewed marks', () => {
 
 describe('runRpcServer loading the project for navigation', () => {
   const initialize = request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION });
+  /** The head commit the fixture pull request's review runs at. */
+  const HEAD = 'f00dcafe1234567890abcdef1234567890abcdef';
 
   /** Every file and folder under a folder, by its path there, with its permission bits. */
   function modesUnder(root: string): Map<string, number> {
@@ -1223,7 +1225,7 @@ describe('runRpcServer loading the project for navigation', () => {
   it("writes a writable copy of its latest review's head copy beside the read-only copies, and reuses it", async () => {
     const store = temporaryCacheDir();
     const responses = await serveInOrder(
-      [initialize, request('review', { url: PR_URL, token: TOKEN }, 2), request('loadProject', { url: PR_URL }, 3), request('loadProject', { url: PR_URL }, 4)],
+      [initialize, request('review', { url: PR_URL, token: TOKEN }, 2), request('loadProject', { url: PR_URL, commit: HEAD }, 3), request('loadProject', { url: PR_URL, commit: HEAD }, 4)],
       { fetch: fixtureFetch().fetch, cacheDir: store },
     );
 
@@ -1247,7 +1249,13 @@ describe('runRpcServer loading the project for navigation', () => {
   it('refuses to load a pull request it holds no finished review of, writing nothing, and malformed load params', async () => {
     const store = temporaryCacheDir();
     const responses = await serveInOrder(
-      [initialize, request('loadProject', { url: PR_URL }, 2), request('loadProject', { url: 'https://example.com/x' }, 3), request('loadProject', {}, 4)],
+      [
+        initialize,
+        request('loadProject', { url: PR_URL, commit: HEAD }, 2),
+        request('loadProject', { url: 'https://example.com/x', commit: HEAD }, 3),
+        request('loadProject', {}, 4),
+        request('loadProject', { url: PR_URL }, 5),
+      ],
       { cacheDir: store },
     );
 
@@ -1255,12 +1263,28 @@ describe('runRpcServer loading the project for navigation', () => {
     expect(responses[1]!.error!.message).toContain('review the pull request again');
     expect(responses[2]!.error!.code).toBe(JSON_RPC_INVALID_PARAMS);
     expect(responses[3]!.error!.code).toBe(JSON_RPC_INVALID_PARAMS);
+    expect(responses[4]!.error!.code).toBe(JSON_RPC_INVALID_PARAMS);
     expect(readdirSync(store)).toEqual([]);
     await removeCopy(store);
   });
 
+  it("refuses a load at a commit its latest finished review is not at, writing nothing", async () => {
+    const store = temporaryCacheDir();
+    const moved = 'abcdef0123456789abcdef0123456789abcdef01';
+    const responses = await serveInOrder(
+      [initialize, request('review', { url: PR_URL, token: TOKEN }, 2), request('loadProject', { url: PR_URL, commit: moved }, 3)],
+      { fetch: fixtureFetch().fetch, cacheDir: store },
+    );
+
+    expect(responses[2]!.error!.code).toBe(ENGINE_FAILED_CODE);
+    expect(responses[2]!.error!.message).toContain('is at commit f00dcaf, not the confirmed abcdef0');
+    expect(responses[2]!.error!.message).toContain('review the pull request again, then load it');
+    expect(existsSync(join(store, 'github.com', 'example-org', 'example-repo', 'pull-42', 'project'))).toBe(false);
+    await removeCopy(store);
+  });
+
   it('refuses a load before the handshake completed', async () => {
-    const responses = await serve([request('loadProject', { url: PR_URL })]);
+    const responses = await serve([request('loadProject', { url: PR_URL, commit: HEAD })]);
 
     expect(responses[0]!.error!.code).toBe(NOT_INITIALIZED_CODE);
   });

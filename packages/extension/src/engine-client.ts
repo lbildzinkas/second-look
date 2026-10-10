@@ -403,14 +403,16 @@ export class EngineClient {
 
   /**
    * Has the engine write the project loaded for navigation: a writable
-   * copy of the head copy of the pull request's latest review. Sent only
-   * once the reviewer confirmed the warning. Resolves with where it is.
+   * copy of the head copy of the pull request's latest review, at the
+   * head commit the reviewer confirmed. Sent only once the reviewer
+   * confirmed the warning; the engine refuses a review at any other
+   * commit, writing nothing. Resolves with where it is.
    */
-  async loadProject(url: string): Promise<ProjectCopy> {
+  async loadProject(url: string, commit: string): Promise<ProjectCopy> {
     if (!this.handshaken) {
       throw new Error('the engine has not completed its handshake yet');
     }
-    const result = await this.request(LOAD_PROJECT_METHOD, { url }, LOAD_PROJECT_TIMEOUT_MS);
+    const result = await this.request(LOAD_PROJECT_METHOD, { url, commit }, LOAD_PROJECT_TIMEOUT_MS);
     if (!isProjectCopy(result)) {
       throw new ProjectProtocolError();
     }
