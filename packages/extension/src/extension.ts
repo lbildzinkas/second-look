@@ -18,6 +18,7 @@ import {
   OPEN_LIBRARY_EVIDENCE_COMMAND,
   OPEN_OVERVIEW_COMMAND,
   OPEN_PART_COMMAND,
+  OPEN_REVIEW_CONTAINER_COMMAND,
   REVIEW_COMMAND,
   REVIEW_TREE_VIEW,
   SUBMIT_REVIEW_COMMAND,
@@ -79,6 +80,7 @@ export {
   OPEN_LIBRARY_EVIDENCE_COMMAND,
   OPEN_OVERVIEW_COMMAND,
   OPEN_PART_COMMAND,
+  OPEN_REVIEW_CONTAINER_COMMAND,
   REVIEW_COMMAND,
   REVIEW_TREE_VIEW,
   SUBMIT_REVIEW_COMMAND,
@@ -314,6 +316,7 @@ class ReviewSession {
       return;
     }
     const accessToken = session.accessToken;
+    await vscode.commands.executeCommand(OPEN_REVIEW_CONTAINER_COMMAND);
 
     // A new review replaces one still running: stopping the engine drops
     // the old request, and the next request starts a fresh engine.

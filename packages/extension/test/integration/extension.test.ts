@@ -18,6 +18,7 @@ import {
   OPEN_LIBRARY_EVIDENCE_COMMAND,
   OPEN_OVERVIEW_COMMAND,
   OPEN_PART_COMMAND,
+  OPEN_REVIEW_CONTAINER_COMMAND,
   REVIEW_COMMAND,
   REVIEW_TREE_VIEW,
   SUBMIT_REVIEW_COMMAND,
@@ -349,6 +350,28 @@ describe('the review command, end to end against a fake engine', () => {
     });
   });
 
+  it('opens the Second Look side bar when the review starts, before the tree fills', async () => {
+    activate(stubContext() as unknown as vscode.ExtensionContext, {
+      spawnEngine: () => fakeEngine({ result: mixedResult(), answerDelayMs: 300, logName: 'open-container.log' }),
+    });
+    stub.inputBoxResult = PR_URL;
+    stub.session = { accessToken: TOKEN };
+
+    const reviewed = registeredCommands().get(REVIEW_COMMAND)!() as Promise<void>;
+    const view = stub.treeViews[0]!;
+
+    // The side bar opens with the review itself, so the tree is visible
+    // before its first section is revealed into it.
+    await until('the Second Look side bar to open', () =>
+      stub.executedCommands.some((command) => command.id === OPEN_REVIEW_CONTAINER_COMMAND),
+    );
+    expect(view.revealed).toEqual([]);
+
+    await reviewed;
+    expect(stub.executedCommands).toEqual([{ id: OPEN_REVIEW_CONTAINER_COMMAND, args: [] }]);
+    expect(view.revealed).toHaveLength(1);
+  });
+
   it("answers a hover on a library name on the head side of a part with the review's documentation links", async () => {
     const result = docLinksResult();
     await reviewWithFakeEngine({ result, logName: 'doc-links.log' });
@@ -410,6 +433,7 @@ describe('the review command, end to end against a fake engine', () => {
 
     expect(stub.sessionRequests).toEqual([]);
     expect(stub.progressTitles).toEqual([]);
+    expect(stub.executedCommands).toEqual([]);
     expect(renderedTree(stub.treeViews[0]!)).toEqual([]);
   });
 
@@ -515,6 +539,7 @@ describe('a review arriving in stages', () => {
     const base = (path: string) => changeUri('base', plain.copies.base.commit, path);
     const head = (path: string) => changeUri('head', plain.copies.head.commit, path);
     expect(stub.executedCommands).toEqual([
+      { id: OPEN_REVIEW_CONTAINER_COMMAND, args: [] },
       {
         id: 'vscode.changes',
         args: [
@@ -604,6 +629,7 @@ describe('reading a part in the multi-file diff', () => {
     await clickPart(view, 'src/retry.py');
 
     expect(stub.executedCommands).toEqual([
+      { id: OPEN_REVIEW_CONTAINER_COMMAND, args: [] },
       {
         id: 'vscode.changes',
         args: [
@@ -682,6 +708,7 @@ describe('reading a part in the multi-file diff', () => {
     await registeredCommands().get(OPEN_ALL_PARTS_COMMAND)!() as Promise<void>;
 
     expect(stub.executedCommands).toEqual([
+      { id: OPEN_REVIEW_CONTAINER_COMMAND, args: [] },
       {
         id: 'vscode.changes',
         args: [
@@ -873,6 +900,7 @@ describe('the overview', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(stub.executedCommands).toEqual([
+      { id: OPEN_REVIEW_CONTAINER_COMMAND, args: [] },
       { id: 'vscode.changes', args: ['src/retry.py', [[head('src/retry.py'), base('src/retry.py'), head('src/retry.py')]]] },
     ]);
   });
@@ -907,6 +935,7 @@ describe('the overview', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(stub.executedCommands).toEqual([
+      { id: OPEN_REVIEW_CONTAINER_COMMAND, args: [] },
       { id: 'vscode.changes', args: ['src/settings.ts', [[head('src/settings.ts'), base('src/settings.ts'), head('src/settings.ts')]]] },
     ]);
   });
