@@ -573,16 +573,23 @@ export function claudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}): Agent
     });
 
     let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
+    const stop = (): void => {
       child.kill('SIGTERM');
       setTimeout(() => child.kill('SIGKILL'), killGraceMs).unref();
+    };
+    const timer = setTimeout(() => {
+      timedOut = true;
+      stop();
     }, request.timeoutMs);
+    // A cancelled review stops its run as the timeout would; the run then fails.
+    request.signal?.addEventListener('abort', stop, { once: true });
+    if (request.signal?.aborted) stop();
     const exit = await new Promise<{ code: number | null; spawnError?: string }>((done) => {
       child.on('error', (spawnError) => done({ code: null, spawnError: spawnError.message }));
       child.on('close', (code) => done({ code }));
     });
     clearTimeout(timer);
+    request.signal?.removeEventListener('abort', stop);
     // The child closes only after its output ends, so every line has been read.
     lines.close();
 

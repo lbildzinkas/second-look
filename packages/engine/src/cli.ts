@@ -152,8 +152,11 @@ while the agent compares the change with its description and issues,
 then the result with the comparison in another while the agent lists
 the claims, then the result with the claims in another while the agent
 judges them, then the result with the verdicts in another while the agent
-maps the acceptance criteria, then the mapped result. Each review
-request may also carry the reviewer's agent choice — the agent, model,
+maps the acceptance criteria, then the mapped result. Every notification
+and the response record each stage's id, position, start time, duration,
+agent and outcome, and a review/cancel request naming a review's id stops
+it: the review answers with what landed, every stage not run stopped.
+Each review request may also carry the reviewer's agent choice — the agent, model,
 effort, account and agent path from the editor's settings, the path an
 absolute one that replaces the agent's command — which runs that review's
 agent passes and stamps the account label on their results, replacing

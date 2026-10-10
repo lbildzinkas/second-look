@@ -42,7 +42,7 @@ describe('runCli review', () => {
       parts: unknown[];
       budget: { limits: Record<string, number>; used: { agentRuns: number; filesFetched: number; downloadBytes: number } };
     };
-    expect(result.version).toBe(20);
+    expect(result.version).toBe(21);
     expect(result.parts).toHaveLength(11);
     // Every GitHub answer and archive the review downloaded is counted,
     // with no limit set, and the use is the last line on stderr.
@@ -69,7 +69,7 @@ describe('runCli review', () => {
       version: number;
       copies: { head: { path: string } };
     };
-    expect(result.version).toBe(20);
+    expect(result.version).toBe(21);
     expect(result.copies.head.path.startsWith(cacheDir)).toBe(true);
   });
 

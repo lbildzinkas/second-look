@@ -1,12 +1,13 @@
 import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_AGENT_SETTINGS, type AgentAdapter, type AgentRunRequest } from '../src/agent.js';
 import { budgetMeter } from '../src/budget.js';
 import { removeCopy } from '../src/cache.js';
 import { CLAIMS_INSTRUCTIONS } from '../src/claims.js';
 import { CRITERIA_MAPPING_INSTRUCTIONS } from '../src/criteria-mapping.js';
 import { REVIEW_RESULT_VERSION } from '../src/protocol.js';
-import type { Part } from '../src/protocol.js';
+import type { Part, ReviewStageRecord } from '../src/protocol.js';
 import { fetchChange, reviewChange, reviewPullRequest, type ReviewStage } from '../src/review.js';
 import { VERDICTS_INSTRUCTIONS } from '../src/verdicts.js';
 import {
@@ -19,6 +20,7 @@ import {
   pull8,
   scriptedAgent,
   temporaryCacheDir,
+  type ScriptedAgent,
 } from './helpers.js';
 
 let cacheDir: string;
@@ -40,7 +42,7 @@ describe('reviewPullRequest', () => {
     });
 
     expect(result.version).toBe(REVIEW_RESULT_VERSION);
-    expect(result.version).toBe(20);
+    expect(result.version).toBe(21);
     expect(result.pullRequest.number).toBe(42);
     expect(result.pullRequest.description).toHaveLength(8082);
     // The head commit's SHA, where the noise attributes are read.
@@ -501,10 +503,13 @@ describe('reviewPullRequest on a budget', () => {
 
     expect(plain.result).not.toHaveProperty('budget');
     expect(plain.stages.every((stage) => stage.result.budget === undefined)).toBe(true);
-    const { budget, parseTimeMs: _metered, copies: meteredCopies, ...meteredRest } = metered.result;
-    const { parseTimeMs: _plain, copies: plainCopies, ...plainRest } = plain.result;
+    const { budget, parseTimeMs: _metered, copies: meteredCopies, stages: meteredStages, ...meteredRest } = metered.result;
+    const { parseTimeMs: _plain, copies: plainCopies, stages: plainStages, ...plainRest } = plain.result;
     expect(budget!.limits).toEqual({ agentRuns: 0, filesFetched: 0, downloadMiB: 0 });
     expect(meteredRest).toEqual(plainRest);
+    // The same stages end the same way; only their times differ.
+    const ends = (stages: ReviewStageRecord[] | undefined) => stages!.map(({ id, state, detail }) => ({ id, state, detail }));
+    expect(ends(meteredStages)).toEqual(ends(plainStages));
     expect(meteredCopies.head.path.replace(cacheDir, '')).toBe(plainCopies.head.path.replace(otherCache, ''));
     expect({ ...meteredCopies.base, path: '' }).toEqual({ ...plainCopies.base, path: '' });
     expect(metered.stages.map((stage) => stage.running)).toEqual(plain.stages.map((stage) => stage.running));
@@ -571,5 +576,160 @@ describe('reviewPullRequest on a budget, with claims and criteria', () => {
     expect(result.criteria).toMatchObject({ outcome: 'read' });
     expect(result.claims!.claims.map((claim) => claim.verdict.kind)).toEqual(['unverifiable']);
     expect(result.criteria!.criteria.map((criterion) => criterion.verdict.kind)).toEqual(["can't tell", "can't tell", "can't tell", "can't tell"]);
+  });
+});
+
+describe("the review's stages", () => {
+  const CLAIM = 'The full description must never be truncated by the companion, whatever its length.';
+  const settings = { ...DEFAULT_AGENT_SETTINGS, model: 'fake/model', effort: 'high' };
+
+  /** Lists one claim from the description, judges it, and maps the four criteria; any other pass gets no answer it accepts. */
+  function judgingAgent(): ScriptedAgent {
+    return answeringAgent((run) => {
+      if (run.instructions === CLAIMS_INSTRUCTIONS) return { claims: [{ source: 'description', quote: CLAIM, file: null, line: null, part: 'p1' }] };
+      if (run.instructions === VERDICTS_INSTRUCTIONS) {
+        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: "the model's memory", reason: 'Nothing in the change shows it.', evidence: [], library: null }] };
+      }
+      if (run.instructions === CRITERIA_MAPPING_INSTRUCTIONS) {
+        return { criteria: ['a1', 'a2', 'a3', 'a4'].map((id) => ({ id, verdict: "can't tell", reason: 'Nothing in the change shows it.', code: [], tests: [], manual: [] })) };
+      }
+      return {};
+    });
+  }
+
+  async function review(agent: AgentAdapter, options: { signal?: AbortSignal; story?: boolean } = {}) {
+    const updates: ReviewStage[] = [];
+    const result = await reviewPullRequest(PR_URL, {
+      token: 'test-token',
+      fetch: fixtureFetch().fetch,
+      cacheDir,
+      ...(options.signal ? { signal: options.signal } : {}),
+      agentStage: { adapter: agent, settings, ...(options.story === false ? { story: false } : {}), onStage: (update) => updates.push(update) },
+    });
+    return { result, updates };
+  }
+
+  const states = (stages: ReviewStageRecord[] | undefined) => stages!.map((stage) => `${stage.position}/${stage.total} ${stage.id}: ${stage.state}`);
+
+  it('records every stage of a full run: its place, start time, duration, agent, stamp and outcome', async () => {
+    const before = Date.now();
+    const { result, updates } = await review(judgingAgent());
+
+    expect(states(result.stages)).toEqual([
+      '1/9 plain: done',
+      '2/9 grouping: fell back',
+      '3/9 ranking: fell back',
+      '4/9 story: fell back',
+      '5/9 unexplained: fell back',
+      '6/9 claims: done',
+      '7/9 verdicts: done',
+      '8/9 criteria: done',
+      '9/9 docLinks: done',
+    ]);
+    for (const stage of result.stages!) {
+      expect(Date.parse(stage.startedAt!)).toBeGreaterThanOrEqual(before - 1000);
+      expect(stage.durationMs).toBeGreaterThanOrEqual(0);
+      if (stage.id !== 'plain') expect(stage.agent).toEqual({ agent: 'fake', model: 'fake/model', effort: 'high' });
+    }
+    const byId = new Map(result.stages!.map((stage) => [stage.id, stage]));
+    expect(byId.get('plain')).not.toHaveProperty('agent');
+    // Each finished stage carries its pass's stamp and, when it fell back, its reason.
+    expect(byId.get('claims')!.stamp).toEqual(result.claims!.stamp);
+    expect(byId.get('verdicts')!.stamp).toEqual(result.claims!.judging!.stamp);
+    expect(byId.get('criteria')!.stamp).toEqual(result.criteria!.mapping!.stamp);
+    expect(byId.get('story')).toMatchObject({ detail: result.story!.detail, stamp: result.story!.stamp });
+    // The ranking was never asked, so it fell back with no stamp.
+    expect(byId.get('ranking')!.detail).toBe(result.ranking.agent!.detail);
+    expect(byId.get('ranking')).not.toHaveProperty('stamp');
+
+    // Every update names the stage running, which the result so far records
+    // as running, with every stage before it finished and every one after it to come.
+    expect(updates.map((update) => update.stage!.id)).toEqual(['grouping', 'story', 'unexplained', 'claims', 'verdicts', 'criteria']);
+    for (const update of updates) {
+      const stage = update.stage!;
+      expect(stage).toMatchObject({ state: 'running', total: 9, agent: { agent: 'fake', model: 'fake/model', effort: 'high' } });
+      expect(stage).not.toHaveProperty('durationMs');
+      expect(update.result.stages![stage.position - 1]).toEqual(stage);
+      expect(update.result.stages!.slice(0, stage.position - 1).every((each) => each.durationMs !== undefined && each.state !== 'running')).toBe(true);
+      expect(update.result.stages!.slice(stage.position).every((each) => each.state === 'to come' && each.startedAt === undefined)).toBe(true);
+    }
+    expect(updates.find((update) => update.stage!.id === 'verdicts')!.stage!.position).toBe(7);
+  });
+
+  it('marks a stage that falls back with its reason, one not asked for skipped, and one that breaks failed, and goes on', async () => {
+    const judging = judgingAgent();
+    const breaking: AgentAdapter = {
+      ...judging,
+      run: async (request) => {
+        if (request.instructions === CLAIMS_INSTRUCTIONS) throw new Error('the agent broke');
+        return judging.run(request);
+      },
+    };
+    const { result } = await review(breaking, { story: false });
+    const byId = new Map(result.stages!.map((stage) => [stage.id, stage]));
+
+    expect(byId.get('grouping')).toMatchObject({ state: 'fell back', detail: result.grouping.agent!.detail, stamp: result.grouping.agent!.stamp });
+    expect(byId.get('grouping')!.detail).toContain('the answer was invalid twice');
+    expect(byId.get('story')).toEqual({ id: 'story', position: 4, total: 9, state: 'skipped', detail: 'the review was asked not to run it' });
+    expect(byId.get('claims')).toMatchObject({ state: 'failed', detail: 'the agent broke', durationMs: expect.any(Number) });
+    expect(result.claims).toBeUndefined();
+    // With no claims listed, there is nothing to judge; the criteria are still mapped.
+    expect(byId.get('verdicts')).toMatchObject({ state: 'skipped', detail: 'this change gave it nothing to do' });
+    expect(byId.get('criteria')!.state).toBe('done');
+    expect(result.criteria!.mapping!.outcome).toBe('mapped');
+  });
+
+  it('stops the stage running on a cancel, keeps what landed and marks every stage not run stopped', async () => {
+    const cancel = new AbortController();
+    const judging = judgingAgent();
+    const stopped: AgentRunRequest[] = [];
+    // The reviewer cancels while the claims are being judged; the run going ends only when it is stopped.
+    const agent: AgentAdapter = {
+      ...judging,
+      run: async (request) => {
+        if (request.instructions !== VERDICTS_INSTRUCTIONS) return judging.run(request);
+        stopped.push(request);
+        setTimeout(() => cancel.abort(), 10);
+        await new Promise((resolve) => request.signal!.addEventListener('abort', resolve, { once: true }));
+        return { status: 'failed', text: '', error: 'stopped', stamp: { agent: 'fake', agentVersion: '1.2.3', model: null, effort: null, runAt: new Date().toISOString() } };
+      },
+    };
+    const { result, updates } = await review(agent, { signal: cancel.signal });
+
+    expect(stopped).toHaveLength(1);
+    expect(states(result.stages)).toEqual([
+      '1/9 plain: done',
+      '2/9 grouping: fell back',
+      '3/9 ranking: fell back',
+      '4/9 story: fell back',
+      '5/9 unexplained: fell back',
+      '6/9 claims: done',
+      '7/9 verdicts: stopped',
+      '8/9 criteria: stopped',
+      '9/9 docLinks: stopped',
+    ]);
+    const byId = new Map(result.stages!.map((stage) => [stage.id, stage]));
+    // The stage running when the cancel came keeps its start and duration; the ones after it never started.
+    expect(byId.get('verdicts')).toMatchObject({ detail: 'the review was stopped before this stage finished', startedAt: expect.any(String), durationMs: expect.any(Number) });
+    expect(byId.get('criteria')).toEqual({ id: 'criteria', position: 8, total: 9, state: 'stopped', detail: 'the review was stopped before this stage finished' });
+    // The claims landed and stay, not checked; nothing of the verdicts, criteria or documentation links stage is kept.
+    expect(result.claims).toMatchObject({ outcome: 'listed' });
+    expect(result.claims!.claims.map((claim) => claim.verdict.kind)).toEqual(['not checked']);
+    expect(result.claims!.judging).toBeUndefined();
+    expect(result.criteria!.mapping).toBeUndefined();
+    expect(result.docLinks).toBeUndefined();
+    // The last update was the verdicts stage starting: none followed the cancel.
+    expect(updates.at(-1)!.stage!.id).toBe('verdicts');
+  });
+
+  it('fails a review cancelled before the plain pass had a result, and downloads nothing more', async () => {
+    const cancel = new AbortController();
+    cancel.abort();
+    const transport = fixtureFetch();
+    const fetched = vi.fn(transport.fetch);
+    await expect(
+      reviewPullRequest(PR_URL, { token: 'test-token', fetch: fetched, cacheDir, signal: cancel.signal, agentStage: { adapter: judgingAgent() } }),
+    ).rejects.toThrow();
+    expect(fetched.mock.calls.every(([, init]) => init?.signal === cancel.signal)).toBe(true);
   });
 });

@@ -8,7 +8,9 @@ import {
   NOT_INITIALIZED_CODE,
   REVIEW_STAGE_METHOD,
   VERSION_MISMATCH_CODE,
+  type ReviewStageParams,
 } from '../src/rpc.js';
+import type { AgentAdapter, AgentRunRequest } from '../src/agent.js';
 import type { AgentName } from '../src/agents.js';
 import type { ScriptedAgent } from './helpers.js';
 import { CLAIMS_INSTRUCTIONS } from '../src/claims.js';
@@ -148,7 +150,7 @@ describe('runRpcServer', () => {
 
     expect(responses[0]!.result).toEqual({ protocolVersion: ENGINE_PROTOCOL_VERSION });
     const first = responses[1]!.result as { version: number; parts: unknown[] };
-    expect(first.version).toBe(20);
+    expect(first.version).toBe(21);
     expect(first.parts).toHaveLength(11);
     const second = responses[2]!.result as { parts: unknown[] };
     expect(second.parts).toHaveLength(11);
@@ -257,7 +259,7 @@ describe('runRpcServer', () => {
     expect(responses[0]!.id).toBeNull();
     expect(responses[0]!.error!.message).toContain('not JSON');
     expect(responses[1]!.error!.message).toContain('unknown method: start');
-    expect(responses[1]!.error!.message).toContain('initialize, agents/probe, review, fetchLibrary, draftComment, ask, sendReview, reviewedMarks, markReviewed and markViewed');
+    expect(responses[1]!.error!.message).toContain('initialize, agents/probe, review, review/cancel, fetchLibrary, draftComment, ask, sendReview, reviewedMarks, markReviewed and markViewed');
     expect(responses[2]!.result).toEqual({ protocolVersion: ENGINE_PROTOCOL_VERSION });
   });
 
@@ -355,6 +357,86 @@ describe('runRpcServer', () => {
   });
 });
 
+describe('runRpcServer cancelling a review', () => {
+  it('stops the stage running, answers the review with what landed and every stage not run stopped, and sends no stage after', async () => {
+    const lines = [
+      request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+      request('review', { url: PR_7_URL, token: TOKEN, agent: { agent: 'pi', model: 'fake/model', effort: 'high' } }, 2),
+    ];
+    // The grouping run goes on until it is stopped.
+    const grouping: AgentRunRequest[] = [];
+    const agent: AgentAdapter = {
+      ...scriptedAgent([]),
+      run: async (run) => {
+        grouping.push(run);
+        await new Promise((resolve) => run.signal!.addEventListener('abort', resolve, { once: true }));
+        return { status: 'failed', text: '', error: 'stopped', stamp: { agent: 'fake', agentVersion: '1.2.3', model: null, effort: null, runAt: new Date().toISOString() } };
+      },
+    };
+    const written: string[] = [];
+    let stageSeen: () => void = () => undefined;
+    const firstStage = new Promise<void>((resolve) => (stageSeen = resolve));
+    let index = 0;
+    await runRpcServer(
+      {
+        readLine: async () => {
+          if (index < lines.length) return lines[index++] as string;
+          if (index === lines.length) {
+            index++;
+            await firstStage;
+            return request('review/cancel', { id: 2 }, 3);
+          }
+          return null;
+        },
+      },
+      {
+        writeLine: (line) => {
+          written.push(line);
+          if (line.includes(REVIEW_STAGE_METHOD)) stageSeen();
+        },
+      },
+      { cacheDir, fetch: fixtureFetch(pull7()).fetch, agent: { adapterFor: () => agent, defaultAgent: 'pi' } },
+    );
+
+    const messages = written.map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(messages.map((message) => message['id'] ?? message['method'])).toEqual([1, REVIEW_STAGE_METHOD, 3, 2]);
+    const stage = (messages[1]!['params'] as ReviewStageParams).stage!;
+    expect(stage).toMatchObject({ id: 'grouping', position: 2, total: 9, state: 'running', agent: { agent: 'fake', model: 'fake/model', effort: 'high' } });
+    expect(Date.parse(stage.startedAt!)).not.toBeNaN();
+    expect(messages[2]).toMatchObject({ id: 3, result: { cancelled: true } });
+    expect(grouping).toHaveLength(1);
+    const result = messages[3]!['result'] as ReviewResult;
+    // The plain parts landed and stay; the grouping was stopped and the rest never ran.
+    expect(result.grouping).toEqual({ by: 'plain' });
+    expect(result.parts.length).toBeGreaterThan(0);
+    expect(result.stages!.map((each) => `${each.id}: ${each.state}`)).toEqual([
+      'plain: done',
+      'grouping: stopped',
+      'ranking: stopped',
+      'story: stopped',
+      'unexplained: stopped',
+      'claims: stopped',
+      'verdicts: stopped',
+      'criteria: stopped',
+      'docLinks: stopped',
+    ]);
+    expect(result.story).toBeUndefined();
+    expect(result.claims).toBeUndefined();
+  });
+
+  it('answers a cancel of a review that is not running, and refuses one that names no review or comes before the handshake', async () => {
+    const responses = await serve([
+      request('review/cancel', { id: 2 }, 1),
+      request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }, 2),
+      request('review/cancel', { id: 9 }, 3),
+      request('review/cancel', { id: 'two' }, 4),
+    ]);
+    expect(responses[0]!.error).toMatchObject({ code: NOT_INITIALIZED_CODE, message: expect.stringContaining('initialize before review/cancel') });
+    expect(responses[2]).toMatchObject({ id: 3, result: { cancelled: false } });
+    expect(responses[3]!.error).toMatchObject({ code: JSON_RPC_INVALID_PARAMS, message: 'review/cancel needs params: { "id": number }, the id of the review request to stop' });
+  });
+});
+
 describe('runRpcServer with an agent', () => {
   it('sends the plain result as a stage notification before the answer with the agent parts, story, unexplained changes and claims', async () => {
     const lines = [
@@ -391,7 +473,7 @@ describe('runRpcServer with an agent', () => {
         id: 2,
         running: 'grouping related hunks with fake',
         timeoutMs: 660_000,
-        result: { version: 20, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
+        result: { version: 21, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
       },
     });
     // The fake agent has no tested ranking, so the story stage follows the grouping.
@@ -825,7 +907,7 @@ describe('runRpcServer fetching a library', () => {
     });
     expect(pypiBeforeFetch).toBe(0);
     expect(answer(3).result).toMatchObject({
-      version: 20,
+      version: 21,
       claims: {
         claims: [
           {
@@ -950,7 +1032,7 @@ describe('runRpcServer fetching a library', () => {
 
     expect(answer(3).error).toBeUndefined();
     expect(answer(3).result).toMatchObject({
-      version: 20,
+      version: 21,
       claims: {
         claims: [
           {
