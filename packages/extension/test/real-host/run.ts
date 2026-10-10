@@ -269,12 +269,21 @@ export async function run(): Promise<void> {
       `the ${EXTENSION_ID} activation did not export the review tree's data provider`,
     );
 
-    deepStrictEqual(await renderedTree(provider), [
-      {
-        label: 'Review a pull request to see its parts here, ranked by importance.',
-        contextValue: 'part',
-      },
-    ]);
+    // Before the first review the tree is empty, so the view shows its
+    // welcome button.
+    deepStrictEqual(await renderedTree(provider), []);
+
+    // The review tree lives in its own Activity Bar container: the
+    // container opens, and the tree focuses, through the commands the
+    // editor derives from the manifest.
+    await withTimeout(
+      vscode.commands.executeCommand('workbench.view.extension.second-look'),
+      'opening the Second Look container',
+    );
+    await withTimeout(
+      vscode.commands.executeCommand('second-look.reviewTree.focus'),
+      'focusing the review tree',
+    );
 
     await withTimeout(
       vscode.commands.executeCommand(REVIEW_COMMAND, PR_URL),

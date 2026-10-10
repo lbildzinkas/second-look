@@ -93,12 +93,6 @@ export interface ExtensionDeps {
   env?: NodeJS.ProcessEnv;
 }
 
-/** The one node the tree shows before the first review. */
-const EMPTY_TREE_PLACEHOLDER: TreePart = {
-  label: 'Review a pull request to see its parts here, ranked by importance.',
-  kind: 'part',
-};
-
 /** A tree node: a section, a part inside it, or a pending comment. */
 type TreeNode = TreeSection | TreePart | TreeComment;
 
@@ -194,7 +188,9 @@ class ReviewTreeProvider implements vscode.TreeDataProvider<TreeNode> {
 
   getChildren(node?: TreeNode): TreeNode[] {
     if (node === undefined) {
-      return this.sections.length > 0 ? this.sections : [EMPTY_TREE_PLACEHOLDER];
+      // Empty before the first review, so the view shows its welcome
+      // content: the button that starts one.
+      return this.sections;
     }
     return isSection(node) ? node.parts : [];
   }

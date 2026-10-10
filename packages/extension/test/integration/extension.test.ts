@@ -262,19 +262,14 @@ describe('activating the companion', () => {
     expect(stub.commentControllers.map((controller) => controller.id)).toEqual(['second-look', 'second-look.findings']);
   });
 
-  it('shows the placeholder before any review ran, with nothing to open', () => {
+  it('leaves the tree empty before any review ran, so the view shows its welcome button', () => {
     activate(stubContext() as unknown as vscode.ExtensionContext, {
       spawnEngine: () => {
         throw new Error('no review ran');
       },
     });
 
-    const provider = providerOf(stub.treeViews[0]!);
-    const placeholder = provider.getChildren()[0]!;
-    expect(provider.getTreeItem(placeholder).label).toBe(
-      'Review a pull request to see its parts here, ranked by importance.',
-    );
-    expect(provider.getTreeItem(placeholder).command).toBeUndefined();
+    expect(providerOf(stub.treeViews[0]!).getChildren()).toEqual([]);
   });
 });
 
@@ -401,12 +396,7 @@ describe('the review command, end to end against a fake engine', () => {
     });
 
     expect(stub.errorMessages).toEqual(['GitHub is down']);
-    expect(renderedTree(view)).toEqual([
-      {
-        label: 'Review a pull request to see its parts here, ranked by importance.',
-        contextValue: 'part',
-      },
-    ]);
+    expect(renderedTree(view)).toEqual([]);
   });
 
   it('does nothing without a pull request URL', async () => {
@@ -420,12 +410,7 @@ describe('the review command, end to end against a fake engine', () => {
 
     expect(stub.sessionRequests).toEqual([]);
     expect(stub.progressTitles).toEqual([]);
-    expect(renderedTree(stub.treeViews[0]!)).toEqual([
-      {
-        label: 'Review a pull request to see its parts here, ranked by importance.',
-        contextValue: 'part',
-      },
-    ]);
+    expect(renderedTree(stub.treeViews[0]!)).toEqual([]);
   });
 
   it('asks again later when the reviewer is not signed in', async () => {

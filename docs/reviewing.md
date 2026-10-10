@@ -1,6 +1,6 @@
 # How a review works
 
-A review starts with the **Second Look: Review pull request** command and a GitHub pull request URL. The engine — a separate local process the extension starts — fetches the pull request from GitHub with your sign-in, keeps read-only copies of both sides of the change in its cache, and offers its result to the extension, which shows it as the ranked review tree in the Explorer side bar and the overview tab. Nothing is checked out into your workspace, and nothing from the pull request is built, installed or run.
+A review starts with the **Second Look: Review pull request** command — the **Review a pull request** button in the empty Second Look view, the pull request button in its title bar, or the Command Palette — and a GitHub pull request URL. The engine — a separate local process the extension starts — fetches the pull request from GitHub with your sign-in, keeps read-only copies of both sides of the change in its cache, and offers its result to the extension, which shows it as the ranked review tree in the Second Look side bar, opened from its own icon in the Activity Bar, and the overview tab. Nothing is checked out into your workspace, and nothing from the pull request is built, installed or run.
 
 This page follows one review from start to sent. The words are the project's [glossary](../CONTEXT.md) words: story, part, importance, noise, claim, verdict, evidence source, ask, finding.
 

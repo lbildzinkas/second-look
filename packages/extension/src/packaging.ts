@@ -80,6 +80,27 @@ export function stagedExtensionManifest(
 }
 
 /**
+ * The icon files the manifest's view containers point at, relative to
+ * the extension's root: the package carries each one at the same path,
+ * so the Activity Bar finds its icon in an installed package exactly as
+ * it does in the repository.
+ */
+export function viewContainerIconFiles(manifest: Record<string, unknown>): string[] {
+  const contributes = manifest['contributes'] as
+    | { viewsContainers?: Record<string, { icon?: unknown }[]> }
+    | undefined;
+  const files = new Set<string>();
+  for (const containers of Object.values(contributes?.viewsContainers ?? {})) {
+    for (const container of containers) {
+      if (typeof container.icon === 'string') {
+        files.add(container.icon);
+      }
+    }
+  }
+  return [...files].sort();
+}
+
+/**
  * A size a person can read, in decimal units: the package's size is what
  * the build reports, so the reader can judge it without a calculator.
  */
