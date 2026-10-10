@@ -106,7 +106,7 @@ describe('the banner body', () => {
     } as ReviewResult;
 
     expect(bannerBody(ranked, retry, NO_MARKS).split('\n\n')[2]).toBe(
-      'Signals: new code · 2 callers · no tests before this pull request · Agent ranking: pi · zai/glm\\-4\\.6 \\(ranking prompt v2\\)',
+      'Signals: new code · 2 callers · no tests before this pull request · Agent ranking: pi · zai/glm\\-4\\.6 · default effort \\(ranking prompt v2\\)',
     );
   });
 
