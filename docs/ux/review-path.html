@@ -1,0 +1,1323 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Second Look — v1.1 review path</title>
+<link rel="stylesheet" href="codicons/codicon.css">
+<style>
+/* ---------- board chrome (tokens from docs/ux/reviewing-surface.html) ---------- */
+*,*::before,*::after{box-sizing:border-box}
+:root{--bd-bg:#111214;--bd-panel:#18191c;--bd-line:#2a2c31;--bd-ink:#e6e6e6;--bd-dim:#9a9ca3;--bd-acc:#4daafc;--bd-ok:#89d185;--bd-bad:#f48771;--bd-warn:#e2c08d}
+html,body{margin:0;background:var(--bd-bg);color:var(--bd-ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+a{color:var(--bd-acc)}
+code{font:13px "SF Mono",Menlo,Consolas,monospace;background:#23252a;padding:1px 5px;border-radius:4px;overflow-wrap:anywhere}
+.wrap{max-width:1500px;margin:0 auto;padding:28px 28px 120px}
+h1{font-size:30px;line-height:1.2;margin:0 0 6px;letter-spacing:-.01em}
+h2{font-size:22px;margin:0 0 4px}
+h3{font-size:16px;margin:0 0 6px}
+.lede{color:var(--bd-dim);max-width:1060px;margin:0}
+.eyebrow{text-transform:uppercase;letter-spacing:.08em;font-size:12px;color:var(--bd-acc);font-weight:600}
+.card{background:var(--bd-panel);border:1px solid var(--bd-line);border-radius:10px;padding:16px 18px;min-width:0}
+.tag{display:inline-block;font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;border:1px solid var(--bd-line);color:var(--bd-dim);white-space:nowrap}
+.tag.rec{border-color:#2f6f3a;color:var(--bd-ok);background:#132516}
+.top{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:22px 0 26px}
+@media (max-width:1200px){.top{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:700px){.top{grid-template-columns:minmax(0,1fr)}}
+.top .card{display:flex;flex-direction:column;gap:6px}
+.top .card .pn{font:700 12px "SF Mono",Menlo,monospace;color:var(--bd-acc)}
+.top .card p{margin:0;font-size:14px;color:#cfd1d6}
+.top .card a{font-size:13px}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px;font-size:13px}
+.flow span.s{border:1px solid var(--bd-line);border-radius:999px;padding:3px 10px;background:#1d1f23;white-space:nowrap}
+.flow span.s.k{border-color:var(--bd-acc);color:#fff;background:#13263a}
+.flow i.arr{color:var(--bd-dim);font-style:normal}
+.mnav{position:sticky;top:0;z-index:20;background:rgba(17,18,20,.94);backdrop-filter:blur(6px);border-bottom:1px solid var(--bd-line);margin:0 -28px 18px;padding:10px 28px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.mnav a{color:var(--bd-dim);text-decoration:none;font-size:13px;border:1px solid var(--bd-line);border-radius:999px;padding:4px 11px;white-space:nowrap}
+.mnav a.p{color:#fff;border-color:#33507a;background:#13263a}
+.mnav a:hover{color:#fff;border-color:#555}
+.mnav .sp{flex:1}
+.seg{display:inline-flex;align-items:center;border:1px solid var(--bd-line);border-radius:8px;overflow:hidden}
+.seg .lb{font-size:12px;color:var(--bd-dim);padding:0 8px}
+.seg button{background:transparent;color:var(--bd-dim);border:0;border-left:1px solid var(--bd-line);padding:5px 11px;font:600 12px -apple-system,system-ui,sans-serif;cursor:pointer}
+.seg button[aria-pressed=true]{background:#2a2d33;color:#fff}
+.part{margin:60px 0 24px;padding:18px 20px;border-radius:12px;border:1px solid #2a3a52;background:linear-gradient(180deg,#14202f,#111214);scroll-margin-top:64px}
+.part .pn{font:700 12px "SF Mono",Menlo,monospace;color:var(--bd-acc);letter-spacing:.08em;text-transform:uppercase}
+.part h2{font-size:26px;margin:2px 0 6px}
+.part p{margin:0;color:#cfd1d6;max-width:1100px}
+.part .owner{margin-top:8px;font-size:14px;color:var(--bd-dim);border-left:3px solid #33507a;padding-left:10px}
+section.moment{margin:0 0 50px;scroll-margin-top:64px}
+.mhead{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+.mhead .num{font:700 13px "SF Mono",Menlo,monospace;color:var(--bd-acc)}
+.mdesc{color:var(--bd-dim);margin:0 0 14px;max-width:1100px}
+.g2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.g3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+@media (max-width:1100px){.g2,.g3{grid-template-columns:minmax(0,1fr)!important}}
+.shot{min-width:0}
+.cap{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:13px;color:var(--bd-dim);flex-wrap:wrap}
+.cap b{color:var(--bd-ink)}
+.stage{position:relative;width:100%;overflow:hidden;border-radius:8px;border:1px solid #000;box-shadow:0 8px 30px rgba(0,0,0,.45)}
+.stage>.vs{position:absolute;left:0;top:0;transform-origin:0 0}
+.notes{font-size:13.5px;color:#cfd1d6;margin:10px 2px 0;padding-left:18px}
+.notes li{margin:3px 0}
+.today-only,.after-only{display:none}
+body.today .today-only{display:revert}
+body:not(.today) .after-only{display:revert}
+.t-today{display:none!important}
+body.today .t-today{display:flex!important}
+body.today .t-after{display:none!important}
+.hlnote{color:var(--bd-warn)}
+.tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:10px}
+@media (max-width:800px){.tr{grid-template-columns:minmax(0,1fr)}}
+.tr h4{margin:0 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.05em}
+.tr .gain h4{color:var(--bd-ok)}.tr .cost h4{color:var(--bd-bad)}
+.tr ul{margin:0;padding-left:18px;font-size:13.5px;color:#cfd1d6}
+.tr li{margin:3px 0}
+.altrec{margin-top:16px;border-color:#2f6f3a;background:linear-gradient(180deg,#132016,#18191c 60%)}
+.altrec p{margin:6px 0 0;color:#cfd1d6}
+.tblwrap{overflow-x:auto;border:1px solid var(--bd-line);border-radius:10px;max-height:760px}
+table.inv{border-collapse:collapse;width:100%;min-width:900px;font-size:13.5px}
+table.inv th,table.inv td{padding:6px 10px;border-bottom:1px solid var(--bd-line);text-align:left;vertical-align:top}
+table.inv th{background:#1b1d21;color:var(--bd-dim);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em;position:sticky;top:0;z-index:1}
+table.inv td.k{color:var(--bd-dim);font-size:12.5px}
+table.inv tr.grp td{background:#16181b;color:var(--bd-acc);font:700 12px "SF Mono",Menlo,monospace;text-transform:uppercase;letter-spacing:.06em}
+table.inv .new{color:var(--bd-ok);font-weight:600;font-size:11px;border:1px solid #2f6f3a;border-radius:999px;padding:0 6px;margin-left:4px;white-space:nowrap}
+.shotimg{border:1px solid #000;border-radius:8px;max-height:620px;overflow:auto;background:#000}
+.shotimg img{display:block;width:100%}
+.sw{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+@media (max-width:1100px){.sw{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:640px){.sw{grid-template-columns:minmax(0,1fr)}}
+.swc{border-radius:10px;padding:12px 14px;border:1px solid #333;min-width:0}
+.swc h4{margin:0 0 8px;font-size:13px}
+.swc .r{display:flex;align-items:center;gap:7px;font-size:13px;padding:2px 0}
+.swc .r .codicon{font-size:15px}
+.swc .r .nm{flex:1;min-width:0}
+.swc .r .cr{font:12px "SF Mono",Menlo,monospace;opacity:.85}
+.swc .gl{font-size:11px;text-transform:uppercase;letter-spacing:.06em;opacity:.7;margin:8px 0 2px}
+/* decisions */
+.dec{display:flex;flex-direction:column;gap:12px}
+.dec fieldset{border:1px solid var(--bd-line);border-radius:10px;padding:12px 16px 14px;margin:0;background:var(--bd-panel);min-width:0}
+.dec legend{font-weight:600;padding:0 6px;font-size:15px}
+.dec legend .n{font:700 13px "SF Mono",Menlo,monospace;color:var(--bd-acc);margin-right:6px}
+.dec .why{color:var(--bd-dim);font-size:13.5px;margin:2px 0 8px}
+.dec label.ch{display:flex;gap:9px;align-items:flex-start;border:1px solid var(--bd-line);border-radius:8px;padding:7px 11px;margin:5px 0;cursor:pointer;background:#1d1f23;font-size:14px}
+.dec label.ch:has(input:checked){border-color:var(--bd-acc);background:#13263a}
+.dec label.ch input{accent-color:var(--bd-acc);margin-top:4px;flex:none}
+.dec label.ch .k{font:700 12px "SF Mono",Menlo,monospace;color:var(--bd-dim);margin-top:2px;flex:none}
+.dec textarea{width:100%;min-height:70px;resize:vertical;background:#0f1012;color:var(--bd-ink);border:1px solid var(--bd-line);border-radius:6px;padding:8px 10px;font:14px/1.4 -apple-system,system-ui,sans-serif}
+.dgroup{font:700 12px "SF Mono",Menlo,monospace;color:var(--bd-acc);letter-spacing:.08em;text-transform:uppercase;margin:18px 0 0}
+.sendrow{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:4px;position:sticky;bottom:0;background:rgba(17,18,20,.95);padding:10px 0;border-top:1px solid var(--bd-line)}
+button.q{background:#0e639c;color:#fff;border:0;border-radius:6px;padding:8px 16px;font:600 14px -apple-system,system-ui,sans-serif;cursor:pointer}
+button.q:hover{background:#1177bb}
+button.q2{background:transparent;color:var(--bd-dim);border:1px solid var(--bd-line);border-radius:6px;padding:7px 13px;font:600 13px -apple-system,system-ui,sans-serif;cursor:pointer}
+.qstate{font-size:13px;color:var(--bd-dim)}
+.qstate.ok{color:var(--bd-ok)}
+.build ul{margin:6px 0 0;padding-left:18px;font-size:14px;color:#cfd1d6}
+.build li{margin:5px 0}
+
+/* ---------- VS Code mockup (Dark Modern tokens + the semantic palette of part 4) ---------- */
+.vs{--fg:#cccccc;--mut:#9d9d9d;--ed:#1f1f1f;--bar:#181818;--line:#2b2b2b;--acc:#0078d4;--sel:#04395e;--wid:#222222;
+  --ok:#73c991;--bad:#f48771;--warn:#e2c08d;--info:#75beff;--must:#d7a4f5;--ink:#e6e6e6;--link:#4daafc;--card:#252526;--cardb:#333;
+  width:1100px;height:620px;background:var(--ed);color:var(--fg);font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;display:flex;flex-direction:column;overflow:hidden;text-align:left}
+.vs.black{--ed:#0b0b0b;--bar:#111111;--line:#262626;--card:#161616;--cardb:#2c2c2c}
+.vs *{min-width:0}
+.vs .codicon{font-size:16px;line-height:1}
+.vs .mono{font-family:"SF Mono",Menlo,Consolas,monospace}
+.vs .c-ok{color:var(--ok)}.vs .c-bad{color:var(--bad)}.vs .c-warn{color:var(--warn)}.vs .c-info{color:var(--info)}.vs .c-must{color:var(--must)}.vs .c-mut{color:var(--mut)}
+.vs .codicon-modifier-spin,.vs .spin{animation:sp 1.3s linear infinite;display:inline-block}
+@keyframes sp{to{transform:rotate(360deg)}}
+.vs-title{height:30px;flex:none;background:var(--bar);border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 10px;gap:8px}
+.vs-title .dots{display:flex;gap:7px}.vs-title .dots i{width:12px;height:12px;border-radius:50%;display:block}
+.vs-title .dots i:nth-child(1){background:#ff5f57}.vs-title .dots i:nth-child(2){background:#febc2e}.vs-title .dots i:nth-child(3){background:#28c840}
+.vs-cc{margin:0 auto;width:380px;height:22px;border:1px solid #3c3c3c;background:#222;border-radius:6px;color:var(--mut);font-size:12px;display:flex;align-items:center;justify-content:center;gap:6px}
+.vs-body{flex:1;display:flex;min-height:0}
+.vs-act{width:48px;flex:none;background:var(--bar);border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;padding-top:4px}
+.vs-act .ai{width:48px;height:46px;display:flex;align-items:center;justify-content:center;color:#868686;position:relative}
+.vs-act .ai .codicon{font-size:24px}
+.vs-act .ai.on{color:#fff}.vs-act .ai.on::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:2px;background:var(--acc)}
+.vs-act .ai .ab2{position:absolute;right:7px;bottom:7px;background:#0078d4;color:#fff;font-size:9px;border-radius:8px;padding:0 4px;line-height:14px}
+.vs-act .grow{flex:1}
+.vs-act svg{width:24px;height:24px}
+.vs-side{width:270px;flex:none;background:var(--bar);border-right:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden}
+.vs-sideh{height:35px;flex:none;display:flex;align-items:center;padding:0 8px 0 20px;font-size:11px;letter-spacing:.04em;color:#ccc;text-transform:uppercase;gap:2px}
+.vs-sideh .sp{flex:1}
+.vs-sideh .ab{width:22px;height:22px;display:flex;align-items:center;justify-content:center;color:#ccc;border-radius:4px}
+.vs-sec{flex:none;height:22px;display:flex;align-items:center;gap:4px;padding:0 8px 0 2px;white-space:nowrap;overflow:hidden;font:700 11px/1 -apple-system,system-ui,sans-serif;text-transform:uppercase;color:#ccc;border-top:1px solid var(--line)}
+.vs-sec .codicon{font-size:14px}
+.vs-sec .sp{flex:1}
+.vs-main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative}
+.vs-tabs{height:35px;flex:none;background:var(--bar);display:flex;border-bottom:1px solid var(--line)}
+.vs-tab{display:flex;align-items:center;gap:6px;padding:0 12px;color:var(--mut);border-right:1px solid var(--line);font-size:13px;white-space:nowrap;overflow:hidden}
+.vs-tab .codicon{font-size:14px}
+.vs-tab.on{background:var(--ed);color:#fff;border-top:1px solid var(--acc);margin-bottom:-1px}
+.vs-ed{flex:1;overflow:hidden;position:relative;min-height:0}
+.vs-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;color:#6b6b6b}
+.vs-empty .logo{width:120px;height:120px;opacity:.08}
+.vs-empty dl{display:grid;grid-template-columns:auto auto;gap:6px 14px;margin:0;font-size:13px}
+.vs-empty dt{text-align:right;color:#8b8b8b}.vs-empty dd{margin:0;color:#8b8b8b}
+.vs-empty kbd{font:12px -apple-system,system-ui,sans-serif;background:#2b2b2b;border:1px solid #3a3a3a;border-radius:3px;padding:1px 5px;color:#aaa}
+.vs-status{height:22px;flex:none;background:var(--bar);border-top:1px solid var(--line);display:flex;align-items:stretch;font-size:12px;color:var(--mut)}
+.vs-status .rem{background:var(--acc);color:#fff;display:flex;align-items:center;padding:0 10px}
+.vs-status .si{padding:0 7px;display:flex;align-items:center;gap:4px;white-space:nowrap}
+.vs-status .si .codicon{font-size:14px}
+.vs-status .sp{flex:1}
+.vs-status .sl{color:#ccc}
+.vs-status .sl.warnbg{background:#cca700;color:#1f1f1f}
+.vs-status .sl.hover{background:rgba(255,255,255,.12)}
+.hl{outline:2px dashed #e2c08d;outline-offset:-2px}
+/* quick input */
+.qp{position:absolute;top:36px;left:50%;transform:translateX(-50%);width:620px;background:var(--wid);border:1px solid #333;border-radius:6px;box-shadow:0 0 14px rgba(0,0,0,.65);padding:6px 0 5px;z-index:5;color:#ccc;font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;--sel:#04395e;--acc:#0078d4;--mut:#9d9d9d}
+.qp.solo{position:relative;top:auto;left:auto;transform:none;width:100%}
+.qp .codicon{font-size:16px;line-height:1}
+.qp-t{display:flex;align-items:center;height:24px;padding:0 6px;font-size:12.5px}
+.qp-t .l,.qp-t .r{width:60px;display:flex;align-items:center;gap:2px;color:#ccc}
+.qp-t .r{justify-content:flex-end}
+.qp-t .c{flex:1;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qp-in{margin:4px 6px 6px;height:26px;border:1px solid var(--acc);background:#313131;border-radius:2px;display:flex;align-items:center;padding:0 6px;gap:6px;font-size:13px;color:#ccc}
+.qp-in .ph{color:#8b8b8b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qp-in .val{color:#ddd;white-space:nowrap}
+.qp-in .caret{display:inline-block;width:1px;height:15px;background:#ddd;margin-left:-4px}
+.qp-msg{margin:0 6px 6px;padding:4px 8px;font-size:12px;color:#ccc;line-height:1.45}
+.qp-msg.warn{background:#352a05;border:1px solid #b89500;border-radius:2px}
+.qi{display:flex;align-items:center;gap:6px;min-height:22px;padding:0 11px;position:relative;white-space:nowrap}
+.qi.two{min-height:40px;align-items:flex-start;padding-top:3px;padding-bottom:3px}
+.qi.act{background:var(--sel);outline:1px solid var(--acc);outline-offset:-1px;color:#fff}
+.qi.sept{border-top:1px solid #3c3c3c;margin-top:2px}
+.qi .ic{flex:none;width:16px;display:flex;justify-content:center;padding-top:1px}
+.qi .tx{display:flex;flex-direction:column;flex:1;min-width:0}
+.qi .ln{display:flex;align-items:center;gap:6px;min-width:0;overflow:hidden}
+.qi .l{white-space:nowrap}
+.qi .l b{color:#2aaaff;font-weight:600}
+.qi.act .l b{color:#7fc6ff}
+.qi .d{color:var(--mut);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:inline-flex;align-items:center;gap:3px}
+.qi.act .d{color:#ccd5df}
+.qi .d .codicon,.qi .dt .codicon{font-size:13px}
+.qi .dt{color:var(--mut);font-size:12px;white-space:normal;line-height:1.35}
+.qi.act .dt{color:#c3cdd8}
+.qi .sl{position:absolute;right:11px;top:3px;color:var(--mut);font-size:12px}
+.qi.act .sl{color:#c3cdd8}
+.qi .kb{margin-left:auto;color:var(--mut);font-size:12px}
+.qp-hint{font-size:11.5px;color:#8b8b8b;padding:4px 11px 0;border-top:1px solid #2f2f2f;margin-top:4px}
+/* notification + tooltip */
+.toast{position:absolute;right:12px;bottom:34px;width:450px;background:#202020;border:1px solid #303030;border-radius:4px;box-shadow:0 0 10px rgba(0,0,0,.6);z-index:6;color:#ccc;font:13px/1.4 -apple-system,system-ui,sans-serif}
+.toast .codicon{font-size:16px;line-height:1}
+.toast .tb{display:flex;gap:9px;padding:10px 12px 6px}
+.toast .tb .codicon{color:#3794ff;margin-top:1px}
+.toast .tb .codicon.w{color:#cca700}
+.toast .tm{line-height:1.45;flex:1}
+.toast .tx{color:#c5c5c5!important;margin-left:auto}
+.toast .tf{display:flex;align-items:center;gap:6px;padding:4px 12px 10px}
+.toast .src{color:#8b8b8b;font-size:12px;flex:1}
+.toast .pbar{height:2px;margin:0 12px 8px;background:#2b2b2b;position:relative;overflow:hidden}
+.toast .pbar::after{content:"";position:absolute;top:0;bottom:0;width:22%;background:#0078d4;animation:pg 2s linear infinite}
+.vbtn{background:#0078d4;color:#fff;border:0;border-radius:2px;padding:3px 10px;font:12.5px -apple-system,system-ui,sans-serif;white-space:nowrap;display:inline-flex;align-items:center;gap:4px}
+.vbtn.sec{background:#313131;color:#ccc}
+.vbtn .codicon{font-size:13px}
+.tip{position:absolute;left:180px;bottom:28px;width:470px;background:#202020;border:1px solid #454545;border-radius:4px;box-shadow:0 0 8px rgba(0,0,0,.6);padding:8px 10px;font-size:12.5px;line-height:1.45;color:#ccc;z-index:6;white-space:normal}
+.tip p{margin:0 0 6px}.tip p:last-child{margin:0}
+.tip .w{color:#e2c08d}
+/* welcome view */
+.wel{padding:10px 20px;display:flex;flex-direction:column;gap:10px;font-size:13px;color:#ccc;line-height:1.45}
+.wel p{margin:0}
+.wel .wb{display:block;width:100%;text-align:center;background:#0078d4;color:#fff;border-radius:2px;padding:4px 0;font-size:13px}
+.wel .lk{color:#4daafc}
+/* tree nodes */
+.vs .tn{height:22px;display:flex;align-items:center;gap:5px;padding-right:8px;white-space:nowrap;color:#ccc;position:relative}
+.vs .tn.sel{background:var(--sel);outline:1px solid var(--acc);outline-offset:-1px;color:#fff}
+.vs .tn.cur{background:#ffffff0d}
+.vs .tn .tw{width:16px;flex:none;display:flex;justify-content:center;color:#c5c5c5}
+.vs .tn .tw .codicon{font-size:14px}
+.vs .tn .ic{width:16px;flex:none;display:flex;justify-content:center}
+.vs .tn .lab{overflow:hidden;text-overflow:ellipsis;flex:0 1 auto}
+.vs .tn .desc{color:var(--mut);font-size:12px;overflow:hidden;text-overflow:ellipsis;flex:1 1 0}
+.vs .tn.sel .desc{color:#c3cdd8}
+.vs .tn .acts{display:flex;gap:2px;margin-left:auto;flex:none}
+.vs .tn .acts .codicon{font-size:15px;padding:1px;color:#ccc}
+.vs .tn .bd{background:#616161;color:#fff;border-radius:9px;padding:0 6px;font-size:10.5px;flex:none;line-height:15px}
+.vs .tn .cb{width:15px;height:15px;flex:none;border:1px solid #6b6b6b;border-radius:3px;background:#2a2a2a;display:inline-flex;align-items:center;justify-content:center;color:#fff}
+.vs .tn .cb.on{background:#0078d4;border-color:#0078d4}
+.vs .tn .cb .codicon{font-size:12px}
+.vs .vmsg{padding:4px 12px 6px 20px;font-size:12px;color:#ccc;line-height:1.4;white-space:normal}
+.vs .vmsg .codicon{font-size:13px;vertical-align:-2px}
+.vs .vprog{height:2px;flex:none;position:relative;overflow:hidden}
+.vs .vprog::after{content:"";position:absolute;top:0;bottom:0;width:22%;background:#0078d4;animation:pg 2s linear infinite}
+@keyframes pg{from{left:-22%}to{left:100%}}
+/* ---------- the overview, redesigned (part 4 look, reused everywhere) ---------- */
+.ovw{height:100%;overflow:hidden;display:flex;justify-content:center;gap:26px;padding:16px 24px;color:var(--fg);font-size:13px;line-height:1.5}
+.ovw .col{flex:0 1 640px;min-width:0}
+.ovw .rail{flex:none;width:180px;font-size:12px;color:var(--mut);padding-top:4px}
+.ovw .rail b{display:block;color:var(--fg);font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+.ovw .rail .ri{display:flex;align-items:center;gap:6px;padding:3px 6px;border-radius:4px}
+.ovw .rail .ri.on{background:#ffffff10;color:var(--ink)}
+.ovw .rail .ri .codicon{font-size:13px}
+.ovw .rail .ri .n{margin-left:auto;font-size:11.5px}
+.ovw .t{font-size:18px;font-weight:650;color:var(--ink);margin:0;line-height:1.3}
+.ovw .meta{color:var(--mut);font-size:12px;margin:2px 0 10px}
+.ovw .meta .mono{font-size:11.5px}
+.ovw .att{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+.ovw .pl{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:600;border-radius:4px;padding:1px 7px;border:1px solid currentColor;white-space:nowrap;line-height:18px}
+.ovw .pl .codicon{font-size:13px}
+.ovw .pl.ok{color:var(--ok);background:#73c99114}.ovw .pl.bad{color:var(--bad);background:#f4877114}.ovw .pl.warn{color:var(--warn);background:#e2c08d14}.ovw .pl.info{color:var(--info);background:#75beff14}.ovw .pl.mut{color:var(--mut);background:transparent;font-weight:500}.ovw .pl.must{color:var(--must);background:#d7a4f514}
+.ovw .sec{background:var(--card);border:1px solid var(--cardb);border-radius:6px;padding:10px 14px 12px;margin:0 0 10px}
+.ovw .sh{display:flex;align-items:center;gap:8px;margin:0 0 6px;flex-wrap:wrap}
+.ovw .sh h3{margin:0;font-size:14.5px;font-weight:650;color:var(--ink)}
+.ovw .sh .stmp{margin-left:auto;font-size:11px;color:var(--mut);opacity:.85}
+.ovw .story{color:var(--ink);font-size:13.5px;line-height:1.6;margin:0}
+.ovw .story a,.ovw a{color:var(--link);text-decoration:none;border-bottom:1px solid #4daafc55}
+.ovw code,.ovw .ref{font:11.5px "SF Mono",Menlo,Consolas,monospace;background:#ffffff0f;border:1px solid #ffffff1a;border-radius:3px;padding:0 4px;color:var(--ink)}
+.ovw .ref{color:var(--link);cursor:pointer;white-space:nowrap}
+.ovw .it{border-left:3px solid var(--mut);background:#ffffff06;border-radius:0 4px 4px 0;padding:7px 10px 8px;margin:6px 0}
+.ovw .it.bad{border-left-color:var(--bad)}.ovw .it.warn{border-left-color:var(--warn)}.ovw .it.ok{border-left-color:var(--ok)}.ovw .it.info{border-left-color:var(--info)}
+.ovw .it .hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ovw .it q{color:var(--ink);font-size:13.5px;quotes:"“" "”"}
+.ovw .it .why{color:var(--fg);margin:4px 0 6px;font-size:12.5px}
+.ovw .it .src{color:var(--mut);font-size:12px}
+.ovw .ev{display:grid;grid-template-columns:86px minmax(0,1fr);gap:3px 10px;font-size:12px;margin-top:4px}
+.ovw .ev .k{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.05em;padding-top:2px}
+.ovw .ev .v{display:flex;flex-direction:column;gap:2px;min-width:0}
+.ovw .ev .v span.l{display:flex;gap:8px;align-items:baseline;min-width:0}
+.ovw .ev .v span.l em{font-style:normal;color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.ovw .ev .none{color:var(--mut);font-style:italic}
+.ovw .acts{display:flex;gap:6px;margin-top:7px}
+.ovw .fold{display:flex;align-items:center;gap:6px;color:var(--mut);font-size:12.5px;padding:5px 2px;border-top:1px dashed var(--cardb);margin-top:6px}
+.ovw .fold .codicon{font-size:13px}
+.ovw .quiet{display:flex;align-items:center;gap:8px;color:var(--fg);font-size:12.5px}
+.ovw .stages{border:1px solid var(--cardb);border-radius:6px;padding:6px 0;margin:0 0 10px;background:var(--card)}
+.ovw .stages .hdr{display:flex;align-items:center;gap:8px;padding:2px 12px 6px;border-bottom:1px solid var(--cardb);margin-bottom:4px}
+.ovw .stages .hdr b{color:var(--ink);font-size:13px}
+.ovw .stages .hdr .tm{margin-left:auto;color:var(--mut);font-size:12px}
+.ovw .sr{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:6px;align-items:center;padding:2px 12px;font-size:12.5px}
+.ovw .sr .w{color:var(--mut);font-size:12px;font-variant-numeric:tabular-nums}
+.ovw .sr.run{background:#0f2a42}
+.ovw .sr.run .nm{color:var(--ink);font-weight:600}
+.ovw .sr.todo .nm{color:var(--mut)}
+.ovw .sr .codicon{font-size:14px}
+.ovw .sr .who{color:var(--info);font-weight:400;font-size:12px}
+.ovw .bar{height:2px;background:#2b2b2b;border-radius:2px;overflow:hidden;position:relative;grid-column:2/4}
+.ovw .bar::after{content:"";position:absolute;top:0;bottom:0;width:25%;background:#3794ff;animation:pg 1.8s linear infinite}
+.ovw .sk{height:8px;border-radius:4px;background:linear-gradient(90deg,#2a2a2a,#383838,#2a2a2a);background-size:200% 100%;animation:sk 1.6s linear infinite;display:block}
+@keyframes sk{from{background-position:200% 0}to{background-position:-200% 0}}
+.ovw .wait{display:flex;align-items:center;gap:8px;color:var(--info);font-size:12.5px;margin:2px 0 6px}
+.ovw .done{border:1px solid #2e5f3a;background:#73c9910f;border-radius:6px;padding:8px 12px;margin:0 0 10px;font-size:12.5px}
+.ovw .done b{color:var(--ink)}
+.ovw .done .fb{display:flex;gap:6px;align-items:baseline;margin-top:3px;color:var(--fg)}
+.ovw .done .fb .codicon{color:var(--warn);font-size:13px}
+/* option S2 (tinted) and S3 (dashboard) */
+.ovw.s2 .it{border-left-width:0;border-radius:5px;padding:8px 11px}
+.ovw.s2 .it.warn{background:#33290f}.ovw.s2 .it.bad{background:#3a1d18}.ovw.s2 .it.ok{background:#15301d}
+.ovw.s2 .sec{background:transparent;border:0;padding:4px 0}
+.dash{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:0 0 10px}
+.dash .tile{border-radius:6px;padding:8px 10px;border:1px solid var(--cardb);background:var(--card)}
+.dash .tile .big{font-size:20px;font-weight:700;line-height:1.1}
+.dash .tile .lb{font-size:11.5px;color:var(--mut)}
+.ovw table.ct{width:100%;border-collapse:collapse;font-size:12px}
+.ovw table.ct td,.ovw table.ct th{border-bottom:1px solid var(--cardb);padding:4px 6px;text-align:left;vertical-align:top}
+.ovw table.ct th{color:var(--mut);font-weight:600;font-size:11px;text-transform:uppercase}
+/* stepper webview (option B) / webview side bar (option C) */
+.stp{padding:8px 12px 10px;font-size:12.5px;color:#ccc}
+.stp .rail2{display:flex;align-items:center;margin:2px 0 8px}
+.stp .dot{width:18px;height:18px;border-radius:50%;border:1.5px solid #6b6b6b;display:flex;align-items:center;justify-content:center;font-size:10px;color:#9d9d9d;flex:none}
+.stp .dot.ok{background:#1d3b26;border-color:var(--ok);color:var(--ok)}
+.stp .dot.ok .codicon{font-size:11px}
+.stp .dot.cur{border-color:#3794ff;color:#fff;background:#0f2a42}
+.stp .ln{height:1.5px;background:#3c3c3c;flex:1}
+.stp .ln.ok{background:var(--ok)}
+.stp .card3{border:1px solid #2f4f6f;border-radius:5px;background:#14212e;padding:7px 9px}
+.stp .card3 b{color:#fff}
+.stp .card3 .btns{display:flex;gap:5px;margin-top:6px;flex-wrap:wrap}
+.stp .run{display:flex;gap:6px;align-items:center;color:var(--info);margin-top:6px;font-size:12px}
+.wsb{padding:8px 10px;font-size:12.5px;color:#ccc;display:flex;flex-direction:column;gap:7px}
+.wsb .c4{border:1px solid #333;border-radius:5px;padding:6px 9px;background:#1d1d1d}
+.wsb .c4.cur{border-color:#2f4f6f;background:#14212e}
+.wsb .c4 h5{margin:0;font-size:12px;color:#e6e6e6;display:flex;gap:6px;align-items:center}
+.wsb .c4 h5 .codicon{font-size:14px}
+.wsb .c4 h5 .r{margin-left:auto;font-weight:400;color:#9d9d9d}
+.wsb .row2{display:flex;gap:6px;align-items:center;padding:2px 0}
+.wsb .row2 .cbx{width:13px;height:13px;border:1px solid #6b6b6b;border-radius:3px;flex:none}
+.wsb .row2 .cbx.on{background:#0078d4;border-color:#0078d4}
+/* webview setup page (alt B of setup) */
+.wv{padding:18px 28px;font-size:13px;color:#ccc;overflow:hidden;height:100%}
+.wv h1{font-size:18px;margin:0 0 2px;color:#e6e6e6;letter-spacing:0}
+.wv .intro{color:#9d9d9d;margin:0 0 12px}
+.wv .lab{font-weight:600;color:#ddd;margin:12px 0 5px;font-size:12.5px}
+.wv .agents{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.wv .ag{border:1px solid #3c3c3c;border-radius:4px;padding:8px 10px;display:flex;gap:8px}
+.wv .ag.on{border-color:#0078d4;background:#0b2a44}
+.wv .ag .rd,.wv .opt .rd{width:14px;height:14px;border-radius:50%;border:1px solid #888;flex:none;margin-top:2px}
+.wv .ag.on .rd,.wv .opt.on .rd{border:4px solid #0078d4;background:#fff}
+.wv .ag small{display:block;color:#9d9d9d}
+.wv .opt{display:flex;align-items:center;gap:8px;padding:3px 0}
+.wv .opt small{color:#9d9d9d}
+.wv .segs{display:flex;border:1px solid #3c3c3c;border-radius:3px;overflow:hidden;width:max-content}
+.wv .segs span{padding:3px 10px;border-right:1px solid #3c3c3c;font-size:12.5px}
+.wv .segs span:last-child{border-right:0}
+.wv .segs span.on{background:#0078d4;color:#fff}
+.wv .inp{border:1px solid #3c3c3c;background:#313131;border-radius:2px;height:24px;padding:3px 7px;color:#8b8b8b;width:320px}
+.wv .foot{margin-top:14px;display:flex;gap:8px;align-items:center}
+.wt{display:flex;height:100%;padding:20px 26px;gap:22px}
+.wt .lft{width:330px;flex:none}
+.wt h1{font-size:18px;margin:0 0 2px;color:#e6e6e6;letter-spacing:0}
+.wt .sub{color:#9d9d9d;margin:0 0 12px;font-size:12.5px}
+.wt .step{display:flex;gap:8px;padding:8px 10px;border-radius:4px;margin-bottom:4px}
+.wt .step.on{background:#2a2d2e}
+.wt .step .codicon{font-size:16px;color:#9d9d9d;margin-top:1px}
+.wt .step b{display:block;color:#ddd;font-weight:600}
+.wt .step span{color:#9d9d9d;font-size:12.5px;line-height:1.4;display:block}
+.wt .step .vbtn{margin-top:6px;display:inline-flex}
+.wt .media{flex:1;border:1px solid #333;border-radius:6px;background:#181818;display:flex;flex-direction:column;padding:16px;gap:8px;color:#9d9d9d;font-size:12.5px}
+.wt .media table{border-collapse:collapse;font-size:12px;color:#ccc}
+.wt .media td,.wt .media th{border-bottom:1px solid #333;padding:4px 8px;text-align:left}
+/* pull request picker (part 1.4) */
+.prw{padding:6px 10px 10px;display:flex;flex-direction:column;gap:7px;font-size:12.5px;color:#ccc}
+.prw .srch{height:24px;border:1px solid #0078d4;background:#313131;border-radius:2px;display:flex;align-items:center;gap:6px;padding:0 6px;color:#8b8b8b}
+.prw .srch .codicon{font-size:14px}
+.prw .chips{display:flex;gap:4px;flex-wrap:wrap}
+.prw .chip{border:1px solid #3c3c3c;border-radius:10px;padding:0 8px;font-size:11.5px;color:#9d9d9d;line-height:18px}
+.prw .chip.on{border-color:#0078d4;background:#0b2a44;color:#fff}
+.prw .gh{font:700 10.5px -apple-system,system-ui,sans-serif;text-transform:uppercase;letter-spacing:.05em;color:#9d9d9d;margin-top:3px;display:flex;gap:6px;align-items:center}
+.prw .gh .n{background:#616161;color:#fff;border-radius:8px;padding:0 5px;font-size:10px;letter-spacing:0}
+.prc{border:1px solid #333;border-radius:5px;padding:6px 9px;background:#1d1d1d}
+.prc.sel{border-color:#0078d4;background:#0b2a44}
+.prc .l1{display:flex;gap:6px;align-items:baseline;min-width:0}
+.prc .l1 b{color:#e6e6e6;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
+.prc .l2{color:#9d9d9d;font-size:11.5px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:1px}
+.prc .sum{color:#bbb;font-size:12px;margin-top:3px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.prc .pl2{display:inline-flex;align-items:center;gap:3px;font-size:11px;border:1px solid currentColor;border-radius:4px;padding:0 5px;line-height:16px;font-weight:600}
+.prc .pl2 .codicon{font-size:12px}
+.prc .sz{font-family:"SF Mono",Menlo,monospace;font-size:11px}
+.prc .sz .a{color:#73c991}.prc .sz .d{color:#f48771}
+.nextc{border:1px solid #2f4f6f;background:#14212e;border-radius:6px;padding:8px 10px;margin:6px 10px 6px}
+.nextc .k{font:700 10.5px -apple-system,system-ui,sans-serif;text-transform:uppercase;letter-spacing:.06em;color:#75beff}
+.nextc b{color:#fff;display:block;margin:2px 0}
+.nextc .why{color:#c3cdd8;font-size:12px;line-height:1.45}
+.nextc .btns{display:flex;gap:5px;margin-top:7px}
+.ex{font-size:10.5px;color:#9d9d9d;border:1px dashed #555;border-radius:3px;padding:0 4px;margin-left:4px}
+/* round 2 */
+.r2{border-color:#6b5a2e;background:linear-gradient(180deg,#221d10,#111214)}
+.r2 .pn{color:var(--bd-warn)}
+table.rcpt{border-collapse:collapse;width:100%;font-size:13.5px;min-width:760px}
+table.rcpt td,table.rcpt th{border-bottom:1px solid var(--bd-line);padding:6px 10px;text-align:left;vertical-align:top}
+table.rcpt th{color:var(--bd-dim);font-size:12px;text-transform:uppercase;letter-spacing:.04em;background:#1b1d21}
+table.rcpt td.q{color:#e8d9b5;font-style:italic}
+.tag.pick{border-color:#6b5a2e;color:var(--bd-warn);background:#251f12}
+.tag.moot{border-color:#444;color:#777}
+.dec fieldset.moot{opacity:.55}
+/* webview side bar, dashboard look (owner's picks C + S3) */
+.wsd{padding:8px 10px 10px;font-size:12.5px;color:#ccc;display:flex;flex-direction:column;gap:7px;height:100%;overflow:hidden}
+.wsd .tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
+.wsd .tile{border:1px solid #333;border-radius:5px;padding:4px 6px;background:#1d1d1d}
+.wsd .tile .big{font-size:16px;font-weight:700;line-height:1.1}
+.wsd .tile .lb{font-size:10.5px;color:#9d9d9d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wsd .prog{border:1px solid #1d4f7a;background:#0f2a42;border-radius:5px;padding:5px 8px;font-size:12px;color:#c3d8ee}
+.wsd .prog .bar2{height:2px;background:#22384f;margin-top:5px;position:relative;overflow:hidden;border-radius:2px}
+.wsd .prog .bar2::after{content:"";position:absolute;top:0;bottom:0;width:25%;background:#3794ff;animation:pg 1.8s linear infinite}
+.wsd .stc{border:1px solid #333;border-radius:5px;background:#1d1d1d;padding:6px 9px}
+.wsd .stc.cur{border-color:#2f4f6f;background:#14212e}
+.wsd .stc.dim{opacity:.6}
+.wsd .stc h5{margin:0;font-size:12.5px;color:#e6e6e6;display:flex;gap:6px;align-items:center}
+.wsd .stc h5 .codicon{font-size:14px}
+.wsd .stc h5 .r{margin-left:auto;font-weight:400;color:#9d9d9d;font-size:11.5px}
+.wsd .lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:#9d9d9d;margin:7px 0 3px}
+.wsd .agc{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.wsd .ag{border:1px solid #3c3c3c;border-radius:4px;padding:4px 7px;font-size:12px}
+.wsd .ag.on{border-color:#0078d4;background:#0b2a44}
+.wsd .ag small{display:block;color:#9d9d9d;font-size:10.5px}
+.wsd .sel2{border:1px solid #3c3c3c;background:#313131;border-radius:2px;padding:2px 7px;display:flex;align-items:center;gap:6px;font-size:12px}
+.wsd .sel2 .codicon{font-size:13px;margin-left:auto}
+.wsd .segs{display:flex;border:1px solid #3c3c3c;border-radius:3px;overflow:hidden}
+.wsd .segs span{flex:1;text-align:center;padding:2px 0;border-right:1px solid #3c3c3c;font-size:11px}
+.wsd .segs span:last-child{border-right:0}
+.wsd .segs span.on{background:#0078d4;color:#fff}
+.wsd .prow{display:flex;gap:6px;align-items:center;padding:2px 0}
+.wsd .prow .cbx{width:13px;height:13px;border:1px solid #6b6b6b;border-radius:3px;flex:none}
+.wsd .prow .cbx.on{background:#0078d4;border-color:#0078d4}
+.wsd .prow .codicon{font-size:13px}
+.ovw .rail .ri.lnk{cursor:pointer}
+.ovw .rail .ri.lnk:hover{background:#ffffff14;color:var(--ink)}
+.ovw .rail .ri.go{outline:1px dashed #e2c08d;outline-offset:1px;background:#ffffff10;color:var(--ink)}
+.ovw .jump{font-size:11px;color:#e2c08d;margin:2px 0 0 6px}
+.ovw .sec.target{box-shadow:0 0 0 2px #e2c08d66}
+.ovw table.ct tr.f td{background:#ffffff06}
+.ovw table.ct tr.ex2 td{background:#ffffff04;padding-top:0}
+</style>
+</head>
+<body>
+<style>
+/* final-board additions */
+.fl{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:1100px){.fl{grid-template-columns:minmax(0,1fr)}}
+.side{display:flex;flex-direction:column;gap:12px;min-width:0}
+.stepno{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;background:#13263a;border:1px solid #33507a;color:#fff;font:700 13px "SF Mono",Menlo,monospace;flex:none}
+.mhead2{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+.mhead2 h2{margin:0}
+.oq{border:1px solid #6b5a2e;background:linear-gradient(180deg,#221d10,#18191c 70%);border-radius:10px;padding:12px 14px}
+.oq h4{margin:0 0 4px;font-size:14px;color:var(--bd-warn);display:flex;gap:6px;align-items:center}
+.oq p{margin:0 0 8px;font-size:13.5px;color:#cfd1d6}
+.oq label{display:flex;gap:8px;align-items:flex-start;border:1px solid var(--bd-line);border-radius:8px;padding:6px 10px;margin:5px 0;cursor:pointer;background:#1d1f23;font-size:13.5px}
+.oq label:has(input:checked){border-color:var(--bd-acc);background:#13263a}
+.oq input{accent-color:var(--bd-acc);margin-top:3px;flex:none}
+.oq .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px}
+.oq textarea,.appr textarea{width:100%;min-height:54px;resize:vertical;background:#0f1012;color:var(--bd-ink);border:1px solid var(--bd-line);border-radius:6px;padding:7px 9px;font:13.5px/1.4 -apple-system,system-ui,sans-serif;margin-top:6px}
+.how{font-size:13.5px;color:#cfd1d6}
+.how ul{margin:4px 0 0;padding-left:18px}.how li{margin:3px 0}
+.appr{border:1px solid #2f6f3a;background:linear-gradient(180deg,#132016,#18191c 70%);border-radius:10px;padding:14px 16px;margin:18px 0 8px}
+.appr h3{margin:0 0 4px}
+.appr .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.appr label{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--bd-line);border-radius:999px;padding:4px 12px;cursor:pointer;background:#1d1f23;font-size:13.5px}
+.appr label:has(input:checked){border-color:var(--bd-ok);background:#132516}
+.chg{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:12px}
+@media (max-width:1000px){.chg{grid-template-columns:minmax(0,1fr)}}
+.chg .card{font-size:13.5px;color:#cfd1d6}
+.chg .card b{color:#fff}
+details.apx{border:1px solid var(--bd-line);border-radius:10px;background:var(--bd-panel);margin:12px 0;padding:0 16px}
+details.apx>summary{cursor:pointer;padding:12px 0;font-weight:600;font-size:15px}
+details.apx[open]>summary{border-bottom:1px solid var(--bd-line);margin-bottom:12px}
+details.apx .inner{padding-bottom:16px}
+table.fin{border-collapse:collapse;width:100%;min-width:820px;font-size:13.5px}
+table.fin td,table.fin th{border-bottom:1px solid var(--bd-line);padding:5px 9px;text-align:left;vertical-align:top}
+table.fin th{color:var(--bd-dim);font-size:12px;text-transform:uppercase;background:#1b1d21}
+table.fin td.n{font:700 12px "SF Mono",Menlo,monospace;color:var(--bd-acc)}
+.src-pick{color:var(--bd-warn);font-size:11.5px;font-weight:600;white-space:nowrap}
+.src-rec{color:var(--bd-ok);font-size:11.5px;font-weight:600;white-space:nowrap}
+.src-ad{color:var(--bd-acc);font-size:11.5px;font-weight:600;white-space:nowrap}
+.src-moot{color:#777;font-size:11.5px;font-weight:600;white-space:nowrap}
+/* diff editor mock */
+.vs .bnr{border-bottom:1px solid var(--line);background:#1b1b1b;padding:7px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12.5px}
+.vs .bnr .pl3{display:inline-flex;gap:4px;align-items:center;font-size:12px;font-weight:600;border:1px solid currentColor;border-radius:4px;padding:0 7px;line-height:18px}
+.vs .bnr .why{color:#ccc;flex:1;min-width:200px}
+.vs .bnr .codicon{font-size:13px}
+.vs .dfh{height:24px;display:flex;align-items:center;gap:8px;padding:0 12px;background:#202020;border-bottom:1px solid var(--line);font-size:12px;color:#ccc}
+.vs .dif{display:grid;grid-template-columns:1fr 1fr;font:12px/19px "SF Mono",Menlo,Consolas,monospace}
+.vs .dif .pane{border-right:1px solid var(--line);min-width:0;overflow:hidden}
+.vs .dl{display:flex;white-space:pre;min-width:0}
+.vs .dl .ln{width:38px;flex:none;text-align:right;padding-right:8px;color:#6e7681}
+.vs .dl .tx{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;color:#d4d4d4}
+.vs .dl.add{background:#23863633}.vs .dl.add .tx{color:#e6ffe6}
+.vs .dl.del{background:#da363333}
+.vs .dl.emp{background:repeating-linear-gradient(135deg,#1f1f1f 0 4px,#252525 4px 8px)}
+.vs .dl .k{color:#9cdcfe}.vs .dl .s{color:#ce9178}.vs .dl .c{color:#6a9955}
+.vs .thr{margin:6px 10px 6px 46px;border:1px solid #3c3c3c;border-radius:4px;background:#252526;font:12.5px/1.45 -apple-system,system-ui,sans-serif;color:#ccc;white-space:normal}
+.vs .thr .th{display:flex;gap:6px;align-items:center;padding:5px 9px;border-bottom:1px solid #3c3c3c;font-size:12px}
+.vs .thr .th .codicon{font-size:13px}
+.vs .thr .tb2{padding:7px 9px}
+.vs .thr .tb2 .ta{border:1px solid #0078d4;background:#313131;border-radius:2px;padding:5px 7px;color:#ddd;margin:5px 0}
+.vs .thr .tf2{display:flex;gap:6px;padding:0 9px 8px}
+/* send page mock */
+.spg{padding:18px 26px;height:100%;overflow:hidden;font-size:13px;color:#ccc}
+.spg h1{font-size:18px;margin:0 0 2px;color:#e6e6e6;letter-spacing:0}
+.spg .intro{color:#9d9d9d;margin:0 0 12px}
+.spg .draft{border:1px solid #333;border-radius:4px;padding:8px 10px;margin-bottom:8px;display:flex;flex-direction:column;gap:5px}
+.spg .draft .wh{font:12px "SF Mono",Menlo,monospace;color:#4daafc;display:flex;gap:8px;align-items:center}
+.spg .draft .wh .fr{margin-left:auto;font:11.5px -apple-system,system-ui,sans-serif;color:#9d9d9d}
+.spg .draft .ta,.spg .ta{border:1px solid #3c3c3c;background:#313131;border-radius:2px;padding:6px 8px;font:12px/1.4 "SF Mono",Menlo,monospace;color:#ddd}
+.spg .lab{font-weight:600;color:#ddd;margin:12px 0 5px;font-size:12.5px}
+.spg .ev3{display:flex;gap:14px;margin:6px 0 12px}
+.spg .ev3 span{display:flex;gap:6px;align-items:center}
+.spg .rd{width:13px;height:13px;border-radius:50%;border:1px solid #888}
+.spg .rd.on{border:4px solid #0078d4;background:#fff}
+</style>
+<div class="wrap">
+
+<p class="eyebrow">second-look v1.1 · issues #124 · #126 · #122 · #123 · #125 · approved design</p>
+<h1>Second Look v1.1, end to end: from first open to sending the review</h1>
+<p class="lede">One flow, in the order a reviewer meets it, built from the picks below and the recommendations kept for everything else. The side bar is one webview carrying the richer step path. The overview uses the dashboard-and-tables style, and its contents rail jumps to each section. Real content from the review of <b>interview-coach #97</b>; rows marked <span class="ex">example</span> are invented. Every decision is listed in the appendix.</p>
+
+<div class="chg">
+  <div class="card"><b>The picks, built in</b><br>Side bar as one webview (C) · pull request list with descriptions (2) · progress in the side bar and the overview (A) · dashboard and tables (S3) · clickable contents rail.</div>
+  <div class="card"><b>Recommendations, adapted</b><br>The step path, its state icons and every action now live on webview cards. The effort is always visible. Findings come first. Colour always comes with an icon. A notification appears only when a stage falls back.</div>
+  <div class="card"><b>Dropped from the board</b><br>The rejected options (tree side bar, stepper, drop-down and queue pickers, notification and timeline progress, styles S1 and S2, walkthrough). They are listed in the appendix.</div>
+</div>
+
+<nav class="mnav">
+  <a href="#f1">1 First open: setup</a><a href="#f2">2 Pick a pull request</a><a href="#f3">3 The agent works</a><a href="#f4">4 Read the parts</a><a href="#f5">5 Claims</a><a href="#f6">6 Criteria</a><a href="#f7">7 Comments</a><a href="#f8">8 Send</a><a href="#apx">Appendix</a>
+  <span class="sp"></span>
+  <span class="seg" role="group" aria-label="Tested list state"><span class="lb">Tested list:</span><button type="button" id="tg-after" aria-pressed="true">after #120</button><button type="button" id="tg-today" aria-pressed="false">today</button></span>
+</nav>
+
+<!-- ============ 1 FIRST OPEN: SETUP ============ -->
+<section class="moment" id="f1">
+  <div class="mhead2"><span class="stepno">1</span><h2>First open: set up the agent, model and effort</h2></div>
+  <p class="mdesc">The reviewer clicks the Second Look icon for the first time. Step 1's card is open with the setup form. Nothing has been chosen, so the status bar shows the defaults that would run, effort included.</p>
+  <div class="fl">
+    <div class="shot">
+      <div class="stage"><div class="vs" data-act="sl" data-status="unchosen" data-w="1180" data-h="700">
+        <div class="vs-body">
+          <div class="vs-side" style="width:390px">
+            <div class="vs-sideh"><span>Second Look</span><span class="sp"></span><span class="ab"><i class="codicon codicon-ellipsis"></i></span></div>
+            <div class="wsd">
+              <div class="stc cur"><h5><i class="codicon codicon-circle-filled c-info"></i>1 Set up the agent<span class="r">step 1 of 8</span></h5>
+                <div class="lbl">Agent</div>
+                <div class="agc"><div class="ag on"><b>Claude Code</b><small>2.1.296 · ready · stored subscription</small></div><div class="ag"><b>Pi</b><small>0.86.1 · ready · its own login</small></div></div>
+                <div class="lbl">Model</div>
+                <div class="sel2"><i class="codicon codicon-pass c-ok" style="margin:0"></i>claude-sonnet-5-5 <span class="c-mut after-only">· tested at high</span><span class="c-mut today-only">· not tested yet</span><i class="codicon codicon-chevron-down"></i></div>
+                <div style="font-size:11px;color:#9d9d9d;margin-top:3px">Tested first · then Claude Code's default model · then Other…</div>
+                <div class="lbl">Effort</div>
+                <div class="segs"><span>default</span><span>low</span><span>med</span><span class="on">high <span class="after-only">✓</span></span><span>xhigh</span><span>max</span></div>
+                <div class="lbl">Account label (optional)</div>
+                <div class="sel2" style="color:#8b8b8b">e.g. Claude Max (work address)</div>
+                <div style="display:flex;gap:5px;margin-top:9px"><span class="vbtn">Save</span><span class="vbtn sec">Use the defaults</span></div>
+              </div>
+              <div class="stc dim"><h5><i class="codicon codicon-circle-large-outline c-mut"></i>2 Pick a pull request<span class="r">after setup</span></h5></div>
+              <div class="stc dim"><h5><i class="codicon codicon-circle-large-outline c-mut"></i>3 Read the story</h5></div>
+              <div class="stc dim"><h5><i class="codicon codicon-circle-large-outline c-mut"></i>4 Review the parts</h5></div>
+              <div class="stc dim"><h5><i class="codicon codicon-circle-large-outline c-mut"></i>5 Claims and verdicts</h5></div>
+              <div class="stc dim"><h5><i class="codicon codicon-circle-large-outline c-mut"></i>6 Criteria and unexplained</h5></div>
+              <div class="stc dim"><h5><i class="codicon codicon-circle-large-outline c-mut"></i>7 Comments</h5></div>
+              <div class="stc dim"><h5><i class="codicon codicon-circle-large-outline c-mut"></i>8 Send the review</h5></div>
+            </div>
+          </div>
+          <div class="vs-main"><div class="vs-ed" data-empty></div></div>
+        </div>
+      </div></div>
+    </div>
+    <div class="side">
+      <div class="card how"><b>Setup, as chosen</b>
+        <p style="margin:6px 0 0">The form in step 1's card (shown), with the four-value quick pick for fast changes from the status bar. Not chosen: the four quick picks everywhere with no form, and the form everywhere with the status bar opening step 1.</p>
+      </div>
+      <div class="card how"><b>How it behaves</b>
+        <ul>
+          <li><b>“ready”</b> = installed, version known, and the lockdown is available. Sign-in is confirmed by the first review. The Claude Code line names the login it would use, and warns ⚠ when an inherited ANTHROPIC_API_KEY overrides the subscription.</li>
+          <li>An agent that is missing shows “not found on the PATH VS Code started with”, an install link, and “Choose anyway”.</li>
+          <li>Save writes <code>agent</code>, <code>agentModel</code>, <code>agentEffort</code> and <code>agentAccount</code> to user settings. “Use the defaults” keeps Pi. Either way the card folds to one line with a <span style="color:#4daafc">change</span> link.</li>
+          <li>Opens by itself only once. Later it is reachable from step 1, the status bar and <b>Second Look: Choose agent and model</b>.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="g2" style="margin-top:16px">
+    <div class="card" style="padding:12px 14px"><b style="font-size:14px">The status bar always shows the effort</b><div id="sbstates" style="display:flex;flex-direction:column;gap:8px;margin-top:8px"></div></div>
+    <div class="shot">
+      <div class="cap"><b>Click the status bar</b><span>· the quick change, without opening the side bar</span></div>
+      <div class="qp solo">
+        <div class="qp-t"><span class="l"></span><span class="c">Second Look: Choose agent and model</span><span class="r"></span></div>
+        <div class="qp-in"><span class="ph">Pick what to change</span></div>
+        <div>
+          <div class="qi"><span class="ic"><i class="codicon codicon-hubot"></i></span><span class="tx"><span class="ln"><span class="l">Agent</span><span class="d">Claude Code 2.1.296</span></span></span></div>
+          <div class="qi act"><span class="ic"><i class="codicon codicon-sparkle"></i></span><span class="tx"><span class="ln"><span class="l">Model</span><span class="d">claude-sonnet-5-5 <span class="t-after" style="display:inline-flex;gap:3px;align-items:center">· <i class="codicon codicon-pass"></i> tested at high</span><span class="t-today" style="gap:3px;align-items:center">· not tested yet</span></span></span></span></div>
+          <div class="qi"><span class="ic"><i class="codicon codicon-dashboard"></i></span><span class="tx"><span class="ln"><span class="l">Effort</span><span class="d">high</span></span></span></div>
+          <div class="qi"><span class="ic"><i class="codicon codicon-account"></i></span><span class="tx"><span class="ln"><span class="l">Account label</span><span class="d">Claude Max (work)</span></span></span></div>
+          <div class="qi sept"><span class="ic"><i class="codicon codicon-layout-sidebar-left"></i></span><span class="tx"><span class="ln"><span class="l">Open the setup in the side bar</span></span></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 2 PICK A PULL REQUEST ============ -->
+<section class="moment" id="f2">
+  <div class="mhead2"><span class="stepno">2</span><h2>Pick a pull request</h2></div>
+  <p class="mdesc">Step 1 folds to one line. Step 2 lists the reviewer's open pull requests from GitHub (the editor's own sign-in), each with a short summary, review state and size. Typing filters; pasting a URL into the same box starts that review.</p>
+  <div class="fl">
+    <div class="shot">
+      <div class="stage"><div class="vs" data-act="sl" data-badge="2" data-status="cc" data-w="1180" data-h="760">
+        <div class="vs-body">
+          <div class="vs-side" style="width:400px">
+            <div class="vs-sideh"><span>Second Look</span><span class="sp"></span><span class="ab"><i class="codicon codicon-refresh"></i></span><span class="ab"><i class="codicon codicon-ellipsis"></i></span></div>
+            <div class="wsd">
+              <div class="stc"><h5><i class="codicon codicon-pass-filled c-ok"></i>1 Set up<span class="r">Claude Code · sonnet-5-5 · high · <span style="color:#4daafc">change</span></span></h5></div>
+              <div class="stc cur" style="padding-bottom:4px"><h5><i class="codicon codicon-circle-filled c-info"></i>2 Pick a pull request<span class="r">7 open</span></h5>
+                <div class="prw" style="padding:6px 0 0">
+                  <div class="srch"><i class="codicon codicon-search"></i>Filter, or paste a pull request URL</div>
+                  <div class="chips"><span class="chip on">All 7</span><span class="chip">Review requested 2</span><span class="chip">Mine 4</span><span class="chip">Involving 1</span></div>
+                  <div class="gh">Review requested from you <span class="n">2</span></div>
+                  <div class="prc"><div class="l1"><b>Retry idempotent charges on timeout</b><span class="ex">example</span></div>
+                    <div class="l2"><span>octo-org/payments #412</span><span>· maria-k</span><span>· waiting on you 2 days</span></div>
+                    <div class="sum">Retries charge calls that time out, using the idempotency key so a retry can never double-charge. Adds a backoff and a test for the timeout path.</div>
+                    <div class="l2" style="margin-top:4px"><span class="pl2" style="color:#75beff"><i class="codicon codicon-eye"></i>your review</span><span class="pl2" style="color:#73c991"><i class="codicon codicon-check"></i>1 approval</span><span class="sz"><span class="a">+84</span> <span class="d">−12</span> · 5 files</span></div></div>
+                  <div class="prc"><div class="l1"><b>Rate-limit login attempts</b><span class="ex">example</span></div>
+                    <div class="l2"><span>octo-org/auth #62</span><span>· sam-r</span><span>· 1 day</span></div>
+                    <div class="l2" style="margin-top:3px"><span class="pl2" style="color:#75beff"><i class="codicon codicon-history"></i>new commits since your last look</span><span class="sz"><span class="a">+46</span> <span class="d">−9</span> · 3 files</span></div></div>
+                  <div class="gh">Your pull requests <span class="n">4</span></div>
+                  <div class="prc sel"><div class="l1"><b>Add AI engineering study sources to the sources list</b></div>
+                    <div class="l2"><span>interview-coach #97</span><span>· you</span><span>· 40 min</span></div>
+                    <div class="sum">`sources.yaml` gains eight AI engineering sources, so `coach setup` downloads them next to the System Design Primer and the Tech Interview Handbook.</div>
+                    <div class="l2" style="margin-top:4px"><span class="pl2" style="color:#9d9d9d"><i class="codicon codicon-circle-large-outline"></i>no review yet</span><span class="sz"><span class="a">+381</span> <span class="d">−2</span> · 4 files</span><span class="vbtn" style="margin-left:auto;padding:1px 8px"><i class="codicon codicon-play"></i>Review</span></div></div>
+                  <div class="prc"><div class="l1"><b>feat(engine): explain workspace member changes in lockfile confirmation</b></div>
+                    <div class="l2"><span>second-look #118</span><span>· you</span><span>· 4 h</span><span class="sz"><span class="a">+1613</span> <span class="d">−186</span> · 16 files</span></div></div>
+                  <div class="prc" style="opacity:.8"><div class="l1"><b>feat: load the project for navigation, on request (#50)</b></div><div class="l2"><span>second-look #117</span><span>· you</span><span>· 5 h</span></div></div>
+                </div>
+              </div>
+              <div class="stc dim"><h5><i class="codicon codicon-circle-large-outline c-mut"></i>3–8 after the review starts</h5></div>
+            </div>
+          </div>
+          <div class="vs-main"><div class="vs-ed" data-empty></div></div>
+        </div>
+      </div></div>
+    </div>
+    <div class="side">
+      <div class="card how"><b>How it behaves</b>
+        <ul>
+          <li>Groups: <b>review requested from you</b> (sorted by how long you have kept someone waiting) → <b>yours</b> → <b>involving you</b> → <b>open in this repository</b>. Each pull request appears once.</li>
+          <li><span style="color:#75beff">“new commits since your last look”</span> comes from the companion's own record. It is the best part of the review-queue idea, kept here.</li>
+          <li>The <i class="codicon codicon-refresh"></i> title button reloads the list. The view badge counts pull requests waiting on you.</li>
+          <li>Nothing new is stored. The list is read each time with the editor's GitHub sign-in.</li>
+        </ul>
+      </div>
+      <div class="wsd" style="height:auto;padding:0;gap:8px">
+        <div class="stc"><h5><i class="codicon codicon-info c-info"></i>Nothing waiting on you</h5><div style="font-size:12px;color:#bbb;margin-top:3px">No open pull requests request your review or involve you. Paste any pull request URL above.</div></div>
+        <div class="stc"><h5><i class="codicon codicon-account c-info"></i>Not signed in to GitHub</h5><div style="font-size:12px;color:#bbb;margin-top:3px">Sign in to list your pull requests. Pasting a URL works without it; the review asks then.</div><div style="margin-top:5px"><span class="vbtn">Sign in to GitHub</span></div></div>
+        <div class="stc"><h5><i class="codicon codicon-warning c-warn"></i>GitHub could not be reached</h5><div style="font-size:12px;color:#bbb;margin-top:3px">The request timed out. Pasting a URL still works.</div><div style="margin-top:5px"><span class="vbtn sec"><i class="codicon codicon-refresh"></i>Try again</span></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 3 THE AGENT WORKS ============ -->
+<section class="moment" id="f3">
+  <div class="mhead2"><span class="stepno">3</span><h2>The review starts: the agent's work is visible everywhere</h2></div>
+  <p class="mdesc">Clicking <b>Review</b> opens the overview and starts the stages. The plain parts and the story land first, and the reviewer can start reading while the agent keeps checking. Here stage 7 of 9, the verdicts, is running. The times are illustrative.</p>
+  <div class="fl">
+    <div class="shot">
+      <div class="stage"><div class="vs" data-act="sl" data-badge="2" data-status="running" data-w="1500" data-h="860">
+        <div class="vs-body">
+          <div class="vs-side" style="width:390px">
+            <div class="vs-sideh"><span>Second Look</span><span class="sp"></span><span class="ab"><i class="codicon codicon-debug-stop"></i></span><span class="ab"><i class="codicon codicon-book"></i></span><span class="ab"><i class="codicon codicon-rocket"></i></span><span class="ab"><i class="codicon codicon-ellipsis"></i></span></div>
+            <div class="vprog"></div>
+            <div class="wsd">
+              <div class="tiles">
+                <div class="tile"><div class="big c-info">2<span style="font-size:11px;color:#9d9d9d;font-weight:400">/2</span></div><div class="lb">parts left</div></div>
+                <div class="tile"><div class="big c-info"><i class="codicon codicon-loading codicon-modifier-spin" style="font-size:15px"></i></div><div class="lb">claims · 6</div></div>
+                <div class="tile"><div class="big c-mut">–</div><div class="lb">criteria · 4</div></div>
+                <div class="tile"><div class="big c-mut">0</div><div class="lb">comments</div></div>
+              </div>
+              <div class="prog"><i class="codicon codicon-loading codicon-modifier-spin"></i> <b>Checking the claims</b> · Claude Code · claude-sonnet-5-5 · high · 1:42 · stage 7 of 9<div class="bar2"></div></div>
+              <div class="stc"><h5><i class="codicon codicon-pass-filled c-ok"></i>1–2 Set up · interview-coach #97<span class="r">done</span></h5></div>
+              <div class="stc cur"><h5><i class="codicon codicon-circle-filled c-info"></i>3 Read the story<span class="r">ready</span></h5><div style="font-size:12px;color:#bbb;margin-top:3px">The story is in the overview. Reading it ticks this step.</div><div style="margin-top:5px"><span class="vbtn"><i class="codicon codicon-book"></i>Open the overview</span></div></div>
+              <div class="stc"><h5><i class="codicon codicon-circle-large-outline c-mut"></i>4 Review the parts<span class="r">2 parts · plain ranking</span></h5></div>
+              <div class="stc"><h5><i class="codicon codicon-loading codicon-modifier-spin c-info"></i>5 Claims and verdicts<span class="r">6 listed · checking…</span></h5>
+                <span class="sk" style="display:block;height:8px;border-radius:4px;background:#2a2a2a;margin-top:6px;width:90%"></span><span class="sk" style="display:block;height:8px;border-radius:4px;background:#2a2a2a;margin-top:5px;width:65%"></span></div>
+              <div class="stc dim"><h5><i class="codicon codicon-clock c-mut"></i>6 Criteria and unexplained<span class="r">after the verdicts</span></h5></div>
+              <div class="stc dim"><h5><i class="codicon codicon-circle-large-outline c-mut"></i>7 Comments</h5></div>
+              <div class="stc dim"><h5><i class="codicon codicon-circle-large-outline c-mut"></i>8 Send the review</h5></div>
+            </div>
+          </div>
+          <div class="vs-main">
+            <div class="vs-tabs"><div class="vs-tab on"><i class="codicon codicon-book"></i>Second Look: #97 overview</div></div>
+            <div class="vs-ed" data-ov="s3run"></div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+    <div class="side">
+      <div class="card how"><b>Where the reviewer sees it</b>
+        <ul>
+          <li><b>Side bar:</b> the progress bar, a strip naming the stage, agent, model, effort, elapsed time and “7 of 9”, a spinner on the step being produced, and a clock on the step waiting for it.</li>
+          <li><b>Overview:</b> a stage list (done with times, running, to come). Sections still coming show a skeleton and a blue “checking” line, never a quiet empty note.</li>
+          <li><b>Status bar:</b> <code>⟳ 7/9 Second Look: Claude Code · claude-sonnet-5-5 · high</code>, visible with the side bar closed.</li>
+          <li><b><i class="codicon codicon-debug-stop"></i> Stop review</b> keeps what has landed and marks the remaining stages “stopped”.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 4 READ THE PARTS ============ -->
+<section class="moment" id="f4">
+  <div class="mhead2"><span class="stepno">4</span><h2>Read the story, then review the parts, must review first</h2></div>
+  <p class="mdesc">Step 3 ticked itself when the overview was read. Step 4 lists the parts by importance with their checkboxes. <b>Open next part</b> opens the multi-file diff for the first unreviewed must-review part, with its banner (#91). The agent is still working on the criteria (stage 8).</p>
+  <div class="fl">
+    <div class="shot">
+      <div class="stage"><div class="vs" data-act="sl" data-badge="1" data-status="running8" data-w="1500" data-h="760">
+        <div class="vs-body">
+          <div class="vs-side" style="width:390px">
+            <div class="vs-sideh"><span>Second Look</span><span class="sp"></span><span class="ab"><i class="codicon codicon-debug-stop"></i></span><span class="ab"><i class="codicon codicon-book"></i></span><span class="ab"><i class="codicon codicon-rocket"></i></span><span class="ab"><i class="codicon codicon-ellipsis"></i></span></div>
+            <div class="vprog"></div>
+            <div class="wsd">
+              <div class="tiles">
+                <div class="tile"><div class="big c-info">1<span style="font-size:11px;color:#9d9d9d;font-weight:400">/2</span></div><div class="lb">parts left</div></div>
+                <div class="tile"><div class="big c-warn">1</div><div class="lb">claim to check</div></div>
+                <div class="tile"><div class="big c-info"><i class="codicon codicon-loading codicon-modifier-spin" style="font-size:15px"></i></div><div class="lb">criteria · 4</div></div>
+                <div class="tile"><div class="big c-mut">0</div><div class="lb">comments</div></div>
+              </div>
+              <div class="prog"><i class="codicon codicon-loading codicon-modifier-spin"></i> <b>Mapping the criteria</b> · Claude Code · claude-sonnet-5-5 · high · 0:38 · stage 8 of 9<div class="bar2"></div></div>
+              <div class="stc"><h5><i class="codicon codicon-pass-filled c-ok"></i>1–3 Set up · #97 · story read<span class="r">done</span></h5></div>
+              <div class="stc cur"><h5><i class="codicon codicon-circle-filled c-info"></i>4 Review the parts<span class="r">1 of 2 left · must review first</span></h5>
+                <div class="lbl">Must review</div>
+                <div class="prow"><span class="cbx"></span><i class="codicon codicon-star-full c-must"></i><span style="color:#fff;background:#0b2a44;border-radius:3px;padding:0 3px">sources.yaml AI engineering sources, NONE licence, and their test</span></div>
+                <div class="lbl">Worth reviewing</div>
+                <div class="prow"><span class="cbx on"></span><i class="codicon codicon-eye c-info"></i><span style="color:#9d9d9d">The notices and README edits</span></div>
+                <div style="display:flex;gap:5px;margin-top:7px;flex-wrap:wrap"><span class="vbtn"><i class="codicon codicon-diff"></i>Open next part</span><span class="vbtn sec"><i class="codicon codicon-diff-multiple"></i>All in order</span><span class="vbtn sec"><i class="codicon codicon-comment-discussion"></i>Ask…</span><span class="vbtn sec"><i class="codicon codicon-filter"></i>Changed since last look</span></div>
+              </div>
+              <div class="stc"><h5><i class="codicon codicon-question c-warn"></i>5 Claims and verdicts<span class="r">1 unverifiable · 5 verified</span></h5></div>
+              <div class="stc"><h5><i class="codicon codicon-loading codicon-modifier-spin c-info"></i>6 Criteria and unexplained<span class="r">mapping 4…</span></h5></div>
+              <div class="stc dim"><h5><i class="codicon codicon-circle-large-outline c-mut"></i>7 Comments</h5></div>
+              <div class="stc dim"><h5><i class="codicon codicon-circle-large-outline c-mut"></i>8 Send the review</h5></div>
+            </div>
+          </div>
+          <div class="vs-main">
+            <div class="vs-tabs"><div class="vs-tab"><i class="codicon codicon-book"></i>#97 overview</div><div class="vs-tab on"><i class="codicon codicon-diff-multiple"></i>sources.yaml AI engineering sources, NONE licence, and their test</div></div>
+            <div class="vs-ed">
+              <div class="bnr"><span class="pl3" style="color:var(--must)"><i class="codicon codicon-star-full"></i>Must review</span><span class="why">New sources and a new licence rule that decide what <code style="font-size:11px">coach setup</code> downloads; the test pins it. <span class="c-mut">· new code · test changed · 3 files mention these names</span></span><span class="vbtn sec"><i class="codicon codicon-comment-discussion"></i>Explain</span><span class="vbtn sec">What covers this?</span><span class="vbtn sec">Verify a claim</span><span style="display:inline-flex;gap:5px;align-items:center;color:#ccc"><span class="cb" style="width:14px;height:14px;border:1px solid #6b6b6b;border-radius:3px;display:inline-block"></span>Reviewed</span></div>
+              <div class="dfh"><i class="codicon codicon-chevron-down" style="font-size:13px"></i><span class="mono">sources.yaml</span><span class="c-mut">abbreviated</span></div>
+              <div class="dif">
+                <div class="pane">
+                  <div class="dl"><span class="ln">13</span><span class="tx"><span class="c"># Each source: name, repository, pinned commit,</span></span></div>
+                  <div class="dl"><span class="ln">14</span><span class="tx"><span class="c"># licence as found at that commit.</span></span></div>
+                  <div class="dl emp"><span class="ln"></span><span class="tx"></span></div>
+                  <div class="dl"><span class="ln">…</span><span class="tx"></span></div>
+                  <div class="dl emp"><span class="ln"></span><span class="tx"></span></div>
+                  <div class="dl emp"><span class="ln"></span><span class="tx"></span></div>
+                  <div class="dl emp"><span class="ln"></span><span class="tx"></span></div>
+                  <div class="dl emp"><span class="ln"></span><span class="tx"></span></div>
+                </div>
+                <div class="pane">
+                  <div class="dl"><span class="ln">13</span><span class="tx"><span class="c"># Each source: name, repository, pinned commit,</span></span></div>
+                  <div class="dl"><span class="ln">14</span><span class="tx"><span class="c"># licence as found at that commit.</span></span></div>
+                  <div class="dl add"><span class="ln">15</span><span class="tx"><span class="c"># files paths inside the repository; text only, never images</span></span></div>
+                  <div class="dl"><span class="ln">…</span><span class="tx"></span></div>
+                  <div class="dl add"><span class="ln">86</span><span class="tx">- <span class="k">name</span>: <span class="s">ai-engineering-field-guide</span></span></div>
+                  <div class="dl add"><span class="ln">88</span><span class="tx">  <span class="k">commit</span>: <span class="s">ed590319553252e2b8275486597b144ac55a4f3c</span></span></div>
+                  <div class="dl add"><span class="ln">89</span><span class="tx">  <span class="k">licence</span>: <span class="s">NONE</span></span></div>
+                  <div class="dl add"><span class="ln">90</span><span class="tx">  <span class="k">local_only</span>: <span class="s">true</span></span></div>
+                </div>
+              </div>
+              <div class="dfh" style="margin-top:6px"><i class="codicon codicon-chevron-down" style="font-size:13px"></i><span class="mono">tests/test_study_material.py</span></div>
+              <div class="dif">
+                <div class="pane"><div class="dl emp"><span class="ln"></span><span class="tx"></span></div><div class="dl emp"><span class="ln"></span><span class="tx"></span></div></div>
+                <div class="pane"><div class="dl add"><span class="ln">76</span><span class="tx">    <span class="k">assert not</span> [p <span class="k">for</span> s <span class="k">in</span> sources <span class="k">for</span> p <span class="k">in</span> s.files <span class="k">if</span> p.startswith(translated)]</span></div><div class="dl add"><span class="ln">79</span><span class="tx">    <span class="k">assert</span> all(s.local_only <span class="k">for</span> s <span class="k">in</span> sources <span class="k">if</span> s.licence == <span class="s">"NONE"</span>)</span></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+    <div class="side">
+      <div class="card how"><b>How it behaves</b>
+        <ul>
+          <li>Ticking a part, in the side bar or the banner, marks it reviewed (kept per pull request, as today). The “parts left” tile and the Activity Bar badge count down.</li>
+          <li><b>Ask…</b> offers Explain this part, Verify this claim and What covers this? Answers open at the top of the overview.</li>
+          <li><b>Changed since last look</b> appears only on a second visit.</li>
+          <li>The diff is VS Code's own read-only multi-file diff editor. The banner is #91's, already planned.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 5 CLAIMS ============ -->
+<section class="moment" id="f5">
+  <div class="mhead2"><span class="stepno">5</span><h2>Claims and verdicts: findings first, and the rail jumps to Claims</h2></div>
+  <p class="mdesc">The review has finished. Step 5 lists its finding with Draft comment and Open buttons; the verified claims fold into one line. In the overview the reviewer clicked <b>Claims</b> in the rail, so the page scrolled there. Ranking fell back to the plain one, the only fallback in this review, so the finished notice says why.</p>
+  <div class="fl">
+    <div class="shot">
+      <div class="stage"><div class="vs" data-act="sl" data-status="cc" data-w="1500" data-h="800">
+        <div class="vs-body">
+          <div class="vs-side" style="width:390px">
+            <div class="vs-sideh"><span>Second Look</span><span class="sp"></span><span class="ab"><i class="codicon codicon-book"></i></span><span class="ab"><i class="codicon codicon-rocket"></i></span><span class="ab"><i class="codicon codicon-ellipsis"></i></span></div>
+            <div class="wsd">
+              <div class="tiles">
+                <div class="tile"><div class="big c-ok">0<span style="font-size:11px;color:#9d9d9d;font-weight:400">/2</span></div><div class="lb">parts left</div></div>
+                <div class="tile"><div class="big c-warn">1</div><div class="lb">claim unverifiable</div></div>
+                <div class="tile"><div class="big c-warn">2</div><div class="lb">partly met</div></div>
+                <div class="tile"><div class="big c-mut">0</div><div class="lb">comments</div></div>
+              </div>
+              <div class="prog" style="border-color:#2e5f3a;background:#13241a;color:#cfe8d5"><i class="codicon codicon-pass-filled c-ok"></i> <b>Review complete</b> in 4:12 · <span class="c-warn"><i class="codicon codicon-circle-slash"></i> ranking fell back</span></div>
+              <div class="stc"><h5><i class="codicon codicon-pass-filled c-ok"></i>1–4 Set up · #97 · story · parts<span class="r">done</span></h5></div>
+              <div class="stc cur"><h5><i class="codicon codicon-circle-filled c-info"></i>5 Claims and verdicts<span class="r">1 unverifiable · 5 verified</span></h5>
+                <div class="it" style="border-left:3px solid var(--warn);background:#ffffff06;border-radius:0 4px 4px 0;padding:6px 8px;margin-top:6px">
+                  <div style="display:flex;gap:6px;align-items:center"><i class="codicon codicon-question c-warn" style="font-size:13px"></i><b style="color:var(--warn);font-size:11.5px">Unverifiable</b><span style="color:#9d9d9d;font-size:11px">description, line 5</span></div>
+                  <div style="color:#e6e6e6;margin:3px 0">“The whole download is 225 files, about 2.7 MB.”</div>
+                  <div style="display:flex;gap:5px"><span class="vbtn"><i class="codicon codicon-edit"></i>Draft comment</span><span class="vbtn sec"><i class="codicon codicon-go-to-file"></i>Open</span><span class="vbtn sec"><i class="codicon codicon-search"></i>Verify again</span></div>
+                </div>
+                <div class="prow" style="margin-top:5px;color:#9d9d9d"><i class="codicon codicon-chevron-right"></i><i class="codicon codicon-pass-filled c-ok"></i><b style="color:var(--ok)">5 verified</b></div>
+                <div style="display:flex;gap:6px;align-items:center;margin-top:6px"><span class="cbx" style="width:13px;height:13px;border:1px solid #6b6b6b;border-radius:3px;display:inline-block"></span><span style="font-size:12px">I've checked the claims</span></div>
+              </div>
+              <div class="stc"><h5><i class="codicon codicon-warning c-warn"></i>6 Criteria and unexplained<span class="r">2 partly met · 2 met</span></h5></div>
+              <div class="stc dim"><h5><i class="codicon codicon-circle-large-outline c-mut"></i>7 Comments</h5></div>
+              <div class="stc dim"><h5><i class="codicon codicon-circle-large-outline c-mut"></i>8 Send the review</h5></div>
+            </div>
+          </div>
+          <div class="vs-main">
+            <div class="vs-tabs"><div class="vs-tab on"><i class="codicon codicon-book"></i>Second Look: #97 overview</div></div>
+            <div class="vs-ed" data-ov="s3claims"></div>
+          </div>
+        </div>
+        <div class="toast">
+          <div class="tb"><i class="codicon codicon-warning w"></i><div class="tm">Second Look finished reviewing #97 in 4:12. Ranking fell back to the plain ranking: Claude Code with claude-sonnet-5-5 at high has no ranking evaluation yet.</div><i class="codicon codicon-close tx"></i></div>
+          <div class="tf"><span class="src">Source: Second Look</span><span class="vbtn">Open overview</span></div>
+        </div>
+      </div></div>
+    </div>
+    <div class="side">
+      <div class="card how"><b>How it behaves</b>
+        <ul>
+          <li><b>Rail = links.</b> Each entry scrolls the overview to its section. As you scroll, the rail highlights the section in view. Each entry shows its count in colour.</li>
+          <li>A finding row opens in place to show the verdict's reason and its evidence rows. Each <code>file:line</code> chip opens the line read-only.</li>
+          <li>A claim about a pinned library offers <i class="codicon codicon-cloud-download"></i> <b>Fetch library</b> on its row (none in this pull request). Nothing downloads until it is pressed.</li>
+          <li>The notification appears only because a stage fell back. A clean finish only changes the strip and the status bar.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 6 CRITERIA ============ -->
+<section class="moment" id="f6">
+  <div class="mhead2"><span class="stepno">6</span><h2>Acceptance criteria and unexplained changes</h2></div>
+  <p class="mdesc">Step 6 lists the criteria that are not fully met, then the unexplained changes (none here). Clicking <b>Acceptance criteria</b> in the rail scrolls the overview to its table. The first finding row is open.</p>
+  <div class="fl">
+    <div class="shot">
+      <div class="stage"><div class="vs" data-act="sl" data-status="cc" data-w="1500" data-h="740">
+        <div class="vs-body">
+          <div class="vs-side" style="width:390px">
+            <div class="vs-sideh"><span>Second Look</span><span class="sp"></span><span class="ab"><i class="codicon codicon-book"></i></span><span class="ab"><i class="codicon codicon-rocket"></i></span><span class="ab"><i class="codicon codicon-ellipsis"></i></span></div>
+            <div class="wsd">
+              <div class="stc"><h5><i class="codicon codicon-pass-filled c-ok"></i>1–5 Set up · #97 · story · parts · claims<span class="r">done</span></h5></div>
+              <div class="stc cur"><h5><i class="codicon codicon-circle-filled c-info"></i>6 Criteria and unexplained<span class="r">2 partly met · 2 met</span></h5>
+                <div class="prow" style="margin-top:6px;align-items:flex-start"><i class="codicon codicon-warning c-warn" style="margin-top:2px"></i><span><b style="color:var(--warn);font-size:11.5px">Partly met</b> <span style="color:#e6e6e6">`coach setup` downloads the new sources…, stays safe to run twice…</span></span></div>
+                <div style="display:flex;gap:5px;margin:3px 0 4px 19px"><span class="vbtn"><i class="codicon codicon-edit"></i>Draft comment</span><span class="vbtn sec">#96</span></div>
+                <div class="prow" style="align-items:flex-start"><i class="codicon codicon-warning c-warn" style="margin-top:2px"></i><span><b style="color:var(--warn);font-size:11.5px">Partly met</b> <span style="color:#e6e6e6">The sources-list schema check passes… locally and in CI.</span></span></div>
+                <div style="display:flex;gap:5px;margin:3px 0 4px 19px"><span class="vbtn"><i class="codicon codicon-edit"></i>Draft comment</span></div>
+                <div class="prow" style="color:#9d9d9d"><i class="codicon codicon-chevron-right"></i><i class="codicon codicon-pass-filled c-ok"></i><b style="color:var(--ok)">2 met</b></div>
+                <div class="prow" style="color:#9d9d9d"><i class="codicon codicon-pass-filled c-ok"></i>Every part explained</div>
+              </div>
+              <div class="stc dim"><h5><i class="codicon codicon-circle-large-outline c-mut"></i>7 Comments</h5></div>
+              <div class="stc dim"><h5><i class="codicon codicon-circle-large-outline c-mut"></i>8 Send the review</h5></div>
+            </div>
+          </div>
+          <div class="vs-main">
+            <div class="vs-tabs"><div class="vs-tab on"><i class="codicon codicon-book"></i>Second Look: #97 overview</div></div>
+            <div class="vs-ed" data-ov="s3crit"></div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+    <div class="side">
+      <div class="card how"><b>How it behaves</b>
+        <ul>
+          <li>State colours always come with an icon and a word: <span style="color:#e2c08d"><i class="codicon codicon-warning"></i> partly met</span>, <span style="color:#f48771"><i class="codicon codicon-error"></i> not met</span>, <span style="color:#75beff"><i class="codicon codicon-person"></i> needs manual check</span>, <span style="color:#73c991"><i class="codicon codicon-pass-filled"></i> met</span>.</li>
+          <li>The criteria heading (<code>second-look.criteriaHeading</code>) can be changed from this card's <i class="codicon codicon-ellipsis"></i> menu.</li>
+          <li>Every colour passes WCAG AA in dark, light and high contrast (see the appendix).</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 7 COMMENTS ============ -->
+<section class="moment" id="f7">
+  <div class="mhead2"><span class="stepno">7</span><h2>Write and edit comments</h2></div>
+  <p class="mdesc">“Draft comment” on a finding opens the agent's short draft in a thread on the exact line. The reviewer edits it and adds it to the review. Step 7 gathers every pending comment and draft, each with a discard button.</p>
+  <div class="fl">
+    <div class="shot">
+      <div class="stage"><div class="vs" data-act="sl" data-status="cc" data-w="1500" data-h="660">
+        <div class="vs-body">
+          <div class="vs-side" style="width:390px">
+            <div class="vs-sideh"><span>Second Look</span><span class="sp"></span><span class="ab"><i class="codicon codicon-book"></i></span><span class="ab"><i class="codicon codicon-rocket"></i></span><span class="ab"><i class="codicon codicon-ellipsis"></i></span></div>
+            <div class="wsd">
+              <div class="stc"><h5><i class="codicon codicon-pass-filled c-ok"></i>1–6 Set up through criteria<span class="r">done</span></h5></div>
+              <div class="stc cur"><h5><i class="codicon codicon-circle-filled c-info"></i>7 Comments<span class="r">1 pending · 1 draft</span></h5>
+                <div class="prow" style="margin-top:6px"><i class="codicon codicon-comment c-mut"></i><span class="mono" style="font-size:11px;color:#4daafc">sources.yaml:15</span><span style="color:#bbb;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Can CI check idempotence?</span><i class="codicon codicon-trash" style="margin-left:auto"></i></div>
+                <div class="prow"><i class="codicon codicon-sparkle c-info"></i><span class="mono" style="font-size:11px;color:#4daafc">description:5</span><span style="color:#bbb;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Draft · 2.7 MB can't be checked…</span><i class="codicon codicon-check" style="margin-left:auto"></i><i class="codicon codicon-close"></i></div>
+                <div style="font-size:11.5px;color:#9d9d9d;margin-top:5px">Add more: the + beside any diff line, or “Comment on this part…”.</div>
+              </div>
+              <div class="stc"><h5><i class="codicon codicon-circle-large-outline c-mut"></i>8 Send the review<span class="r">1 comment ready</span></h5></div>
+            </div>
+          </div>
+          <div class="vs-main">
+            <div class="vs-tabs"><div class="vs-tab on"><i class="codicon codicon-note"></i>description (read-only)</div></div>
+            <div class="vs-ed">
+              <div class="dif" style="grid-template-columns:1fr">
+                <div class="pane" style="border:0">
+                  <div class="dl"><span class="ln">3</span><span class="tx">`sources.yaml` gains eight AI engineering sources, so `coach setup` downloads them…</span></div>
+                  <div class="dl"><span class="ln">4</span><span class="tx"></span></div>
+                  <div class="dl" style="background:#e2c08d14"><span class="ln">5</span><span class="tx">The whole download is 225 files, about 2.7 MB.</span></div>
+                  <div class="thr">
+                    <div class="th"><i class="codicon codicon-sparkle c-info"></i><b>Draft comment</b> · from the unverifiable claim · description, line 5<span style="margin-left:auto;color:#9d9d9d">claude-code · claude-sonnet-5-5 · high</span></div>
+                    <div class="tb2">The listed paths add up to 225 files, but the 2.7 MB total can't be checked from the repository. Could you paste the size `coach setup` reported, or drop the number from the description?
+                      <div class="ta">The listed paths add up to 225 files, but the 2.7 MB total can't be checked from the repository. Could you paste the size `coach setup` reported?</div></div>
+                    <div class="tf2"><span class="vbtn"><i class="codicon codicon-check"></i>Add to review</span><span class="vbtn sec">Discard draft</span></div>
+                  </div>
+                  <div class="dl"><span class="ln">6</span><span class="tx"></span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+    <div class="side">
+      <div class="card how"><b>How it behaves</b>
+        <ul>
+          <li>A draft is never sent on its own. It joins the review only after <b>Add to review</b>.</li>
+          <li>Each row in step 7 opens its thread; <i class="codicon codicon-trash"></i> discards a pending comment, <i class="codicon codicon-check"></i>/<i class="codicon codicon-close"></i> add or discard a draft.</li>
+          <li>Step 7 ticks itself when no draft is left undecided.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 8 SEND ============ -->
+<section class="moment" id="f8">
+  <div class="mhead2"><span class="stepno">8</span><h2>Send the review</h2></div>
+  <p class="mdesc">Step 8 (or the <i class="codicon codicon-rocket"></i> title button) opens the Send review page, the design already chosen: every comment for one last pass, the overall comment, the review type and one Submit. Afterwards step 8 links to the review on GitHub.</p>
+  <div class="fl">
+    <div class="shot">
+      <div class="stage"><div class="vs" data-act="sl" data-status="cc" data-w="1500" data-h="640">
+        <div class="vs-body">
+          <div class="vs-side" style="width:390px">
+            <div class="vs-sideh"><span>Second Look</span><span class="sp"></span><span class="ab"><i class="codicon codicon-book"></i></span><span class="ab"><i class="codicon codicon-rocket"></i></span><span class="ab"><i class="codicon codicon-ellipsis"></i></span></div>
+            <div class="wsd">
+              <div class="stc"><h5><i class="codicon codicon-pass-filled c-ok"></i>1–7 Set up through comments<span class="r">done</span></h5></div>
+              <div class="stc cur"><h5><i class="codicon codicon-circle-filled c-info"></i>8 Send the review<span class="r">2 comments</span></h5><div style="font-size:12px;color:#bbb;margin-top:3px">Nothing reaches GitHub until you press Submit on the page.</div><div style="margin-top:6px"><span class="vbtn"><i class="codicon codicon-rocket"></i>Open the Send review page</span></div></div>
+              <div class="stc" style="border-color:#2e5f3a;background:#13241a"><h5><i class="codicon codicon-pass-filled c-ok"></i>After Submit<span class="r">example</span></h5><div style="font-size:12px;color:#cfe8d5;margin-top:3px">Sent as Comment · 2 comments · pinned to 998ded4</div><div style="margin-top:5px"><span class="vbtn sec"><i class="codicon codicon-link-external"></i>Open on GitHub</span></div></div>
+            </div>
+          </div>
+          <div class="vs-main">
+            <div class="vs-tabs"><div class="vs-tab on"><i class="codicon codicon-rocket"></i>Send review: #97</div></div>
+            <div class="vs-ed"><div class="spg">
+              <h1>Send your review of #97</h1>
+              <p class="intro">Every comment below goes to GitHub as one review, pinned to head 998ded4. Edit or drop any of them first.</p>
+              <div class="draft"><div class="wh">sources.yaml:15<span class="fr">your comment · <span style="color:#4daafc">drop</span></span></div><div class="ta">Can CI check idempotence, so a second `coach setup` run is tested and not only reported?</div></div>
+              <div class="draft"><div class="wh">description, line 5<span class="fr">from the unverifiable claim · <span style="color:#4daafc">drop</span></span></div><div class="ta">The listed paths add up to 225 files, but the 2.7 MB total can't be checked from the repository. Could you paste the size `coach setup` reported?</div></div>
+              <div class="lab">Overall comment</div>
+              <div class="ta" style="color:#8b8b8b">Thanks: the sources and the licence rule look right. Two small asks above.</div>
+              <div class="ev3"><span><span class="rd on"></span>Comment</span><span><span class="rd"></span>Approve</span><span><span class="rd"></span>Request changes</span></div>
+              <span class="vbtn">Submit review</span>
+            </div></div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+    <div class="side">
+      <div class="card how"><b>How it behaves</b>
+        <ul>
+          <li>Unchanged from the shipped Send review page; only the way in is new.</li>
+          <li>A send that fails keeps every comment exactly where it was, and step 8 says why.</li>
+          <li>A second visit after new commits re-opens the steps those commits touch.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ APPENDIX ============ -->
+<section class="moment" id="apx">
+  <div class="mhead"><span class="num">APX</span><h2>Appendix</h2></div>
+
+  <details class="apx"><summary>Every decision, as built (27)</summary><div class="inner">
+    <p style="margin:0 0 8px;color:var(--bd-dim);font-size:13.5px"><span class="src-pick">picked</span> chosen among the options · <span class="src-rec">recommended</span> recommended and kept · <span class="src-ad">adapted</span> changed to fit the picks · <span class="src-moot">moot</span> no longer applies</p>
+    <div class="tblwrap" style="max-height:none"><table class="fin">
+      <tr><th>#</th><th>Decision</th><th>As built</th><th>Source</th></tr>
+      <tr><td class="n">1</td><td>Side bar architecture</td><td>The whole side bar as one webview, with the step path's states and actions on cards</td><td><span class="src-pick">picked</span></td></tr>
+      <tr><td class="n">2</td><td>Step ticks</td><td>Automatic where measurable (setup, review open, story read, every part reviewed, no draft undecided, sent). A tick box for claims and criteria. New commits re-open the affected steps.</td><td><span class="src-rec">recommended</span></td></tr>
+      <tr><td class="n">3</td><td>Guidance</td><td>Ordered and never locked. The current step's card is open and the rest fold to one line.</td><td><span class="src-ad">adapted</span></td></tr>
+      <tr><td class="n">4</td><td>Findings in the side bar</td><td>Finding cards with Draft, Open, Verify and Fetch buttons. Confirmations fold.</td><td><span class="src-ad">adapted</span></td></tr>
+      <tr><td class="n">5</td><td>#124 ticket cut</td><td>(a) Webview side bar shell with steps 1–4; (b) steps 5–6 finding cards; (c) steps 7–8 comments and send; (d) settings and asks on the cards, with the accessibility pass</td><td><span class="src-ad">adapted</span></td></tr>
+      <tr><td class="n">6</td><td>Setup surface</td><td>A form in step 1's card, plus the quick-pick summary from the status bar. Chosen over quick picks only and a form everywhere.</td><td><span class="src-pick">picked</span> (B, adapted)</td></tr>
+      <tr><td class="n">7</td><td>First open</td><td>Step 1's card is open by itself on first open; “Use the defaults” dismisses it</td><td><span class="src-ad">adapted</span></td></tr>
+      <tr><td class="n">8</td><td>Four steps or combined</td><td>Not applicable: the form shows all four fields at once</td><td><span class="src-moot">moot</span></td></tr>
+      <tr><td class="n">9</td><td>Re-open</td><td>Step 1's change link opens the form. The status bar opens the four-value summary quick pick.</td><td><span class="src-ad">adapted</span></td></tr>
+      <tr><td class="n">10</td><td>Default effort text</td><td><code>· default effort</code></td><td><span class="src-rec">recommended</span></td></tr>
+      <tr><td class="n">11</td><td>Untested marker</td><td>Beaker icon in the status bar; the full warning in the tooltip</td><td><span class="src-rec">recommended</span></td></tr>
+      <tr><td class="n">12</td><td>“Signed in”</td><td>Probe facts plus Claude Code's login source; the first review confirms</td><td><span class="src-rec">recommended</span></td></tr>
+      <tr><td class="n">13</td><td>Confirmation</td><td>Not applicable: the form's Save button confirms, and the card folds to show the result</td><td><span class="src-moot">moot</span></td></tr>
+      <tr><td class="n">14</td><td>Status bar before any choice</td><td>The defaults with a gear: <code>⚙ Second Look: Pi · default model · default effort</code></td><td><span class="src-rec">recommended</span></td></tr>
+      <tr><td class="n">15</td><td>Where progress shows</td><td>The side bar (bar, strip, spinner on the step) and the overview (stage list, placeholders)</td><td><span class="src-pick">picked</span></td></tr>
+      <tr><td class="n">16</td><td>Times</td><td>Elapsed for the running stage, durations for finished ones, total at the end; no estimates</td><td><span class="src-rec">recommended</span></td></tr>
+      <tr><td class="n">17</td><td>Status bar during a review</td><td><code>⟳ 7/9 Second Look: agent · model · effort</code></td><td><span class="src-rec">recommended</span></td></tr>
+      <tr><td class="n">18</td><td>End of review</td><td>The strip and status bar always; a notification only on fallback or failure</td><td><span class="src-rec">recommended</span></td></tr>
+      <tr><td class="n">19</td><td>Stop</td><td>A Stop review title button; needs a small engine cancel</td><td><span class="src-rec">recommended</span></td></tr>
+      <tr><td class="n">20</td><td>Overview style</td><td>Dashboard and tables (S3), with finding rows that open in place to show reason and evidence</td><td><span class="src-pick">picked</span></td></tr>
+      <tr><td class="n">21</td><td>Order</td><td>Findings first in every table; confirmations below</td><td><span class="src-rec">recommended</span></td></tr>
+      <tr><td class="n">22</td><td>Wide layout</td><td>A bounded column plus a contents rail of <b>clickable</b> links with scroll-spy and coloured counts</td><td><span class="src-pick">picked</span> + clickable rail</td></tr>
+      <tr><td class="n">23</td><td>Evidence</td><td><code>file:line</code> chips with the quoted line, grouped Code / Tests / Manual inside an opened row; “+3” in the collapsed row</td><td><span class="src-ad">adapted</span></td></tr>
+      <tr><td class="n">24</td><td>Colour source</td><td>VS Code theme colours, with AA-checked fallbacks</td><td><span class="src-rec">recommended</span></td></tr>
+      <tr><td class="n">25</td><td>Pull request picker</td><td>A list in the side bar with a short description, review state and size</td><td><span class="src-pick">picked</span></td></tr>
+      <tr><td class="n">26</td><td>Groups</td><td>Requested (sorted by waiting time, last-look flag) → yours → involving → this repository; each pull request appears once</td><td><span class="src-rec">recommended</span></td></tr>
+      <tr><td class="n">27</td><td>Signed out</td><td>A sign-in card; pasting a URL still works</td><td><span class="src-rec">recommended</span></td></tr>
+    </table></div>
+  </div></details>
+
+  <details class="apx"><summary>Where every command, ask and setting lives in the webview side bar</summary><div class="inner">
+    <div class="tblwrap" style="max-height:none"><table class="inv">
+      <thead><tr><th style="width:32%">What (today's place)</th><th>Where in the side bar</th></tr></thead>
+      <tbody>
+        <tr><td>Choose agent and model <span class="k">(new)</span> · <code>agent</code>, <code>agentModel</code>, <code>agentEffort</code>, <code>agentAccount</code> <span class="k">(Settings)</span></td><td>Step 1 card form; status bar quick pick</td></tr>
+        <tr><td>Review pull request <span class="k">(palette)</span></td><td>Step 2 list, its URL box and its Review buttons</td></tr>
+        <tr><td>Stop the review <span class="k">(new)</span></td><td>Title bar ⏹ while running</td></tr>
+        <tr><td>Open overview <span class="k">(view title)</span> · description, CI, documentation, stamps <span class="k">(overview)</span></td><td>Step 3 card button; title 📖; overview rail</td></tr>
+        <tr><td>Open part · reviewed checkbox <span class="k">(tree)</span></td><td>Step 4 part rows and their checkboxes; the diff banner</td></tr>
+        <tr><td>Open all parts · filter changed since last look <span class="k">(view title)</span></td><td>Step 4 buttons</td></tr>
+        <tr><td>Why this matters · Explain · Verify · What covers this? <span class="k">(part menus)</span></td><td>Step 4 Ask… button and the part row's ⋯ menu; the diff banner</td></tr>
+        <tr><td>Comment on this part… <span class="k">(part menu)</span></td><td>Part row ⋯ menu; step 7 hint</td></tr>
+        <tr><td><code>mirrorViewedToGitHub</code> <span class="k">(Settings)</span></td><td>Step 4 card ⋯ menu toggle</td></tr>
+        <tr><td>Fetch / Decompile library · open cited file <span class="k">(thread links)</span></td><td>Step 5 finding cards</td></tr>
+        <tr><td>Draft comment <span class="k">(thread, overview)</span></td><td>Step 5 and 6 finding cards</td></tr>
+        <tr><td>Criteria · issue links · unexplained changes <span class="k">(overview, tree badge)</span></td><td>Step 6 card</td></tr>
+        <tr><td><code>criteriaHeading</code> <span class="k">(Settings)</span></td><td>Step 6 card ⋯ menu</td></tr>
+        <tr><td>Add comment <span class="k">(gutter)</span> · discard comment · add/discard draft <span class="k">(threads)</span></td><td>Editor gutter (unchanged); step 7 rows with discard, add and discard buttons</td></tr>
+        <tr><td>Submit review… <span class="k">(view title, palette)</span></td><td>Step 8 button; title 🚀</td></tr>
+        <tr><td>Open Second Look settings <span class="k">(new)</span></td><td>Title ⋯ menu</td></tr>
+        <tr><td>Documentation hover <span class="k">(diff)</span></td><td>Unchanged; the list is in the overview rail</td></tr>
+      </tbody>
+    </table></div>
+    <p style="font-size:13px;color:var(--bd-dim);margin:8px 0 0">Every VS Code command stays registered, so the Command Palette and keybindings keep working alongside the side bar.</p>
+  </div></details>
+
+  <details class="apx"><summary>Colours and contrast in four themes</summary><div class="inner"><div class="sw" id="swatches"></div></div></details>
+
+  <details class="apx"><summary>Before: the v0.1.0 overview</summary><div class="inner"><div class="shotimg"><img src="review-path-before.png" alt="The v0.1.0 Second Look overview for interview-coach pull request 97"></div></div></details>
+
+  <details class="apx"><summary>Alternatives not chosen</summary><div class="inner how">
+    <ul>
+      <li><b>Side bar:</b> one native tree with step sections (its richer look is kept on the webview cards); a stepper header above native trees.</li>
+      <li><b>Pull request picker:</b> drop-down quick pick (its “paste a URL in the same box” is kept); review queue (its “waiting on you” order and last-look flag are kept).</li>
+      <li><b>Setup:</b> the Getting Started walkthrough; quick picks only, with no form; the form everywhere.</li>
+      <li><b>Progress:</b> a progress notification; an overview-only timeline.</li>
+      <li><b>Overview style:</b> S1 semantic accents (its stripes and icon pills live on inside opened rows); S2 tinted cards.</li>
+    </ul>
+  </div></details>
+
+  <div class="card build" style="margin-top:12px">
+    <h3>Build notes</h3>
+    <ul>
+      <li><b>Order:</b> #121 effort setting → #119 Activity Bar container → #124(a) webview side bar shell with steps 1–4, holding #122 setup and #126 list → #123 progress → #125 overview → #124(b–d).</li>
+      <li><b>A webview side bar</b> means Second Look draws its own checkboxes, focus and keyboard navigation, with ARIA roles so screen readers still work. That makes it larger than the tree design.</li>
+      <li><b>Engine:</b> a probe method returning installed agents, login source and effort levels (#122); stage id, start time and stamp on stage updates, and a cancel (#123). The pull request list needs GitHub GraphQL search for body, size and review state (#126).</li>
+    </ul>
+  </div>
+</section>
+
+</div>
+
+<!-- overview templates (S3 dashboard style) -->
+<template id="ov-s3run">
+  <div class="ovw" style="padding:18px 34px;gap:34px">
+    <div class="col" style="flex-basis:800px">
+      <p class="t">Add AI engineering study sources to the sources list</p>
+      <p class="meta">lbildzinkas/interview-coach #97 · lbildzinkas · <span class="mono">fm/ic-ai-sources → master</span> · head <span class="mono">998ded4</span></p>
+      <div class="dash">
+        <div class="tile"><div class="big c-info"><i class="codicon codicon-loading codicon-modifier-spin" style="font-size:18px"></i></div><div class="lb">6 claims being checked</div></div>
+        <div class="tile"><div class="big c-mut">4</div><div class="lb"><i class="codicon codicon-clock" style="font-size:12px"></i> criteria, next</div></div>
+        <div class="tile"><div class="big c-ok">0</div><div class="lb"><i class="codicon codicon-pass-filled c-ok" style="font-size:12px"></i> unexplained changes</div></div>
+        <div class="tile"><div class="big c-info">2</div><div class="lb">parts to review</div></div>
+      </div>
+      <div class="stages">
+        <div class="hdr"><i class="codicon codicon-loading codicon-modifier-spin c-info"></i><b>Review in progress</b><span class="c-mut" style="font-size:12px">stage 7 of 9</span><span class="tm">2:58 so far</span></div>
+        <div class="sr"><i class="codicon codicon-pass-filled c-ok"></i><span class="nm">Plain parts and noise checks</span><span class="w">0:03</span></div>
+        <div class="sr"><i class="codicon codicon-pass-filled c-ok"></i><span class="nm">Grouping <span class="who">by Claude Code</span></span><span class="w">0:31</span></div>
+        <div class="sr"><i class="codicon codicon-circle-slash c-warn"></i><span class="nm">Ranking <span class="c-warn" style="font-size:12px">plain ranking kept: no ranking evaluation for this combination</span></span><span class="w">0:00</span></div>
+        <div class="sr"><i class="codicon codicon-pass-filled c-ok"></i><span class="nm">Story <span class="who">by Claude Code</span></span><span class="w">0:22</span></div>
+        <div class="sr"><i class="codicon codicon-pass-filled c-ok"></i><span class="nm">Unexplained changes <span class="who">by Claude Code</span></span><span class="w">0:19</span></div>
+        <div class="sr"><i class="codicon codicon-pass-filled c-ok"></i><span class="nm">Claims · 6 listed <span class="who">by Claude Code</span></span><span class="w">0:21</span></div>
+        <div class="sr run"><i class="codicon codicon-loading codicon-modifier-spin c-info"></i><span class="nm">Verdicts: checking 6 claims <span class="who">· Claude Code · claude-sonnet-5-5 · high</span></span><span class="w" style="color:var(--info)">1:42</span><span></span><span class="bar"></span></div>
+        <div class="sr todo"><i class="codicon codicon-circle-large-outline c-mut"></i><span class="nm">Acceptance criteria</span><span class="w">next</span></div>
+        <div class="sr todo"><i class="codicon codicon-circle-large-outline c-mut"></i><span class="nm">Documentation links</span><span class="w">to come</span></div>
+      </div>
+      <div class="sec"><div class="sh"><h3>Story</h3><span class="stmp">claude-code · claude-sonnet-5-5 · story v1</span></div><p class="story"><a>The sources.yaml change</a> adds eight pinned AI engineering sources, so <code>coach setup</code> downloads them with the existing ones, and its header now documents a <code>NONE</code> licence that must be <code>local_only</code>. <a>The notices and README edits</a> credit the sources that may be committed in <code>THIRD_PARTY_NOTICES.md</code> and explain in <code>README.md</code> what "(local only)" means.</p></div>
+      <div class="sec">
+        <div class="sh"><h3>Claims</h3><span class="pl info"><i class="codicon codicon-loading codicon-modifier-spin"></i>checking 6 · 1:42</span><span class="stmp">claims v1 · verdicts v5</span></div>
+        <table class="ct"><tr><th style="width:26px">#</th><th style="width:110px">State</th><th>Claim</th><th style="width:140px">Where it is made</th></tr>
+          <tr><td>1</td><td><span class="pl mut"><i class="codicon codicon-loading codicon-modifier-spin"></i>checking</span></td><td>`sources.yaml` gains eight AI engineering sources…</td><td><span class="ref">description:3</span></td></tr>
+          <tr><td>2</td><td><span class="pl mut"><i class="codicon codicon-loading codicon-modifier-spin"></i>checking</span></td><td>The whole download is 225 files, about 2.7 MB.</td><td><span class="ref">description:5</span></td></tr>
+          <tr><td colspan="4" class="c-mut">4 more being checked</td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="rail" style="position:sticky;top:0">
+      <b>On this page</b>
+      <div class="ri lnk on"><i class="codicon codicon-loading codicon-modifier-spin c-info"></i>Review progress<span class="n c-info">7/9</span></div>
+      <div class="ri lnk"><i class="codicon codicon-book"></i>Story</div>
+      <div class="ri lnk"><i class="codicon codicon-loading codicon-modifier-spin c-info"></i>Claims<span class="n c-info">6</span></div>
+      <div class="ri lnk"><i class="codicon codicon-clock c-mut"></i>Acceptance criteria<span class="n">4</span></div>
+      <div class="ri lnk"><i class="codicon codicon-pass-filled c-ok"></i>Unexplained changes<span class="n c-ok">0</span></div>
+      <div class="ri lnk"><i class="codicon codicon-clock c-mut"></i>Documentation</div>
+      <div class="ri lnk"><i class="codicon codicon-pass c-ok"></i>Pipeline and CI</div>
+      <div class="ri lnk"><i class="codicon codicon-note"></i>Description</div>
+    </div>
+  </div>
+</template>
+
+<template id="ov-s3claims">
+  <div class="ovw" style="padding:18px 34px;gap:34px">
+    <div class="col" style="flex-basis:800px">
+      <div class="done" style="margin-bottom:10px"><i class="codicon codicon-pass-filled c-ok"></i> <b>Review complete</b> in 4:12 · 9 stages · Claude Code · claude-sonnet-5-5 · high <span class="c-mut">· show stages ▸</span><div class="fb"><i class="codicon codicon-circle-slash"></i><span><b>Ranking fell back</b>: plain ranking kept; no ranking evaluation for this combination yet.</span></div></div>
+      <div class="dash">
+        <div class="tile"><div class="big c-warn">2</div><div class="lb"><i class="codicon codicon-warning c-warn" style="font-size:12px"></i> criteria partly met</div></div>
+        <div class="tile"><div class="big c-ok">2</div><div class="lb"><i class="codicon codicon-pass-filled c-ok" style="font-size:12px"></i> criteria met</div></div>
+        <div class="tile"><div class="big c-warn">1</div><div class="lb"><i class="codicon codicon-question c-warn" style="font-size:12px"></i> claim unverifiable</div></div>
+        <div class="tile"><div class="big c-ok">5</div><div class="lb"><i class="codicon codicon-pass-filled c-ok" style="font-size:12px"></i> claims verified</div></div>
+      </div>
+      <div class="sec target">
+        <div class="sh"><h3>Claims</h3><span class="pl warn"><i class="codicon codicon-question"></i>1 unverifiable</span><span class="pl ok"><i class="codicon codicon-pass-filled"></i>5 verified</span><span class="stmp">claims v1 · verdicts v5 · claude-sonnet-5-5 · high</span></div>
+        <table class="ct"><tr><th style="width:26px">#</th><th style="width:118px">Verdict</th><th>Claim</th><th style="width:140px">Evidence</th></tr>
+          <tr class="f"><td>2</td><td><span class="pl warn"><i class="codicon codicon-question"></i>unverifiable</span></td><td><b style="color:var(--ink);font-weight:600">The whole download is 225 files, about 2.7 MB.</b> <span class="c-mut">▾</span></td><td>the change itself</td></tr>
+          <tr class="ex2"><td></td><td colspan="3"><div class="it warn" style="margin:2px 0 4px"><p class="why" style="margin:0 0 4px">The listed paths do add up to 225 files, but the download size of about 2.7 MB cannot be checked from the repository.</p>
+            <div class="ev"><span class="k">Made in</span><span class="v"><span class="l"><span class="ref">description:5</span><em>pull request description · part sources.yaml AI engineering sources…</em></span></span></div>
+            <div class="acts"><span class="vbtn"><i class="codicon codicon-edit"></i>Draft comment</span><span class="vbtn sec"><i class="codicon codicon-search"></i>Verify again</span></div></div></td></tr>
+          <tr><td>1</td><td><span class="pl ok"><i class="codicon codicon-pass-filled"></i>verified</span></td><td>`sources.yaml` gains eight AI engineering sources, so `coach setup` downloads them…</td><td><span class="ref">sources.yaml:86</span> +1</td></tr>
+          <tr><td>3</td><td><span class="pl ok"><i class="codicon codicon-pass-filled"></i>verified</span></td><td>Each source is pinned to a commit, and only the English text it needs is listed…</td><td><span class="ref">sources.yaml:88</span> +1</td></tr>
+          <tr><td>4</td><td><span class="pl ok"><i class="codicon codicon-pass-filled"></i>verified</span></td><td>The three repositories with no licence file use the licence value `NONE` and `local_only: true`.</td><td><span class="ref">sources.yaml:89</span> +3</td></tr>
+          <tr><td colspan="4" class="c-mut">2 more verified ▸</td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="rail" style="position:sticky;top:0">
+      <b>On this page</b>
+      <div class="ri lnk"><i class="codicon codicon-book"></i>Story</div>
+      <div class="ri lnk go"><i class="codicon codicon-question c-warn"></i>Claims<span class="n c-warn">1</span></div>
+      <div class="jump">↳ clicked: scrolled to Claims</div>
+      <div class="ri lnk"><i class="codicon codicon-warning c-warn"></i>Acceptance criteria<span class="n c-warn">2</span></div>
+      <div class="ri lnk"><i class="codicon codicon-pass-filled c-ok"></i>Unexplained changes<span class="n c-ok">0</span></div>
+      <div class="ri lnk"><i class="codicon codicon-link"></i>Documentation<span class="n">4</span></div>
+      <div class="ri lnk"><i class="codicon codicon-pass c-ok"></i>Pipeline and CI</div>
+      <div class="ri lnk"><i class="codicon codicon-note"></i>Description</div>
+      <div class="ri lnk"><i class="codicon codicon-info"></i>How results were made</div>
+    </div>
+  </div>
+</template>
+
+<template id="ov-s3crit">
+  <div class="ovw" style="padding:18px 34px;gap:34px">
+    <div class="col" style="flex-basis:800px">
+      <div class="sec target">
+        <div class="sh"><h3>Acceptance criteria</h3><span class="pl warn"><i class="codicon codicon-warning"></i>2 partly met</span><span class="pl ok"><i class="codicon codicon-pass-filled"></i>2 met</span><span class="stmp">#96 closes · criteria-mapping v1</span></div>
+        <table class="ct"><tr><th style="width:26px">#</th><th style="width:110px">State</th><th>Criterion</th><th style="width:150px">Evidence</th></tr>
+          <tr class="f"><td>2</td><td><span class="pl warn"><i class="codicon codicon-warning"></i>partly met</span></td><td><b style="color:var(--ink);font-weight:600">`coach setup` downloads the new sources into the git-ignored folder, stays safe to run twice, and fetches no images, translations or other languages.</b> <span class="c-mut">▾</span></td><td><span class="ref">sources.yaml:15</span> +4</td></tr>
+          <tr class="ex2"><td></td><td colspan="3"><div class="it warn" style="margin:2px 0 4px"><p class="why" style="margin:0 0 4px">The lists are explicit English markdown paths and the test guards against translation folders, and the description reports a double run and a clean tree, but I could not verify the download or idempotence myself.</p>
+            <div class="ev">
+              <span class="k">Code</span><span class="v"><span class="l"><span class="ref">sources.yaml:15</span><em># files paths inside the repository; text only, never images</em></span></span>
+              <span class="k">Tests</span><span class="v"><span class="l"><span class="ref">tests/test_study_material.py:76</span><em>assert not [p … startswith(translated)]</em></span><span class="l"><span class="ref">tests/test_study_material.py:77</span><em>assert not [p … "units/" … "/en/" not in p]</em></span></span>
+              <span class="k">Manual</span><span class="v"><span class="l"><span class="ref">description:49</span><em>“downloaded all 12 sources. A second run printed "already up to date"…”</em></span></span>
+            </div>
+            <div class="acts"><span class="vbtn"><i class="codicon codicon-edit"></i>Draft comment</span></div></div></td></tr>
+          <tr class="f"><td>4</td><td><span class="pl warn"><i class="codicon codicon-warning"></i>partly met</span></td><td>The sources-list schema check passes, and the project's single check command passes locally and in CI. <span class="c-mut">▸</span></td><td><span class="ref">test…:57</span> +1</td></tr>
+          <tr><td>1</td><td><span class="pl ok"><i class="codicon codicon-pass-filled"></i>met</span></td><td>Each new source is in the sources list with download URL, pinned commit, licence…</td><td><span class="ref">sources.yaml:86</span> +6</td></tr>
+          <tr><td>3</td><td><span class="pl ok"><i class="codicon codicon-pass-filled"></i>met</span></td><td>Third-party notices credit each committable source with its licence notice…</td><td><span class="ref">NOTICES.md:46</span> +4</td></tr>
+        </table>
+      </div>
+      <div class="sec"><div class="sh"><h3>Unexplained changes</h3><span class="pl ok"><i class="codicon codicon-pass-filled"></i>none</span><span class="stmp">unexplained v1</span></div><div class="quiet"><i class="codicon codicon-pass-filled c-ok"></i>Every part is explained, and every change the description promises is in the diff.</div></div>
+    </div>
+    <div class="rail" style="position:sticky;top:0">
+      <b>On this page</b>
+      <div class="ri lnk"><i class="codicon codicon-book"></i>Story</div>
+      <div class="ri lnk"><i class="codicon codicon-question c-warn"></i>Claims<span class="n c-warn">1</span></div>
+      <div class="ri lnk go"><i class="codicon codicon-warning c-warn"></i>Acceptance criteria<span class="n c-warn">2</span></div>
+      <div class="jump">↳ clicked: scrolled to the criteria</div>
+      <div class="ri lnk"><i class="codicon codicon-pass-filled c-ok"></i>Unexplained changes<span class="n c-ok">0</span></div>
+      <div class="ri lnk"><i class="codicon codicon-link"></i>Documentation<span class="n">4</span></div>
+      <div class="ri lnk"><i class="codicon codicon-pass c-ok"></i>Pipeline and CI</div>
+      <div class="ri lnk"><i class="codicon codicon-note"></i>Description</div>
+    </div>
+  </div>
+</template>
+
+<script>
+(function(){
+  var SL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-label="Second Look"><circle cx="10" cy="10" r="6.6"/><path d="M15 15l5.6 5.6"/><path d="M6.1 10q3.9-3.6 7.8 0q-3.9 3.6-7.8 0z"/><circle cx="10" cy="10" r="1.3" fill="currentColor" stroke="none"/></svg>';
+  var STATUS = {
+    'unchosen': {icon:'settings-gear', text:'Second Look: Pi · default model · default effort'},
+    'cc':       {icon:{after:null,today:'beaker'}, text:'Second Look: Claude Code · claude-sonnet-5-5 · high'},
+    'running':  {icon:'loading codicon-modifier-spin', text:'7/9 Second Look: Claude Code · claude-sonnet-5-5 · high'},
+    'running8': {icon:'loading codicon-modifier-spin', text:'8/9 Second Look: Claude Code · claude-sonnet-5-5 · high'}
+  };
+  function iconFor(spec){
+    if(spec === null || spec === undefined) return '';
+    if(typeof spec === 'string') return '<i class="codicon codicon-'+spec+'"></i>';
+    var a = spec.after ? '<i class="codicon codicon-'+spec.after+' after-only"></i>' : '';
+    var t = spec.today ? '<i class="codicon codicon-'+spec.today+' today-only"></i>' : '';
+    return a + t;
+  }
+  function statusBar(key){
+    var s = STATUS[key] || STATUS.cc;
+    return '<div class="vs-status"><span class="rem"><i class="codicon codicon-remote" style="font-size:14px"></i></span>'+
+      '<span class="si"><i class="codicon codicon-source-control"></i>master</span>'+
+      '<span class="si"><i class="codicon codicon-error"></i>0 <i class="codicon codicon-warning"></i>0</span>'+
+      '<span class="si sl hl">'+iconFor(s.icon)+s.text+'</span>'+
+      '<span class="sp"></span><span class="si">UTF-8</span><span class="si"><i class="codicon codicon-bell"></i></span></div>';
+  }
+  function actBar(on, badge){
+    var items = [['files','explorer'],['search'],['source-control'],['debug-alt'],['extensions']];
+    var h = '<div class="vs-act">';
+    items.forEach(function(it){ h += '<div class="ai'+(on===(it[1]||it[0])?' on':'')+'"><i class="codicon codicon-'+it[0]+'"></i></div>'; });
+    h += '<div class="ai'+(on==='sl'?' on':'')+'" title="Second Look">'+SL_ICON+(badge?'<span class="ab2">'+badge+'</span>':'')+'</div>';
+    h += '<div class="grow"></div><div class="ai"><i class="codicon codicon-account"></i></div><div class="ai"><i class="codicon codicon-settings-gear"></i></div></div>';
+    return h;
+  }
+  var LOGO = '<svg class="logo" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.2"><circle cx="10" cy="10" r="6.6"/><path d="M15 15l5.6 5.6"/><path d="M6.1 10q3.9-3.6 7.8 0q-3.9 3.6-7.8 0z"/></svg>';
+  var EMPTY_FULL = '<div class="vs-empty">'+LOGO+'<dl><dt>Show All Commands</dt><dd><kbd>⇧</kbd> <kbd>⌘</kbd> <kbd>P</kbd></dd><dt>Go to File</dt><dd><kbd>⌘</kbd> <kbd>P</kbd></dd><dt>Find in Files</dt><dd><kbd>⇧</kbd> <kbd>⌘</kbd> <kbd>F</kbd></dd></dl></div>';
+  document.querySelectorAll('.vs').forEach(function(vs){
+    if(!vs.closest('.stage')) return;
+    var w = +(vs.dataset.w || 1100), h = +(vs.dataset.h || 620);
+    vs.style.width = w + 'px'; vs.style.height = h + 'px';
+    var body = vs.querySelector('.vs-body');
+    if(body){
+      vs.insertAdjacentHTML('afterbegin', '<div class="vs-title"><span class="dots"><i></i><i></i><i></i></span><span class="vs-cc"><i class="codicon codicon-search" style="font-size:13px"></i>interview-coach</span></div>');
+      body.insertAdjacentHTML('afterbegin', actBar(vs.dataset.act || 'sl', vs.dataset.badge));
+      body.insertAdjacentHTML('afterend', statusBar(vs.dataset.status || 'cc'));
+    }
+    vs.querySelectorAll('[data-empty]').forEach(function(el){ el.innerHTML = EMPTY_FULL; });
+    vs.querySelectorAll('[data-ov]').forEach(function(el){ var t = document.getElementById('ov-' + el.dataset.ov); if(t) el.appendChild(t.content.cloneNode(true)); });
+  });
+
+  /* status bar states */
+  var STATES = [
+    {k:'Not chosen yet', icon:'settings-gear', text:'Second Look: Pi · default model · default effort'},
+    {k:'Chosen', icon:{after:null,today:'beaker'}, text:'Second Look: Claude Code · claude-sonnet-5-5 · high'},
+    {k:'Untested combination', icon:'beaker', text:'Second Look: Claude Code · claude-opus-5-5 · max'},
+    {k:'Review running', icon:'loading codicon-modifier-spin', text:'7/9 Second Look: Claude Code · claude-sonnet-5-5 · high'},
+    {k:'API key overrides the subscription', icon:'warning', text:'Second Look: Claude Code · claude-sonnet-5-5 · high', warn:true}
+  ];
+  var strip = document.getElementById('sbstates');
+  STATES.forEach(function(s){
+    strip.insertAdjacentHTML('beforeend',
+      '<div style="display:grid;grid-template-columns:minmax(0,170px) minmax(0,1fr);gap:10px;align-items:center">'+
+      '<div style="font-size:12.5px;color:#cfd1d6">'+s.k+'</div>'+
+      '<div class="vs" style="width:auto;height:auto;background:transparent;overflow-x:auto"><div class="vs-status" style="border:1px solid #2b2b2b;border-radius:3px;overflow:hidden">'+
+      '<span class="si sl'+(s.warn?' warnbg':'')+'">'+iconFor(s.icon)+s.text+'</span><span class="sp"></span></div></div></div>');
+  });
+
+  /* contrast swatches */
+  function lum(h){ h=h.replace('#',''); var c=[0,2,4].map(function(i){ var v=parseInt(h.substr(i,2),16)/255; return v<=0.03928? v/12.92 : Math.pow((v+0.055)/1.055,2.4); }); return 0.2126*c[0]+0.7152*c[1]+0.0722*c[2]; }
+  function cr(a,b){ var x=lum(a), y=lum(b); var hi=Math.max(x,y), lo=Math.min(x,y); return ((hi+0.05)/(lo+0.05)).toFixed(1); }
+  var THEMES = [
+    {name:'Dark Modern', bg:'#1f1f1f', ink:'#e6e6e6', border:'#333', c:{ok:'#73c991',bad:'#f48771',warn:'#e2c08d',info:'#75beff',must:'#d7a4f5',mut:'#9d9d9d'}},
+    {name:'A black theme', bg:'#0b0b0b', ink:'#e6e6e6', border:'#2c2c2c', c:{ok:'#73c991',bad:'#f48771',warn:'#e2c08d',info:'#75beff',must:'#d7a4f5',mut:'#9d9d9d'}},
+    {name:'Light Modern', bg:'#ffffff', ink:'#1f1f1f', border:'#d0d0d0', c:{ok:'#2d7a32',bad:'#b3261e',warn:'#855d00',info:'#005fb8',must:'#7a3fa8',mut:'#616161'}},
+    {name:'Dark High Contrast', bg:'#000000', ink:'#ffffff', border:'#6fc3df', c:{ok:'#89d185',bad:'#f48771',warn:'#ffd700',info:'#75beff',must:'#e0b0ff',mut:'#c8c8c8'}}
+  ];
+  var GROUPS = [
+    ['Verdicts', [['pass-filled','verified','ok'],['error','refuted','bad'],['question','unverifiable','warn'],['circle-large-outline','not checked','mut']]],
+    ['Criteria', [['pass-filled','met','ok'],['warning','partly met','warn'],['error','not met','bad'],['person','needs manual check','info'],['circle-large-outline',"can't tell",'mut']]],
+    ['Importance', [['star-full','must review','must'],['eye','worth reviewing','info'],['circle-small','context','mut']]],
+    ['Stages', [['loading','running','info'],['circle-slash','fell back','warn']]]
+  ];
+  var sw = document.getElementById('swatches');
+  THEMES.forEach(function(t){
+    var h = '<div class="swc" style="background:'+t.bg+';color:'+t.ink+';border-color:'+t.border+'"><h4>'+t.name+' <span style="font-weight:400;opacity:.7;font-size:11.5px">'+t.bg+'</span></h4>';
+    GROUPS.forEach(function(g){
+      h += '<div class="gl">'+g[0]+'</div>';
+      g[1].forEach(function(s){ var col = t.c[s[2]]; h += '<div class="r" style="color:'+col+'"><i class="codicon codicon-'+s[0]+'"></i><span class="nm">'+s[1]+'</span><span class="cr">'+cr(col,t.bg)+':1</span></div>'; });
+    });
+    h += '<div class="gl">Body text</div><div class="r"><span class="nm">ink</span><span class="cr">'+cr(t.ink,t.bg)+':1</span></div></div>';
+    sw.insertAdjacentHTML('beforeend', h);
+  });
+
+  /* scale the window mockups */
+  function fit(){
+    document.querySelectorAll('.stage').forEach(function(st){
+      var vs = st.querySelector('.vs'); if(!vs) return;
+      var w = +(vs.dataset.w || 1100), h = +(vs.dataset.h || 620);
+      var s = st.clientWidth / w;
+      vs.style.transform = 'scale(' + s + ')';
+      st.style.height = Math.round(h * s) + 'px';
+    });
+  }
+  fit();
+  if(window.ResizeObserver){ var ro = new ResizeObserver(fit); document.querySelectorAll('.stage').forEach(function(st){ ro.observe(st); }); }
+  else window.addEventListener('resize', fit);
+  document.querySelectorAll('details').forEach(function(d){ d.addEventListener('toggle', fit); });
+
+  /* tested-list toggle */
+  var ta = document.getElementById('tg-after'), tt = document.getElementById('tg-today');
+  function setToday(on){ document.body.classList.toggle('today', on); ta.setAttribute('aria-pressed', String(!on)); tt.setAttribute('aria-pressed', String(on)); }
+  ta.addEventListener('click', function(){ setToday(false); });
+  tt.addEventListener('click', function(){ setToday(true); });
+
+})();
+</script>
+</body>
+</html>
