@@ -126,6 +126,11 @@
         "command": "second-look.ask.cover",
         "title": "What covers this?",
         "category": "Second Look"
+      },
+      {
+        "command": "second-look.markReviewed",
+        "title": "Mark the part reviewed, or clear its mark",
+        "category": "Second Look"
       }
     ],
     "menus": {
@@ -204,6 +209,10 @@
         },
         {
           "command": "second-look.ask.cover",
+          "when": "false"
+        },
+        {
+          "command": "second-look.markReviewed",
           "when": "false"
         }
       ],

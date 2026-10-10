@@ -14,8 +14,8 @@ function kindLabel(kind: string): string {
   return kind.charAt(0).toUpperCase() + kind.slice(1);
 }
 
-/** A command link the finding's trusted Markdown runs, with its arguments. */
-function commandLink(text: string, command: string, args: readonly unknown[]): string {
+/** A command link a finding's, or the part banner's, trusted Markdown runs, with its arguments. */
+export function commandLink(text: string, command: string, args: readonly unknown[]): string {
   return `[${escapeMarkdown(text)}](command:${command}?${encodeURIComponent(JSON.stringify(args))})`;
 }
 

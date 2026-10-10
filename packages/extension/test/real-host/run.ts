@@ -7,6 +7,7 @@ import * as vscode from 'vscode';
 import {
   ADD_COMMENT_COMMAND,
   CHANGE_SCHEME,
+  MARK_REVIEWED_COMMAND,
   OPEN_ALL_PARTS_COMMAND,
   OPEN_PART_COMMAND,
   REVIEW_COMMAND,
@@ -354,6 +355,30 @@ export async function run(): Promise<void> {
       }),
       'the diff scrolled to the first hunk',
     );
+
+    // The banner above the part's diff (ADR 0007) marks the part reviewed
+    // through the same path as its checkbox in the tree, carrying the part
+    // by where it starts: the engine keeps the mark, and clearing it from
+    // the banner clears it there too.
+    const [firstHunk] = review.parts[0]!.hunks;
+    const bannerRef = { anchor: { path: 'src/retry.py', hunk: { oldStart: firstHunk!.oldStart, newStart: firstHunk!.newStart } } };
+    const markRequests = (): EngineRequest[] =>
+      readFileSync(join(workDir, 'engine.log'), 'utf8')
+        .split('\n')
+        .filter((line) => line !== '')
+        .map((line) => JSON.parse(line) as EngineRequest)
+        .filter((request) => request.method === 'markReviewed');
+    for (const reviewed of [true, false]) {
+      await withTimeout(
+        vscode.commands.executeCommand(MARK_REVIEWED_COMMAND, bannerRef, reviewed),
+        'the banner\'s mark-reviewed command',
+      );
+      const marked = await withTimeout(
+        waitFor('the mark in the engine log', () => markRequests().find((request) => (request.params as { reviewed?: boolean }).reviewed === reviewed)),
+        'the mark in the engine log',
+      );
+      deepStrictEqual((marked.params as { part: { name: string } }).part.name, 'src/retry.py');
+    }
 
     // The copies serve the pull request's content, read-only: the head
     // side holds the new retry logic, the base side the old one, and a
