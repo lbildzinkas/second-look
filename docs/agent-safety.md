@@ -41,6 +41,7 @@ No agent is given a tool that reaches the network: each runs with file-reading t
 | The pull request, its diff, merge base, base and head archives, `.gitattributes`, last review | GitHub's REST API with the reviewer's token | every review | `github.ts:76-300`, `github.ts:366` |
 | Linked issues | GitHub's GraphQL API | every review | `github.ts:173-215` |
 | Check runs, annotations and the logs of failed GitHub Actions jobs | GitHub's REST API | every review | `github.ts:105-170`, `ci.ts` |
+| The reviewer's open pull requests, one search per group | GitHub's GraphQL API with the reviewer's token | each time the reviewer's pull requests are listed (`pullRequests/list`) | `github.ts:395-418`, `pull-request-list.ts` |
 | The submitted review, and the **Viewed** mark when the mirror setting is on | GitHub's REST and GraphQL APIs | only when the reviewer presses send, or ticks a part with the mirror on | `github.ts:309-360`, `send.ts` |
 | A Python library at the pinned hash | `pypi.org`, then `files.pythonhosted.org` | only when the reviewer presses a fetch | `library-fetch.ts:202-240` |
 | A .NET package, its symbol package and its Source Link files | `api.nuget.org`, `www.nuget.org`, and the source hosts of GitHub, GitLab, Bitbucket and Azure DevOps | only when the reviewer presses a fetch or a decompile | `nuget-fetch.ts:38`, `nuget-fetch.ts:190-194`, `nuget-fetch.ts:245-249` |

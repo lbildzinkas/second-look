@@ -33,6 +33,7 @@ import type { AgentName } from './agents.js';
 import type { AskKind } from './asks.js';
 import type { AskAnswer, AskedClaim, BudgetLimits, DraftComment, FindingRef, PendingReview, ReviewedMarks, ReviewResult, SentReview, ViewedFiles } from './protocol.js';
 import type { MarkedPart } from './reviewed-marks.js';
+import type { PullRequestList } from './protocol.js';
 
 /** Version of the JSON-RPC protocol between the extension and the engine. */
 export const ENGINE_PROTOCOL_VERSION = 1 as const;
@@ -379,3 +380,30 @@ export function redactToken(text: string, token: string | undefined): string {
   }
   return text.split(token).join('[REDACTED]');
 }
+
+/**
+ * The request that lists the reviewer's open pull requests for them to
+ * pick one (issue 136): one GitHub search per group — review requested
+ * from them, theirs, involving them, and open in the open folder's
+ * repository when it is a GitHub one — each pull request in its first
+ * group, with its short summary, review state, size and whether new
+ * commits landed since the reviewer's last look. Nothing is written,
+ * here or on GitHub.
+ */
+export const LIST_PULL_REQUESTS_METHOD = 'pullRequests/list' as const;
+
+/** One list request; the token travels with the request, never stored. */
+export interface ListPullRequestsParams {
+  /**
+   * The GitHub token for this one request, from VS Code's GitHub sign-in;
+   * absent or empty when the reviewer is not signed in, which the list
+   * answers with that reason. The engine uses it only for the searches and
+   * never stores or echoes it.
+   */
+  token?: string;
+  /** The open folder's GitHub repository as `owner/name`, when it is one; absent lists no "this repository" group. */
+  repository?: string;
+}
+
+/** The list request's result: the groups, or why the reviewer is not signed in or GitHub could not be reached. */
+export type ListPullRequestsRpcResult = PullRequestList;

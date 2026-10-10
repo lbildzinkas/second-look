@@ -1544,3 +1544,80 @@ export interface DiffLine {
    */
   endsWithoutNewline?: boolean;
 }
+
+/**
+ * The groups the reviewer's open pull requests are listed in, in order:
+ * review requested from them, their own, involving them, and open in the
+ * repository of the folder they have open. A pull request is listed once,
+ * in its first group.
+ */
+export const PULL_REQUEST_GROUPS = ['review requested', 'yours', 'involving you', 'this repository'] as const;
+
+export type PullRequestGroupKind = (typeof PULL_REQUEST_GROUPS)[number];
+
+/** Where a listed pull request stands in review. */
+export interface ListedReviewState {
+  /** True when the reviewer's review is requested, by name or through a team. */
+  requested: boolean;
+  /** How many reviewers' latest opinion is an approval. */
+  approvals: number;
+  /** How many reviewers' latest opinion asks for changes. */
+  changesRequested: number;
+  draft: boolean;
+}
+
+/** One open pull request in the list the reviewer picks from. */
+export interface ListedPullRequest {
+  /** The pull request's HTML URL, which a review request takes. */
+  url: string;
+  /** The repository as `owner/name`. */
+  repository: string;
+  number: number;
+  title: string;
+  /** Author login, or the empty string when GitHub does not report one. */
+  author: string;
+  /** When the pull request last changed, as an ISO 8601 timestamp. */
+  updatedAt: string;
+  /**
+   * The start of the description as a reader sees it on GitHub: its first
+   * two lines of text, headings and blank lines skipped, joined and cut to
+   * {@link PULL_REQUEST_SUMMARY_LENGTH} characters, with hidden HTML
+   * comments and invisible characters left out. It is untrusted text the
+   * author wrote: shown as plain text, never as Markdown or HTML, and
+   * never handed to an agent. Empty when the description is.
+   */
+  summary: string;
+  review: ListedReviewState;
+  size: { additions: number; deletions: number; files: number };
+  /**
+   * True when the engine's own last-look record holds a look at another
+   * head commit: new commits landed since the reviewer last opened the
+   * review. False when they never opened it here.
+   */
+  newCommitsSinceLastLook: boolean;
+  /**
+   * In the review-requested group, since when the reviewer has kept the
+   * pull request waiting, as an ISO 8601 timestamp: the latest request of
+   * their review, by name or else through a team, or the pull request's
+   * creation when GitHub shows no request.
+   */
+  waitingSince?: string;
+}
+
+/** The longest summary a listed pull request carries, in characters. */
+export const PULL_REQUEST_SUMMARY_LENGTH = 240;
+
+/** One group of the list, in its order: waiting longest first for review requested, else most recently updated first. */
+export interface PullRequestGroup {
+  group: PullRequestGroupKind;
+  pullRequests: ListedPullRequest[];
+}
+
+/**
+ * The reviewer's open pull requests, read from GitHub each time with
+ * their sign-in, or why they could not be: not signed in, or GitHub out
+ * of reach, each with a plain reason.
+ */
+export type PullRequestList =
+  | { outcome: 'listed'; groups: PullRequestGroup[] }
+  | { outcome: 'signed out' | 'unreachable'; reason: string };
