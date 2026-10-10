@@ -1,6 +1,6 @@
 # How a review works
 
-A review starts with the **Second Look: Review pull request** command and a GitHub pull request URL. The engine — a separate local process the extension starts — fetches the pull request from GitHub with your sign-in, keeps read-only copies of both sides of the change in its cache, and offers its result to the extension, which shows it as the ranked review tree in the Explorer side bar and the overview tab. Nothing is checked out into your workspace, and nothing from the pull request is built, installed or run.
+A review starts with the **Second Look: Review pull request** command and a GitHub pull request URL. The engine — a separate local process the extension starts — fetches the pull request from GitHub with your sign-in, keeps read-only copies of both sides of the change in its cache, and offers its result to the extension, which shows it as the ranked review tree in the Explorer side bar and the overview tab. Nothing is checked out into your workspace, and the companion never builds, installs or runs anything from the pull request — only the project you choose to load for navigation, below, can let language extensions run it.
 
 This page follows one review from start to sent. The words are the project's [glossary](../CONTEXT.md) words: story, part, importance, noise, claim, verdict, evidence source, ask, finding.
 
@@ -100,6 +100,16 @@ Reviewed marks are kept locally per pull request and never sent anywhere by them
 ## Documentation links
 
 Hover a library call on the head side of a part's diff — in a Python or a C# change — and the hover links the API to its documentation at the version the project pins. The links come first from the libraries' published inventories, which the engine downloads and reads itself; the APIs no inventory linked go to the agent, whose suggestions are shown labelled as suggested and not checked. The overview's **Documentation** section lists every link, the inventory links first.
+
+## Loading the project for navigation
+
+The copies the diff reads are read-only and nothing runs in them, so go to definition into the rest of the code needs a project a language extension can load. **Second Look: Load the project for navigation…** — in the Command Palette, or the review tree's **…** menu — gives it one, only when you ask and only after a finished review:
+
+1. A warning says what will happen and what can run: a writable copy of the head commit is written to the companion's cache and opened in a new window, where language extensions may restore the project, run its build targets, load its analyzers and source generators, and start the interpreters, SDKs and tools the project or its editor settings name — as you, with your files and your network.
+2. Nothing is written or opened unless you press **Write and open the project**; dismissing the warning leaves everything as it was.
+3. The folder opens untrusted, in VS Code's Restricted Mode, unless you trust it — or already trust a folder that contains it. Many language extensions do little until you do; trust it only once you have read enough of the change to accept what it may run. With workspace trust turned off in your settings, the warning says the folder opens trusted.
+
+The copy is written once per head commit and reused as you left it. The companion's agents keep their locked-down posture: they read only the read-only copies, never this folder, whether or not you load it. [What agents can read, reach and run](agent-safety.md#the-project-loaded-for-navigation) has the detail.
 
 ## Every result carries its stamp
 

@@ -14,6 +14,7 @@ import {
   DRAFT_COMMENT_COMMAND,
   FETCH_LIBRARY_COMMAND,
   FILTER_CHANGED_COMMAND,
+  LOAD_PROJECT_COMMAND,
   OPEN_ALL_PARTS_COMMAND,
   OPEN_LIBRARY_EVIDENCE_COMMAND,
   OPEN_OVERVIEW_COMMAND,
@@ -24,6 +25,7 @@ import {
   WHY_THIS_MATTERS_COMMAND,
   askCommand,
 } from './commands.js';
+import { LOAD_PROJECT_CONFIRM, OPEN_FOLDER_COMMAND, loadProjectWarning } from './project-load.js';
 import { CHANGE_SCHEME, ChangeCopiesProvider, changeUri, libraryUri } from './change-copies.js';
 import { openPartInDiffEditor, openWholeChangeInDiffEditor, PartMarker } from './diff-view.js';
 import {
@@ -75,6 +77,7 @@ export {
   DRAFT_COMMENT_COMMAND,
   FETCH_LIBRARY_COMMAND,
   FILTER_CHANGED_COMMAND,
+  LOAD_PROJECT_COMMAND,
   OPEN_ALL_PARTS_COMMAND,
   OPEN_LIBRARY_EVIDENCE_COMMAND,
   OPEN_OVERVIEW_COMMAND,
@@ -811,6 +814,51 @@ class ReviewSession {
     return picked === undefined ? undefined : { index: picked.index };
   }
 
+  /**
+   * Loads the project for navigation, the reviewer having asked for it:
+   * a modal warning first names what restoring the project and language
+   * servers may run, and only its confirm button goes on — dismissing it
+   * writes and opens nothing. The request then carries the head commit
+   * the warning named; the engine writes a writable copy of the finished
+   * review's head copy at it — or refuses, writing nothing — and the
+   * editor opens it in a new window, where workspace trust leaves it
+   * untrusted unless the reviewer trusts it; the companion never trusts
+   * it for them. The agents' locked-down posture is unchanged: no agent
+   * run reads that folder.
+   */
+  async loadProject(): Promise<void> {
+    const result = this.result;
+    const url = this.url;
+    if (result === undefined || url === undefined) {
+      vscode.window.showWarningMessage('Review a pull request first, then load its project for navigation.');
+      return;
+    }
+    if (this.running) {
+      vscode.window.showWarningMessage('Wait for the review to finish, then load its project for navigation.');
+      return;
+    }
+    const review = this.reviews;
+    const isTrustEnabled = vscode.workspace.getConfiguration('security.workspace.trust').get<boolean>('enabled', true) !== false;
+    const warning = loadProjectWarning(result, isTrustEnabled);
+    const choice = await vscode.window.showWarningMessage(warning.message, { modal: true, detail: warning.detail }, LOAD_PROJECT_CONFIRM);
+    if (choice !== LOAD_PROJECT_CONFIRM || review !== this.reviews) return;
+    try {
+      const project = await vscode.window.withProgress(
+        { location: { viewId: REVIEW_TREE_VIEW }, title: 'Writing the project for navigation…' },
+        async () => (await this.readyEngine()).loadProject(url, result.copies.head.commit),
+      );
+      // A review started meanwhile replaces this one; nothing is opened for it.
+      if (review !== this.reviews) return;
+      if (project.commit !== result.copies.head.commit) {
+        vscode.window.showWarningMessage('The review changed while the project was written; review the pull request again, then load it.');
+        return;
+      }
+      await vscode.commands.executeCommand(OPEN_FOLDER_COMMAND, vscode.Uri.file(project.path), { forceNewWindow: true });
+    } catch (error) {
+      vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   /** Opens the review's overview at the story's start. */
   openOverview(): void {
     if (!this.overview.open()) {
@@ -1036,13 +1084,16 @@ class ReviewSession {
  * at one part as its "why this matters" — the commands that draft a
  * comment from a finding and add the draft to the pending review or
  * discard it, one command for each ask a part's context menu offers,
- * whose answer the overview shows, the parts' reviewed checkboxes, and the status bar entry
- * that shows the agent and model in use.
+ * whose answer the overview shows, the parts' reviewed checkboxes, the status bar entry
+ * that shows the agent and model in use, and the command that loads the
+ * project for navigation once the reviewer confirms its warning.
  * Nothing here runs anything from the workspace — the engine is started
  * from the companion's own install, reads GitHub, and writes only the
  * one review the reviewer sends — and, only with the opt-in mirror
  * setting on, the "Viewed" mark of each file whose every part they
- * reviewed.
+ * reviewed. The one writable copy of the pull request it has the engine
+ * write is the project loaded for navigation, only once the reviewer
+ * confirms.
  *
  * Returns the review tree's data provider, so a test running in a real
  * editor can read the tree the command filled.
@@ -1122,6 +1173,7 @@ export function activate(
       isEditorComment(comment) ? session.discardDraft(comment) : undefined,
     ),
     ...ASK_KINDS.map((kind) => vscode.commands.registerCommand(askCommand(kind), (arg?: unknown) => session.ask(kind, arg))),
+    vscode.commands.registerCommand(LOAD_PROJECT_COMMAND, () => session.loadProject()),
   );
   return tree;
 }

@@ -1,3 +1,4 @@
+import { isAbsolute } from 'node:path';
 import {
   ASK_KINDS,
   CHECKED_VERDICT_KINDS,
@@ -23,6 +24,7 @@ import {
   type PartOrigin,
   type PartRank,
   type PartRole,
+  type ProjectCopy,
   type ReviewedMarks,
   type ReviewResult,
   type SentReview,
@@ -973,6 +975,25 @@ export function isReviewedMarks(value: unknown): value is ReviewedMarks {
 /** Checks that a value read over the protocol lists the files marked "Viewed" on GitHub. */
 export function isViewedFiles(value: unknown): value is ViewedFiles {
   return isRecord(value) && Array.isArray(value['paths']) && value['paths'].every(isString);
+}
+
+/** Error thrown when a load's answer is not the project loaded for navigation. */
+export class ProjectProtocolError extends Error {
+  constructor() {
+    super(`the engine's answer is not the project loaded for navigation`);
+    this.name = 'ProjectProtocolError';
+  }
+}
+
+/** Checks that a value read over the protocol is the project loaded for navigation: its commit and an absolute path. */
+export function isProjectCopy(value: unknown): value is ProjectCopy {
+  return (
+    isRecord(value) &&
+    isString(value['commit']) &&
+    isString(value['path']) &&
+    isAbsolute(value['path']) &&
+    typeof value['reused'] === 'boolean'
+  );
 }
 
 /**

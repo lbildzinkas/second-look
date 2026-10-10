@@ -1,7 +1,7 @@
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { defaultCacheDir, ensureCopy, pullRequestCacheDir, removeCopy } from '../src/cache.js';
+import { defaultCacheDir, ensureCopy, ensureProjectCopy, projectCopyDir, pullRequestCacheDir, removeCopy } from '../src/cache.js';
 import { githubTarball, temporaryCacheDir } from './helpers.js';
 
 const REF = { owner: 'example-org', repo: 'example-repo', number: 7 };
@@ -93,5 +93,31 @@ describe('ensureCopy', () => {
     expect(first.path).toBe(second.path);
     expect(existsSync(join(first.path, 'a.txt'))).toBe(true);
     expect(readdirSync(pullRequestCacheDir(cacheDir, REF))).toEqual([COMMIT]);
+  });
+});
+
+describe('ensureProjectCopy', () => {
+  /** A head copy made by hand, holding a link no archive would carry, to prove none is copied. */
+  function handMadeHead(): string {
+    const head = join(cacheDir, 'hand-made-head');
+    mkdirSync(join(head, 'src'), { recursive: true });
+    writeFileSync(join(head, 'src', 'Program.cs'), 'class Program {}\n');
+    symlinkSync('/etc/hosts', join(head, 'src', 'hosts'));
+    return head;
+  }
+
+  it('copies regular files and folders only, never a link, and leaves no partial folder behind', async () => {
+    const project = await ensureProjectCopy(cacheDir, REF, { commit: COMMIT, path: handMadeHead(), reused: false });
+
+    expect(project).toEqual({ commit: COMMIT, path: projectCopyDir(cacheDir, REF, COMMIT), reused: false });
+    expect(readdirSync(join(project.path, 'src'))).toEqual(['Program.cs']);
+    expect(readFileSync(join(project.path, 'src', 'Program.cs'), 'utf8')).toBe('class Program {}\n');
+    expect(statSync(join(project.path, 'src', 'Program.cs')).mode & 0o777).toBe(0o644);
+    expect(readdirSync(join(pullRequestCacheDir(cacheDir, REF), 'project'))).toEqual([COMMIT]);
+  });
+
+  it('refuses anything but a full commit hash, writing nothing', async () => {
+    await expect(ensureProjectCopy(cacheDir, REF, { commit: '../master', path: handMadeHead(), reused: false })).rejects.toThrow(/not a full commit hash/);
+    expect(existsSync(pullRequestCacheDir(cacheDir, REF))).toBe(false);
   });
 });

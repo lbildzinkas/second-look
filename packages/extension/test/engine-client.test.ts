@@ -35,6 +35,7 @@ interface FakeEngineOptions {
   viewedError?: string;
   askResult?: unknown;
   askError?: string;
+  projectError?: string;
 }
 
 /** Starts the fake engine as a separate process, speaking real stdio. */
@@ -65,6 +66,7 @@ function fakeEngine(options: FakeEngineOptions = {}): ChildProcessWithoutNullStr
       ...(options.viewedError !== undefined ? { FAKE_ENGINE_VIEWED_ERROR: options.viewedError } : {}),
       ...(options.askResult !== undefined ? { FAKE_ENGINE_ASK_RESULT: JSON.stringify(options.askResult) } : {}),
       ...(options.askError !== undefined ? { FAKE_ENGINE_ASK_ERROR: options.askError } : {}),
+      ...(options.projectError !== undefined ? { FAKE_ENGINE_PROJECT_ERROR: options.projectError } : {}),
     },
   });
 }
@@ -300,6 +302,37 @@ describe('EngineClient against a fake engine', () => {
     await failing.initialize();
     await expect(failing.markViewed(PR_URL, TOKEN, ['web/cart.ts'])).rejects.toThrow('GitHub refused');
     failing.dispose();
+  });
+
+  it('asks the engine to write the project loaded for navigation at the confirmed commit, and reads where it is', async () => {
+    const client = new EngineClient(() => fakeEngine({ result: mixedResult(), logName: 'load-project.log' }));
+    await client.initialize();
+
+    const { head } = mixedResult().copies;
+    expect(await client.loadProject(PR_URL, head.commit)).toEqual({ commit: head.commit, path: `${head.path.slice(0, head.path.lastIndexOf('/'))}/project/${head.commit}`, reused: false });
+    const request = loggedRequests('load-project.log').find((each) => (each as { method: string }).method === 'loadProject') as { params: unknown };
+    expect(request.params).toEqual({ url: PR_URL, commit: head.commit });
+    client.dispose();
+
+    const failing = new EngineClient(() => fakeEngine({ result: mixedResult(), projectError: 'the disk is full' }));
+    await failing.initialize();
+    await expect(failing.loadProject(PR_URL, head.commit)).rejects.toThrow('the disk is full');
+    failing.dispose();
+
+    const moved = new EngineClient(() => fakeEngine({ result: mixedResult() }));
+    await moved.initialize();
+    await expect(moved.loadProject(PR_URL, '0123456789abcdef0123456789abcdef01234567')).rejects.toThrow('review the pull request again, then load it');
+    moved.dispose();
+  });
+
+  it('refuses a load answer that is not a project with an absolute path', async () => {
+    const result = mixedResult();
+    result.copies.head.path = 'relative/f00d';
+    const client = new EngineClient(() => fakeEngine({ result }));
+    await client.initialize();
+
+    await expect(client.loadProject(PR_URL, mixedResult().copies.head.commit)).rejects.toThrow("the engine's answer is not the project loaded for navigation");
+    client.dispose();
   });
 
   it('refuses a marks answer that is not the reviewed marks', async () => {

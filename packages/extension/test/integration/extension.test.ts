@@ -14,6 +14,7 @@ import {
   DRAFT_COMMENT_COMMAND,
   FETCH_LIBRARY_COMMAND,
   FILTER_CHANGED_COMMAND,
+  LOAD_PROJECT_COMMAND,
   OPEN_ALL_PARTS_COMMAND,
   OPEN_LIBRARY_EVIDENCE_COMMAND,
   OPEN_OVERVIEW_COMMAND,
@@ -24,6 +25,7 @@ import {
   WHY_THIS_MATTERS_COMMAND,
   activate,
 } from '../../src/extension.js';
+import { LOAD_PROJECT_CONFIRM, OPEN_FOLDER_COMMAND } from '../../src/project-load.js';
 import { CHANGE_SCHEME, changeUri, libraryUri } from '../../src/change-copies.js';
 import { askCommand } from '../../src/commands.js';
 import { escapeMarkdown } from '../../src/findings.js';
@@ -35,6 +37,7 @@ import {
   Position,
   Range,
   TreeItemCheckboxState,
+  Uri,
   stub,
   stubContext,
   workspace,
@@ -71,6 +74,8 @@ interface FakeEngineOptions {
   draftResult?: unknown;
   /** The answer the engine answers an ask with. */
   askResult?: unknown;
+  /** The plain error the engine answers a project load with. */
+  projectError?: string;
 }
 
 function fakeEngine(options: FakeEngineOptions): ChildProcessWithoutNullStreams {
@@ -98,6 +103,7 @@ function fakeEngine(options: FakeEngineOptions): ChildProcessWithoutNullStreams 
       ...(options.fetchResult !== undefined ? { FAKE_ENGINE_FETCH_RESULT: JSON.stringify(options.fetchResult) } : {}),
       ...(options.draftResult !== undefined ? { FAKE_ENGINE_DRAFT_RESULT: JSON.stringify(options.draftResult) } : {}),
       ...(options.askResult !== undefined ? { FAKE_ENGINE_ASK_RESULT: JSON.stringify(options.askResult) } : {}),
+      ...(options.projectError !== undefined ? { FAKE_ENGINE_PROJECT_ERROR: options.projectError } : {}),
       FAKE_ENGINE_LOG: join(workDir, options.logName),
     },
   });
@@ -132,6 +138,7 @@ async function reviewWithFakeEngine(options: FakeEngineOptions): Promise<StubTre
     askCommand('explain'),
     askCommand('verify'),
     askCommand('cover'),
+    LOAD_PROJECT_COMMAND,
   ]);
 
   stub.inputBoxResult = PR_URL;
@@ -255,6 +262,7 @@ describe('activating the companion', () => {
       askCommand('explain'),
       askCommand('verify'),
       askCommand('cover'),
+      LOAD_PROJECT_COMMAND,
     ]);
     expect(stub.treeViews.map((view) => view.id)).toEqual([REVIEW_TREE_VIEW]);
     expect(stub.fileSystemProviders.map((entry) => entry.scheme)).toEqual(['second-look-change']);
@@ -1765,5 +1773,87 @@ describe('since your last look', () => {
     await registeredCommands().get(REVIEW_COMMAND)!() as Promise<void>;
     expect(partLabels(view)).toHaveLength(7);
     expect(view.message).toBe('Since your last look at abcdef0 on 2026-10-01: 1 of 7 parts changed.');
+  });
+});
+
+describe('loading the project for navigation', () => {
+  function loggedMethods(logName: string): string[] {
+    return readFileSync(join(workDir, logName), 'utf8')
+      .split('\n')
+      .filter((line) => line !== '')
+      .map((line) => (JSON.parse(line) as { method: string }).method);
+  }
+
+  async function loadProject(): Promise<void> {
+    await registeredCommands().get(LOAD_PROJECT_COMMAND)!() as Promise<void>;
+  }
+
+  it('writes and opens nothing when the reviewer dismisses the warning', async () => {
+    await reviewWithFakeEngine({ result: mixedResult(), logName: 'project-dismissed.log' });
+    stub.executedCommands = [];
+
+    await loadProject();
+
+    expect(stub.modalWarnings).toHaveLength(1);
+    expect(stub.modalWarnings[0]!.items).toEqual([LOAD_PROJECT_CONFIRM]);
+    expect(stub.modalWarnings[0]!.detail).toContain('restoring the project');
+    expect(loggedMethods('project-dismissed.log')).not.toContain('loadProject');
+    expect(stub.executedCommands).toEqual([]);
+  });
+
+  it('has the engine write the head copy once confirmed, then opens it in a new window, never trusting it', async () => {
+    await reviewWithFakeEngine({ result: mixedResult(), logName: 'project-confirmed.log' });
+    stub.executedCommands = [];
+    stub.modalWarningChoice = LOAD_PROJECT_CONFIRM;
+
+    await loadProject();
+
+    const { head } = mixedResult().copies;
+    const path = `${head.path.slice(0, head.path.lastIndexOf('/'))}/project/${head.commit}`;
+    expect(loggedMethods('project-confirmed.log').filter((method) => method === 'loadProject')).toHaveLength(1);
+    // The request carries the head commit the warning named, so the engine
+    // writes nothing for a review at any other commit.
+    const load = readFileSync(join(workDir, 'project-confirmed.log'), 'utf8')
+      .split('\n')
+      .filter((line) => line !== '')
+      .map((line) => JSON.parse(line) as { method: string; params?: Record<string, unknown> })
+      .find((request) => request.method === 'loadProject');
+    expect(load!.params).toEqual({ url: PR_URL, commit: head.commit });
+    expect(stub.executedCommands).toEqual([{ id: OPEN_FOLDER_COMMAND, args: [Uri.file(path), { forceNewWindow: true }] }]);
+    expect(stub.errorMessages).toEqual([]);
+  });
+
+  it('says so in the warning when workspace trust is turned off', async () => {
+    stub.configuration['security.workspace.trust.enabled'] = false;
+    await reviewWithFakeEngine({ result: mixedResult(), logName: 'project-trust-off.log' });
+
+    await loadProject();
+
+    expect(stub.modalWarnings[0]!.detail).toContain('Workspace trust is turned off');
+  });
+
+  it('opens nothing when the engine fails to write the project, and says why', async () => {
+    await reviewWithFakeEngine({ result: mixedResult(), logName: 'project-failed.log', projectError: 'the disk is full' });
+    stub.executedCommands = [];
+    stub.modalWarningChoice = LOAD_PROJECT_CONFIRM;
+
+    await loadProject();
+
+    expect(stub.errorMessages).toEqual(['the disk is full']);
+    expect(stub.executedCommands).toEqual([]);
+  });
+
+  it('asks for a review first, showing no warning and asking the engine nothing', async () => {
+    activate(stubContext() as unknown as vscode.ExtensionContext, {
+      spawnEngine: () => {
+        throw new Error('no review ran');
+      },
+    });
+
+    await loadProject();
+
+    expect(stub.warningMessages).toEqual(['Review a pull request first, then load its project for navigation.']);
+    expect(stub.modalWarnings).toEqual([]);
+    expect(stub.executedCommands).toEqual([]);
   });
 });

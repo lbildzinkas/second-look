@@ -26,10 +26,13 @@
 //   FAKE_ENGINE_STAGE_ONLY        send the stage notification, then never answer
 //   FAKE_ENGINE_ANSWER_DELAY_MS   wait this long after the stage before answering
 //   FAKE_ENGINE_VIEWED_ERROR      answer markViewed with this plain error message
+//   FAKE_ENGINE_PROJECT_ERROR     answer loadProject with this plain error message
 //
 // The reviewed marks live in the fake's memory: markReviewed ticks or
 // clears a part by its name, reviewedMarks reads them back, and markViewed
-// answers with the paths it was asked to mark.
+// answers with the paths it was asked to mark. loadProject writes nothing:
+// it answers with a project folder beside the review result's head copy,
+// refusing a load at any other commit, like the engine.
 //
 // Every request it receives is appended to the log, so a test can prove
 // what reached the engine, including the token carried per request.
@@ -62,6 +65,7 @@ const stage = process.env.FAKE_ENGINE_STAGE ? JSON.parse(process.env.FAKE_ENGINE
 const stageOnly = Boolean(process.env.FAKE_ENGINE_STAGE_ONLY);
 const answerDelayMs = Number(process.env.FAKE_ENGINE_ANSWER_DELAY_MS ?? '0');
 const viewedError = process.env.FAKE_ENGINE_VIEWED_ERROR;
+const projectError = process.env.FAKE_ENGINE_PROJECT_ERROR;
 let marks = [];
 
 if (process.env.FAKE_ENGINE_IGNORE_SIGTERM) {
@@ -167,6 +171,21 @@ function handle(line) {
   if (request.method === 'markViewed') {
     if (viewedError) fail(request.id, -32002, viewedError);
     else send({ jsonrpc: '2.0', id: request.id, result: { paths: request.params.paths } });
+    return;
+  }
+  if (request.method === 'loadProject') {
+    const head = (resultsByUrl?.[request.params.url] ?? reviewResult).copies.head;
+    if (projectError || request.params.commit !== head.commit) {
+      fail(
+        request.id,
+        -32002,
+        projectError ??
+          `this engine's latest finished review is at commit ${head.commit.slice(0, 7)}, not the confirmed ${String(request.params.commit ?? '').slice(0, 7)}; review the pull request again, then load it`,
+      );
+      return;
+    }
+    const path = `${head.path.slice(0, head.path.lastIndexOf('/'))}/project/${head.commit}`;
+    send({ jsonrpc: '2.0', id: request.id, result: { commit: head.commit, path, reused: false } });
     return;
   }
   fail(request.id, -32601, `unknown method: ${request.method}`);

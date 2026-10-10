@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { DEFAULT_AGENT_SETTINGS, type AgentAdapter, type AgentSettings } from './agent.js';
 import { AGENT_NAMES, isAgentName, type AgentName } from './agents.js';
 import { ASK_KINDS, ASKS, askAboutPart, isAskKind } from './asks.js';
-import { pullRequestCacheDir } from './cache.js';
+import { ensureProjectCopy, pullRequestCacheDir } from './cache.js';
 import { draftComment, draftFinding, isFindingRef } from './draft-comment.js';
 import { GitHubClient, parsePullRequestUrl } from './github.js';
 import { pressLibraryFetch } from './library-verdicts.js';
@@ -23,6 +23,7 @@ import {
   JSON_RPC_INVALID_REQUEST,
   JSON_RPC_METHOD_NOT_FOUND,
   JSON_RPC_PARSE_ERROR,
+  LOAD_PROJECT_METHOD,
   MARK_REVIEWED_METHOD,
   MARK_VIEWED_METHOD,
   NOT_INITIALIZED_CODE,
@@ -37,6 +38,7 @@ import {
   type DraftCommentParams,
   type FetchLibraryParams,
   type InitializeParams,
+  type LoadProjectParams,
   type MarkReviewedParams,
   type MarkViewedParams,
   type ReviewAgentChoice,
@@ -129,7 +131,10 @@ export interface RpcServerDeps {
  * read and change the reviewed marks in the pull request's local store,
  * which outlives the engine, and `markViewed` marks the whole files of
  * the latest review that every mark covers "Viewed" on GitHub, only for
- * the reviewer's opt-in mirror.
+ * the reviewer's opt-in mirror. `loadProject` writes a writable copy of
+ * that latest review's head copy for language extensions to navigate,
+ * only once the reviewer confirmed its head commit, and runs nothing
+ * in it.
  *
  * With an agent, a review arrives in stages: as soon as the plain result
  * is ready the engine sends it in a {@link REVIEW_STAGE_METHOD}
@@ -215,12 +220,16 @@ export async function runRpcServer(
       running.push(markViewed(value.params, value.id, sink, initialized, deps, reviews));
       continue;
     }
+    if (value.method === LOAD_PROJECT_METHOD) {
+      running.push(loadProject(value.params, value.id, sink, initialized, deps, reviews));
+      continue;
+    }
     respond(
       sink,
       failure(
         value.id,
         JSON_RPC_METHOD_NOT_FOUND,
-        `unknown method: ${value.method}; this engine speaks ${INITIALIZE_METHOD}, ${REVIEW_METHOD}, ${FETCH_LIBRARY_METHOD}, ${DRAFT_COMMENT_METHOD}, ${ASK_METHOD}, ${SEND_REVIEW_METHOD}, ${REVIEWED_MARKS_METHOD}, ${MARK_REVIEWED_METHOD} and ${MARK_VIEWED_METHOD}`,
+        `unknown method: ${value.method}; this engine speaks ${INITIALIZE_METHOD}, ${REVIEW_METHOD}, ${FETCH_LIBRARY_METHOD}, ${DRAFT_COMMENT_METHOD}, ${ASK_METHOD}, ${SEND_REVIEW_METHOD}, ${REVIEWED_MARKS_METHOD}, ${MARK_REVIEWED_METHOD}, ${MARK_VIEWED_METHOD} and ${LOAD_PROJECT_METHOD}`,
       ),
     );
   }
@@ -721,6 +730,46 @@ async function markViewed(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     respond(sink, failure(id, ENGINE_FAILED_CODE, redactToken(message, token)));
+  }
+}
+
+/**
+ * Writes the project loaded for navigation from the pull request's latest
+ * finished review at the head commit the reviewer confirmed: a writable
+ * copy of its head copy, beside the read-only copies, which no agent run
+ * reads. Any other commit is refused, writing nothing; nothing here runs.
+ */
+async function loadProject(
+  params: unknown,
+  id: number,
+  sink: RpcLineSink,
+  initialized: boolean,
+  deps: RpcServerDeps,
+  reviews: Map<string, ReviewResult>,
+): Promise<void> {
+  if (!initialized) {
+    respond(sink, failure(id, NOT_INITIALIZED_CODE, `the protocol starts with a version handshake: ${INITIALIZE_METHOD} before ${LOAD_PROJECT_METHOD}`));
+    return;
+  }
+  const { url, commit } = (params ?? {}) as Partial<LoadProjectParams>;
+  const ref = typeof url === 'string' ? parsePullRequestUrl(url) : null;
+  if (ref === null || typeof url !== 'string' || typeof commit !== 'string') {
+    respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${LOAD_PROJECT_METHOD} needs params: { "url": string, "commit": string }`));
+    return;
+  }
+  const result = reviews.get(url);
+  if (result === undefined) {
+    respond(sink, failure(id, ENGINE_FAILED_CODE, `this engine has no finished review of ${url} to load the project of; review the pull request again`));
+    return;
+  }
+  if (result.copies.head.commit !== commit) {
+    respond(sink, failure(id, ENGINE_FAILED_CODE, `this engine's latest finished review of ${url} is at commit ${result.copies.head.commit.slice(0, 7)}, not the confirmed ${commit.slice(0, 7)}; review the pull request again, then load it`));
+    return;
+  }
+  try {
+    respond(sink, { jsonrpc: '2.0', id, result: await ensureProjectCopy(deps.cacheDir, ref, result.copies.head) });
+  } catch (error) {
+    respond(sink, failure(id, ENGINE_FAILED_CODE, error instanceof Error ? error.message : String(error)));
   }
 }
 

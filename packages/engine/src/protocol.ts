@@ -1180,6 +1180,20 @@ export interface ChangeCopy {
 }
 
 /**
+ * The project loaded for navigation: a writable copy of the head copy,
+ * written only when the reviewer confirmed it, for language extensions to
+ * restore and navigate. No agent run ever reads it.
+ */
+export interface ProjectCopy {
+  /** The head commit it was copied from. */
+  commit: string;
+  /** Absolute path of the folder, beside the pull request's read-only copies. */
+  path: string;
+  /** True when an earlier load at the same commit was reused, as the reviewer left it. */
+  reused: boolean;
+}
+
+/**
  * One noise label the rules can attach to a part. A part whose label is
  * lockfile, generated, vendored or moved or renamed sinks below the parts
  * a reviewer must read; snapshot and fixture parts are labelled but never

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -225,7 +226,7 @@ describe('runRpcServer', () => {
     expect(responses[0]!.id).toBeNull();
     expect(responses[0]!.error!.message).toContain('not JSON');
     expect(responses[1]!.error!.message).toContain('unknown method: start');
-    expect(responses[1]!.error!.message).toContain('initialize, review, fetchLibrary, draftComment, ask, sendReview, reviewedMarks, markReviewed and markViewed');
+    expect(responses[1]!.error!.message).toContain('initialize, review, fetchLibrary, draftComment, ask, sendReview, reviewedMarks, markReviewed, markViewed and loadProject');
     expect(responses[2]!.result).toEqual({ protocolVersion: ENGINE_PROTOCOL_VERSION });
   });
 
@@ -1051,6 +1052,32 @@ describe('runRpcServer fetching a library', () => {
   });
 });
 
+/** Serves the lines one at a time, each sent once the one before it is answered. */
+async function serveInOrder(lines: string[], deps: { fetch?: typeof fetch; cacheDir: string }): Promise<Response[]> {
+  const written: Response[] = [];
+  let index = 0;
+  let answered: () => void = () => undefined;
+  await runRpcServer(
+    {
+      readLine: async () => {
+        if (index >= lines.length) return null;
+        while (written.length < index) await new Promise<void>((resolve) => (answered = resolve));
+        return lines[index++]!;
+      },
+    },
+    {
+      writeLine: (line) => {
+        const response = JSON.parse(line) as Response;
+        if (response.id === null || response.id === undefined) return;
+        written.push(response);
+        answered();
+      },
+    },
+    deps,
+  );
+  return written;
+}
+
 describe('runRpcServer keeping reviewed marks', () => {
   const GRAPHQL = 'https://api.github.com/graphql';
 
@@ -1074,32 +1101,6 @@ describe('runRpcServer keeping reviewed marks', () => {
       return transport.fetch(input, init);
     };
     return { fetch: fetchImpl, marked, tokens };
-  }
-
-  /** Serves the lines one at a time, each sent once the one before it is answered. */
-  async function serveInOrder(lines: string[], deps: { fetch?: typeof fetch; cacheDir: string }): Promise<Response[]> {
-    const written: Response[] = [];
-    let index = 0;
-    let answered: () => void = () => undefined;
-    await runRpcServer(
-      {
-        readLine: async () => {
-          if (index >= lines.length) return null;
-          while (written.length < index) await new Promise<void>((resolve) => (answered = resolve));
-          return lines[index++]!;
-        },
-      },
-      {
-        writeLine: (line) => {
-          const response = JSON.parse(line) as Response;
-          if (response.id === null || response.id === undefined) return;
-          written.push(response);
-          answered();
-        },
-      },
-      deps,
-    );
-    return written;
   }
 
   const initialize = request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION });
@@ -1199,5 +1200,92 @@ describe('runRpcServer keeping reviewed marks', () => {
     expect(failed.error!.message).toContain("GitHub's pull-request-id query failed: bad credentials [REDACTED]");
     expect(failed.error!.message).not.toContain(TOKEN);
     await removeCopy(store);
+  });
+});
+
+describe('runRpcServer loading the project for navigation', () => {
+  const initialize = request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION });
+  /** The head commit the fixture pull request's review runs at. */
+  const HEAD = 'f00dcafe1234567890abcdef1234567890abcdef';
+
+  /** Every file and folder under a folder, by its path there, with its permission bits. */
+  function modesUnder(root: string): Map<string, number> {
+    const modes = new Map<string, number>();
+    const walk = (folder: string, prefix: string): void => {
+      for (const entry of readdirSync(folder, { withFileTypes: true })) {
+        const path = join(folder, entry.name);
+        modes.set(`${prefix}${entry.name}`, statSync(path).mode & 0o777);
+        if (entry.isDirectory()) walk(path, `${prefix}${entry.name}/`);
+      }
+    };
+    walk(root, '');
+    return modes;
+  }
+
+  it("writes a writable copy of its latest review's head copy beside the read-only copies, and reuses it", async () => {
+    const store = temporaryCacheDir();
+    const responses = await serveInOrder(
+      [initialize, request('review', { url: PR_URL, token: TOKEN }, 2), request('loadProject', { url: PR_URL, commit: HEAD }, 3), request('loadProject', { url: PR_URL, commit: HEAD }, 4)],
+      { fetch: fixtureFetch().fetch, cacheDir: store },
+    );
+
+    const { head } = (responses[1]!.result as ReviewResult).copies;
+    const project = responses[2]!.result as { commit: string; path: string; reused: boolean };
+    expect(project).toEqual({ commit: head.commit, path: join(store, 'github.com', 'example-org', 'example-repo', 'pull-42', 'project', head.commit), reused: false });
+    expect(responses[3]!.result).toEqual({ ...project, reused: true });
+    // The same files, every one writable and none executable; the head copy the agents read stays read-only.
+    const headModes = modesUnder(head.path);
+    const projectModes = modesUnder(project.path);
+    expect([...projectModes.keys()]).toEqual([...headModes.keys()]);
+    expect([...projectModes].every(([path, mode]) => mode === (statSync(join(project.path, path)).isDirectory() ? 0o755 : 0o644))).toBe(true);
+    expect([...headModes].every(([path, mode]) => mode === (statSync(join(head.path, path)).isDirectory() ? 0o555 : 0o444))).toBe(true);
+    for (const path of headModes.keys()) {
+      if (statSync(join(head.path, path)).isFile()) expect(readFileSync(join(project.path, path))).toEqual(readFileSync(join(head.path, path)));
+    }
+    expect(project.path.startsWith(`${head.path}/`)).toBe(false);
+    await removeCopy(store);
+  });
+
+  it('refuses to load a pull request it holds no finished review of, writing nothing, and malformed load params', async () => {
+    const store = temporaryCacheDir();
+    const responses = await serveInOrder(
+      [
+        initialize,
+        request('loadProject', { url: PR_URL, commit: HEAD }, 2),
+        request('loadProject', { url: 'https://example.com/x', commit: HEAD }, 3),
+        request('loadProject', {}, 4),
+        request('loadProject', { url: PR_URL }, 5),
+      ],
+      { cacheDir: store },
+    );
+
+    expect(responses[1]!.error!.code).toBe(ENGINE_FAILED_CODE);
+    expect(responses[1]!.error!.message).toContain('review the pull request again');
+    expect(responses[2]!.error!.code).toBe(JSON_RPC_INVALID_PARAMS);
+    expect(responses[3]!.error!.code).toBe(JSON_RPC_INVALID_PARAMS);
+    expect(responses[4]!.error!.code).toBe(JSON_RPC_INVALID_PARAMS);
+    expect(readdirSync(store)).toEqual([]);
+    await removeCopy(store);
+  });
+
+  it("refuses a load at a commit its latest finished review is not at, writing nothing", async () => {
+    const store = temporaryCacheDir();
+    const moved = 'abcdef0123456789abcdef0123456789abcdef01';
+    const responses = await serveInOrder(
+      [initialize, request('review', { url: PR_URL, token: TOKEN }, 2), request('loadProject', { url: PR_URL, commit: moved }, 3)],
+      { fetch: fixtureFetch().fetch, cacheDir: store },
+    );
+
+    expect(responses[2]!.error!.code).toBe(ENGINE_FAILED_CODE);
+    expect(responses[2]!.error!.message).toContain('is at commit f00dcaf, not the confirmed abcdef0');
+    expect(responses[2]!.error!.message).toContain('review the pull request again, then load it');
+    expect(existsSync(join(store, 'github.com', 'example-org', 'example-repo', 'pull-42', 'project'))).toBe(false);
+    await removeCopy(store);
+  });
+
+  it('refuses a load before the handshake completed', async () => {
+    const responses = await serve([request('loadProject', { url: PR_URL, commit: HEAD })]);
+
+    expect(responses[0]!.error!.code).toBe(NOT_INITIALIZED_CODE);
   });
 });
