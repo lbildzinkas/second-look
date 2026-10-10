@@ -113,15 +113,18 @@ export async function seedCase(diff: string, options: SeedOptions): Promise<stri
       for (const path of naming) headPaths.add(path);
     }
     // A wrap may touch a lock file while leaving its manifest alone (a
-    // transitive dependency bump); the review reads that manifest to
-    // check the lock file, so the case carries it on both sides and the
+    // transitive dependency bump); the review reads that manifest, and
+    // the manifests of the workspace members either side declares, to
+    // check the lock file, so the case carries them on both sides and the
     // replay assesses the lock file exactly as the live review did.
     const changedPaths = [
       ...new Set(live.parts.flatMap((part) => [part.path, part.previousPath ?? part.path])),
     ];
-    for (const manifest of await lockfileManifests(changedPaths, mutated)) {
-      basePaths.add(manifest);
-      headPaths.add(manifest);
+    for (const copy of [options.sourceDir, mutated]) {
+      for (const manifest of await lockfileManifests(changedPaths, copy)) {
+        basePaths.add(manifest);
+        headPaths.add(manifest);
+      }
     }
     try {
       await copyFiles(options.sourceDir, join(folder, 'base'), basePaths);
