@@ -13,6 +13,7 @@ import { sendReview } from './send.js';
 import { isMarkedPart, readReviewedMarks, saveReviewedMark, wholeFilesReviewed } from './reviewed-marks.js';
 import { isAskedClaim, withVerifiedClaim } from './verify.js';
 import type { TestedRanking } from './ranking.js';
+import { isRepositoryName, listPullRequests } from './pull-request-list.js';
 import {
   ASK_METHOD,
   DRAFT_COMMENT_METHOD,
@@ -51,6 +52,7 @@ import {
   type RpcResponse,
   type SendReviewParams,
 } from './rpc.js';
+import { LIST_PULL_REQUESTS_METHOD, type ListPullRequestsParams } from './rpc.js';
 /** Where the server reads its lines from: the engine's stdin. */
 export interface RpcLineSource {
   /** The next line from the client, or null when the input ends. */
@@ -163,6 +165,11 @@ export interface RpcServerDeps {
  * The review stops at its limits, and a library fetch pressed once a
  * limit is reached is refused with a plain message naming it; asks and
  * drafts are only counted.
+ *
+ * `pullRequests/list` lists the reviewer's open pull requests in their
+ * groups with the request's token, reading each one's new-commits flag
+ * from the last-look records and storing nothing; with no token, a token
+ * GitHub refuses, or GitHub out of reach, it answers with the reason.
  */
 export async function runRpcServer(
   source: RpcLineSource,
@@ -237,12 +244,16 @@ export async function runRpcServer(
       running.push(markViewed(value.params, value.id, sink, initialized, deps, reviews));
       continue;
     }
+    if (value.method === LIST_PULL_REQUESTS_METHOD) {
+      running.push(pullRequestList(value.params, value.id, sink, initialized, deps));
+      continue;
+    }
     respond(
       sink,
       failure(
         value.id,
         JSON_RPC_METHOD_NOT_FOUND,
-        `unknown method: ${value.method}; this engine speaks ${INITIALIZE_METHOD}, ${PROBE_AGENTS_METHOD}, ${REVIEW_METHOD}, ${FETCH_LIBRARY_METHOD}, ${DRAFT_COMMENT_METHOD}, ${ASK_METHOD}, ${SEND_REVIEW_METHOD}, ${REVIEWED_MARKS_METHOD}, ${MARK_REVIEWED_METHOD} and ${MARK_VIEWED_METHOD}`,
+        `unknown method: ${value.method}; this engine speaks ${INITIALIZE_METHOD}, ${PROBE_AGENTS_METHOD}, ${REVIEW_METHOD}, ${FETCH_LIBRARY_METHOD}, ${DRAFT_COMMENT_METHOD}, ${ASK_METHOD}, ${SEND_REVIEW_METHOD}, ${REVIEWED_MARKS_METHOD}, ${MARK_REVIEWED_METHOD}, ${MARK_VIEWED_METHOD} and ${LIST_PULL_REQUESTS_METHOD}`,
       ),
     );
   }
@@ -836,6 +847,42 @@ async function markViewed(
     const whole = wholeFilesReviewed(result.parts, await readReviewedMarks(deps.cacheDir, ref), paths);
     await new GitHubClient({ token, ...(deps.fetch ? { fetch: deps.fetch } : {}) }).markFilesAsViewed(ref, whole);
     respond(sink, { jsonrpc: '2.0', id, result: { paths: whole } });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    respond(sink, failure(id, ENGINE_FAILED_CODE, redactToken(message, token)));
+  }
+}
+
+/**
+ * Lists the reviewer's open pull requests in their groups, with the
+ * request's token, used for these searches only and redacted from any
+ * error. Not signed in, a token GitHub refuses and GitHub out of reach
+ * are answers, each with its plain reason; any other failure is an error.
+ */
+async function pullRequestList(
+  params: unknown,
+  id: number,
+  sink: RpcLineSink,
+  initialized: boolean,
+  deps: RpcServerDeps,
+): Promise<void> {
+  if (!initialized) {
+    respond(sink, failure(id, NOT_INITIALIZED_CODE, `the protocol starts with a version handshake: ${INITIALIZE_METHOD} before ${LIST_PULL_REQUESTS_METHOD}`));
+    return;
+  }
+  const { token, repository } = (params ?? {}) as Partial<ListPullRequestsParams>;
+  if ((token !== undefined && typeof token !== 'string') || (repository !== undefined && !isRepositoryName(repository))) {
+    respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${LIST_PULL_REQUESTS_METHOD} needs params: { "token"?: string, "repository"?: "owner/name" }`));
+    return;
+  }
+  try {
+    const result = await listPullRequests({
+      cacheDir: deps.cacheDir,
+      ...(token !== undefined ? { token } : {}),
+      ...(repository !== undefined ? { repository } : {}),
+      ...(deps.fetch ? { fetch: deps.fetch } : {}),
+    });
+    respond(sink, { jsonrpc: '2.0', id, result });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     respond(sink, failure(id, ENGINE_FAILED_CODE, redactToken(message, token)));

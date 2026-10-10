@@ -40,6 +40,10 @@ import {
   temporaryCacheDir,
   zipArchive,
 } from './helpers.js';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import type { PullRequestList } from '../src/protocol.js';
+import { failingFetch } from './helpers.js';
 
 const TOKEN = 'ghp_test-token-do-not-print';
 
@@ -257,7 +261,7 @@ describe('runRpcServer', () => {
     expect(responses[0]!.id).toBeNull();
     expect(responses[0]!.error!.message).toContain('not JSON');
     expect(responses[1]!.error!.message).toContain('unknown method: start');
-    expect(responses[1]!.error!.message).toContain('initialize, agents/probe, review, fetchLibrary, draftComment, ask, sendReview, reviewedMarks, markReviewed and markViewed');
+    expect(responses[1]!.error!.message).toContain('initialize, agents/probe, review, fetchLibrary, draftComment, ask, sendReview, reviewedMarks, markReviewed, markViewed and pullRequests/list');
     expect(responses[2]!.result).toEqual({ protocolVersion: ENGINE_PROTOCOL_VERSION });
   });
 
@@ -1376,5 +1380,80 @@ describe('runRpcServer keeping reviewed marks', () => {
     expect(failed.error!.message).toContain("GitHub's pull-request-id query failed: bad credentials [REDACTED]");
     expect(failed.error!.message).not.toContain(TOKEN);
     await removeCopy(store);
+  });
+});
+
+describe('runRpcServer listing pull requests', () => {
+  const initialize = request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION });
+
+  /** A fetch that answers every search with the recorded search of the reviewer's own pull requests, keeping the tokens it carried. */
+  function searchFetch(): { fetch: typeof fetch; tokens: (string | null)[] } {
+    const tokens: (string | null)[] = [];
+    const answer = readFileSync(fileURLToPath(new URL('./fixtures/pull-requests/yours.json', import.meta.url)), 'utf8');
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url !== 'https://api.github.com/graphql') throw new Error(`unexpected request to ${url}`);
+      tokens.push(new Headers(init?.headers).get('authorization'));
+      return new Response(answer, { status: 200, headers: { 'content-type': 'application/json; charset=utf-8' } });
+    };
+    return { fetch: fetchImpl, tokens };
+  }
+
+  it('lists the reviewer’s open pull requests in their groups with the request’s token', async () => {
+    const github = searchFetch();
+
+    const responses = await serve([initialize, request('pullRequests/list', { token: TOKEN, repository: 'example-org/example-repo' }, 2)], github.fetch);
+
+    const list = responses[1]!.result as PullRequestList;
+    expect(list.outcome).toBe('listed');
+    if (list.outcome !== 'listed') return;
+    expect(list.groups.map(({ group, pullRequests }) => ({ group, numbers: pullRequests.map(({ number }) => number) }))).toEqual([
+      { group: 'review requested', numbers: [7] },
+      { group: 'yours', numbers: [] },
+      { group: 'involving you', numbers: [] },
+      { group: 'this repository', numbers: [] },
+    ]);
+    expect(github.tokens).toEqual(Array(4).fill(`token ${TOKEN}`));
+  });
+
+  it('answers a request without a token with the plain reason, asking GitHub nothing', async () => {
+    const github = searchFetch();
+
+    const responses = await serve([initialize, request('pullRequests/list', {}, 2)], github.fetch);
+
+    expect(responses[1]!.result).toEqual({ outcome: 'signed out', reason: 'Not signed in to GitHub: sign in to list your pull requests.' });
+    expect(github.tokens).toEqual([]);
+  });
+
+  it('answers GitHub out of reach with the plain reason', async () => {
+    const offline = failingFetch(new TypeError('fetch failed', { cause: new Error('connect ECONNREFUSED') }));
+
+    const responses = await serve([initialize, request('pullRequests/list', { token: TOKEN }, 2)], offline);
+
+    expect(responses[1]!.result).toEqual({ outcome: 'unreachable', reason: 'GitHub could not be reached (connect ECONNREFUSED): check the connection and try again.' });
+  });
+
+  it('refuses a list before the handshake, and params that are not a token and an owner/name repository', async () => {
+    const responses = await serve([
+      request('pullRequests/list', { token: TOKEN }),
+      request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }, 2),
+      request('pullRequests/list', { token: 42 }, 3),
+      request('pullRequests/list', { token: TOKEN, repository: 'example-org/example-repo is:closed' }, 4),
+    ]);
+
+    expect(responses[0]!.error).toMatchObject({ code: NOT_INITIALIZED_CODE });
+    expect(responses[0]!.error!.message).toContain('initialize before pullRequests/list');
+    for (const refused of responses.slice(2)) {
+      expect(refused.error).toEqual({ code: JSON_RPC_INVALID_PARAMS, message: 'pullRequests/list needs params: { "token"?: string, "repository"?: "owner/name" }' });
+    }
+  });
+
+  it('redacts the token from a search GitHub answered with an error', async () => {
+    const failing: typeof fetch = async () => Response.json({ data: null, errors: [{ message: `bad credentials ${TOKEN}` }] });
+
+    const responses = await serve([initialize, request('pullRequests/list', { token: TOKEN }, 2)], failing);
+
+    expect(responses[1]!.error!.code).toBe(ENGINE_FAILED_CODE);
+    expect(responses[1]!.error!.message).toBe("GitHub's pull-request search failed: bad credentials [REDACTED]");
   });
 });

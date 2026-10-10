@@ -18,6 +18,8 @@ The companion works on text written by other people — a pull request's code, i
 
 **Reads, with your token.** One review reads the pull request's metadata, its description in full (never truncated), its full diff, the repository's `.gitattributes` at the head commit (for the noise labels), the issues the pull request links, the CI check runs with their annotations and the logs of failed GitHub Actions jobs, and — to know where your last look was, when no local record exists — your last submitted review. Base and head archives are downloaded for the read-only copies. All of it is read-only.
 
+**The list of your pull requests.** Listing your open pull requests to pick one runs one read-only GitHub search per group — review requested from you, yours, involving you, and open in the open folder's repository when it is a GitHub one — with your token, and reads each one's title, author, the start of its description, its review state and its size. Whether new commits landed since your last look comes from the local record of your last look, which the list only reads: nothing is stored.
+
 **Writes, only when you press.** The companion's one write is the review you submit: pressing Submit on the Send review page asks for the GitHub sign-in at that moment and sends one request, every comment mapped to its position and the whole review pinned to the head commit it read. With the `second-look.mirrorViewedToGitHub` setting on, marking the last part of a file reviewed also marks that whole file **Viewed** on GitHub. Nothing else is ever written: the companion never posts a comment, a review or a reaction on its own.
 
 ## What reaches your model provider

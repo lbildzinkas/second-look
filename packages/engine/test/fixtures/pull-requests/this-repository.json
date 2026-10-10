@@ -1,0 +1,41 @@
+{
+  "data": {
+    "viewer": { "login": "reviewer" },
+    "search": {
+      "nodes": [
+        {
+          "url": "https://github.com/example-org/example-repo/pull/7",
+          "number": 7,
+          "title": "Add the fresh-start helper",
+          "body": "",
+          "createdAt": "2026-10-09T13:00:00Z",
+          "updatedAt": "2026-10-10T08:40:00Z",
+          "isDraft": true,
+          "additions": 381,
+          "deletions": 2,
+          "changedFiles": 4,
+          "headRefOid": "7777777777777777777777777777777777777777",
+          "repository": { "nameWithOwner": "example-org/example-repo" },
+          "author": { "login": "reviewer" },
+          "latestOpinionatedReviews": { "nodes": [] }
+        },
+        {
+          "url": "https://github.com/example-org/example-repo/pull/9",
+          "number": 9,
+          "title": "Add the web workspace",
+          "body": "Moves the web app into its own workspace member.",
+          "createdAt": "2026-09-30T10:00:00Z",
+          "updatedAt": "2026-10-02T10:00:00Z",
+          "isDraft": false,
+          "additions": 52,
+          "deletions": 3,
+          "changedFiles": 3,
+          "headRefOid": "9999999999999999999999999999999999999999",
+          "repository": { "nameWithOwner": "example-org/example-repo" },
+          "author": { "login": "sam-r" },
+          "latestOpinionatedReviews": { "nodes": [{ "state": "CHANGES_REQUESTED" }] }
+        }
+      ]
+    }
+  }
+}
