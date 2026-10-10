@@ -9,6 +9,7 @@ import {
   sanitiseUntrusted,
   stampText,
 } from '../src/overview.js';
+import { ElementDouble, PageDouble } from './overview-page.js';
 import {
   claimsResult,
   criteriaResult,
@@ -827,8 +828,14 @@ describe('the dashboard and the contents rail', () => {
     expect(claims).toContain('<tr class="ex" id="claim-1"><td></td>');
     for (const id of ['claim-2', 'claim-3', 'claim-0']) expect(claims).toContain(`<tr class="ex" id="${id}" hidden>`);
     // The page's own script opens and closes a row in place.
-    expect(html).toContain("document.querySelectorAll('button.tg')");
-    expect(html).toContain('row.hidden = !open;');
+    const page = PageDouble.load(html);
+    const toggle = page.matching('button.tg').find((button) => button.getAttribute('aria-controls') === 'claim-2')!;
+    toggle.click();
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(page.byId('claim-2')!.hidden).toBe(false);
+    toggle.click();
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(page.byId('claim-2')!.hidden).toBe(true);
   });
 
   it('folds a group of evidence after three lines', () => {
@@ -884,12 +891,24 @@ describe('the dashboard and the contents rail', () => {
 
   it('scrolls to the section a rail entry names, and highlights the entry of the section in view', () => {
     const html = overviewHtml({ result: findingsResult() }, 'N');
+    const page = PageDouble.load(html);
+    const entry = (section: string): ElementDouble => page.matching('button.ri').find((button) => button.getAttribute('data-section') === section)!;
+    // Where the page's sections sit once its reader has scrolled the claims to the top of the view.
+    const tops: Record<string, number> = { story: -600, criteria: -400, unexplained: -300, claims: 40, docs: 400, pipeline: 500, description: 700, stamps: 800 };
+    for (const [section, top] of Object.entries(tops)) page.byId(section)!.top = top;
+    page.scroll();
 
-    expect(html).toContain("document.querySelectorAll('button.ri')");
-    expect(html).toContain("section.scrollIntoView({ block: 'start' });");
-    expect(html).toContain("window.addEventListener('scroll', spy, { passive: true });");
-    expect(html).toContain("entry.classList.toggle('on', on);");
-    expect(html).toContain("entry.setAttribute('aria-current', 'location');");
+    expect(entry('claims').classes.has('on')).toBe(true);
+    expect(entry('claims').getAttribute('aria-current')).toBe('location');
+    expect(entry('story').classes.has('on')).toBe(false);
+    expect(entry('story').getAttribute('aria-current')).toBeNull();
+
+    page.byId('docs')!.top = 0;
+    entry('docs').click();
+    expect(page.byId('docs')!.scrolledIntoView).toBe('start');
+    expect(entry('docs').classes.has('on')).toBe(true);
+    expect(entry('docs').getAttribute('aria-current')).toBe('location');
+    expect(entry('claims').classes.has('on')).toBe(false);
     expect(loadsOrLinks(html)).toBe(false); // The rail is the page's own script, never a link that loads anything.
   });
 
@@ -989,7 +1008,13 @@ describe('OverviewPanel', () => {
     overview.update(pipelineResult());
     overview.open();
     const panel = stub.webviewPanels[0]!;
-    expect(panel.webview.html).toContain("document.querySelectorAll('button.claim-cite')");
+    // The page's own script posts the claim and evidence a chip names, which the panel then opens.
+    const page = PageDouble.load(panel.webview.html);
+    page.matching('button.claim-cite').forEach((chip) => chip.click());
+    expect(page.posted).toEqual([
+      { type: 'openClaimEvidence', claim: 2, index: 0 },
+      { type: 'openClaimEvidence', claim: 1, index: 0 },
+    ]);
 
     panel.webview.receive({ type: 'openClaimEvidence', claim: 1, index: 0 });
     panel.webview.receive({ type: 'openClaimEvidence', claim: 2, index: 0 });
