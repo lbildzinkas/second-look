@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { pathInCopy } from './archive.js';
+import { BudgetLimitError } from './budget.js';
 import { docsUrlProblem, downloadBody, publicDocsFetch, readAll } from './doc-fetch.js';
 import {
   frameworkMoniker,
@@ -202,8 +203,9 @@ async function pythonInventory(pin: LibraryPin, fetchFn: typeof fetch): Promise<
         const inventory = parseSphinxInventory(await readAll(body));
         if (sphinxVersionMatches(inventory.version, pin.version)) return { inventory, url };
         seen.push(`${url} documents ${inventory.version}`);
-      } catch {
-        // An unreadable place is one more place without the inventory.
+      } catch (error) {
+        // A download refused at a budget limit says so; an unreadable place is one more place without the inventory.
+        if (error instanceof BudgetLimitError) throw error;
       }
     }
     const tried = seen.length > 0 ? `; ${seen.join('; ')}` : '';

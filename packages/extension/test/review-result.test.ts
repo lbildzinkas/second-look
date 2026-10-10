@@ -770,6 +770,6 @@ describe('parseReviewResult', () => {
 
 describe('the versioned protocol is shared with the engine', () => {
   it('uses the same version constant', () => {
-    expect(REVIEW_RESULT_VERSION).toBe(19);
+    expect(REVIEW_RESULT_VERSION).toBe(20);
   });
 });

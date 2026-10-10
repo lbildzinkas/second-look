@@ -354,21 +354,21 @@
           "scope": "application",
           "minimum": 0,
           "default": 0,
-          "description": "The most agent runs one review may start, its later library fetches, asks and drafts included; every attempt counts, a retry too. 0 is no limit, the default. The limit travels with each review request and the review's result shows the runs used so far; for now the companion only counts, and nothing is refused."
+          "description": "The most agent runs one review may start, its later library fetches, asks and drafts included; every attempt counts, a retry too. 0 is no limit, the default. The limit travels with each review request and the review's result shows the runs used so far. The review's agent passes stop at it, and what they leave is not checked, with the limit as the reason; a library fetch pressed past it is refused, and asks and drafts are only counted."
         },
         "second-look.budget.filesFetched": {
           "type": "integer",
           "scope": "application",
           "minimum": 0,
           "default": 0,
-          "description": "The most files one review may download, its later library fetches included: every download from GitHub, a package registry or a library's repository counts as one. 0 is no limit, the default. The limit travels with each review request and the review's result shows the files fetched so far; for now the companion only counts, and nothing is refused."
+          "description": "The most files one review may download, its later library fetches included: every download from GitHub, a package registry or a library's repository counts as one. 0 is no limit, the default. The limit travels with each review request and the review's result shows the files fetched so far. Documentation and library downloads past it are refused; the review's own reads of the pull request never are."
         },
         "second-look.budget.downloadMiB": {
           "type": "number",
           "scope": "application",
           "minimum": 0,
           "default": 0,
-          "description": "The most mebibytes one review may download across every file it fetches, its later library fetches included. 0 is no limit, the default. The limit travels with each review request and the review's result shows the bytes downloaded so far; for now the companion only counts, and nothing is refused."
+          "description": "The most mebibytes one review may download across every file it fetches, its later library fetches included. 0 is no limit, the default. The limit travels with each review request and the review's result shows the bytes downloaded so far. Documentation and library downloads past it are refused; the review's own reads of the pull request never are."
         }
       }
     }

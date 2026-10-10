@@ -143,8 +143,8 @@ export interface ReviewParams {
   /**
    * The budget's limits, mirroring the editor's settings, each 0 for no
    * limit; absent limits nothing. The engine meters the review against
-   * them — counting only, nothing is refused yet — and the result carries
-   * the use so far.
+   * them and stops at them — what a limit leaves says which limit — and
+   * the result carries the use so far.
    */
   budget?: BudgetLimits;
 }
