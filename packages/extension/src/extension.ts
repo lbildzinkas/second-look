@@ -995,8 +995,8 @@ class ReviewSession {
   }
 
   /**
-   * The engine, started and past its handshake. The agent, model and
-   * account the settings choose travel with each review request, so a
+   * The engine, started and past its handshake. The agent, model, effort
+   * and account the settings choose travel with each review request, so a
    * settings change needs no engine restart: the next review simply runs
    * on the chosen agent, and its result is stamped accordingly.
    */
