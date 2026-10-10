@@ -342,7 +342,7 @@ async function review(
       failure(
         id,
         JSON_RPC_INVALID_PARAMS,
-        `${REVIEW_METHOD} needs params: { "url": string, "token": string, "agent"?: { "agent": "${AGENT_NAMES.join('" | "')}", "model"?: string, "account"?: string }, "criteriaHeading"?: string }`,
+        `${REVIEW_METHOD} needs params: { "url": string, "token": string, "agent"?: { "agent": "${AGENT_NAMES.join('" | "')}", "model"?: string, "account"?: string }, "criteriaHeading"?: string, "budget"?: { "agentRuns": number, "filesFetched": number, "downloadMiB": number } }`,
       ),
     );
     return;
