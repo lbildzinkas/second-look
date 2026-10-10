@@ -18,8 +18,10 @@
  * review — the protocol's one write of the review, asked for only when the
  * reviewer presses send (ADR 0002) — {@link REVIEWED_MARKS_METHOD} and
  * {@link MARK_REVIEWED_METHOD} read and change the reviewed marks in the
- * pull request's local store, and {@link MARK_VIEWED_METHOD} marks files
- * "Viewed" on GitHub when the reviewer's opt-in setting mirrors them. A review request also carries the reviewer's
+ * pull request's local store, {@link MARK_VIEWED_METHOD} marks files
+ * "Viewed" on GitHub when the reviewer's opt-in setting mirrors them, and
+ * {@link LOAD_PROJECT_METHOD} writes the project loaded for navigation
+ * once the reviewer confirmed it. A review request also carries the reviewer's
  * agent choice — which installed agent runs the review's agent passes,
  * with which model — and the reviewer's label for the account it bills,
  * so switching the choice in the editor's settings reaches the next
@@ -28,7 +30,7 @@
 
 import type { AgentName } from './agents.js';
 import type { AskKind } from './asks.js';
-import type { AskAnswer, AskedClaim, DraftComment, FindingRef, PendingReview, ReviewedMarks, ReviewResult, SentReview, ViewedFiles } from './protocol.js';
+import type { AskAnswer, AskedClaim, DraftComment, FindingRef, PendingReview, ProjectCopy, ReviewedMarks, ReviewResult, SentReview, ViewedFiles } from './protocol.js';
 import type { MarkedPart } from './reviewed-marks.js';
 
 /** Version of the JSON-RPC protocol between the extension and the engine. */
@@ -281,6 +283,24 @@ export interface MarkViewedParams {
 
 /** The mirror request's result: the files marked. */
 export type MarkViewedRpcResult = ViewedFiles;
+
+/**
+ * The request that writes the project loaded for navigation: a writable
+ * copy of the head copy of the pull request's latest review, for language
+ * extensions to restore and navigate. The client sends it only once the
+ * reviewer confirmed the warning naming what that may run; the engine
+ * runs nothing in it, and no agent run reads it.
+ */
+export const LOAD_PROJECT_METHOD = 'loadProject' as const;
+
+/** One load request: the pull request whose latest review's head copy to write. */
+export interface LoadProjectParams {
+  /** The pull request's HTML URL. */
+  url: string;
+}
+
+/** The load request's result: where the project was written. */
+export type LoadProjectRpcResult = ProjectCopy;
 
 /**
  * The notification the engine sends while a review request is still

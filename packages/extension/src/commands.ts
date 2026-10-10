@@ -84,6 +84,14 @@ export const DISCARD_DRAFT_COMMAND = 'second-look.discardDraft' as const;
 export const DRAFT_COMMENT_CONTEXT = 'second-look-draft' as const;
 
 /**
+ * Loads the project for navigation: after the reviewer confirms a warning
+ * naming what restoring a project and language servers may run, the
+ * engine writes a writable copy of the head copy and the editor opens it
+ * in a new window, untrusted unless the reviewer trusts it.
+ */
+export const LOAD_PROJECT_COMMAND = 'second-look.loadProject' as const;
+
+/**
  * The command that makes one ask (the glossary's ask) about a part, from
  * the part's context menu in the tree: one command for each kind in the
  * engine's ask registry, which the manifest declares with the ask's title.

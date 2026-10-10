@@ -127,6 +127,11 @@
         "command": "second-look.ask.cover",
         "title": "What covers this?",
         "category": "Second Look"
+      },
+      {
+        "command": "second-look.loadProject",
+        "title": "Load the project for navigation…",
+        "category": "Second Look"
       }
     ],
     "menus": {
@@ -157,6 +162,11 @@
           "command": "second-look.openOverview",
           "when": "view == second-look.reviewTree",
           "group": "navigation"
+        },
+        {
+          "command": "second-look.loadProject",
+          "when": "view == second-look.reviewTree",
+          "group": "project"
         }
       ],
       "commandPalette": [
