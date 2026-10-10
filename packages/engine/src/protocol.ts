@@ -11,7 +11,7 @@ import type { AgentStamp } from './agent.js';
 import type { AskKind } from './asks.js';
 
 /** Version of the review result schema. */
-export const REVIEW_RESULT_VERSION = 20 as const;
+export const REVIEW_RESULT_VERSION = 21 as const;
 
 /**
  * Version 2 added the head commit's SHA and each part's noise assessment;
@@ -52,7 +52,10 @@ export const REVIEW_RESULT_VERSION = 20 as const;
  * version 19 added the review's budget: the limits the reviewer's
  * settings set and what the review and its later fetches, asks and drafts
  * have used so far; version 20 added the reason a claim or acceptance
- * criterion is not checked, when a budget limit left it so.
+ * criterion is not checked, when a budget limit left it so; version 21
+ * added the review's stages: each one's id, position, start time,
+ * duration, who worked on it and how it ended, a stage the reviewer's
+ * cancel kept from finishing marked stopped.
  */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
@@ -364,6 +367,8 @@ export interface ReviewResult {
   docLinks?: DocLinks;
   /** The review's budget: its limits and what it has used so far; absent when the review was not metered, such as an offline replay. */
   budget?: Budget;
+  /** The review's stages in the order they run, each with how it stands; absent when no agent was asked, such as a plain review. */
+  stages?: ReviewStageRecord[];
 }
 
 /**
@@ -1543,4 +1548,52 @@ export interface DiffLine {
    * `\ No newline at end of file` marker that follows it.
    */
   endsWithoutNewline?: boolean;
+}
+
+/**
+ * The stages of a review with an agent, by their stable ids, in the order
+ * they run: the plain pass, then the agent grouping the hunks, ranking
+ * the parts, writing the story, comparing the change with its description
+ * and issues, listing the claims, judging them, mapping the acceptance
+ * criteria, and last the documentation links.
+ */
+export const REVIEW_STAGE_IDS = ['plain', 'grouping', 'ranking', 'story', 'unexplained', 'claims', 'verdicts', 'criteria', 'docLinks'] as const;
+
+/** One stage's stable id. */
+export type ReviewStageId = (typeof REVIEW_STAGE_IDS)[number];
+
+/**
+ * How a stage stands: **to come** before it starts; **running**; then
+ * **done**, **fell back** when its agent gave no usable answer or was not
+ * tested, so the result says why, **failed** when it broke, **skipped**
+ * when it had nothing to do, such as fewer than two parts to rank, or
+ * **stopped** when the reviewer cancelled the review before it finished.
+ */
+export type ReviewStageState = 'to come' | 'running' | 'done' | 'fell back' | 'failed' | 'skipped' | 'stopped';
+
+/** The agent working on a stage, with the model and effort asked for; null for the agent's own default. */
+export interface ReviewStageAgent {
+  agent: string;
+  model: string | null;
+  effort: string | null;
+}
+
+/** One stage of a review: where it sits, when it ran, who worked on it and how it ended. */
+export interface ReviewStageRecord {
+  id: ReviewStageId;
+  /** Its place in the order, from 1. */
+  position: number;
+  /** How many stages the review has. */
+  total: number;
+  state: ReviewStageState;
+  /** When it started, as an ISO 8601 time; absent until it starts, and for a stage skipped or stopped before it started. */
+  startedAt?: string;
+  /** How long it took, in milliseconds; absent until it finishes. */
+  durationMs?: number;
+  /** The agent working on it; absent for the plain pass, which runs no agent. */
+  agent?: ReviewStageAgent;
+  /** Who answered, as the finished stage's result stamps it; absent when no agent ran. */
+  stamp?: AgentStamp;
+  /** One plain line: why it fell back, failed, was skipped or was stopped. */
+  detail?: string;
 }

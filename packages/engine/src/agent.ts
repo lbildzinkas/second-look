@@ -73,6 +73,8 @@ export interface AgentRunRequest {
   effort?: string;
   /** The run is stopped after this many milliseconds. */
   timeoutMs: number;
+  /** Stops the run when it aborts, as at its timeout, such as when the reviewer cancels the review. */
+  signal?: AbortSignal;
 }
 
 /** Tokens a run used, as the agent reports them. */
@@ -179,6 +181,8 @@ export interface AgentSettings {
    * review's stages stop; the reviewer's asks and drafts only count.
    */
   stopAtBudget?: boolean;
+  /** Aborts when the reviewer cancels the review: no run starts after it, and every run going is stopped. */
+  signal?: AbortSignal;
 }
 
 export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
@@ -210,8 +214,12 @@ export interface AgentTask {
   check?: (answer: unknown) => string[] | Promise<string[]>;
 }
 
-/** Why a task produced no answer; `budget-limit` when the agent-run limit kept a run, or its retry, from starting. */
-export type AgentFailureReason = 'unusable' | 'timeout' | 'agent-failed' | 'invalid-answer' | 'budget-limit';
+/**
+ * Why a task produced no answer; `budget-limit` when the agent-run limit
+ * kept a run, or its retry, from starting; `stopped` when the review was
+ * cancelled first.
+ */
+export type AgentFailureReason = 'unusable' | 'timeout' | 'agent-failed' | 'invalid-answer' | 'budget-limit' | 'stopped';
 
 /** A task's result: a schema-valid answer, or a failure that says why; always stamped. */
 export type AgentResult =
@@ -299,6 +307,9 @@ async function runTask(
   let stamp: AgentStamp | undefined;
   let problems: string[] = [];
   for (let attempt = 1; attempt <= 2; attempt++) {
+    if (settings.signal?.aborted) {
+      return { ok: false, reason: 'stopped', message: 'the review was stopped', attempts: attempt - 1, stamp: stamp ?? probeStamp(probe, settings.account) };
+    }
     const meter = settings.budget;
     if (meter && settings.stopAtBudget && !hasAgentRunLeft(meter)) {
       const message =
@@ -320,6 +331,7 @@ async function runTask(
       timeoutMs: settings.timeoutMs,
       ...(settings.model ? { model: settings.model } : {}),
       ...(settings.effort ? { effort: settings.effort } : {}),
+      ...(settings.signal ? { signal: settings.signal } : {}),
     });
     const current = stamp
       ? combineStamps(stamp, withAccount(outcome.stamp, settings.account))
