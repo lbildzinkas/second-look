@@ -16,7 +16,7 @@ export const OPEN_REVIEW_CONTAINER_COMMAND = 'workbench.view.extension.second-lo
 /** Opens one part's files in the multi-file diff editor. */
 export const OPEN_PART_COMMAND = 'second-look.openPart' as const;
 
-/** Toggles the tree between every part and only the parts changed since the reviewer's last look. */
+/** Toggles the side bar between every part and only the parts changed since the reviewer's last look. */
 export const FILTER_CHANGED_COMMAND = 'second-look.filterChangedSinceLastLook' as const;
 
 /** Opens the whole change in the multi-file diff editor, in ranked order. */
@@ -50,7 +50,7 @@ export const PENDING_THREAD_CONTEXT = 'second-look-pending' as const;
 /** Opens the review's overview: the story, the description and who made each result. */
 export const OPEN_OVERVIEW_COMMAND = 'second-look.openOverview' as const;
 
-/** Opens the overview's story at one part: the tree's "why this matters" on each part. */
+/** Opens the overview's story at one part: the side bar's "why this matters" on each part. */
 export const WHY_THIS_MATTERS_COMMAND = 'second-look.whyThisMatters' as const;
 
 /** The id of the comment controller the companion shows its findings with. */
@@ -89,7 +89,7 @@ export const DRAFT_COMMENT_CONTEXT = 'second-look-draft' as const;
 
 /**
  * The command that makes one ask (the glossary's ask) about a part, from
- * the part's context menu in the tree: one command for each kind in the
+ * the part's context menu in the side bar: one command for each kind in the
  * engine's ask registry, which the manifest declares with the ask's title.
  */
 export function askCommand(kind: AskKind): string {

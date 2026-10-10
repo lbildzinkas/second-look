@@ -111,8 +111,8 @@ function markedFiles(part: Part, files: readonly PartFile[]): { part: FileSlice;
 }
 
 /**
- * Opens the whole change in one multi-file diff, in the order the reviewer
- * reads the tree: the importance groups in order, the parts the engine has
+ * Opens the whole change in one multi-file diff, in the side bar's reading
+ * order: the importance groups in order, the parts the engine has
  * not ranked yet, and the noise last. Every part's lines are marked as its
  * files become visible, and the first part scrolls to its first hunk.
  */
