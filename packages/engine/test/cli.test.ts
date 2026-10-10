@@ -168,6 +168,31 @@ describe('runCli review', () => {
     }
   });
 
+  it('refuses a model or effort the agent cannot take before starting it or fetching anything', async () => {
+    const cases: [string[], string][] = [
+      [['--model', '--help'], 'the model "--help" is not a plain name'],
+      [['--effort', '-x'], 'the effort "-x" is not a plain level'],
+      [['--effort', 'minimal'], 'claude-code does not accept the effort "minimal": choose low, medium, high, xhigh, max'],
+    ];
+    for (const [flags, message] of cases) {
+      const { out, err } = streams();
+      const code = await runCli(
+        ['review', PR_URL, '--agent', 'claude-code', ...flags],
+        { GITHUB_TOKEN: TOKEN, SECOND_LOOK_CACHE_DIR: cacheDir },
+        { out, err },
+        {
+          fetch: failingFetch(new Error('nothing is fetched')),
+          claudeCode: { command: ['/nonexistent/claude'], guardPath: '/nonexistent/guard' },
+        },
+      );
+
+      expect(code, flags.join(' ')).toBe(1);
+      expect(out.text, flags.join(' ')).toBe('');
+      expect(err.text, flags.join(' ')).toContain(`second-look-engine: ${message}`);
+      expect(err.text, flags.join(' ')).not.toContain('nothing is fetched');
+    }
+  });
+
   it('prints usage with --help and asks for no token', async () => {
     const { out, err } = streams();
     const code = await runCli(['--help'], {}, { out, err }, {});
@@ -193,6 +218,17 @@ describe('runCli serve', () => {
     expect(out.text).toBe('');
     expect(err.text).toBe(
       'second-look-engine: serve takes the GitHub token with each request, not on the command line\n',
+    );
+  });
+
+  it('refuses an effort the agent does not accept, like review does', async () => {
+    const { out, err } = streams();
+    const code = await runCli(['serve', '--agent', 'pi', '--effort', 'ultra'], {}, { out, err });
+
+    expect(code).toBe(1);
+    expect(out.text).toBe('');
+    expect(err.text).toBe(
+      'second-look-engine: pi does not accept the effort "ultra": choose off, minimal, low, medium, high, xhigh, max, or leave it empty for the agent\'s own default\n',
     );
   });
 

@@ -109,9 +109,13 @@ export const REVIEW_METHOD = 'review' as const;
 export interface ReviewAgentChoice {
   /** The agent that runs every pass of the review: `pi` or `claude-code`. */
   agent: AgentName;
-  /** The model to ask for; empty or absent is the agent's own default. */
+  /** The model to ask for, a plain name; empty or absent is the agent's own default. */
   model?: string;
-  /** The effort level to ask for, one the agent accepts; empty or absent is the agent's own default. */
+  /**
+   * The effort level to ask for, one the agent accepts; empty or absent is the agent's own default.
+   * A model or effort that is not a plain identifier, or an effort the agent does not accept, is
+   * refused before any agent starts (see `modelAndEffortProblem`).
+   */
   effort?: string;
   /** The reviewer's label for the account or subscription the runs bill; empty or absent when unlabelled. */
   account?: string;

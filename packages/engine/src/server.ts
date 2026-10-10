@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { DEFAULT_AGENT_SETTINGS, type AgentAdapter, type AgentSettings } from './agent.js';
-import { AGENT_NAMES, isAgentName, type AgentName } from './agents.js';
+import { AGENT_NAMES, isAgentName, modelAndEffortProblem, type AgentName } from './agents.js';
 import { ASK_KINDS, ASKS, askAboutPart, isAskKind } from './asks.js';
 import { pullRequestCacheDir } from './cache.js';
 import { draftComment, draftFinding, isFindingRef } from './draft-comment.js';
@@ -274,7 +274,7 @@ function agentChoiceProblem(value: unknown): string | undefined {
   if (choice['account'] !== undefined && typeof choice['account'] !== 'string') {
     return 'the agent choice account must be a string';
   }
-  return undefined;
+  return modelAndEffortProblem(choice['agent'], choice as Pick<ReviewAgentChoice, 'model' | 'effort'>);
 }
 
 /**

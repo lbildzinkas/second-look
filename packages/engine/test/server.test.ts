@@ -621,6 +621,34 @@ describe('runRpcServer with an agent', () => {
     expect(answers(5).error).toMatchObject({ code: JSON_RPC_INVALID_PARAMS });
     expect(answers(5).error!.message).toContain('effort must be a string');
   });
+
+  it('refuses a model or effort the agent cannot take before any agent starts', async () => {
+    const pi = namedAgent('pi', 'pi/model');
+    const claude = namedAgent('claude-code', 'claude/model');
+    const answers = await serveWithAgent(
+      [
+        request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+        request('review', { url: PR_7_URL, token: TOKEN, agent: { agent: 'claude-code', model: '--help' } }, 2),
+        request('review', { url: PR_7_URL, token: TOKEN, agent: { agent: 'pi', effort: '--thinking' } }, 3),
+        request('review', { url: PR_7_URL, token: TOKEN, agent: { agent: 'claude-code', effort: 'minimal' } }, 4),
+        request('draftComment', { url: PR_7_URL, finding: { kind: 'claim', index: 0 }, agent: { agent: 'pi', model: '-m' } }, 5),
+      ],
+      { adapterFor: (name) => (name === 'pi' ? pi : claude), defaultAgent: 'pi' },
+    );
+
+    expect(answers(2).error).toMatchObject({ code: JSON_RPC_INVALID_PARAMS });
+    expect(answers(2).error!.message).toBe(
+      'review: the model "--help" is not a plain name: use only letters, digits and . _ - / :, not starting with -',
+    );
+    expect(answers(3).error).toMatchObject({ code: JSON_RPC_INVALID_PARAMS });
+    expect(answers(3).error!.message).toContain('the effort "--thinking" is not a plain level');
+    expect(answers(4).error).toMatchObject({ code: JSON_RPC_INVALID_PARAMS });
+    expect(answers(4).error!.message).toContain('claude-code does not accept the effort "minimal": choose low, medium, high, xhigh, max');
+    expect(answers(5).error).toMatchObject({ code: JSON_RPC_INVALID_PARAMS });
+    expect(answers(5).error!.message).toContain('the model "-m" is not a plain name');
+    expect(pi.requests).toHaveLength(0);
+    expect(claude.requests).toHaveLength(0);
+  });
 });
 
 describe('runRpcServer fetching a library', () => {
