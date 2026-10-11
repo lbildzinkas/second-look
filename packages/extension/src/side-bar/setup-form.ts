@@ -83,6 +83,8 @@ export class SetupForm {
 
   /** Opens the form on the settings in use, and probes the installed agents. */
   open(): void {
+    // A test still out describes the draft this one replaces, so its answer is dropped.
+    this.tests += 1;
     this.view = { open: true, draft: settingsDraft(), probe: { state: 'probing' } };
     this.deps.onChange();
     void this.probe();

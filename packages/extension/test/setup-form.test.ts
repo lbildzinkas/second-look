@@ -280,6 +280,23 @@ describe('the setup form controller', () => {
     expect(stub.configurationUpdates).toEqual([]);
   });
 
+  it("drops a test's late answer once the form was closed and opened again on another draft", async () => {
+    let answer: (result: TestAgentRpcResult) => void = () => undefined;
+    const engine = { ...fakeEngine(), testAgent: () => new Promise<TestAgentRpcResult>((resolve) => (answer = resolve)) };
+    const { setup } = form(engine);
+    await send(setup, { field: 'agent', value: 'claude-code' });
+    const pressed = setup.handle(setupMessage({ type: 'setup', action: 'test', value: '', fields: {} })!);
+    await settle();
+    expect(setup.current.test).toEqual({ state: 'testing' });
+
+    await send(setup, { action: 'defaults' });
+    await send(setup, { action: 'open' });
+    answer({ ok: true, stamp: STAMP });
+    await pressed;
+    expect(setup.current.draft.agent).toBe('pi');
+    expect(setup.current.test).toBeUndefined();
+  });
+
   it('writes the agent path field to the user settings when the agent is not found, then probes again and shows it ready', async () => {
     const { setup, engine } = form();
     setup.shown();
