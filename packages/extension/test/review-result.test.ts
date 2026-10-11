@@ -5,12 +5,14 @@ import {
   REQUESTS_FETCH,
   claimsResult,
   criteriaResult,
+  doneStages,
   fetchedResult,
   judgedResult,
   mappedCriteriaResult,
   offeredResult,
   pipelineResult,
   unexplainedResult,
+  verdictsRunningStages,
 } from './results.js';
 
 function sampleResult(): ReviewResult {
@@ -129,6 +131,31 @@ describe('isReviewResult', () => {
     expect(isReviewResult(null)).toBe(false);
     expect(isReviewResult('review')).toBe(false);
     expect(isReviewResult({ version: 3 })).toBe(false);
+  });
+
+  it('accepts the review\u2019s stages, running and finished, and rejects a record without its shape', () => {
+    const withRunning = { ...sampleResult(), stages: verdictsRunningStages() };
+    const withDone = { ...sampleResult(), stages: doneStages() };
+    expect(isReviewResult(withRunning)).toBe(true);
+    expect(isReviewResult(withDone)).toBe(true);
+    expect(isReviewResult(JSON.parse(JSON.stringify(withRunning)))).toBe(true);
+
+    const stages = () => JSON.parse(JSON.stringify(withRunning)).stages as Record<string, unknown>[];
+    for (const broken of [
+      [{ id: 'no-such-stage', position: 1, total: 9, state: 'done' }],
+      [{ id: 'plain', position: 1, total: 9, state: 'finished' }],
+      [{ id: 'plain', position: 0, total: 9, state: 'done' }],
+      [{ id: 'plain', position: 1, total: 0, state: 'done' }],
+      [{ id: 'plain', position: 1, total: 9, state: 'done', durationMs: -1 }],
+      [{ id: 'plain', position: 1, total: 9, state: 'done', startedAt: 42 }],
+      [{ id: 'verdicts', position: 7, total: 9, state: 'running', agent: { agent: 'pi', model: 4 } }],
+      [{ id: 'verdicts', position: 7, total: 9, state: 'running', stamp: { agent: 'pi' } }],
+    ]) {
+      expect(isReviewResult({ ...sampleResult(), stages: broken })).toBe(false);
+    }
+    const misshapen = stages();
+    delete misshapen[0]!['state'];
+    expect(isReviewResult({ ...sampleResult(), stages: misshapen })).toBe(false);
   });
 
   it('rejects a part without its syntax findings', () => {

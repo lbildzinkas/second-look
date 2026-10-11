@@ -4,6 +4,7 @@ import {
   type NoiseAssessment,
   type Part,
   type ReviewResult,
+  type ReviewStageRecord,
 } from '@second-look/engine';
 
 /** The noise assessment every part carries: no rule applied. */
@@ -578,4 +579,47 @@ export function docLinksResult(copies?: CopyPaths): ReviewResult {
       },
     },
   };
+}
+
+/** The agent, model and effort every stage of the staged results below ran on. */
+const STAGE_AGENT = { agent: 'pi', model: 'zai/glm-4.6', effort: 'high' } as const;
+
+/** The start of the review, as the plain pass records it. */
+const REVIEW_STARTED_AT = '2026-10-04T00:00:00.000Z';
+
+/**
+ * The stages of a review whose verdicts stage is running, over the claims
+ * result: every stage before it done, the ranking fallen back, the
+ * criteria and documentation links still to come.
+ */
+export function verdictsRunningStages(): ReviewStageRecord[] {
+  const stage = (
+    id: ReviewStageRecord['id'],
+    position: number,
+    state: ReviewStageRecord['state'],
+    more: Partial<ReviewStageRecord> = {},
+  ): ReviewStageRecord => ({ id, position, total: 9, state, ...more });
+  return [
+    stage('plain', 1, 'done', { startedAt: REVIEW_STARTED_AT, durationMs: 3_000 }),
+    stage('grouping', 2, 'done', { startedAt: '2026-10-04T00:00:03.000Z', durationMs: 31_000, agent: STAGE_AGENT }),
+    stage('ranking', 3, 'fell back', { startedAt: '2026-10-04T00:00:34.000Z', durationMs: 0, agent: STAGE_AGENT, detail: 'plain ranking kept: no ranking evaluation for this combination' }),
+    stage('story', 4, 'done', { startedAt: '2026-10-04T00:00:34.000Z', durationMs: 22_000, agent: STAGE_AGENT }),
+    stage('unexplained', 5, 'done', { startedAt: '2026-10-04T00:00:56.000Z', durationMs: 19_000, agent: STAGE_AGENT }),
+    stage('claims', 6, 'done', { startedAt: '2026-10-04T00:01:15.000Z', durationMs: 21_000, agent: STAGE_AGENT }),
+    stage('verdicts', 7, 'running', { startedAt: '2026-10-04T00:01:36.000Z', agent: STAGE_AGENT }),
+    stage('criteria', 8, 'to come'),
+    stage('docLinks', 9, 'to come'),
+  ];
+}
+
+/**
+ * The stages of a finished review over the judged result: every stage
+ * done save the ranking, which fell back, with the durations that sum to
+ * the review's whole time.
+ */
+export function doneStages(): ReviewStageRecord[] {
+  const ends: Partial<Record<ReviewStageRecord['id'], number>> = { verdicts: 102_000, criteria: 38_000, docLinks: 15_000 };
+  return verdictsRunningStages().map((record) =>
+    ends[record.id] === undefined ? record : { ...record, state: 'done' as const, durationMs: ends[record.id] },
+  );
 }

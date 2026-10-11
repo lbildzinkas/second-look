@@ -24,6 +24,9 @@ import {
   type LinkedIssue,
   type Part,
   type ReviewResult,
+  type ReviewStageAgent,
+  type ReviewStageId,
+  type ReviewStageRecord,
   type Story,
 } from '@second-look/engine';
 import { sinceLastLookLine } from './tree.js';
@@ -108,8 +111,11 @@ function overviewMessage(value: unknown): OverviewMessage | undefined {
 /**
  * The review's overview (issue #30), the tab at the top of the review in
  * the recorded design (docs/ux), in its dashboard-and-tables style: the
- * pull request's title and where it comes from, a chip for each stage
- * done and the one still running, count tiles, then each section as a
+ * pull request's title and where it comes from, the stage list while a
+ * review runs — each stage done with its duration, the one running with
+ * its agent, model, effort and elapsed time, and the ones to come —
+ * folding, once the review is done, into one line with each fallback and
+ * its reason, count tiles, then each section as a
  * block in a bounded reading column beside a contents rail that scrolls to
  * it — the claims, criteria and unexplained changes as tables, findings
  * first, each row opening in place to its reason and evidence — the
@@ -126,7 +132,9 @@ function overviewMessage(value: unknown): OverviewMessage | undefined {
  * opens its page in the browser — the pipeline report and whether it is trusted, the checks run on the merge
  * commit with their annotations and failed jobs' trimmed logs, the pull
  * request's description in full with its hidden content shown and flagged,
- * and who made each result.
+ * and who made each result. While the review runs, each section still
+ * being produced shows a skeleton and a line naming the agent checking
+ * it, and claims already listed read as being checked, never as finished.
  *
  * Everything on the page but the companion's own words was written by
  * someone else, the agent's story and reasons, the claims' quotes, the
@@ -395,6 +403,185 @@ function stageChips(state: OverviewState): string {
     .join('');
 }
 
+/** One stage's time, whole seconds as `m:ss`: a duration once a stage is done, an elapsed time while it runs. */
+export function clockText(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+/** How the page names each stage of a review, in the order they run. */
+const STAGE_NAMES: Record<ReviewStageId, string> = {
+  plain: 'Parts and noise checks',
+  grouping: 'Grouping',
+  ranking: 'Ranking',
+  story: 'Story',
+  unexplained: 'Unexplained changes',
+  claims: 'Claims',
+  verdicts: 'Verdicts',
+  criteria: 'Acceptance criteria',
+  docLinks: 'Documentation links',
+};
+
+/** A stage's worker as one line: agent · model · effort, naming each of the agent's own defaults. */
+export function stageAgentLine(agent: ReviewStageAgent): string {
+  return [agent.agent, agent.model ?? 'default model', agent.effort ?? 'default effort'].join(' · ');
+}
+
+/** The record of one stage of the review shown, by its id. */
+function stageOf(state: OverviewState, id: ReviewStageId): ReviewStageRecord | undefined {
+  return state.result.stages?.find((record) => record.id === id);
+}
+
+/** Whether one stage of the review shown is running now. */
+function stageRunning(state: OverviewState, id: ReviewStageId): boolean {
+  return stageOf(state, id)?.state === 'running';
+}
+
+/** The agent, model and effort the review runs on, as the newest stage record that names them does. */
+function reviewAgentLine(state: OverviewState): string | undefined {
+  const records = state.result.stages ?? [];
+  for (let index = records.length - 1; index >= 0; index -= 1) {
+    const { agent } = records[index]!;
+    if (agent !== undefined) return stageAgentLine(agent);
+  }
+  return undefined;
+}
+
+/** A stage's name with what it says of its own result: who ran it, what it listed or is checking, or why it did not land. */
+function stageName(record: ReviewStageRecord, state: OverviewState): string {
+  let name = STAGE_NAMES[record.id];
+  const claims = state.result.claims;
+  if (record.id === 'claims' && claims?.outcome === 'listed') name += ` · ${claims.claims.length} listed`;
+  if (record.id === 'verdicts' && record.state === 'running' && claims !== undefined) name += `: checking ${claims.claims.length} claims`;
+  const by = record.state === 'done' && record.agent !== undefined ? ` <span class="who">by ${escapeHtml(record.agent.agent)}</span>` : '';
+  const why =
+    record.detail !== undefined && (record.state === 'fell back' || record.state === 'failed')
+      ? ` <span class="fallback${record.state === 'failed' ? ' tone-bad' : ''}">${escapeHtml(record.detail)}</span>`
+      : '';
+  return escapeHtml(name) + by + why;
+}
+
+/** One stage of the list: its icon by how it stands, its name with what it left, and its time or its place. */
+function stageRow(record: ReviewStageRecord, state: OverviewState): string {
+  const name = stageName(record, state);
+  const time = record.durationMs === undefined ? '' : escapeHtml(clockText(record.durationMs));
+  const quiet = record.detail === undefined ? '' : ` title="${escapeHtml(record.detail)}"`;
+  switch (record.state) {
+    case 'running': {
+      const agent = record.agent === undefined ? '' : ` <span class="who">· ${escapeHtml(stageAgentLine(record.agent))}</span>`;
+      const started = record.startedAt === undefined ? Number.NaN : Date.parse(record.startedAt);
+      const elapsed = Number.isNaN(started) ? '0:00' : clockText(Date.now() - started);
+      const mark = Number.isNaN(started) ? '' : ` data-started="${started}"`;
+      return (
+        `<div class="srow run"><span class="ic run tone-info" aria-hidden="true">◌</span><span class="nm">${name}${agent}</span>` +
+        `<span class="w tone-info elapsed"${mark}>${escapeHtml(elapsed)}</span><span class="bar" aria-hidden="true"></span></div>`
+      );
+    }
+    case 'to come': {
+      const run = state.result.stages?.find((each) => each.state === 'running');
+      const next = run !== undefined && record.position === run.position + 1;
+      return `<div class="srow todo"><span class="ic tone-mut" aria-hidden="true">○</span><span class="nm">${name}</span><span class="w">${next ? 'next' : 'to come'}</span></div>`;
+    }
+    case 'skipped':
+      return `<div class="srow todo"${quiet}><span class="ic tone-mut" aria-hidden="true">○</span><span class="nm">${name}</span><span class="w">skipped</span></div>`;
+    case 'stopped':
+      return `<div class="srow todo"${quiet}><span class="ic tone-mut" aria-hidden="true">□</span><span class="nm">${name}</span><span class="w">stopped</span></div>`;
+    case 'fell back':
+      return `<div class="srow"><span class="ic tone-warn" aria-hidden="true">⊘</span><span class="nm">${name}</span><span class="w">${time}</span></div>`;
+    case 'failed':
+      return `<div class="srow"><span class="ic tone-bad" aria-hidden="true">✕</span><span class="nm">${name}</span><span class="w">${time}</span></div>`;
+    default:
+      return `<div class="srow"><span class="ic tone-ok" aria-hidden="true">✓</span><span class="nm">${name}</span><span class="w">${time}</span></div>`;
+  }
+}
+
+/** Every stage of the review shown, one row each, in the order they run. */
+function stageRows(state: OverviewState): string {
+  return (state.result.stages ?? []).map((record) => stageRow(record, state)).join('');
+}
+
+/**
+ * The stage list while a review runs: every stage in the order it runs,
+ * the done ones with their durations and who ran them, the running one
+ * with the agent, model and effort working on it and its elapsed time,
+ * and the ones to come, under a header naming how far the review has
+ * come and how long it has run so far.
+ */
+function runningList(state: OverviewState): string {
+  const records = state.result.stages ?? [];
+  const run = records.find((record) => record.state === 'running');
+  const place = run === undefined ? '' : ` <span class="cnt">stage ${run.position} of ${run.total}</span>`;
+  const first = records.find((record) => record.startedAt !== undefined)?.startedAt;
+  const startedAt = first === undefined ? Number.NaN : Date.parse(first);
+  const soFar = Number.isNaN(startedAt)
+    ? ''
+    : `<span class="tm"><span class="elapsed" data-started="${startedAt}">${escapeHtml(clockText(Date.now() - startedAt))}</span> so far</span>`;
+  return `<div class="slist"><div class="shead"><span class="ic run tone-info" aria-hidden="true">◌</span><b>Review in progress</b>${place}${soFar}</div>${stageRows(state)}</div>`;
+}
+
+/**
+ * The stages folded into one line once the review is done: how long the
+ * whole review took, how many stages it ran and who ran them, the list
+ * itself behind a fold, and beneath it each stage that fell back,
+ * failed or was stopped, with its reason. A review a stage was stopped
+ * in says so rather than claiming to be complete.
+ */
+function completeLine(state: OverviewState): string {
+  const records = state.result.stages ?? [];
+  const total = records.reduce((sum, record) => sum + (record.durationMs ?? 0), 0);
+  const agent = reviewAgentLine(state);
+  const stopped = records.some((record) => record.state === 'stopped');
+  const head = `<span class="ic ${stopped ? 'tone-mut' : 'tone-ok'}" aria-hidden="true">${stopped ? '□' : '✓'}</span> <b>${stopped ? 'Review stopped' : 'Review complete'}</b>`;
+  const who = agent === undefined ? '' : ` · ${escapeHtml(agent)}`;
+  const stagesWord = records.length === 1 ? 'stage' : 'stages';
+  const notes = records
+    .filter((record) => record.state === 'fell back' || record.state === 'failed' || record.state === 'stopped')
+    .map((record) => {
+      const tone = record.state === 'failed' ? 'bad' : record.state === 'stopped' ? 'mut' : 'warn';
+      const icon = record.state === 'failed' ? '✕' : record.state === 'stopped' ? '□' : '⊘';
+      const reason = record.detail === undefined ? '' : `: ${escapeHtml(record.detail)}`;
+      return `<div class="fbnote tone-${tone}"><span class="ic" aria-hidden="true">${icon}</span><span><b>${escapeHtml(`${STAGE_NAMES[record.id]} ${record.state}`)}</b>${reason}</span></div>`;
+    })
+    .join('');
+  return (
+    `<div class="sdone">${head} in ${escapeHtml(clockText(total))} · ${records.length} ${stagesWord}${who}` +
+    `<details class="sfold"><summary>show stages</summary><div class="slist">${stageRows(state)}</div></details>${notes}</div>`
+  );
+}
+
+/**
+ * The line under where the pull request comes from: the stage list while
+ * a review runs, folding into one line once it is done. A result no
+ * stages came with, such as a plain review, keeps its stage chips.
+ */
+function progressBlock(state: OverviewState): string {
+  const records = state.result.stages;
+  if (records === undefined || records.length === 0) return `<div class="stages">${stageChips(state)}</div>`;
+  return state.running !== undefined || records.some((record) => record.state === 'running') ? runningList(state) : completeLine(state);
+}
+
+/**
+ * A section the review is still producing: a skeleton where its rows
+ * will land, and a line naming the agent checking it — never a quiet
+ * note that reads empty or finished.
+ */
+function beingChecked(state: OverviewState, id: ReviewStageId): string {
+  const own = stageOf(state, id);
+  const line = own?.agent !== undefined ? stageAgentLine(own.agent) : reviewAgentLine(state);
+  const toCome = own !== undefined && (own.state === 'to come' || own.state === 'skipped' || own.state === 'stopped');
+  const words = toCome
+    ? line === undefined
+      ? 'Still to come.'
+      : `Still to come; ${line} will check it.`
+    : line === undefined
+      ? 'Being checked.'
+      : `Being checked by ${line}.`;
+  return (
+    '<div class="skel" aria-hidden="true"><span class="sk a"></span><span class="sk b"></span><span class="sk c"></span></div>' +
+    `<p class="checking"><span class="ic run tone-info" aria-hidden="true">◌</span> ${escapeHtml(words)}</p>`
+  );
+}
+
 /**
  * A result's stamp in the recorded design's words: agent · model · effort ·
  * prompt version. The effort always shows, named as the agent's default
@@ -418,6 +605,7 @@ const STATES: Record<string, { tone: Tone; icon: string }> = {
   refuted: { tone: 'bad', icon: '✕' },
   unverifiable: { tone: 'warn', icon: '?' },
   'not checked': { tone: 'mut', icon: '○' },
+  checking: { tone: 'info', icon: '◌' },
   met: { tone: 'ok', icon: '✓' },
   'partly met': { tone: 'warn', icon: '◐' },
   'not met': { tone: 'bad', icon: '✕' },
@@ -456,12 +644,29 @@ const CLAIM_ORDER = ['refuted', 'unverifiable', 'not checked', 'verified'];
 /** The criteria's verdicts in the order a reviewer reads them: findings first, confirmations last. */
 const CRITERION_ORDER: readonly string[] = [...CRITERION_VERDICT_KINDS, 'not checked'];
 
-function claimTallies(result: ReviewResult): Tally[] {
-  return tally(result.claims?.claims.map((claim) => claim.verdict.kind) ?? [], CLAIM_ORDER);
+/** A reading order with `not checked` reading `checking`, for a section whose verdicts are being checked. */
+function checkingOrder(order: readonly string[]): readonly string[] {
+  return order.map((state) => (state === 'not checked' ? 'checking' : state));
 }
 
-function criterionTallies(result: ReviewResult): Tally[] {
-  return tally(result.criteria?.criteria.map((criterion) => criterion.verdict.kind) ?? [], CRITERION_ORDER);
+function claimTallies(result: ReviewResult, checking = false): Tally[] {
+  return tally(claimStates(result, checking), checking ? checkingOrder(CLAIM_ORDER) : CLAIM_ORDER);
+}
+
+function criterionTallies(result: ReviewResult, checking = false): Tally[] {
+  return tally(criterionStates(result, checking), checking ? checkingOrder(CRITERION_ORDER) : CRITERION_ORDER);
+}
+
+/** The claims' verdicts, `not checked` reading `checking` while the verdicts stage runs. */
+function claimStates(result: ReviewResult, checking: boolean): string[] {
+  const kinds = result.claims?.claims.map((claim) => claim.verdict.kind) ?? [];
+  return checking ? kinds.map((kind) => (kind === 'not checked' ? 'checking' : kind)) : kinds;
+}
+
+/** The criteria's verdicts, `not checked` reading `checking` while the mapping stage runs. */
+function criterionStates(result: ReviewResult, checking: boolean): string[] {
+  const kinds = result.criteria?.criteria.map((criterion) => criterion.verdict.kind) ?? [];
+  return checking ? kinds.map((kind) => (kind === 'not checked' ? 'checking' : kind)) : kinds;
 }
 
 /** How many unexplained changes the comparison found, in both directions; nothing until it compared. */
@@ -479,11 +684,15 @@ function tile({ state, count }: Tally, label: string): string {
 }
 
 /** The count tiles at the top of the page: the criteria and the claims by verdict, the unexplained changes, and the parts that must be reviewed. */
-function countTiles(result: ReviewResult): string {
+function countTiles(result: ReviewResult, criteriaChecking = false, claimsChecking = false): string {
   const plural = (count: number, one: string, many: string): string => (count === 1 ? one : many);
   const tiles = [
-    ...criterionTallies(result).map((each) => tile(each, `${plural(each.count, 'criterion', 'criteria')} ${each.state}`)),
-    ...claimTallies(result).map((each) => tile(each, `${plural(each.count, 'claim', 'claims')} ${each.state}`)),
+    ...criterionTallies(result, criteriaChecking).map((each) =>
+      tile(each, each.state === 'checking' ? plural(each.count, 'criterion being checked', 'criteria being checked') : `${plural(each.count, 'criterion', 'criteria')} ${each.state}`),
+    ),
+    ...claimTallies(result, claimsChecking).map((each) =>
+      tile(each, each.state === 'checking' ? plural(each.count, 'claim being checked', 'claims being checked') : `${plural(each.count, 'claim', 'claims')} ${each.state}`),
+    ),
   ];
   const unexplained = unexplainedTally(result);
   if (unexplained) tiles.push(tile(unexplained, plural(unexplained.count, 'unexplained change', 'unexplained changes')));
@@ -552,7 +761,7 @@ function storySentences(story: Story, focus: number | undefined): string {
     .join(' ');
 }
 
-/** The story section: the story with its stamp, why there is none, or that it is still coming. */
+/** The story section: the story with its stamp, why there is none, or a skeleton and the line naming who is writing it. */
 function storySection(state: OverviewState): string {
   const { result, focus } = state;
   const story = result.story;
@@ -562,8 +771,8 @@ function storySection(state: OverviewState): string {
       ? `<p class="note">The story does not mention ${escapeHtml(part.name ?? part.path)}.</p>`
       : '';
   if (story === undefined) {
-    const why = state.running !== undefined ? 'The story comes once the agent has written it.' : 'No story was written for this review.';
-    return `<h2>Story</h2><p class="note">${why}</p>`;
+    if (state.running !== undefined) return `<h2>Story</h2>${beingChecked(state, 'story')}`;
+    return `<h2>Story</h2><p class="note">No story was written for this review.</p>`;
   }
   const stamp = stampChip(stampText(story.stamp, 'story', story.promptVersion));
   if (story.outcome === 'fell back') {
@@ -679,20 +888,21 @@ function draftButton(finding: FindingRef): string {
 }
 
 /** One acceptance criterion's row: its verdict, its quote, the issue it comes from as a button that opens it, and, once mapped, its reason and evidence to open. */
-function criterionRow(criterion: AcceptanceCriterion, index: number, criteria: NonNullable<ReviewResult['criteria']>, open: boolean): string {
+function criterionRow(criterion: AcceptanceCriterion, index: number, criteria: NonNullable<ReviewResult['criteria']>, open: boolean, checking = false): string {
   const issue = criteria.issues[criterion.issue];
   const from =
     issue === undefined
       ? ''
       : `<button type="button" class="pt issue" data-issue="${criterion.issue}">${escapeHtml(issueName(issue))}</button> · ${escapeHtml(ISSUE_LINKS[issue.link])}`;
-  const cells = [pill(criterion.verdict.kind), `<q class="quote">${sanitiseUntrusted(criterion.quote).html}</q>`, `<span class="where">${from}</span>`];
-  return tableRow(`criterion-${index}`, index + 1, criterion.verdict.kind, cells, criterionEvidence(criterion, index), open);
+  const state = criterion.verdict.kind === 'not checked' && checking ? 'checking' : criterion.verdict.kind;
+  const cells = [pill(state), `<q class="quote">${sanitiseUntrusted(criterion.quote).html}</q>`, `<span class="where">${from}</span>`];
+  return tableRow(`criterion-${index}`, index + 1, state, cells, criterionEvidence(criterion, index), open);
 }
 
-/** What the criteria section says of their verdicts: mapped, why none was, or that none is yet. */
-function mappingNote(criteria: NonNullable<ReviewResult['criteria']>): string {
+/** What the criteria section says of their verdicts: mapped, why none was, being checked, or that none is yet. */
+function mappingNote(criteria: NonNullable<ReviewResult['criteria']>, checking?: string): string {
   const mapping = criteria.mapping;
-  if (mapping === undefined) return 'None is checked yet.';
+  if (mapping === undefined) return checking === undefined ? 'None is checked yet.' : `Each is being checked by ${checking}.`;
   if (mapping.outcome === 'fell back') return `None is checked: ${mapping.detail}.`;
   return (
     'Each is judged against the change, its read-only copy and the manual checks the description reports, ' +
@@ -725,17 +935,18 @@ function issuesWithoutChecklist(criteria: NonNullable<ReviewResult['criteria']>)
 function criteriaSection(state: OverviewState): string {
   const criteria = state.result.criteria;
   if (criteria === undefined) {
-    const why = state.running !== undefined ? 'The criteria come once the linked issues are read.' : 'No criteria were read for this review.';
-    return `<h2>Acceptance criteria</h2><p class="note">${why}</p>`;
+    if (state.running !== undefined) return `<h2>Acceptance criteria</h2>${beingChecked(state, 'criteria')}`;
+    return `<h2>Acceptance criteria</h2><p class="note">No criteria were read for this review.</p>`;
   }
   const detail = `<p class="note">${escapeHtml(criteria.detail)}.</p>`;
   if (criteria.outcome === 'unreadable') {
     return `<h2>Acceptance criteria</h2>${detail}<p class="note">No criteria were read, so none is checked.</p>`;
   }
   const heading = `, quoted from the checklist under ${escapeHtml(JSON.stringify(criteria.heading))}`;
-  const note = `<p class="note">Each condition listed in the issues this pull request links${heading}. Issue text is untrusted: its hidden content is shown and flagged. ${escapeHtml(mappingNote(criteria))}</p>`;
-  const rows = byState(criteria.criteria, (criterion) => criterion.verdict.kind, CRITERION_ORDER).map(([criterion, index], at) =>
-    criterionRow(criterion, index, criteria, at === 0 && isUnmetCriterion(criterion)),
+  const checking = stageRunning(state, 'criteria') ? reviewAgentLine(state) : undefined;
+  const note = `<p class="note">Each condition listed in the issues this pull request links${heading}. Issue text is untrusted: its hidden content is shown and flagged. ${escapeHtml(mappingNote(criteria, checking))}</p>`;
+  const rows = byState(criteria.criteria, (criterion) => (criterion.verdict.kind === 'not checked' && checking !== undefined ? 'checking' : criterion.verdict.kind), checkingOrder(CRITERION_ORDER)).map(([criterion, index], at) =>
+    criterionRow(criterion, index, criteria, at === 0 && isUnmetCriterion(criterion), checking !== undefined),
   );
   const list = rows.length === 0 ? '' : sectionTable(['Verdict', 'Criterion', 'From'], rows);
   const { mapping } = criteria;
@@ -765,11 +976,8 @@ function unexplainedSection(state: OverviewState): string {
   const { result } = state;
   const unexplained = result.unexplained;
   if (unexplained === undefined) {
-    const why =
-      state.running !== undefined
-        ? 'The unexplained changes come once the agent has compared the change with its description and issues.'
-        : 'The change was not compared with its description and issues for this review.';
-    return `<h2>Unexplained changes</h2><p class="note">${why}</p>`;
+    if (state.running !== undefined) return `<h2>Unexplained changes</h2>${beingChecked(state, 'unexplained')}`;
+    return `<h2>Unexplained changes</h2><p class="note">The change was not compared with its description and issues for this review.</p>`;
   }
   const stamp = unexplained.stamp === undefined ? '' : ` ${stampChip(stampText(unexplained.stamp, 'unexplained', unexplained.promptVersion))}`;
   if (unexplained.outcome !== 'compared') {
@@ -881,22 +1089,26 @@ function verdictDetail(claim: Claim, index: number): string {
 }
 
 /** One claim's row: its verdict, its quote, where it is made with the part it is attached to as a button that opens it, and, once judged, its reason and evidence to open. */
-function claimRow(claim: Claim, index: number, result: ReviewResult, open: boolean): string {
+function claimRow(claim: Claim, index: number, result: ReviewResult, open: boolean, checking = false): string {
   const part = result.parts[claim.part];
   const button =
     part === undefined
       ? ''
       : ` · <button type="button" class="pt" data-part="${claim.part}">${escapeHtml(part.name ?? part.path)}</button>`;
-  const cells = [pill(claim.verdict.kind), `<q class="quote">${sanitiseUntrusted(claim.quote).html}</q>`, `<span class="where">${escapeHtml(claimWhere(claim))}${button}</span>`];
-  return tableRow(`claim-${index}`, index + 1, claim.verdict.kind, cells, verdictDetail(claim, index), open);
+  const state = claim.verdict.kind === 'not checked' && checking ? 'checking' : claim.verdict.kind;
+  const cells = [pill(state), `<q class="quote">${sanitiseUntrusted(claim.quote).html}</q>`, `<span class="where">${escapeHtml(claimWhere(claim))}${button}</span>`];
+  return tableRow(`claim-${index}`, index + 1, state, cells, verdictDetail(claim, index), open);
 }
 
-/** What the claims section says of their verdicts: judged, why none was, or that none is yet. */
-function verdictsNote(claims: NonNullable<ReviewResult['claims']>): string {
+/** What the claims section says of their verdicts: judged, why none was, being checked, or that none is yet. */
+function verdictsNote(claims: NonNullable<ReviewResult['claims']>, checking?: string): string {
   const asked = claims.claims.filter((claim) => claim.asked === true).length;
   const counted = asked === 1 ? 'one checked verdict' : `${asked} checked verdicts`;
   const judging = claims.judging;
-  if (judging === undefined) return asked === 0 ? 'None is checked yet.' : `The verdicts pass did not run; the ${counted} came from the Verify this claim ask.`;
+  if (judging === undefined) {
+    if (checking !== undefined) return `Each is being checked by ${checking}.`;
+    return asked === 0 ? 'None is checked yet.' : `The verdicts pass did not run; the ${counted} came from the Verify this claim ask.`;
+  }
   if (judging.outcome === 'fell back') return asked === 0 ? `None is checked: ${judging.detail}.` : `The judging pass fell back (${judging.detail}); the ${counted} came from the Verify this claim ask.`;
   return (
     `Each is judged against the change, its read-only copy and any failed check's CI log by ${stampText(judging.stamp, 'verdicts', judging.promptVersion)}` +
@@ -905,27 +1117,29 @@ function verdictsNote(claims: NonNullable<ReviewResult['claims']>): string {
   );
 }
 
-/** The claims section: the claims with their stamp, why there are none, or that they are still coming. */
+/** The claims section: the claims with their stamp, why there are none, or a skeleton and the line naming who is listing or checking them. */
 function claimsSection(state: OverviewState): string {
   const { result } = state;
   const claims = result.claims;
   if (claims === undefined) {
-    const why = state.running !== undefined ? 'The claims come once the agent has listed them.' : 'No claims were listed for this review.';
-    return `<h2>Claims</h2><p class="note">${why}</p>`;
+    if (state.running !== undefined) return `<h2>Claims</h2>${beingChecked(state, 'claims')}`;
+    return `<h2>Claims</h2><p class="note">No claims were listed for this review.</p>`;
   }
   const stamp = stampChip(stampText(claims.stamp, 'claims', claims.promptVersion));
   if (claims.outcome === 'fell back' && claims.claims.length === 0) return `<h2>Claims ${stamp}</h2><p class="note">No claims: ${escapeHtml(claims.detail)}.</p>`;
   if (claims.claims.length === 0) return `<h2>Claims ${stamp}</h2><p class="note">The agent found no claim in the change.</p>`;
+  const checking = stageRunning(state, 'verdicts');
+  const who = checking ? reviewAgentLine(state) : undefined;
   const note =
     '<p class="note">Statements about how code or a library behaves, from a fresh pipeline report, the description, the docstrings and comments ' +
-    `the change adds, and the story, in that order. ${escapeHtml(verdictsNote(claims))}</p>`;
+    `the change adds, and the story, in that order. ${escapeHtml(verdictsNote(claims, who))}</p>`;
   const askedListed = claims.claims.some((claim) => claim.asked === true);
   const fellBack =
     claims.outcome === 'fell back'
       ? `<p class="note">Only the pipeline's claims are listed${askedListed ? ', with any the reviewer asked to verify' : ''}: ${escapeHtml(claims.detail)}.</p>`
       : '';
-  const rows = byState(claims.claims, (claim) => claim.verdict.kind, CLAIM_ORDER).map(([claim, index], at) => claimRow(claim, index, result, at === 0 && isFinding(claim)));
-  return `<h2>Claims${tallyPills(claimTallies(result))} ${stamp}</h2>${fellBack}${note}${sectionTable(['Verdict', 'Claim', 'Where it is made'], rows)}`;
+  const rows = byState(claims.claims, (claim) => (claim.verdict.kind === 'not checked' && checking ? 'checking' : claim.verdict.kind), checkingOrder(CLAIM_ORDER)).map(([claim, index], at) => claimRow(claim, index, result, at === 0 && isFinding(claim), checking));
+  return `<h2>Claims${tallyPills(claimTallies(result, checking))} ${stamp}</h2>${fellBack}${note}${sectionTable(['Verdict', 'Claim', 'Where it is made'], rows)}`;
 }
 
 /** How the page names each state of the pipeline report. */
@@ -1014,8 +1228,8 @@ function docLinkItem(link: DocLink, index: number): string {
 function docsSection(state: OverviewState): string {
   const docs = state.result.docLinks;
   if (docs === undefined) {
-    const why = state.running !== undefined ? 'The documentation links come once the review is done.' : 'No documentation links were looked for in this review.';
-    return `<h2>Documentation</h2><p class="note">${why}</p>`;
+    if (state.running !== undefined) return `<h2>Documentation</h2>${beingChecked(state, 'docLinks')}`;
+    return `<h2>Documentation</h2><p class="note">No documentation links were looked for in this review.</p>`;
   }
   const suggestions = docs.suggestions;
   const stamp = suggestions === undefined ? '' : ` ${stampChip(stampText(suggestions.stamp, 'doc-links', suggestions.promptVersion))}`;
@@ -1156,9 +1370,9 @@ function contentsRail(state: OverviewState): string {
   const entries = [
     answers === 0 ? '' : railEntry('asks', 'Asks', '↳', { state: 'answered', count: answers }),
     railEntry('story', 'Story', '¶'),
-    railEntry('criteria', 'Acceptance criteria', '○', criterionTallies(result)[0]),
+    railEntry('criteria', 'Acceptance criteria', '○', criterionTallies(result, stageRunning(state, 'criteria'))[0]),
     railEntry('unexplained', 'Unexplained changes', '○', unexplainedTally(result)),
-    railEntry('claims', 'Claims', '○', claimTallies(result)[0]),
+    railEntry('claims', 'Claims', '○', claimTallies(result, stageRunning(state, 'verdicts'))[0]),
     railEntry('docs', 'Documentation', '↗', links === 0 ? undefined : { state: 'links', count: links }),
     railEntry('pipeline', 'Pipeline and CI', '▸', failed === 0 ? undefined : { state: 'failed', count: failed }),
     railEntry('description', 'Pull request description', '≡'),
@@ -1176,6 +1390,8 @@ function contentsRail(state: OverviewState): string {
  */
 export function overviewHtml(state: OverviewState, nonce: string): string {
   const { result } = state;
+  const claimsChecking = stageRunning(state, 'verdicts');
+  const criteriaChecking = stageRunning(state, 'criteria');
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1230,6 +1446,35 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
   .stg { font-size: 12px; border: 1px solid var(--vscode-panel-border); border-radius: 12px; padding: 1px 9px; }
   .stg.done::before { content: "✓ "; color: var(--ok); }
   .stg.run { color: var(--mut); }
+  /* The stage list, which the chip row becomes while a review runs. */
+  .slist { border: 1px solid var(--vscode-panel-border); border-radius: 6px; padding: 4px 0 2px; margin: 10px 0 4px; }
+  .shead { display: flex; align-items: baseline; gap: 8px; padding: 2px 10px 6px; border-bottom: 1px solid var(--vscode-panel-border); margin-bottom: 2px; font-size: 12.5px; }
+  .shead .cnt { color: var(--mut); font-size: 12px; }
+  .shead .tm { margin-left: auto; color: var(--mut); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .srow { display: flex; align-items: baseline; gap: 8px; padding: 2px 10px; font-size: 12.5px; position: relative; }
+  .srow .ic { width: 1.1em; text-align: center; flex: none; }
+  .srow .nm { min-width: 0; overflow-wrap: anywhere; }
+  .srow .who { color: var(--mut); }
+  .srow .w { margin-left: auto; color: var(--mut); font-variant-numeric: tabular-nums; flex: none; padding-left: 12px; }
+  .srow .fallback { color: var(--warn); font-size: 12px; }
+  .srow .bar { position: absolute; left: 10px; right: 10px; bottom: 0; height: 2px; overflow: hidden; }
+  .srow .bar::before { content: ""; display: block; height: 100%; width: 40%; border-radius: 1px; background: var(--info); animation: sl-slide 1.6s ease-in-out infinite; }
+  @keyframes sl-slide { from { transform: translateX(-40%); } to { transform: translateX(260%); } }
+  @keyframes sl-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+  .ic.run { display: inline-block; animation: sl-pulse 1.2s ease-in-out infinite; }
+  /* The stages folded into one line once the review is done, with each fallback and its reason beneath it. */
+  .sdone { font-size: 12.5px; margin: 10px 0 4px; }
+  .sfold { display: inline; font-weight: 400; }
+  .sfold summary { color: var(--vscode-textLink-foreground); cursor: pointer; font-size: 12px; margin-left: 8px; white-space: nowrap; }
+  .sfold .slist { margin-top: 6px; }
+  .fbnote { display: flex; gap: 6px; align-items: baseline; color: var(--mut); font-size: 12px; margin: 3px 0 0 20px; }
+  .fbnote.warn b { color: var(--warn); } .fbnote.bad b { color: var(--bad); } .fbnote.mut b { color: var(--mut); }
+  /* A section still being produced: a skeleton where its rows will land, and the line naming who is checking it. */
+  .skel { display: grid; gap: 6px; margin: 8px 0 6px; }
+  .sk { height: 10px; border-radius: 5px; background: var(--vscode-foreground); animation: sk-pulse 1.4s ease-in-out infinite; }
+  .sk.a { width: 88%; } .sk.b { width: 64%; } .sk.c { width: 76%; }
+  @keyframes sk-pulse { 0%, 100% { opacity: .08; } 50% { opacity: .16; } }
+  .checking { color: var(--info); font-size: 12px; margin: 0 0 6px; }
   .stamp { margin-left: auto; font-size: 11px; font-weight: 400; color: var(--mut); }
   .dash { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 12px 0; }
   .tile { border: 1px solid var(--vscode-panel-border); border-radius: 6px; padding: 8px 10px; }
@@ -1332,8 +1577,8 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
   <h1>${escapeHtml(result.pullRequest.title)}</h1>
   <div class="meta">${metaLine(result)}</div>
   ${sinceLine(result)}
-  <div class="stages">${stageChips(state)}</div>
-  ${countTiles(result)}
+  ${progressBlock(state)}
+  ${countTiles(result, criteriaChecking, claimsChecking)}
   ${asksSection(state)}
   <section id="story">${storySection(state)}</section>
   <section id="criteria">${criteriaSection(state)}</section>
@@ -1440,6 +1685,23 @@ ${contentsRail(state)}
   var focused = document.querySelector('.answer.focus') || document.querySelector('.sentence.focus');
   if (focused !== null) {
     focused.scrollIntoView({ block: 'center' });
+  }
+  // The running stage's elapsed time, and the review's time so far, tick while the page is open.
+  var clocks = Array.prototype.slice.call(document.querySelectorAll('.elapsed'));
+  function clockText(ms) {
+    var seconds = Math.max(0, Math.floor(ms / 1000));
+    return Math.floor(seconds / 60) + ':' + (seconds % 60 < 10 ? '0' : '') + (seconds % 60);
+  }
+  function tick() {
+    var now = Date.now();
+    clocks.forEach(function (el) {
+      var started = Number(el.getAttribute('data-started'));
+      if (!isNaN(started)) el.textContent = clockText(now - started);
+    });
+  }
+  if (clocks.length > 0) {
+    tick();
+    window.setInterval(tick, 1000);
   }
 }());
 </script>
