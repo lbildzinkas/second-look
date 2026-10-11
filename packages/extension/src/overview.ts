@@ -541,10 +541,14 @@ function progressBlock(state: OverviewState): string {
  * while it runs or is yet to come.
  */
 function endedStage(state: OverviewState, id: ReviewStageId): string | undefined {
-  const own = stageOf(state, id);
-  if (own === undefined || own.state === 'running' || own.state === 'to come') return undefined;
-  const detail = own.detail === undefined ? '' : `: ${own.detail}`;
-  return `${STAGE_NAMES[own.id]} ${own.state}${detail}`;
+  return stageEndLine(stageOf(state, id));
+}
+
+/** One ended stage as a plain line — its name, how it ended, and why — or undefined while it runs or is yet to come. */
+export function stageEndLine(record: ReviewStageRecord | undefined): string | undefined {
+  if (record === undefined || record.state === 'running' || record.state === 'to come') return undefined;
+  const detail = record.detail === undefined ? '' : `: ${record.detail}`;
+  return `${STAGE_NAMES[record.id]} ${record.state}${detail}`;
 }
 
 /**

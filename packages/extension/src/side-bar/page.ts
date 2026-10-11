@@ -1,5 +1,5 @@
-import { escapeHtml, claimWhere, issueName } from '../overview.js';
-import { isFinding, isUnmetCriterion, type AcceptanceCriterion, type Claim, type FindingRef, type LinkedIssue, type ReviewResult } from '@second-look/engine';
+import { escapeHtml, claimWhere, issueName, sanitiseUntrusted, stageEndLine } from '../overview.js';
+import { isFinding, isUnmetCriterion, type AcceptanceCriterion, type Claim, type FindingRef, type LinkedIssue, type ReviewResult, type ReviewStageId } from '@second-look/engine';
 import { anchorOf, type PartAnchor, type TreeComment, type TreePart, type TreeSection } from '../tree.js';
 import { progressBody } from './progress.js';
 import { pullRequestsBody } from './pull-requests.js';
@@ -39,6 +39,23 @@ function button(step: number, command: SideBarButton, label: string, options: { 
 
 function note(text: string): string {
   return `<p class="note">${escapeHtml(text)}</p>`;
+}
+
+/** True while one of the stages that produce a step's results is still running or yet to come. */
+function producing(state: SideBarState, ...ids: ReviewStageId[]): boolean {
+  const { reviewing, result } = state;
+  if (!reviewing || result === undefined) return false;
+  const stages = result.stages;
+  if (stages === undefined) return true;
+  return stages.some((stage) => ids.includes(stage.id) && (stage.state === 'running' || stage.state === 'to come'));
+}
+
+/** How one of the stages that produce a step's results ended, as the overview words it; undefined while it runs or is yet to come. */
+function stageLine(state: SideBarState, id: ReviewStageId): string | undefined {
+  const { result, progress } = state;
+  if (result === undefined) return undefined;
+  const stages = progress?.state === 'finished' ? progress.stages : result.stages;
+  return stageEndLine(stages?.find((record) => record.id === id));
 }
 
 /** A stable key for a part, from where it starts, for its row's ids. */
@@ -131,19 +148,37 @@ function claimFindingRow(claim: Claim, index: number): string {
   return (
     `<li class="finding">` +
     `<div class="head">${statePill(claim.verdict.kind)}<span class="where">${escapeHtml(claimWhere(claim))}</span></div>` +
-    `<q class="quote">${escapeHtml(claim.quote)}</q>` +
+    `<q class="quote">${sanitiseUntrusted(claim.quote).html}</q>` +
     `<div class="actions">${findingButton(5, 'draft', finding, 'Draft comment')}${findingButton(5, 'open', finding, 'Open')}${findingButton(5, 'verify', finding, 'Verify again')}${fetch}</div>` +
     `</li>`
   );
+}
+
+/** What step 5 says of claims none of which is checked: how the listing ended with none, why the judging left none, or that the verdicts are still to come. */
+function unjudgedNote(state: SideBarState, claims: NonNullable<ReviewResult['claims']>): string {
+  if (claims.claims.length === 0) return claims.outcome === 'fell back' ? `No claims: ${claims.detail}.` : 'The agent found no claim in the change.';
+  if (claims.judging !== undefined) return `None is checked: ${claims.judging.detail}.`;
+  if (producing(state, 'verdicts')) return 'The verdicts show here once the claims are checked.';
+  return `None is checked: ${stageLine(state, 'verdicts') ?? 'the verdicts pass did not run'}.`;
 }
 
 /** Step 5's body: the claim findings with their actions, the verified claims folded below them, the verify ask, and the tick. */
 function claimsBody(state: SideBarState): string {
   const { result, ticks } = state;
   if (result === undefined) return note('The claims and their verdicts show here once a review opens.');
-  const claims = result.claims?.claims ?? [];
+  const listing = result.claims;
+  const claims = listing?.claims ?? [];
   const judged = claims.some((claim) => claim.verdict.kind !== 'not checked');
-  if (!judged) return note(result.claims === undefined ? 'The claims show here once the review lists them.' : 'The verdicts show here once the claims are checked.') + `<div class="actions">${button(5, 'overview', 'Open the overview')}</div>`;
+  if (!judged) {
+    if (producing(state, 'claims', 'verdicts')) {
+      return note(listing === undefined ? 'The claims show here once the review lists them.' : unjudgedNote(state, listing)) + `<div class="actions">${button(5, 'overview', 'Open the overview')}</div>`;
+    }
+    return (
+      note(listing === undefined ? 'No claims were listed for this review.' : unjudgedNote(state, listing)) +
+      `<div class="actions">${button(5, 'verifyClaim', 'Verify a claim…')}${button(5, 'overview', 'Open the overview')}</div>` +
+      tickRow(5, 'claims', ticks?.claims === true, "I've checked the claims")
+    );
+  }
   const rows: string[] = [];
   let verified = 0;
   for (const [index, claim] of claims.entries()) {
@@ -173,7 +208,7 @@ function criterionRow(criterion: AcceptanceCriterion, index: number, issues: rea
   return (
     `<li class="finding">` +
     `<div class="head">${statePill(criterion.verdict.kind)}</div>` +
-    `<q class="quote">${escapeHtml(criterion.quote)}</q>` +
+    `<q class="quote">${sanitiseUntrusted(criterion.quote).html}</q>` +
     from +
     draft +
     `</li>`
@@ -213,12 +248,20 @@ function unexplainedRows(result: ReviewResult): { heading: boolean; body: string
   const described = unexplained.described.map((change, index) => (
     `<li class="finding">` +
     `<div class="head">${statePill('described, not in the code')}</div>` +
-    `<q class="quote">${escapeHtml(change.quote)}</q>` +
+    `<q class="quote">${sanitiseUntrusted(change.quote).html}</q>` +
     `<div class="meta">${describedWhere(change, index, issues)}</div>` +
     `<div class="actions">${findingButton(6, 'draft', { kind: 'described change', index }, 'Draft comment')}</div>` +
     `</li>`
   ));
   return { heading: true, body: `<ul class="findings" aria-label="Unexplained changes">${[...parts, ...described].join('')}</ul>` };
+}
+
+/** What step 6 says of criteria none of which is checked: how the reading ended with none, why the mapping left none, or that the verdicts are still to come. */
+function unmappedNote(state: SideBarState, criteria: NonNullable<ReviewResult['criteria']>): string {
+  if (criteria.mapping !== undefined) return `None is checked: ${criteria.mapping.detail}.`;
+  if (criteria.criteria.length === 0) return 'None is checked: no checklist was found to map.';
+  if (producing(state, 'criteria')) return 'The verdicts show here once the criteria are mapped.';
+  return `None is checked: ${stageLine(state, 'criteria') ?? 'the criteria mapping did not run'}.`;
 }
 
 /** Step 6's body: the criteria not fully met with their issue links and drafts, the met ones folded, the unexplained changes, and the tick. */
@@ -236,21 +279,19 @@ function criteriaBody(state: SideBarState): string {
       else rows.push(criterionRow(criterion, index, criteria.issues));
     }
   }
-  // The tick shows once the step's results are in: any criterion mapped, or the comparison done when there is no criterion to map.
-  const settled =
-    criteria?.criteria.some((criterion) => criterion.verdict.kind !== 'not checked') === true ||
-    (result.unexplained?.outcome === 'compared' && (criteria === undefined || criteria.criteria.length === 0));
+  // The tick shows once the step's results are in: its stages ended, whatever they left.
+  const settled = !producing(state, 'unexplained', 'criteria');
   const unexplained = unexplainedRows(result);
   const list =
     criteria === undefined
-      ? note('The acceptance criteria show here once the review reads the linked issues.')
-      : rows.length === 0 && criteria.criteria.some((criterion) => criterion.verdict.kind !== 'not checked')
-        ? note('Every criterion is met.')
-        : rows.length === 0 && criteria.criteria.length > 0
-          ? note('The verdicts show here once the criteria are mapped.')
-          : rows.length === 0
-            ? ''
-            : `<ul class="findings" aria-label="Criteria not fully met">${rows.join('')}</ul>`;
+      ? note(settled ? 'No criteria were read for this review.' : 'The acceptance criteria show here once the review reads the linked issues.')
+      : criteria.outcome === 'unreadable'
+        ? note(`${criteria.detail}. No criteria were read, so none is checked.`)
+        : rows.length > 0
+          ? `<ul class="findings" aria-label="Criteria not fully met">${rows.join('')}</ul>`
+          : criteria.criteria.some((criterion) => criterion.verdict.kind !== 'not checked')
+            ? note('Every criterion is met.')
+            : note(unmappedNote(state, criteria));
   const folded = met === 0 ? '' : `<p class="folded"><span class="tone-ok" aria-hidden="true">✓</span> ${met} met</p>`;
   const unexplainedHeading = unexplained.heading ? '<h3 class="group">Unexplained changes</h3>' : '';
   return (
@@ -434,6 +475,9 @@ export function sideBarHtml(nonce: string, body: string): string {
   .finding .head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .finding .where { color: var(--vscode-descriptionForeground); font-size: 12px; overflow-wrap: anywhere; }
   .finding .quote { display: block; margin: 3px 0; overflow-wrap: anywhere; }
+  .hidden { border: 1px dashed var(--vscode-editorWarning-foreground, var(--vscode-foreground)); border-radius: 3px; padding: 0 4px; }
+  .flag { color: var(--vscode-editorWarning-foreground, var(--vscode-foreground)); font-size: 11px; font-weight: 600; margin-right: 6px; }
+  .shown { font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; }
   .finding .meta { display: flex; align-items: center; gap: 4px 6px; flex-wrap: wrap; margin-top: 2px; font-size: 12px; color: var(--vscode-descriptionForeground); }
   .pill { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; border: 1px solid currentColor; border-radius: 4px; padding: 0 5px; line-height: 16px; white-space: nowrap; }
   .pill .icon { width: 1em; text-align: center; }
