@@ -180,7 +180,8 @@ describe("the side bar's page", () => {
     expect(body).toContain('<h3 class="group" title="The parts to read first.">Must review</h3>');
     expect(body.indexOf('>Must review<')).toBeLessThan(body.indexOf('>Worth reviewing<'));
     expect(body.indexOf('>Worth reviewing<')).toBeLessThan(body.indexOf('>Noise<'));
-    expect(body.match(/<input type="checkbox"/g)).toHaveLength(7);
+    // Seven parts, each with its own reviewed checkbox; the steps' ticks carry their own labels.
+    expect(body.match(/aria-label="Reviewed: /g)).toHaveLength(7);
     expect(body).toMatch(/<input type="checkbox" id="mark-src\/retry\.py@[^"]*" data-anchor="[^"]*" aria-label="Reviewed: src\/retry\.py" checked>/);
     expect(body).toMatch(/<input type="checkbox" id="mark-src\/settings\.ts@[^"]*" data-anchor="[^"]*" aria-label="Reviewed: src\/settings\.ts">/);
     expect(body).toContain('class="open" id="open-src/retry.py@');

@@ -470,7 +470,7 @@ describe("the side bar's page script", () => {
     for (const element of interactive) {
       if (element.tagName === 'input') {
         expect(element.getAttribute('type')).toBe('checkbox');
-        expect(element.getAttribute('aria-label')).toMatch(/^Reviewed: /);
+        expect(element.getAttribute('aria-label')).toMatch(/^Reviewed: |^I've checked /);
       } else {
         expect(element.getAttribute('type')).toBe('button');
       }
