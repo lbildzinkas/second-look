@@ -178,6 +178,8 @@ export interface StubState {
   workspaceConfiguration: Record<string, unknown>;
   /** The settings the extension wrote, in order: the key, the value and the target. */
   configurationUpdates: { key: string; value: unknown; target: unknown }[];
+  /** The extension's global state, which the context's memento reads and writes. */
+  globalState: Record<string, unknown>;
   /** The editors currently visible; tests set these and fire the change. */
   visibleTextEditors: unknown[];
   /** The editor that has focus, with its document and selection; none unless a test sets one. */
@@ -233,6 +235,7 @@ export const stub: StubState = {
   configuration: {},
   workspaceConfiguration: {},
   configurationUpdates: [],
+  globalState: {},
   visibleTextEditors: [],
   activeTextEditor: undefined,
   files: new Map(),
@@ -264,6 +267,7 @@ export const stub: StubState = {
     stub.configuration = {};
     stub.workspaceConfiguration = {};
     stub.configurationUpdates = [];
+    stub.globalState = {};
     stub.visibleTextEditors = [];
     stub.activeTextEditor = undefined;
     visibleEditorListeners.clear();
@@ -882,7 +886,24 @@ export const authentication = {
   },
 };
 
-/** An extension context with the subscriptions activate records. */
-export function stubContext(): { subscriptions: StubDisposable[] } {
-  return { subscriptions: [] };
+/** The memento a context keeps its state in, backed by `stub.globalState`. */
+export interface StubMemento {
+  get<T>(key: string, defaultValue?: T): T | undefined;
+  update(key: string, value: unknown): Promise<void>;
+  keys(): readonly string[];
+}
+
+/** An extension context with the subscriptions activate records, and its global state. */
+export function stubContext(): { subscriptions: StubDisposable[]; globalState: StubMemento } {
+  return {
+    subscriptions: [],
+    globalState: {
+      get: <T,>(key: string, defaultValue?: T): T | undefined => (stub.globalState[key] as T | undefined) ?? defaultValue,
+      update: (key: string, value: unknown): Promise<void> => {
+        stub.globalState[key] = value;
+        return Promise.resolve();
+      },
+      keys: () => Object.keys(stub.globalState),
+    },
+  };
 }

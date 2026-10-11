@@ -1,6 +1,7 @@
 import { parsePullRequestUrl, partsLeft, reviewedState, type AgentName, type Part, type ReviewedMarks, type ReviewResult } from '@second-look/engine';
 import type { AgentSettings } from '../agent-settings.js';
 import { partsInReadingOrder, type TreeSection } from '../tree.js';
+import type { SetupView } from './setup.js';
 
 /** Where one step of the review path stands. */
 export type StepState = 'done' | 'current' | 'running' | 'to come';
@@ -21,6 +22,8 @@ export interface SideBarState {
   reviewing: boolean;
   /** True once the reviewer opened the story, or moved on to the parts. */
   storyRead: boolean;
+  /** Step 1's setup form; while it is open, step 1 is the current step. */
+  setup?: SetupView;
 }
 
 /** One step's card, as its header shows it. */
@@ -57,8 +60,8 @@ export function setupLine(settings: AgentSettings): string {
 
 /**
  * The eight steps of the review path (ADR 0008), each with its state: done
- * where it can be measured — the settings always choose an agent, a review
- * is open, the story was read, every part is reviewed — running while its
+ * where it can be measured — the settings always choose an agent, unless
+ * the setup form is open, a review is open, the story was read, every part is reviewed — running while its
  * results are still arriving, and otherwise current or still to come. The
  * current step is the first one not done; its card is open and the others
  * fold. Steps 5 to 8 are never done yet: their cards point to the overview,
@@ -69,7 +72,7 @@ export function sideBarSteps(state: SideBarState): Step[] {
   const open = result !== undefined;
   const left = open ? partsLeft(result.parts, state.marks) : 0;
   const comments = state.sections.flatMap((section) => section.parts).filter((node) => node.kind === 'comment').length;
-  const done = [true, open, open && state.storyRead, open && left === 0, false, false, false, false];
+  const done = [state.setup?.open !== true, open, open && state.storyRead, open && left === 0, false, false, false, false];
   const running = [
     false,
     reviewing && !open,

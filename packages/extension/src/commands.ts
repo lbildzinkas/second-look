@@ -110,3 +110,6 @@ export const PART_BANNER_CONTEXT = 'second-look-part-banner' as const;
 
 /** Opens the quick pick that changes the agent, model, effort and account label, as the status bar entry does. */
 export const CHOOSE_AGENT_COMMAND = 'second-look.chooseAgent' as const;
+
+/** The command that opens step 1's setup form in the side bar, which the agent quick pick's last item runs. */
+export const OPEN_SETUP_COMMAND = 'second-look.openSetup' as const;

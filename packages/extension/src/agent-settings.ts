@@ -39,7 +39,7 @@ export interface AgentSettings {
 }
 
 /** Each agent's path setting in the `second-look` section. */
-const AGENT_PATH_SETTINGS: Record<AgentName, string> = { pi: 'piPath', 'claude-code': 'claudeCodePath' };
+export const AGENT_PATH_SETTINGS = { pi: 'piPath', 'claude-code': 'claudeCodePath' } as const satisfies Record<AgentName, string>;
 
 /**
  * Reads each agent's path setting: the executable the engine starts in
@@ -62,6 +62,9 @@ export const AGENT_SETTING_KEYS = {
   effort: 'agentEffort',
   account: 'agentAccount',
 } as const satisfies Record<Exclude<keyof AgentSettings, 'path'>, string>;
+
+/** Every setting key in the `second-look` section the companion writes to the user settings. */
+export type SettingKey = (typeof AGENT_SETTING_KEYS)[keyof typeof AGENT_SETTING_KEYS] | (typeof AGENT_PATH_SETTINGS)[keyof typeof AGENT_PATH_SETTINGS];
 
 /** The effort levels each agent accepts, as the settings document them. */
 export const EFFORT_LEVELS: Readonly<Record<AgentName, readonly string[]>> = {

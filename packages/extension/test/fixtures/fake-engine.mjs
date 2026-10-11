@@ -26,6 +26,8 @@
 //   FAKE_ENGINE_STAGE_ONLY        send the stage notification, then never answer
 //   FAKE_ENGINE_ANSWER_DELAY_MS   wait this long after the stage before answering
 //   FAKE_ENGINE_VIEWED_ERROR      answer markViewed with this plain error message
+//   FAKE_ENGINE_PROBE_RESULT      JSON probe of the installed agents to return for agents/probe
+//   FAKE_ENGINE_TEST_RESULT       JSON agent test result to return for agents/test
 //
 // The reviewed marks live in the fake's memory: markReviewed ticks or
 // clears a part by its name, reviewedMarks reads them back, and markViewed
@@ -63,6 +65,7 @@ const stageOnly = Boolean(process.env.FAKE_ENGINE_STAGE_ONLY);
 const answerDelayMs = Number(process.env.FAKE_ENGINE_ANSWER_DELAY_MS ?? '0');
 const viewedError = process.env.FAKE_ENGINE_VIEWED_ERROR;
 const probeResult = process.env.FAKE_ENGINE_PROBE_RESULT ? JSON.parse(process.env.FAKE_ENGINE_PROBE_RESULT) : { agents: [] };
+const testResult = process.env.FAKE_ENGINE_TEST_RESULT ? JSON.parse(process.env.FAKE_ENGINE_TEST_RESULT) : null;
 let marks = [];
 
 if (process.env.FAKE_ENGINE_IGNORE_SIGTERM) {
@@ -114,6 +117,11 @@ function handle(line) {
   }
   if (request.method === 'agents/probe') {
     send({ jsonrpc: '2.0', id: request.id, result: probeResult });
+    return;
+  }
+  if (request.method === 'agents/test') {
+    if (testResult) send({ jsonrpc: '2.0', id: request.id, result: testResult });
+    else fail(request.id, -32002, 'this engine runs no agent, so it has none to test');
     return;
   }
   if (request.method === 'review') {
