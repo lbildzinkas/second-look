@@ -27,7 +27,8 @@ import {
   activate,
 } from '../../src/extension.js';
 import { CHANGE_SCHEME, changeUri, libraryUri } from '../../src/change-copies.js';
-import { CHOOSE_AGENT_COMMAND, askCommand } from '../../src/commands.js';
+import { CHOOSE_AGENT_COMMAND, OPEN_SETUP_COMMAND, askCommand } from '../../src/commands.js';
+import { SETUP_SEEN_KEY } from '../../src/side-bar/setup-form.js';
 import { escapeMarkdown } from '../../src/findings.js';
 import { SEND_REVIEW_VIEW_TYPE } from '../../src/send-page.js';
 import { claimsResult, criteriaResult, docLinksResult, fetchedResult, judgedResult, mixedResult, offeredResult, storyResult, unexplainedResult } from '../results.js';
@@ -137,6 +138,7 @@ async function reviewWithFakeEngine(options: FakeEngineOptions): Promise<SideBar
     askCommand('cover'),
     MARK_REVIEWED_COMMAND,
     CHOOSE_AGENT_COMMAND,
+    OPEN_SETUP_COMMAND,
   ]);
 
   stub.inputBoxResult = PR_URL;
@@ -249,6 +251,9 @@ function editorFor(uri: { toString(): string }): RecordingEditor {
 
 beforeEach(() => {
   stub.reset();
+  // A reviewer past the first open: step 1's setup form stays folded, and
+  // probes nothing, unless a test opens it. The unit tests cover the first open.
+  stub.globalState[SETUP_SEEN_KEY] = true;
 });
 
 describe('activating the companion', () => {
@@ -280,6 +285,7 @@ describe('activating the companion', () => {
       askCommand('cover'),
       MARK_REVIEWED_COMMAND,
       CHOOSE_AGENT_COMMAND,
+      OPEN_SETUP_COMMAND,
     ]);
     expect(stub.treeViews).toEqual([]);
     expect(stub.webviewViewProviders.map((entry) => entry.id)).toEqual([REVIEW_TREE_VIEW]);
@@ -1035,6 +1041,7 @@ describe('the overview', () => {
     expect(stub.warningMessages).toEqual(['Review a pull request first, then open its overview.']);
 
     stub.reset();
+    stub.globalState[SETUP_SEEN_KEY] = true;
     await reviewWithFakeEngine({ result: storyResult(), logName: 'reopen.log' });
     overview().dispose();
     await registeredCommands().get(OPEN_OVERVIEW_COMMAND)!();
@@ -1455,6 +1462,7 @@ describe('the pending review and sending it', () => {
   it('submits each of the three kinds, one write each', async () => {
     for (const submit of ['comment', 'approve', 'request changes'] as const) {
       stub.reset();
+      stub.globalState[SETUP_SEEN_KEY] = true;
       await reviewWithFakeEngine({ result: mixedResult(), logName: `kind-${submit}.log` });
       const thread = stub.commentControllers[0]!.createCommentThread(
         head('src/retry.py'),

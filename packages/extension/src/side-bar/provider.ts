@@ -11,6 +11,8 @@ import {
 import { isBannerPartRef } from '../part-banner.js';
 import { partAtAnchor, type PartAnchor } from '../tree.js';
 import { sideBarBody, sideBarHtml, type SideBarButton } from './page.js';
+import { setupMessage, type SetupMessage } from './setup.js';
+import type { SetupForm } from './setup-form.js';
 import { nextPartToReview, type SideBarState } from './steps.js';
 
 /** The existing command each card button runs, beside the ones that need a part. */
@@ -26,13 +28,15 @@ export type SideBarMessage =
   | { type: 'ready' }
   | { type: 'command'; command: SideBarButton }
   | { type: 'openPart'; anchor: PartAnchor }
-  | { type: 'mark'; anchor: PartAnchor; reviewed: boolean };
+  | { type: 'mark'; anchor: PartAnchor; reviewed: boolean }
+  | SetupMessage;
 
 /** Reads a side-bar message out of what the webview delivered, if it is one. */
 export function sideBarMessage(value: unknown): SideBarMessage | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
   const { type, command, anchor, reviewed } = value as Record<string, unknown>;
   if (type === 'ready') return { type };
+  if (type === 'setup') return setupMessage(value);
   if (type === 'command' && (command === 'nextPart' || (typeof command === 'string' && Object.hasOwn(BUTTON_COMMANDS, command)))) {
     return { type, command: command as SideBarButton };
   }
@@ -48,7 +52,8 @@ export function sideBarMessage(value: unknown): SideBarMessage | undefined {
  * eight step cards, drawn from the review session's state. Every press
  * runs an existing command — the reviewed checkbox through the same
  * mark-reviewed path as the part banner — so the Command Palette and the
- * side bar act alike. The view's badge counts the parts left to review.
+ * side bar act alike, except step 1's setup form, whose changes and
+ * presses go to the form. The view's badge counts the parts left to review.
  */
 export class SideBarProvider implements vscode.WebviewViewProvider {
   private view: vscode.WebviewView | undefined;
@@ -57,24 +62,34 @@ export class SideBarProvider implements vscode.WebviewViewProvider {
 
   private badge: vscode.ViewBadge | undefined;
 
-  constructor(state: SideBarState) {
+  /** Step 1's setup form, when the side bar carries one. */
+  private readonly setup: SetupForm | undefined;
+
+  constructor(state: SideBarState, setup?: SetupForm) {
     this.state = state;
+    this.setup = setup;
   }
 
-  /** What the side bar shows now. */
+  /** What the side bar shows now, step 1's setup form included. */
   get current(): SideBarState {
-    return this.state;
+    return this.setup === undefined ? this.state : { ...this.state, setup: this.setup.current };
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view;
     view.webview.options = { enableScripts: true, enableCommandUris: false, localResourceRoots: [] };
-    view.webview.html = sideBarHtml(randomUUID(), sideBarBody(this.state));
+    view.webview.html = sideBarHtml(randomUUID(), sideBarBody(this.current));
     view.webview.onDidReceiveMessage((message) => this.handle(message));
     view.onDidDispose(() => {
       if (this.view === view) this.view = undefined;
     });
     view.badge = this.badge;
+    this.setup?.shown();
+  }
+
+  /** Draws the side bar again, such as when step 1's setup form changed. */
+  redraw(): void {
+    this.post();
   }
 
   /** Shows the session as it now stands, with the badge counting the parts left. */
@@ -87,7 +102,7 @@ export class SideBarProvider implements vscode.WebviewViewProvider {
   }
 
   private post(): void {
-    void this.view?.webview.postMessage({ type: 'render', body: sideBarBody(this.state) });
+    void this.view?.webview.postMessage({ type: 'render', body: sideBarBody(this.current) });
   }
 
   private handle(value: unknown): void {
@@ -95,6 +110,12 @@ export class SideBarProvider implements vscode.WebviewViewProvider {
     if (message === undefined) return;
     if (message.type === 'ready') {
       this.post();
+      return;
+    }
+    if (message.type === 'setup') {
+      this.setup?.handle(message).then(undefined, (error: unknown) => {
+        void vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
+      });
       return;
     }
     const { result, marks } = this.state;

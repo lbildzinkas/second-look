@@ -298,10 +298,14 @@ export async function run(): Promise<void> {
       sessionsRequested.some((scopes) => scopes?.includes('repo') === true),
       'the GitHub session came through the real authentication API',
     );
+    // On this clean editor's first open, step 1's setup form probes the
+    // installed agents as the side bar opens (issue 135); that probe runs
+    // no model, and the review round trip is every other request.
     const requests = readFileSync(join(workDir, 'engine.log'), 'utf8')
       .split('\n')
       .filter((line) => line !== '')
-      .map((line) => JSON.parse(line) as EngineRequest);
+      .map((line) => JSON.parse(line) as EngineRequest)
+      .filter((request) => request.method !== 'agents/probe');
     deepStrictEqual(requests.length, 3);
     ok(requests[0] && requests[0].method === 'initialize');
     ok(requests[1] && requests[1].method === 'review');

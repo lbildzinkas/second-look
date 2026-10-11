@@ -1,5 +1,6 @@
 import { escapeHtml } from '../overview.js';
 import { anchorOf, type PartAnchor, type TreeComment, type TreePart, type TreeSection } from '../tree.js';
+import { setupFormBody } from './setup.js';
 import { pullRequestLine, sideBarSteps, type SideBarState, type Step, type StepState } from './steps.js';
 
 /** The buttons the side bar's cards carry, each running an existing command. */
@@ -86,7 +87,9 @@ function stepBody(step: Step, state: SideBarState): string {
   const { result } = state;
   switch (step.number) {
     case 1:
-      return note(`Every agent pass runs on ${step.summary}. Change it in the settings or from the status bar.`);
+      return state.setup?.open === true
+        ? setupFormBody(state.setup)
+        : note(`Every agent pass runs on ${step.summary}. Change it with the change link, in the settings or from the status bar.`);
     case 2:
       return result === undefined
         ? note(state.reviewing ? 'Reading the pull request…' : 'Pick the pull request to review.') + `<div class="actions">${button(2, 'review', 'Review a pull request', { primary: true })}</div>`
@@ -106,6 +109,12 @@ function stepBody(step: Step, state: SideBarState): string {
   }
 }
 
+/** Step 1's change link, which opens the setup form, beside its folded heading. */
+function changeLink(step: Step, state: SideBarState): string {
+  if (step.number !== 1 || state.setup === undefined || state.setup.open) return '';
+  return '<button type="button" class="link" id="step-1-change" data-action="open" data-value="" aria-label="Change the agent, model and effort">change</button>';
+}
+
 /**
  * One step's card: a heading whose button folds and opens the card, with
  * the step's state as an icon and in words, then its body. The current
@@ -120,7 +129,7 @@ function stepCard(step: Step, state: SideBarState): string {
     `<li class="step ${step.state.replace(' ', '-')}" id="${id}"${current}>` +
     `<h2><button type="button" class="fold" id="${id}-title" data-step="${step.number}" aria-expanded="${step.open}" aria-controls="${id}-body">` +
     `<span class="icon" aria-hidden="true">${STATE_ICONS[step.state]}</span>` +
-    `<span class="title">${step.number} ${escapeHtml(step.title)}</span>${summary}<span class="state">${step.state}</span></button></h2>` +
+    `<span class="title">${step.number} ${escapeHtml(step.title)}</span>${summary}<span class="state">${step.state}</span></button>${changeLink(step, state)}</h2>` +
     `<div class="body" id="${id}-body" role="region" aria-labelledby="${id}-title"${hidden}>${stepBody(step, state)}</div>` +
     `</li>`
   );
@@ -153,7 +162,7 @@ export function sideBarHtml(nonce: string, body: string): string {
   .step { border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); border-radius: 4px; }
   .step[aria-current] { border-color: var(--vscode-focusBorder); }
   .step.to-come { opacity: 0.75; }
-  h2 { margin: 0; font-size: inherit; }
+  h2 { display: flex; align-items: center; margin: 0; font-size: inherit; }
   button { font: inherit; cursor: pointer; }
   button:focus-visible, input:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
   .fold { display: flex; align-items: center; gap: 6px; width: 100%; padding: 5px 8px; color: inherit; background: none; border: none; text-align: left; font-weight: 600; }
@@ -187,6 +196,16 @@ export function sideBarHtml(nonce: string, body: string): string {
   .secondary { color: var(--vscode-button-secondaryForeground); background-color: var(--vscode-button-secondaryBackground); }
   .secondary:hover { background-color: var(--vscode-button-secondaryHoverBackground); }
   button:disabled { opacity: 0.5; cursor: default; }
+  .link { flex: none; padding: 0 8px; color: var(--vscode-textLink-foreground); background: none; border: none; }
+  .link:hover { text-decoration: underline; }
+  .setup .label { display: block; margin: 8px 0 3px; font-size: 11px; font-weight: 600; color: var(--vscode-descriptionForeground); }
+  .choices { display: flex; flex-wrap: wrap; gap: 4px; }
+  .choice { display: flex; flex-direction: column; align-items: flex-start; padding: 3px 8px; color: var(--vscode-foreground); background: none; border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); border-radius: 3px; text-align: left; }
+  .choice[aria-checked="true"] { border-color: var(--vscode-focusBorder); background-color: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground, var(--vscode-foreground)); }
+  .choice small { font-size: 11px; color: var(--vscode-descriptionForeground); }
+  .setup-text { box-sizing: border-box; width: 100%; padding: 3px 6px; color: var(--vscode-input-foreground); background-color: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; font: inherit; }
+  .problem { color: var(--vscode-errorForeground); }
+  .test { overflow-wrap: anywhere; }
 </style>
 </head>
 <body>
@@ -226,20 +245,34 @@ export function sideBarHtml(nonce: string, body: string): string {
       vscode.postMessage({ type: 'openPart', anchor: anchorOf(pressed) });
     } else if (pressed.hasAttribute('data-command')) {
       vscode.postMessage({ type: 'command', command: pressed.getAttribute('data-command') });
+    } else if (pressed.hasAttribute('data-field')) {
+      vscode.postMessage({ type: 'setup', field: pressed.getAttribute('data-field'), value: pressed.getAttribute('data-value') });
+    } else if (pressed.hasAttribute('data-action')) {
+      var fields = {};
+      Array.prototype.forEach.call(root.querySelectorAll('input.setup-text'), function (box) { fields[box.getAttribute('data-field')] = box.value; });
+      vscode.postMessage({ type: 'setup', action: pressed.getAttribute('data-action'), value: pressed.getAttribute('data-value'), fields: fields });
     }
   });
   root.addEventListener('change', function (event) {
     var box = event.target;
+    if (box.classList.contains('setup-text')) {
+      vscode.postMessage({ type: 'setup', field: box.getAttribute('data-field'), value: box.value });
+      return;
+    }
     if (box.type !== 'checkbox') return;
     vscode.postMessage({ type: 'mark', anchor: anchorOf(box), reviewed: box.checked });
   });
   window.addEventListener('message', function (event) {
     var message = event.data;
     if (message === null || typeof message !== 'object' || message.type !== 'render' || typeof message.body !== 'string') return;
-    var focused = document.activeElement !== null && root.contains(document.activeElement) ? document.activeElement.id : '';
+    var active = document.activeElement !== null && root.contains(document.activeElement) ? document.activeElement : null;
+    var focused = active === null ? '' : active.id;
+    // A text box being typed in keeps its text: it reaches the extension only once it changes.
+    var typed = active !== null && active.classList.contains('setup-text') ? active.value : null;
     root.innerHTML = message.body;
     keepFolds();
     var again = focused === '' ? null : document.getElementById(focused);
+    if (again !== null && typed !== null) again.value = typed;
     if (again !== null) again.focus();
   });
   keepFolds();

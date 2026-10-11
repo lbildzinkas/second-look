@@ -15,6 +15,7 @@ import {
   REVIEW_METHOD,
   REVIEW_STAGE_METHOD,
   SEND_REVIEW_METHOD,
+  TEST_AGENT_METHOD,
   type AskAnswer,
   type AskedClaim,
   type AskKind,
@@ -30,15 +31,18 @@ import {
   type ReviewedMarks,
   type ReviewResult,
   type SentReview,
+  type TestAgentRpcResult,
   type ViewedFiles,
 } from '@second-look/engine';
 import {
+  AgentTestProtocolError,
   AgentsProtocolError,
   AskProtocolError,
   DraftProtocolError,
   MarksProtocolError,
   ProtocolError,
   SendProtocolError,
+  isAgentTestResult,
   isAgentsProbe,
   isAskAnswer,
   isDraftComment,
@@ -98,6 +102,9 @@ const HANDSHAKE_TIMEOUT_MS = 10_000;
 
 /** How long probing the installed agents may take: each agent's version, help and guard check. */
 const PROBE_AGENTS_TIMEOUT_MS = 90_000;
+
+/** How long the agent test may take: the agent's probe, and its one run of up to five minutes. */
+const TEST_AGENT_TIMEOUT_MS = 390_000;
 
 /** How long one review request may take before the engine is given up on. */
 const REVIEW_TIMEOUT_MS = 120_000;
@@ -246,6 +253,25 @@ export class EngineClient {
     const result = await this.request(PROBE_AGENTS_METHOD, { paths }, PROBE_AGENTS_TIMEOUT_MS);
     if (!isAgentsProbe(result)) {
       throw new AgentsProtocolError();
+    }
+    return result;
+  }
+
+  /**
+   * Tests one agent, model and effort (issue 132), sent only when the
+   * reviewer presses Test: the engine runs the choice once, locked down as
+   * a review runs it, on a tiny fixed prompt. A failed run is an answer —
+   * the reason in plain words, with whatever stamp the run had — not a
+   * rejection; rejects with the engine's plain message when the engine
+   * fails.
+   */
+  async testAgent(agent: ReviewAgentChoice): Promise<TestAgentRpcResult> {
+    if (!this.handshaken) {
+      throw new Error('the engine has not completed its handshake yet');
+    }
+    const result = await this.request(TEST_AGENT_METHOD, { agent }, TEST_AGENT_TIMEOUT_MS);
+    if (!isAgentTestResult(result)) {
+      throw new AgentTestProtocolError();
     }
     return result;
   }
