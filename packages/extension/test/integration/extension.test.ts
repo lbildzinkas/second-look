@@ -31,7 +31,7 @@ import { CHOOSE_AGENT_COMMAND, OPEN_SETUP_COMMAND, REFRESH_PULL_REQUESTS_COMMAND
 import { SETUP_SEEN_KEY } from '../../src/side-bar/setup-form.js';
 import { escapeMarkdown } from '../../src/findings.js';
 import { SEND_REVIEW_VIEW_TYPE } from '../../src/send-page.js';
-import { claimsResult, criteriaResult, docLinksResult, fetchedResult, judgedResult, mixedResult, offeredResult, reviewStages, storyResult, unexplainedResult } from '../results.js';
+import { claimsResult, criteriaResult, docLinksResult, fetchedResult, judgedResult, mappedCriteriaResult, mixedResult, offeredResult, reviewStages, storyResult, unexplainedResult } from '../results.js';
 import { changePieces, markedPart } from '@second-look/engine';
 import { OVERVIEW_VIEW_TYPE } from '../../src/overview.js';
 import type { SideBarProvider } from '../../src/side-bar/provider.js';
@@ -2003,6 +2003,16 @@ describe('reviewed marks', () => {
 });
 
 describe('the side bar', () => {
+  /** The requests the fake engine logged, as JSON values. */
+  function engineRequests(logName: string): { method: string; params?: Record<string, unknown> }[] {
+    return readFileSync(join(workDir, logName), 'utf8')
+      .split('\n')
+      .filter((line) => line !== '')
+      .map((line) => JSON.parse(line) as { method: string; params?: Record<string, unknown> });
+  }
+
+  const head = (path: string) => changeUri('head', mixedResult().copies.head.commit, path);
+
   /** Which step's card is open: the current step's. */
   function currentStep(view: SideBarView): string | undefined {
     return /data-current="(\d)"/.exec(String((view.page.webview.posted.at(-1) as { body?: string } | undefined)?.body ?? view.page.webview.html))?.[1];
@@ -2066,6 +2076,141 @@ describe('the side bar', () => {
     stub.configuration = { 'second-look.agent': 'claude-code', 'second-look.agentModel': 'sonnet', 'second-look.agentEffort': 'high' };
     stub.fireConfigurationChange();
     expect(String((view.page.webview.posted.at(-1) as { body: string }).body)).toContain('<span class="summary">Claude Code · sonnet · effort high</span>');
+  });
+
+  it("lists the claim findings on step 5, every button running the command the finding's thread and the overview offer", async () => {
+    const shown = offeredResult();
+    const draft = {
+      finding: { kind: 'claim', index: 1 },
+      statement: 'Gives up after three attempts, whatever the status.',
+      body: 'The docstring says three attempts, but `src/retry.py:6` loops five times.',
+      promptVersion: '1',
+      stamp: { agent: 'pi', agentVersion: '0.86.1', model: 'zai/glm-4.6', effort: null, runAt: '2026-10-06T00:00:00.000Z' },
+    };
+    const verified = {
+      ask: 'verify',
+      part: 0,
+      partName: 'src/retry.py',
+      sections: [{ heading: 'Verdict', text: 'unverifiable, from the change itself: the status check is in the library.' }],
+      cited: [],
+      promptVersion: '5',
+      stamp: { agent: 'pi', agentVersion: '0.86.1', model: 'zai/glm-4.6', effort: null, runAt: '2026-10-07T00:00:00.000Z' },
+      claim: {
+        index: 2,
+        // The verify ask judges the claim again and still cannot settle it
+        // from the change alone, so its answer keeps the library the claim
+        // needs and the fetch its verdict offers — the fetch pressed below
+        // finds that offer, the way the engine's own answer carries it.
+        claim: { ...shown.claims!.claims[2]!, asked: true },
+      },
+    };
+    const view = await reviewWithFakeEngine({ result: shown, draftResult: draft, askResult: verified, fetchResult: fetchedResult('/cache/libraries/requests-2.32.3', undefined), logName: 'step-5.log' });
+    // The parts all reviewed, the claims' card is the current one, with its findings.
+    for (const part of shown.parts) await tick(view, part.name ?? part.path, true);
+    await until('the claims card to open', () => currentStep(view) === '5');
+    const body = String((view.page.webview.posted.at(-1) as { body: string }).body);
+    expect(body).toContain('<span class="pill tone-bad"><span class="icon" aria-hidden="true">✕</span> refuted</span><span class="where">docstring · src/retry.py:3–4</span>');
+    expect(body).toContain('<q class="quote">Gives up after three attempts, whatever the status.</q>');
+    expect(body).toContain('<p class="folded"><span class="tone-ok" aria-hidden="true">✓</span> 1 verified</p>');
+    expect(body).toMatch(/<input type="checkbox" id="step-5-tick" data-tick="claims"/);
+    stub.executedCommands = [];
+
+    // Draft comment runs the draft command, and the engine drafts from the finding.
+    await press(view, { type: 'finding', action: 'draft', kind: 'claim', index: 1 });
+    expect(stub.executedCommands).toEqual([{ id: DRAFT_COMMENT_COMMAND, args: [{ kind: 'claim', index: 1 }] }]);
+    expect(engineRequests('step-5.log').at(-1)).toMatchObject({ method: 'draftComment', params: { url: PR_URL, finding: { kind: 'claim', index: 1 } } });
+    expect(stub.commentControllers[0]!.threads.at(-1)).toMatchObject({ label: 'Draft comment · src/retry.py:3' });
+    stub.executedCommands = [];
+
+    // Open opens the finding's line in the read-only head copy.
+    await press(view, { type: 'finding', action: 'open', kind: 'claim', index: 1 });
+    expect(stub.executedCommands.at(-1)).toEqual({ id: 'vscode.open', args: [head('src/retry.py'), { selection: new Range(2, 0, 2, 0), preview: true }] });
+    stub.executedCommands = [];
+
+    // Verify again runs the verify ask about that claim alone, with no pick to make.
+    await press(view, { type: 'finding', action: 'verify', kind: 'claim', index: 2 });
+    expect(stub.quickPicks).toEqual([]);
+    expect(engineRequests('step-5.log').at(-1)).toMatchObject({ method: 'ask', params: { url: PR_URL, ask: 'verify', part: 0, claim: { index: 2 } } });
+    stub.executedCommands = [];
+
+    // The fetch downloads only when pressed, and the judged claim replaces the one shown.
+    await press(view, { type: 'finding', action: 'fetch', kind: 'claim', index: 2 });
+    expect(stub.executedCommands).toEqual([{ id: FETCH_LIBRARY_COMMAND, args: [2] }]);
+    expect(engineRequests('step-5.log').at(-1)).toMatchObject({ method: 'fetchLibrary', params: { url: PR_URL, claim: 2 } });
+    expect(view.provider.current.result?.claims?.claims[2]?.verdict).toMatchObject({ kind: 'refuted', source: 'library source at the pinned version' });
+    stub.executedCommands = [];
+
+    // Verify a claim… runs the same ask with no claim named, so the reviewer picks one.
+    stub.quickPickResult = { label: 'Never retries a 4xx.', index: 2 };
+    await press(view, { type: 'command', command: 'verifyClaim' });
+    expect(stub.quickPicks[0]!.title).toBe('Verify this claim');
+    expect(engineRequests('step-5.log').at(-1)).toMatchObject({ method: 'ask', params: { claim: { index: 2 } } });
+    expect(stub.errorMessages).toEqual([]);
+  });
+
+  it("lists the criteria not fully met and the unexplained changes on step 6, with the issue link, the draft and the ⋯ at the setting", async () => {
+    const shown = { ...mappedCriteriaResult(), unexplained: unexplainedResult().unexplained };
+    const draft = {
+      finding: { kind: 'criterion', index: 1 },
+      statement: 'The retries are logged',
+      body: 'The issue asks that retries are logged, but nothing in the change logs one.',
+      promptVersion: '1',
+      stamp: { agent: 'pi', agentVersion: '0.86.1', model: 'zai/glm-4.6', effort: null, runAt: '2026-10-06T00:00:00.000Z' },
+    };
+    const view = await reviewWithFakeEngine({ result: shown, draftResult: draft, logName: 'step-6.log' });
+    for (const part of shown.parts) await tick(view, part.name ?? part.path, true);
+    stub.inputBoxResult = 'The issue asks that retries are logged, but nothing in the change logs one.';
+    stub.executedCommands = [];
+
+    // The ⋯ beside the heading opens the Settings editor at the criteria heading setting.
+    await press(view, { type: 'command', command: 'criteriaHeading' });
+    expect(stub.executedCommands).toEqual([{ id: 'workbench.action.openSettings', args: ['@id:second-look.criteriaHeading'] }]);
+    stub.executedCommands = [];
+
+    // The issue link opens the linked issue on GitHub.
+    await press(view, { type: 'openIssue', issue: 0 });
+    expect(stub.openedExternals.at(-1)).toBe('https://github.com/example-org/example-repo/issues/30');
+
+    // Drafting from the not-met criterion runs the draft command, and the engine drafts from the finding.
+    await press(view, { type: 'finding', action: 'draft', kind: 'criterion', index: 1 });
+    expect(stub.executedCommands).toEqual([{ id: DRAFT_COMMENT_COMMAND, args: [{ kind: 'criterion', index: 1 }] }]);
+    expect(engineRequests('step-6.log').at(-1)).toMatchObject({ method: 'draftComment', params: { url: PR_URL, finding: { kind: 'criterion', index: 1 } } });
+    expect(stub.errorMessages).toEqual([]);
+  });
+
+  it("keeps the steps' ticks per pull request, re-opening them only for the pull request they were ticked on", async () => {
+    const other = { ...judgedResult(), pullRequest: { ...judgedResult().pullRequest, url: OTHER_PR_URL, number: 43 } };
+    const view = await reviewWithFakeEngine({ resultsByUrl: { [PR_URL]: judgedResult(), [OTHER_PR_URL]: other }, logName: 'step-ticks.log' });
+    for (const part of judgedResult().parts) await tick(view, part.name ?? part.path, true);
+    await until('the claims card to open', () => currentStep(view) === '5');
+
+    await press(view, { type: 'tick', step: 'claims', checked: true });
+    await until('the ticked card to fold', () => currentStep(view) === '6');
+    expect(stub.globalState['second-look.stepTicks']).toEqual({
+      version: 1,
+      pullRequests: { [PR_URL]: { claims: judgedResult().pullRequest.headSha } },
+    });
+
+    // Another review of the same pull request, at the same head, keeps the tick.
+    // A fresh review re-opens the story step, so the reviewer reads it again
+    // before the ticked step's card opens.
+    stub.inputBoxResult = PR_URL;
+    await registeredCommands().get(REVIEW_COMMAND)!() as Promise<void>;
+    await until('the story to open again', () => currentStep(view) === '3');
+    await press(view, { type: 'command', command: 'overview' });
+    await until('the review to land again', () => currentStep(view) === '6');
+
+    // Another pull request has its own ticks: its claims card opens unticked.
+    stub.inputBoxResult = OTHER_PR_URL;
+    await registeredCommands().get(REVIEW_COMMAND)!() as Promise<void>;
+    await until('the story to open for the other review', () => currentStep(view) === '3');
+    await press(view, { type: 'command', command: 'overview' });
+    await until('the other review to land', () => currentStep(view) === '5');
+    expect(stub.globalState['second-look.stepTicks']).toEqual({
+      version: 1,
+      pullRequests: { [PR_URL]: { claims: judgedResult().pullRequest.headSha } },
+    });
+    expect(stub.errorMessages).toEqual([]);
   });
 });
 

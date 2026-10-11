@@ -10,7 +10,7 @@ The companion works on text written by other people — a pull request's code, i
 
 **The agent's login.** The agent you chose signs in with its own login, which the companion never opens, reads or stores. For Claude Code it checks only which kind of login is present, to stamp the run and to say in the probe of the installed agents which one it would use. The `second-look.agentAccount` setting is a label you type yourself, nothing more.
 
-**Your reviewed marks.** Kept locally, per pull request, keyed by each part's content, in the pull request's own cache folder. They are sent nowhere unless you turn the mirror setting on (below).
+**Your reviewed marks.** Kept locally, per pull request, keyed by each part's content, in the pull request's own cache folder. They are sent nowhere unless you turn the mirror setting on (below). The side bar steps' **I've checked these** ticks are kept locally too, per pull request, in the editor's own global state — the whole editor's storage, not the pull request's cache — and are sent nowhere.
 
 **The engine's own settings and stamps.** What the settings choose, and what each run reports — agent, version, model, effort, run date, tokens and cost when the agent reports them — stay in the results shown to you and in nothing else.
 

@@ -1,20 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { applyMark, markedPart, NO_MARKS, type Comment, type ListedPullRequest, type Part, type PullRequestList, type ReviewedMarks } from '@second-look/engine';
 import {
+  DRAFT_COMMENT_COMMAND,
+  FETCH_LIBRARY_COMMAND,
   MARK_REVIEWED_COMMAND,
   OPEN_ALL_PARTS_COMMAND,
+  OPEN_LIBRARY_EVIDENCE_COMMAND,
   OPEN_OVERVIEW_COMMAND,
   OPEN_PART_COMMAND,
+  OPEN_SETTINGS_COMMAND,
   REVIEW_COMMAND,
   REVIEW_TREE_VIEW,
   SUBMIT_REVIEW_COMMAND,
+  askCommand,
 } from '../src/commands.js';
-import { SideBarProvider } from '../src/side-bar/provider.js';
+import { SideBarProvider, type SideBarDeps } from '../src/side-bar/provider.js';
 import { PullRequestPicker } from '../src/side-bar/pull-request-picker.js';
 import { SetupForm } from '../src/side-bar/setup-form.js';
+import { StepTickStore } from '../src/side-bar/step-ticks.js';
 import type { SideBarState } from '../src/side-bar/steps.js';
 import { anchorOf, buildTree, pendingReviewSection } from '../src/tree.js';
-import { mixedResult, reviewStages, STAGE_MS, STAGES_START } from './results.js';
+import { fetchedResult, judgedResult, mappedCriteriaResult, mixedResult, offeredResult, reviewStages, unexplainedResult, STAGE_MS, STAGES_START } from './results.js';
 import { ConfigurationTarget, stub, stubContext, window } from './vscode-stub.js';
 
 /**
@@ -342,8 +348,8 @@ class LoadedPage {
 }
 
 /** Loads the side bar the way the editor does: the provider resolved, then its page's script run. */
-function loadSideBar(initial: SideBarState, setup?: SetupForm, picker?: PullRequestPicker): { provider: SideBarProvider; page: LoadedPage; view: (typeof stub.webviewViewProviders)[number] } {
-  const provider = new SideBarProvider(initial, setup, picker);
+function loadSideBar(initial: SideBarState, setup?: SetupForm, picker?: PullRequestPicker, deps?: SideBarDeps): { provider: SideBarProvider; page: LoadedPage; view: (typeof stub.webviewViewProviders)[number] } {
+  const provider = new SideBarProvider(initial, setup, picker, deps);
   window.registerWebviewViewProvider(REVIEW_TREE_VIEW, provider);
   const entry = stub.webviewViewProviders[0]!;
   const view = entry.resolve();
@@ -464,7 +470,7 @@ describe("the side bar's page script", () => {
     for (const element of interactive) {
       if (element.tagName === 'input') {
         expect(element.getAttribute('type')).toBe('checkbox');
-        expect(element.getAttribute('aria-label')).toMatch(/^Reviewed: /);
+        expect(element.getAttribute('aria-label')).toMatch(/^Reviewed: |^I've checked /);
       } else {
         expect(element.getAttribute('type')).toBe('button');
       }
@@ -640,6 +646,106 @@ describe("the side bar's page script", () => {
       expect(elapsed!.textContent).toBe('1:01:01');
     } finally {
       vi.useRealTimers();
+    }
+  });
+
+  it("works steps 5 and 6 from the keyboard: every finding action runs its command, the issue opens on GitHub, the setting in the Settings editor", async () => {
+    const result = { ...offeredResult(), criteria: mappedCriteriaResult().criteria, unexplained: unexplainedResult().unexplained };
+    const opened: [string, number][] = [];
+    const deps: SideBarDeps = { openLine: (path, line) => opened.push([path, line]), ticks: new StepTickStore(stubContext().globalState) };
+    const { page } = loadSideBar(reviewState({ result, storyRead: true, marks: marked(...mixedResult().parts) }), undefined, undefined, deps);
+    const part = result.parts[result.claims!.claims[1]!.part]!;
+
+    // Step 5's finding rows: draft, open (the line, read-only, through the opening the overview's chips use), verify again, the fetch, and the ask.
+    page.click('step-5-draft-claim-1');
+    page.click('step-5-open-claim-1');
+    page.click('step-5-verify-claim-1');
+    page.click('step-5-fetch-claim-2');
+    page.click('step-5-verifyClaim');
+    // Step 6's: the criteria's draft and issue link, the unexplained part's draft, the described change's, and the ⋯ at the criteria heading setting.
+    page.click('step-6-draft-criterion-1');
+    page.click('step-6-issue-criterion-1');
+    page.click('step-6-draft-unexplained-part-0');
+    page.click('step-6-draft-described-change-1');
+    page.click('step-6-criteriaHeading');
+
+    expect(stub.executedCommands).toEqual([
+      { id: DRAFT_COMMENT_COMMAND, args: [{ kind: 'claim', index: 1 }] },
+      { id: askCommand('verify'), args: [{ anchor: anchorOf(part), claim: 1 }] },
+      { id: FETCH_LIBRARY_COMMAND, args: [2] },
+      { id: askCommand('verify'), args: [] },
+      { id: DRAFT_COMMENT_COMMAND, args: [{ kind: 'criterion', index: 1 }] },
+      { id: DRAFT_COMMENT_COMMAND, args: [{ kind: 'unexplained part', index: 0 }] },
+      { id: DRAFT_COMMENT_COMMAND, args: [{ kind: 'described change', index: 1 }] },
+      { id: OPEN_SETTINGS_COMMAND, args: ['@id:second-look.criteriaHeading'] },
+    ]);
+    expect(opened).toEqual([['src/retry.py', 3]]);
+    expect(stub.openedExternals).toEqual(['https://github.com/example-org/example-repo/issues/30']);
+  });
+
+  it("opens a claim judged against a fetched library's cited file, the way the finding's thread does", () => {
+    const result = fetchedResult();
+    // The judged claim made in the description, so its finding's thread has no line of the change to sit on.
+    result.claims = {
+      ...result.claims!,
+      claims: result.claims!.claims.map((claim, index) => (index === 2 ? { ...claim, source: 'description', location: { kind: 'description', line: 2 } } : claim)),
+    };
+    const deps: SideBarDeps = { openLine: () => undefined, ticks: new StepTickStore(stubContext().globalState) };
+    const { page } = loadSideBar(reviewState({ result, storyRead: true, marks: marked(...mixedResult().parts) }), undefined, undefined, deps);
+
+    page.click('step-5-open-claim-2');
+
+    expect(stub.executedCommands).toEqual([{ id: OPEN_LIBRARY_EVIDENCE_COMMAND, args: [2, 0] }]);
+  });
+
+  it("ticks a step's I've-checked-these box, which redraws the card as done and keeps its tick across a redraw", async () => {
+    const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+    const result = judgedResult();
+    const ticks = new StepTickStore(stubContext().globalState);
+    const { provider, page, view } = loadSideBar(reviewState({ result, storyRead: true, marks: marked(...mixedResult().parts) }), undefined, undefined, { openLine: () => undefined, ticks });
+    expect(page.element('step-5-tick').hasAttribute('checked')).toBe(false);
+
+    page.tick('step-5-tick', true);
+    await settle();
+    page.render(postedBodies(view).at(-1)!);
+    expect(page.element('step-5-tick').hasAttribute('checked')).toBe(true);
+    expect(page.element('step-5').getAttribute('class')).toBe('step done');
+    expect(ticks.read(result.pullRequest.url, result.pullRequest.headSha)).toEqual({ claims: true, criteria: false });
+
+    // A redraw the session posts keeps the tick, which the store reads for the review shown.
+    provider.update(reviewState({ result, storyRead: true, marks: marked(...mixedResult().parts) }), undefined);
+    page.render(postedBodies(view).at(-1)!);
+    expect(page.element('step-5-tick').hasAttribute('checked')).toBe(true);
+
+    page.tick('step-5-tick', false);
+    await settle();
+    page.render(postedBodies(view).at(-1)!);
+    expect(page.element('step-5-tick').hasAttribute('checked')).toBe(false);
+    expect(page.element('step-5').getAttribute('class')).toBe('step current');
+  });
+
+  it('names every finding row and tick for a screen reader, and the verdict words travel with their glyphs', () => {
+    const result = { ...judgedResult(), criteria: mappedCriteriaResult().criteria, unexplained: unexplainedResult().unexplained };
+    const { page } = loadSideBar(reviewState({ result, storyRead: true, marks: marked(...mixedResult().parts) }));
+
+    const interactive: Element[] = [];
+    const walk = (element: Element): void => {
+      if (['button', 'input'].includes(element.tagName)) interactive.push(element);
+      for (const child of element.children) walk(child);
+    };
+    walk(page.root);
+    for (const element of interactive) {
+      if (element.tagName === 'input') {
+        expect(element.getAttribute('type')).toBe('checkbox');
+        expect(element.getAttribute('aria-label')).toMatch(/^Reviewed: |^I've checked /);
+      } else {
+        expect(element.getAttribute('type')).toBe('button');
+      }
+    }
+    // The verdict words ride with their glyphs, and the state pills carry both.
+    expect(page.root.querySelectorAll('span.pill').length).toBeGreaterThan(3);
+    for (const pill of page.root.querySelectorAll('span.pill')) {
+      expect(pill.querySelector('span.icon')).not.toBeNull();
     }
   });
 });
