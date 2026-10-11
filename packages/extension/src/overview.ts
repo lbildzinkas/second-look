@@ -378,31 +378,6 @@ function sinceLine(result: ReviewResult): string {
   return line === undefined ? '' : `<div class="meta since">${escapeHtml(line)}</div>`;
 }
 
-/** A chip for each stage done, and one for the stage still running. */
-function stageChips(state: OverviewState): string {
-  const { result } = state;
-  const chips: { text: string; done: boolean }[] = [
-    { text: 'parts', done: true },
-    { text: 'noise checks', done: true },
-  ];
-  const grouping = result.grouping.agent;
-  if (grouping) chips.push({ text: grouping.outcome === 'grouped' ? 'grouped by the agent' : 'plain grouping kept', done: true });
-  const ranking = result.ranking.agent;
-  if (ranking) chips.push({ text: result.ranking.by === 'agent' ? 'ranked by the agent' : 'plain ranking kept', done: true });
-  if (result.story) chips.push({ text: result.story.outcome === 'written' ? 'story' : 'no story', done: true });
-  if (result.unexplained) chips.push({ text: result.unexplained.outcome === 'compared' ? 'unexplained changes' : 'no comparison', done: true });
-  if (result.claims) chips.push({ text: result.claims.outcome === 'listed' ? 'claims' : 'no claims', done: true });
-  const judging = result.claims?.judging;
-  if (judging) chips.push({ text: judging.outcome === 'judged' ? 'verdicts' : 'no verdicts', done: true });
-  const mapping = result.criteria?.mapping;
-  if (mapping) chips.push({ text: mapping.outcome === 'mapped' ? 'criteria mapped' : 'criteria not mapped', done: true });
-  if (result.docLinks) chips.push({ text: 'documentation links', done: true });
-  if (state.running !== undefined) chips.push({ text: state.running, done: false });
-  return chips
-    .map((chip) => `<span class="stg ${chip.done ? 'done' : 'run'}">${escapeHtml(chip.text)}${chip.done ? '' : '…'}</span>`)
-    .join('');
-}
-
 /** One stage's time, whole seconds as `m:ss`: a duration once a stage is done, an elapsed time while it runs. */
 export function clockText(ms: number): string {
   const seconds = Math.max(0, Math.floor(ms / 1000));
@@ -551,31 +526,37 @@ function completeLine(state: OverviewState): string {
 
 /**
  * The line under where the pull request comes from: the stage list while
- * a review runs, folding into one line once it is done. A result no
- * stages came with, such as a plain review, keeps its stage chips.
+ * a review runs, folding into one line once it is done; a result no
+ * stages came with shows none.
  */
 function progressBlock(state: OverviewState): string {
   const records = state.result.stages;
-  if (records === undefined || records.length === 0) return `<div class="stages">${stageChips(state)}</div>`;
+  if (records === undefined || records.length === 0) return '';
   return state.running !== undefined || records.some((record) => record.state === 'running') ? runningList(state) : completeLine(state);
 }
 
 /**
  * A section the review is still producing: a skeleton where its rows
  * will land, and a line naming the agent checking it — never a quiet
- * note that reads empty or finished.
+ * note that reads empty or finished. A section whose stage already
+ * ended without its result says what happened to it, in the words the
+ * folded stage list uses, since nothing is checking it and none will.
  */
 function beingChecked(state: OverviewState, id: ReviewStageId): string {
   const own = stageOf(state, id);
+  if (own !== undefined && own.state !== 'running' && own.state !== 'to come') {
+    const detail = own.detail === undefined ? '' : `: ${own.detail}`;
+    return `<p class="note">${escapeHtml(`${STAGE_NAMES[own.id]} ${own.state}${detail}.`)}</p>`;
+  }
   const line = own?.agent !== undefined ? stageAgentLine(own.agent) : reviewAgentLine(state);
-  const toCome = own !== undefined && (own.state === 'to come' || own.state === 'skipped' || own.state === 'stopped');
-  const words = toCome
-    ? line === undefined
-      ? 'Still to come.'
-      : `Still to come; ${line} will check it.`
-    : line === undefined
-      ? 'Being checked.'
-      : `Being checked by ${line}.`;
+  const words =
+    own?.state === 'to come'
+      ? line === undefined
+        ? 'Still to come.'
+        : `Still to come; ${line} will check it.`
+      : line === undefined
+        ? 'Being checked.'
+        : `Being checked by ${line}.`;
   return (
     '<div class="skel" aria-hidden="true"><span class="sk a"></span><span class="sk b"></span><span class="sk c"></span></div>' +
     `<p class="checking"><span class="ic run tone-info" aria-hidden="true">◌</span> ${escapeHtml(words)}</p>`
@@ -1442,11 +1423,7 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
   h2 { font-size: 15px; font-weight: 600; margin: 10px 0 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .meta, .note { color: var(--mut); font-size: 12px; }
   .note { margin: 0 0 6px; }
-  .stages { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 4px; }
-  .stg { font-size: 12px; border: 1px solid var(--vscode-panel-border); border-radius: 12px; padding: 1px 9px; }
-  .stg.done::before { content: "✓ "; color: var(--ok); }
-  .stg.run { color: var(--mut); }
-  /* The stage list, which the chip row becomes while a review runs. */
+  /* The stage list while a review runs. */
   .slist { border: 1px solid var(--vscode-panel-border); border-radius: 6px; padding: 4px 0 2px; margin: 10px 0 4px; }
   .shead { display: flex; align-items: baseline; gap: 8px; padding: 2px 10px 6px; border-bottom: 1px solid var(--vscode-panel-border); margin-bottom: 2px; font-size: 12.5px; }
   .shead .cnt { color: var(--mut); font-size: 12px; }

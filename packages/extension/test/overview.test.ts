@@ -110,13 +110,12 @@ describe('the sanitiser', () => {
 });
 
 describe('overviewHtml', () => {
-  it('follows the recorded overview tab: title, where it comes from, stage chips, the story, then the description and the stamps', () => {
+  it('follows the recorded overview tab: title, where it comes from, the story, then the description and the stamps', () => {
     const html = overviewHtml({ result: storyResult() }, 'NONCE');
 
     const order = [
       '<h1>Retry failed webhook sends</h1>',
       '<div class="meta">example-org/example-repo #42 · reviewer-login · retry-webhooks → master · head f00dcaf</div>',
-      '<div class="stages"><span class="stg done">parts</span><span class="stg done">noise checks</span><span class="stg done">story</span></div>',
       '<h2>Story <span class="stamp">pi · zai/glm-4.6 · default effort · story prompt v1</span></h2>',
       '<div class="story">',
       '<h2>Pull request description</h2>',
@@ -124,6 +123,9 @@ describe('overviewHtml', () => {
     ].map((piece) => html.indexOf(piece));
     expect(order.every((index) => index >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
+    // A result no stages came with shows no stage list.
+    expect(html).not.toContain('class="slist"');
+    expect(html).not.toContain('class="sdone"');
   });
 
   it('says under where it comes from which commit the last look was at, and nothing on a first look', () => {
@@ -189,7 +191,6 @@ describe('overviewHtml', () => {
     const plain = mixedResult();
     const running = overviewHtml({ result: plain, running: 'writing the story with pi' }, 'N');
     expect(running).toContain('<section id="story"><h2>Story</h2><div class="skel" aria-hidden="true"><span class="sk a"></span><span class="sk b"></span><span class="sk c"></span></div><p class="checking"><span class="ic run tone-info" aria-hidden="true">◌</span> Being checked.</p></section>');
-    expect(running).toContain('<span class="stg run">writing the story with pi…</span>');
 
     expect(overviewHtml({ result: plain }, 'N')).toContain('<p class="note">No story was written for this review.</p>');
 
@@ -199,7 +200,6 @@ describe('overviewHtml', () => {
     };
     const html = overviewHtml({ result: fellBack }, 'N');
     expect(html).toContain('<p class="note">No story: the agent gave no usable answer (timeout: too slow).</p>');
-    expect(html).toContain('<span class="stg done">no story</span>');
   });
 
   it('says who made each result: the plain pass, or the agent with its stamp, or why the plain result stayed', () => {
@@ -217,7 +217,6 @@ describe('overviewHtml', () => {
     expect(html).toContain('<li><b>Parts</b> plain grouping kept: the answer was invalid twice</li>');
     expect(html).toContain('<li><b>Ranking</b> ranked by pi · zai/glm-4.6 · effort high · ranking prompt v1: the validator accepted it</li>');
     expect(html).toContain('<li><b>Story</b> written by pi · zai/glm-4.6 · default effort · story prompt v1: the checks accepted the story');
-    expect(html).toContain('<span class="stg done">plain grouping kept</span><span class="stg done">ranked by the agent</span>');
     expect(overviewHtml({ result: mixedResult() }, 'N')).toContain('<li><b>Parts</b> grouped by the plain pass</li><li><b>Ranking</b> ranked by the plain rule</li>');
   });
 
@@ -297,7 +296,6 @@ describe('the verdicts on the overview', () => {
     expect(html).toContain('<div class="why">needs the source of requests, which the companion does not have</div>');
     expect(html).toContain('<div class="why">dropped to unverifiable: the model&#39;s memory never yields verified</div>');
     expect(html).toContain('Each is judged against the change, its read-only copy and any failed check&#39;s CI log by pi · zai/glm-4.6 · default effort · verdicts prompt v1;');
-    expect(html).toContain('<span class="stg done">claims</span><span class="stg done">verdicts</span>');
     expect(html).toContain('<li><b>Verdicts</b> judged by pi · zai/glm-4.6 · default effort · verdicts prompt v1: every citation was re-read in the head copy</li>');
   });
 
@@ -347,7 +345,6 @@ describe('the verdicts on the overview', () => {
     };
     const html = overviewHtml({ result: fellBack }, 'N');
     expect(html).toContain('None is checked: the agent gave no usable answer.');
-    expect(html).toContain('<span class="stg done">no verdicts</span>');
   });
 
   it('says a checked verdict came from the verify ask when the judging fell back', () => {
@@ -453,7 +450,6 @@ describe('the claims on the overview', () => {
     expect(html).toContain('<span class="where">comment · src/retry.py:9 · <button');
     expect(html).toContain('<span class="where">the companion&#39;s story, sentence 2 · <button type="button" class="pt" data-part="1">src/settings.ts</button>');
     expect(html).not.toContain('class="tg"');
-    expect(html).toContain('<span class="stg done">story</span><span class="stg done">claims</span>');
     expect(html).toContain('<li><b>Claims</b> listed by pi · zai/glm-4.6 · default effort · claims prompt v1: every quote was found in its source');
   });
 
@@ -475,7 +471,10 @@ describe('the claims on the overview', () => {
 
   it('shows a skeleton and a being-checked line naming the agent while the claims are listed, why there are none, or that the agent found none', () => {
     const plain = mixedResult();
-    const listing = overviewHtml({ result: { ...plain, stages: verdictsRunningStages().slice(0, 6) }, running: 'listing the claims with pi' }, 'N');
+    const stages = verdictsRunningStages()
+      .slice(0, 6)
+      .map((record) => (record.id === 'claims' ? { ...record, state: 'running' as const, durationMs: undefined } : record));
+    const listing = overviewHtml({ result: { ...plain, stages }, running: 'listing the claims with pi' }, 'N');
     expect(listing).toContain('<section id="claims"><h2>Claims</h2><div class="skel" aria-hidden="true"><span class="sk a"></span><span class="sk b"></span><span class="sk c"></span></div><p class="checking"><span class="ic run tone-info" aria-hidden="true">◌</span> Being checked by pi · zai/glm-4.6 · high.</p></section>');
     expect(overviewHtml({ result: plain }, 'N')).toContain('<p class="note">No claims were listed for this review.</p>');
 
@@ -486,7 +485,6 @@ describe('the claims on the overview', () => {
     };
     const html = overviewHtml({ result: fellBack }, 'N');
     expect(html).toContain('<p class="note">No claims: the agent gave no usable answer (timeout: too slow).</p>');
-    expect(html).toContain('<span class="stg done">no claims</span>');
     expect(html).toContain('<li><b>Claims</b> none: the agent gave no usable answer (timeout: too slow)</li>');
 
     const none: ReviewResult = { ...shown, claims: { ...shown.claims!, claims: [] } };
@@ -607,6 +605,29 @@ describe('the stage list on the overview', () => {
     expect(html).toContain('<b>Review stopped</b>');
     expect(html).toContain('<div class="fbnote tone-mut"><span class="ic" aria-hidden="true">□</span><span><b>Documentation links stopped</b>: the review was stopped before this stage finished</span></div>');
     expect(html).toContain('<div class="srow todo" title="the review was stopped before this stage finished"><span class="ic tone-mut" aria-hidden="true">□</span><span class="nm">Documentation links</span><span class="w">stopped</span></div>');
+  });
+
+  it('says what happened to a section whose stage already ended, never that it is being checked or still to come', () => {
+    const failed = verdictsRunningStages().map((record) => {
+      if (record.id === 'story') return { ...record, state: 'failed' as const, detail: 'the agent run failed: exit 1' };
+      if (record.id === 'unexplained') return { ...record, state: 'running' as const, durationMs: undefined };
+      return record.id === 'verdicts' ? { ...record, state: 'to come' as const } : record;
+    });
+    const failedHtml = overviewHtml({ result: { ...mixedResult(), stages: failed }, running: 'comparing the change with its description and issues with pi' }, 'N');
+    expect(failedHtml).toContain('<section id="story"><h2>Story</h2><p class="note">Story failed: the agent run failed: exit 1.</p></section>');
+    const story = failedHtml.slice(failedHtml.indexOf('<section id="story">'), failedHtml.indexOf('<section id="criteria">'));
+    expect(story).not.toContain('skel');
+    expect(story).not.toContain('Being checked');
+
+    const skipped = doneStages().map((record) => {
+      if (record.id === 'criteria') return { ...record, state: 'skipped' as const, detail: 'this change gave it nothing to do' };
+      return record.id === 'docLinks' ? { ...record, state: 'running' as const, durationMs: undefined } : record;
+    });
+    const skippedHtml = overviewHtml({ result: { ...mixedResult(), stages: skipped }, running: 'suggesting documentation links with pi' }, 'N');
+    expect(skippedHtml).toContain('<section id="criteria"><h2>Acceptance criteria</h2><p class="note">Acceptance criteria skipped: this change gave it nothing to do.</p></section>');
+    const criteria = skippedHtml.slice(skippedHtml.indexOf('<section id="criteria">'), skippedHtml.indexOf('<section id="unexplained">'));
+    expect(criteria).not.toContain('skel');
+    expect(criteria).not.toContain('Still to come');
   });
 
   it('renders the stage names, reasons and times as escaped text, never as markup', () => {
@@ -736,7 +757,6 @@ describe('the criteria verdicts on the overview', () => {
     expect(html).toContain('<span class="label">Tests</span><span class="v"><span class="none">none</span></span>');
     expect(html).toContain('<span class="label">Manual</span><span class="v"><span class="cited">none reported in the pull request</span></span>');
     expect(html).toContain('Each is judged against the change, its read-only copy and the manual checks the description reports, by pi · zai/glm-4.6 · default effort · criteria-mapping prompt v1');
-    expect(html).toContain('<span class="stg done">criteria mapped</span>');
     expect(html).toContain('<li><b>Acceptance criteria</b> mapped by pi · zai/glm-4.6 · default effort · criteria-mapping prompt v1: every citation was re-read');
   });
 
@@ -779,7 +799,6 @@ describe('the criteria verdicts on the overview', () => {
     };
     const html = overviewHtml({ result: fellBack }, 'N');
     expect(html).toContain('None is checked: the agent gave no usable answer (timeout: no answer within 300 seconds).');
-    expect(html).toContain('<span class="stg done">criteria not mapped</span>');
     expect(html).not.toContain('class="evidence"');
   });
 
@@ -856,7 +875,6 @@ describe('the unexplained changes on the overview', () => {
         '<div class="where"><button type="button" class="pt issue" data-issue="0">#30 in example-org/example-repo</button> · line 3</div></td></tr>',
     );
     expect(html).toContain('<button type="button" class="pt draft" data-draft="described change" data-index="1">Draft comment</button>');
-    expect(html).toContain('<span class="stg done">unexplained changes</span>');
     expect(html).toContain('<li><b>Unexplained changes</b> compared by pi · zai/glm-4.6 · default effort · unexplained prompt v1: compared with the description and 2 linked issues;');
   });
 
@@ -864,8 +882,11 @@ describe('the unexplained changes on the overview', () => {
     const shown = unexplainedResult();
     const unexplained = shown.unexplained!;
     const page = (result: ReviewResult, running?: string): string => overviewHtml({ result, ...(running ? { running } : {}) }, 'N');
+    const stages = verdictsRunningStages()
+      .slice(0, 5)
+      .map((record) => (record.id === 'unexplained' ? { ...record, state: 'running' as const, durationMs: undefined } : record));
 
-    expect(page({ ...criteriaResult(), stages: verdictsRunningStages().slice(0, 5) }, 'comparing the change with its description and issues with pi')).toContain(
+    expect(page({ ...criteriaResult(), stages }, 'comparing the change with its description and issues with pi')).toContain(
       '<section id="unexplained"><h2>Unexplained changes</h2><div class="skel" aria-hidden="true"><span class="sk a"></span><span class="sk b"></span><span class="sk c"></span></div><p class="checking"><span class="ic run tone-info" aria-hidden="true">◌</span> Being checked by pi · zai/glm-4.6 · high.</p></section>',
     );
     expect(page(criteriaResult())).toContain('The change was not compared with its description and issues for this review.');
@@ -875,7 +896,6 @@ describe('the unexplained changes on the overview', () => {
     const { stamp: _stamp, ...unstamped } = unexplained;
     const notCompared = page({ ...shown, unexplained: { ...unstamped, outcome: 'not compared', detail: 'the pull request has no description', parts: [], described: [] } });
     expect(notCompared).toContain('<h2>Unexplained changes</h2><p class="note">Not compared: the pull request has no description.</p>');
-    expect(notCompared).toContain('<span class="stg done">no comparison</span>');
     expect(page({ ...shown, unexplained: { ...unexplained, parts: [], described: [] } })).toContain(
       'The agent found every part explained, and every change described in the diff.',
     );
@@ -931,7 +951,7 @@ describe('the dashboard and the contents rail', () => {
         tile('must', '★', 1, `of ${result.parts.length} parts must review`) +
         '</div>',
     );
-    expect(html.indexOf('<div class="dash">')).toBeGreaterThan(html.indexOf('<div class="stages">'));
+    expect(html.indexOf('<div class="dash">')).toBeGreaterThan(html.indexOf('<div class="meta">'));
     expect(html.indexOf('<div class="dash">')).toBeLessThan(html.indexOf('<section id="story">'));
   });
 
@@ -1065,18 +1085,28 @@ describe('OverviewPanel', () => {
     expect(overview.open()).toBe(false);
     expect(stub.webviewPanels).toHaveLength(0);
 
-    overview.update(mixedResult(), 'grouping related hunks with pi');
+    overview.update(
+      {
+        ...mixedResult(),
+        stages: verdictsRunningStages().map((record) => {
+          if (record.id === 'grouping') return { ...record, state: 'running' as const, durationMs: undefined };
+          return record.id === 'plain' ? record : { ...record, state: 'to come' as const, startedAt: undefined, durationMs: undefined };
+        }),
+      },
+      'grouping related hunks with pi',
+    );
     expect(overview.open({ preserveFocus: true })).toBe(true);
 
     const panel = stub.webviewPanels[0]!;
     expect(panel.viewType).toBe(OVERVIEW_VIEW_TYPE);
     expect(panel.title).toBe('Second Look: #42 overview');
     expect(panel.webview.options).toEqual({ enableScripts: true, enableCommandUris: false, localResourceRoots: [] });
-    expect(panel.webview.html).toContain('grouping related hunks with pi…');
+    expect(panel.webview.html).toContain('class="srow run"');
 
     overview.update(storyResult());
     expect(stub.webviewPanels).toHaveLength(1);
     expect(panel.webview.html).toContain('<div class="story">');
+    expect(panel.webview.html).not.toContain('class="srow run"');
     expect(panel.webview.html).not.toContain('grouping related hunks with pi');
   });
 
