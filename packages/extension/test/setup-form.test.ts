@@ -329,6 +329,27 @@ describe('the setup form controller', () => {
     expect(body).not.toContain('data-field="path"');
   });
 
+  it('drops the test result when the used path changes the executable the next test would start', async () => {
+    const notInstalled: TestAgentRpcResult = {
+      ok: false,
+      reason: 'unusable',
+      message: 'Claude Code is not installed: no claude command was found on the PATH the engine started with',
+      stamp: { ...STAMP, model: null, effort: null },
+    };
+    const { setup } = form(fakeEngine(notInstalled));
+    setup.shown();
+    await send(setup, { field: 'agent', value: 'claude-code' });
+    await send(setup, { action: 'test' });
+    expect(setup.current.test).toEqual({ state: 'tested', result: notInstalled });
+    expect(setupFormBody(setup.current)).toContain('no claude command was found on the PATH the engine started with');
+
+    await send(setup, { action: 'usePath', fields: { path: '/opt/claude/bin/claude' } });
+    expect(setup.current.test).toBeUndefined();
+    const body = setupFormBody(setup.current);
+    expect(body).toContain('Claude Code<small>2.1.296 · ready · the stored Claude subscription sign-in</small>');
+    expect(body).not.toContain('no claude command was found');
+  });
+
   it('warns when a workspace setting overrides the path the form writes, which still wins the probe', async () => {
     stub.workspaceConfiguration['second-look.claudeCodePath'] = '/broken/claude';
     const { setup } = form();

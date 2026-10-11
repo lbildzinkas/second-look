@@ -174,9 +174,12 @@ export class SetupForm {
   /** Writes the agent path field to the agent's path setting in the user settings, then probes again. */
   private async usePath(): Promise<void> {
     const { agent, path } = this.view.draft;
-    const problem = pathProblem(path.trim());
-    if (problem !== undefined) return this.refuse(problem);
+    const refused = pathProblem(path.trim());
+    if (refused !== undefined) return this.refuse(refused);
     await writeSetting(AGENT_PATH_SETTINGS[agent], path.trim());
+    const { open, draft, probe, problem } = this.view;
+    this.view = { open, draft, probe, ...(problem !== undefined ? { problem } : {}) };
+    this.tests += 1;
     await this.probe();
   }
 }
