@@ -226,9 +226,14 @@ function describedWhere(change: { location: { kind: 'description'; line: number 
 }
 
 /** Step 6's rows for the unexplained changes in both directions: the parts nothing explains, then the changes described that the diff lacks. */
-function unexplainedRows(result: ReviewResult): { heading: boolean; body: string } {
+function unexplainedRows(result: ReviewResult, settled: boolean): { heading: boolean; body: string } {
   const unexplained = result.unexplained;
-  if (unexplained === undefined) return { heading: false, body: note('The unexplained changes show here once the change is compared with its description.') };
+  if (unexplained === undefined) {
+    return {
+      heading: false,
+      body: note(settled ? 'The change was not compared with its description and issues for this review.' : 'The unexplained changes show here once the change is compared with its description.'),
+    };
+  }
   if (unexplained.outcome !== 'compared') return { heading: false, body: note(`Not compared: ${unexplained.detail}.`) };
   if (unexplained.parts.length === 0 && unexplained.described.length === 0) {
     return { heading: false, body: `<p class="folded"><span class="tone-ok" aria-hidden="true">✓</span> Every part is explained, and every change the description promises is in the diff.</p>` };
@@ -281,7 +286,7 @@ function criteriaBody(state: SideBarState): string {
   }
   // The tick shows once the step's results are in: its stages ended, whatever they left.
   const settled = !producing(state, 'unexplained', 'criteria');
-  const unexplained = unexplainedRows(result);
+  const unexplained = unexplainedRows(result, settled);
   const list =
     criteria === undefined
       ? note(settled ? 'No criteria were read for this review.' : 'The acceptance criteria show here once the review reads the linked issues.')

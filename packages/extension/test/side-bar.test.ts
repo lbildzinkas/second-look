@@ -356,6 +356,18 @@ describe("the side bar's page", () => {
     expect(body).toContain('<p class="note">None is checked: the agent gave no usable answer.</p>');
     expect(body).toMatch(/<input type="checkbox" id="step-6-tick" data-tick="criteria" aria-label="I&#39;ve checked the criteria">/);
   });
+
+  it('words the unexplained changes from how the comparison ended, never a promise once it ended', () => {
+    const ended = sideBarBody(reviewState({ result: criteriaResult(), storyRead: true, marks: marked(...mixedResult().parts) }));
+    expect(ended).toContain('<p class="note">The change was not compared with its description and issues for this review.</p>');
+    expect(ended).not.toContain('once the change is compared with its description');
+    expect(ended).toMatch(/<input type="checkbox" id="step-6-tick" data-tick="criteria" aria-label="I&#39;ve checked the criteria">/);
+
+    const stages = reviewStages('story');
+    const running = sideBarBody(reviewState({ result: { ...criteriaResult(), stages }, reviewing: true, progress: { state: 'running', stage: stages[3]! } }));
+    expect(running).toContain('<p class="note">The unexplained changes show here once the change is compared with its description.</p>');
+    expect(running).not.toContain('id="step-6-tick"');
+  });
 });
 
 describe('the side bar messages', () => {
