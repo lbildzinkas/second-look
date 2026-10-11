@@ -2091,16 +2091,17 @@ describe('the side bar', () => {
       ask: 'verify',
       part: 0,
       partName: 'src/retry.py',
-      sections: [{ heading: 'Verdict', text: 'refuted, from the change itself: a 404 is retried like any other status.' }],
-      cited: [{ path: 'src/retry.py', side: 'head' as const, line: 5, quote: 'if response.status >= 400:' }],
+      sections: [{ heading: 'Verdict', text: 'unverifiable, from the change itself: the status check is in the library.' }],
+      cited: [],
       promptVersion: '5',
       stamp: { agent: 'pi', agentVersion: '0.86.1', model: 'zai/glm-4.6', effort: null, runAt: '2026-10-07T00:00:00.000Z' },
       claim: {
         index: 2,
-        claim: {
-          ...shown.claims!.claims[2]!,
-          verdict: { kind: 'refuted', source: 'the change itself', reason: 'A 404 is retried like any other status.', evidence: [{ path: 'src/retry.py', line: 5, quote: 'if response.status >= 400:' }] },
-        },
+        // The verify ask judges the claim again and still cannot settle it
+        // from the change alone, so its answer keeps the library the claim
+        // needs and the fetch its verdict offers — the fetch pressed below
+        // finds that offer, the way the engine's own answer carries it.
+        claim: { ...shown.claims!.claims[2]!, asked: true },
       },
     };
     const view = await reviewWithFakeEngine({ result: shown, draftResult: draft, askResult: verified, fetchResult: fetchedResult('/cache/libraries/requests-2.32.3', undefined), logName: 'step-5.log' });
@@ -2191,13 +2192,19 @@ describe('the side bar', () => {
     });
 
     // Another review of the same pull request, at the same head, keeps the tick.
+    // A fresh review re-opens the story step, so the reviewer reads it again
+    // before the ticked step's card opens.
     stub.inputBoxResult = PR_URL;
     await registeredCommands().get(REVIEW_COMMAND)!() as Promise<void>;
+    await until('the story to open again', () => currentStep(view) === '3');
+    await press(view, { type: 'command', command: 'overview' });
     await until('the review to land again', () => currentStep(view) === '6');
 
     // Another pull request has its own ticks: its claims card opens unticked.
     stub.inputBoxResult = OTHER_PR_URL;
     await registeredCommands().get(REVIEW_COMMAND)!() as Promise<void>;
+    await until('the story to open for the other review', () => currentStep(view) === '3');
+    await press(view, { type: 'command', command: 'overview' });
     await until('the other review to land', () => currentStep(view) === '5');
     expect(stub.globalState['second-look.stepTicks']).toEqual({
       version: 1,
