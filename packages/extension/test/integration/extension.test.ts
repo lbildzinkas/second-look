@@ -306,6 +306,7 @@ describe('activating the companion', () => {
       CHOOSE_AGENT_COMMAND,
       OPEN_SETUP_COMMAND,
       REFRESH_PULL_REQUESTS_COMMAND,
+      STOP_REVIEW_COMMAND,
     ]);
     expect(stub.treeViews).toEqual([]);
     expect(stub.webviewViewProviders.map((entry) => entry.id)).toEqual([REVIEW_TREE_VIEW]);
@@ -760,7 +761,7 @@ describe('progress in the side bar and the status bar', () => {
       }),
     };
     const { reviewed, view } = startReview({ stage: VERDICTS, stageOnly: true, stoppedResult: stopped, logName: 'stop.log' });
-    await until('the verdicts running', () => view.provider.current.progress?.state === 'running');
+    await until('the verdicts running', () => view.provider.current.progress?.state === 'running' && view.provider.current.progress.stage.id === 'verdicts');
 
     await registeredCommands().get(STOP_REVIEW_COMMAND)!();
     await reviewed;
@@ -779,7 +780,7 @@ describe('progress in the side bar and the status bar', () => {
 
   it('reads a stop after results landed as stopped with what landed, when the stopped review never answers', async () => {
     const { reviewed, view } = startReview({ stage: VERDICTS, stageOnly: true, logName: 'stop-unanswered.log' });
-    await until('the verdicts running', () => view.provider.current.progress?.state === 'running');
+    await until('the verdicts running', () => view.provider.current.progress?.state === 'running' && view.provider.current.progress.stage.id === 'verdicts');
 
     await registeredCommands().get(STOP_REVIEW_COMMAND)!();
     await reviewed;
