@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { applyMark, markedPart, NO_MARKS, type Comment, type Part, type ReviewedMarks } from '@second-look/engine';
+import { applyMark, markedPart, NO_MARKS, type Comment, type ListedPullRequest, type Part, type PullRequestList, type ReviewedMarks } from '@second-look/engine';
 import {
   MARK_REVIEWED_COMMAND,
   OPEN_ALL_PARTS_COMMAND,
@@ -10,6 +10,7 @@ import {
   SUBMIT_REVIEW_COMMAND,
 } from '../src/commands.js';
 import { SideBarProvider } from '../src/side-bar/provider.js';
+import { PullRequestPicker } from '../src/side-bar/pull-request-picker.js';
 import { SetupForm } from '../src/side-bar/setup-form.js';
 import type { SideBarState } from '../src/side-bar/steps.js';
 import { anchorOf, buildTree, pendingReviewSection } from '../src/tree.js';
@@ -44,7 +45,7 @@ class Element {
   readonly children: Element[] = [];
   parent: Element | undefined;
   readonly attributes = new Map<string, string>();
-  private readonly listeners = new Map<string, ((event: { target: Element }) => void)[]>();
+  private readonly listeners = new Map<string, ((event: PageEvent) => void)[]>();
   private ownerField: Document | undefined;
 
   constructor(readonly tagName: string) {}
@@ -159,19 +160,27 @@ class Element {
     for (const child of parse(html)) this.appendChild(child);
   }
 
-  addEventListener(type: string, listener: (event: { target: Element }) => void): void {
+  addEventListener(type: string, listener: (event: PageEvent) => void): void {
     this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
   }
 
-  /** Fires the event on this element, as a bubbling press reaches the root. */
-  dispatch(type: string, target: Element = this): void {
-    for (const listener of this.listeners.get(type) ?? []) listener({ target });
-    this.parent?.dispatch(type, target);
+  /** Fires the event on this element, as a bubbling press reaches the root, with what the event carries: its input type or key. */
+  dispatch(type: string, target: Element = this, detail: { inputType?: string; key?: string } = {}): void {
+    for (const listener of this.listeners.get(type) ?? []) listener({ target, preventDefault: () => undefined, ...detail });
+    this.parent?.dispatch(type, target, detail);
   }
 
   focus(): void {
     this.owner?.becomesActive(this);
   }
+}
+
+/** An event as the page's script reads it. */
+interface PageEvent {
+  target: Element;
+  inputType?: string;
+  key?: string;
+  preventDefault(): void;
 }
 
 /** The document the page's script reads: id lookup, the active element, and the tree the parser built. */
@@ -292,6 +301,18 @@ class LoadedPage {
     this.element(id).dispatch('click');
   }
 
+  /** Types text into a box, replacing what it held, as typing or a paste does. */
+  type(id: string, text: string, inputType = 'insertText'): void {
+    const box = this.element(id);
+    box.value = text;
+    box.dispatch('input', box, { inputType });
+  }
+
+  /** Presses a key in the element that has it. */
+  press(id: string, key: string): void {
+    this.element(id).dispatch('keydown', this.element(id), { key });
+  }
+
   /** Ticks or clears a checkbox, as a press on it does, and reports the change. */
   tick(id: string, checked: boolean): void {
     const box = this.element(id);
@@ -302,8 +323,8 @@ class LoadedPage {
 }
 
 /** Loads the side bar the way the editor does: the provider resolved, then its page's script run. */
-function loadSideBar(initial: SideBarState, setup?: SetupForm): { provider: SideBarProvider; page: LoadedPage; view: (typeof stub.webviewViewProviders)[number] } {
-  const provider = new SideBarProvider(initial, setup);
+function loadSideBar(initial: SideBarState, setup?: SetupForm, picker?: PullRequestPicker): { provider: SideBarProvider; page: LoadedPage; view: (typeof stub.webviewViewProviders)[number] } {
+  const provider = new SideBarProvider(initial, setup, picker);
   window.registerWebviewViewProvider(REVIEW_TREE_VIEW, provider);
   const entry = stub.webviewViewProviders[0]!;
   const view = entry.resolve();
@@ -485,5 +506,100 @@ describe("the side bar's page script", () => {
     page.element('setup-account').value = 'personal';
     page.element('setup-account').dispatch('change');
     expect(setup.current.draft.account).toBe('personal');
+  });
+
+  it("works step 2's list from the keyboard: the box filters as it is typed in, a paste or Enter starts a URL's review, the chips and Review buttons press", async () => {
+    const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+    const pullRequest = (number: number, title: string): ListedPullRequest => ({
+      url: `https://github.com/octo-org/payments/pull/${number}`,
+      repository: 'octo-org/payments',
+      number,
+      title,
+      author: 'maria-k',
+      updatedAt: '2026-10-11T08:00:00Z',
+      summary: '',
+      review: { requested: number === 412, approvals: 0, changesRequested: 0, draft: false },
+      size: { additions: 1, deletions: 1, files: 1 },
+      newCommitsSinceLastLook: false,
+    });
+    const engine = {
+      listPullRequests: () =>
+        Promise.resolve<PullRequestList>({
+          outcome: 'listed',
+          groups: [
+            { group: 'review requested', pullRequests: [pullRequest(412, 'Retry idempotent charges on timeout')] },
+            { group: 'involving you', pullRequests: [pullRequest(7, 'Fix the cart badge')] },
+          ],
+        }),
+    };
+    stub.session = { accessToken: 'ghp_test-token-do-not-print' };
+    const drawn: { provider?: SideBarProvider } = {};
+    const picker = new PullRequestPicker({ engine: () => Promise.resolve(engine), onChange: () => drawn.provider?.redraw(), repository: () => Promise.resolve(undefined) });
+    const { provider, page, view } = loadSideBar({ settings: SETTINGS, marks: NO_MARKS, sections: [], reviewing: false, storyRead: false }, undefined, picker);
+    drawn.provider = provider;
+    await settle();
+    page.render(postedBodies(view).at(-1)!);
+    // Each card, by its Review button's name.
+    const cards = (): string[] => page.root.querySelectorAll('li.pr-card').map((card) => card.querySelector('button')!.getAttribute('aria-label')!);
+    expect(cards()).toEqual(['Review octo-org/payments #412: Retry idempotent charges on timeout', 'Review octo-org/payments #7: Fix the cart badge']);
+
+    // Typing filters; the text being typed, and the keyboard, survive the redraw that answers it.
+    page.element('pr-filter').focus();
+    page.type('pr-filter', 'cart');
+    await settle();
+    page.render(postedBodies(view).at(-1)!);
+    expect(cards()).toEqual(['Review octo-org/payments #7: Fix the cart badge']);
+    expect(page.element('pr-filter').value).toBe('cart');
+    expect(page.document.activeElement?.id).toBe('pr-filter');
+
+    // A chip is a toggle button; its press shows its group.
+    page.type('pr-filter', '');
+    page.click('pr-chip-review-requested');
+    await settle();
+    page.render(postedBodies(view).at(-1)!);
+    expect(page.element('pr-chip-review-requested').getAttribute('aria-pressed')).toBe('true');
+    expect(page.element('pr-chip-all').getAttribute('aria-pressed')).toBe('false');
+    expect(cards()).toEqual(['Review octo-org/payments #412: Retry idempotent charges on timeout']);
+
+    // A card's Review button, a pasted URL and Enter on a typed one each start that review.
+    page.click('pr-review-octo-org_payments__412');
+    page.type('pr-filter', 'https://github.com/octo-org/auth/pull/62', 'insertFromPaste');
+    page.type('pr-filter', 'https://github.com/octo-org/auth/pull/6');
+    page.press('pr-filter', 'Enter');
+    page.press('pr-filter', 'a');
+    await settle();
+    expect(stub.executedCommands).toEqual([
+      { id: REVIEW_COMMAND, args: ['https://github.com/octo-org/payments/pull/412'] },
+      { id: REVIEW_COMMAND, args: ['https://github.com/octo-org/auth/pull/62'] },
+      { id: REVIEW_COMMAND, args: ['https://github.com/octo-org/auth/pull/6'] },
+    ]);
+    page.render(postedBodies(view).at(-1)!);
+    expect(page.element('pr-review-url').getAttribute('data-pr-action')).toBe('review');
+  });
+
+  it("loads step 2's list when the reviewer opens its card during a review", async () => {
+    const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+    const asked: unknown[] = [];
+    const engine = { listPullRequests: (params: unknown) => (asked.push(params), Promise.resolve<PullRequestList>({ outcome: 'unreachable', reason: 'GitHub could not be reached.' })) };
+    stub.session = { accessToken: 'ghp_test-token-do-not-print' };
+    const drawn: { provider?: SideBarProvider } = {};
+    const picker = new PullRequestPicker({ engine: () => Promise.resolve(engine), onChange: () => drawn.provider?.redraw(), repository: () => Promise.resolve(undefined) });
+    const { provider, page, view } = loadSideBar(reviewState(), undefined, picker);
+    drawn.provider = provider;
+    await settle();
+    expect(asked).toEqual([]);
+
+    page.click('step-2-title');
+    await settle();
+    expect(asked).toHaveLength(1);
+    page.render(postedBodies(view).at(-1)!);
+    expect(page.element('step-2-body').hasAttribute('hidden')).toBe(false);
+
+    // Try again reads the list again; folding and opening the card again does not.
+    page.click('pr-reload');
+    page.click('step-2-title');
+    page.click('step-2-title');
+    await settle();
+    expect(asked).toHaveLength(2);
   });
 });

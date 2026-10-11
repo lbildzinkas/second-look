@@ -22,6 +22,7 @@ import {
   OPEN_PART_COMMAND,
   OPEN_REVIEW_CONTAINER_COMMAND,
   OPEN_SETUP_COMMAND,
+  REFRESH_PULL_REQUESTS_COMMAND,
   REVIEW_COMMAND,
   REVIEW_TREE_VIEW,
   SUBMIT_REVIEW_COMMAND,
@@ -41,6 +42,7 @@ import {
   type TreeSection,
 } from './tree.js';
 import { SideBarProvider } from './side-bar/provider.js';
+import { PullRequestPicker } from './side-bar/pull-request-picker.js';
 import { SetupForm } from './side-bar/setup-form.js';
 import type { SideBarState } from './side-bar/steps.js';
 import { draftTarget, ReviewComments } from './comments.js';
@@ -1048,7 +1050,8 @@ class ReviewSession {
  * the status bar entry that shows the agent, model and effort in use,
  * and the command it runs, which opens the quick pick that changes them,
  * and step 1's setup form, which opens by itself on the first open and
- * from the quick pick's last item.
+ * from the quick pick's last item, and step 2's list of the reviewer's
+ * open pull requests, with the title button that reloads it.
  * Nothing here runs anything from the workspace — the engine is started
  * from the companion's own install, reads GitHub, and writes only the
  * one review the reviewer sends — and, only with the opt-in mirror
@@ -1067,7 +1070,11 @@ export function activate(
     globalState: context.globalState,
     onChange: () => sideBar.redraw(),
   });
-  const sideBar: SideBarProvider = new SideBarProvider({ settings: readAgentSettings(), marks: NO_MARKS, sections: [], reviewing: false, storyRead: false }, setup);
+  const picker: PullRequestPicker = new PullRequestPicker({
+    engine: (): Promise<EngineClient> => session.readyEngine(),
+    onChange: () => sideBar.redraw(),
+  });
+  const sideBar: SideBarProvider = new SideBarProvider({ settings: readAgentSettings(), marks: NO_MARKS, sections: [], reviewing: false, storyRead: false }, setup, picker);
   const copies = new ChangeCopiesProvider();
   const marker = new PartMarker();
   const comments = new ReviewComments();
@@ -1140,6 +1147,7 @@ export function activate(
       await vscode.commands.executeCommand(OPEN_REVIEW_CONTAINER_COMMAND);
       setup.open();
     }),
+    vscode.commands.registerCommand(REFRESH_PULL_REQUESTS_COMMAND, () => picker.load()),
   );
   return sideBar;
 }

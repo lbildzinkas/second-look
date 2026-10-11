@@ -79,9 +79,9 @@ Every agent run bills the login the agent is signed in with — your subscriptio
 
 ## Starting a review
 
-1. Click the **Second Look** icon in the Activity Bar (an eye with a check mark), then the **Review a pull request** button on the side bar's second step, or the pull request button in the view's title bar. Running **Second Look: Review pull request** from the Command Palette does the same: the Second Look side bar opens when the review starts.
-2. Paste a GitHub pull request URL, such as `https://github.com/{owner}/{repo}/pull/{number}`.
-3. Sign in with VS Code's built-in GitHub login when it asks (the `repo` scope of the editor's GitHub account).
+1. Click the **Second Look** icon in the Activity Bar (an eye with a check mark). The side bar's second step lists your open pull requests from GitHub, with VS Code's GitHub sign-in: review requested from you, yours, involving you, and open in the folder's repository, each with its short description, review state and size. Typing in its box filters the list; the chips show one group at a time, and the refresh button in the view's title bar reloads it.
+2. Press **Review** on a pull request, or paste a GitHub pull request URL, such as `https://github.com/{owner}/{repo}/pull/{number}`, into the same box. The pull request button in the view's title bar, and **Second Look: Review pull request** from the Command Palette, ask for a URL instead: the Second Look side bar opens when the review starts.
+3. Sign in with VS Code's built-in GitHub login when it asks (the `repo` scope of the editor's GitHub account). Signed out, the list offers a **Sign in to GitHub** button; a pasted URL works without it, and the review asks then.
 
 The review fills the Second Look side bar and the overview tab opens beside it; results arrive in stages while the agent works. [How a review works](reviewing.md) walks through each one.
 

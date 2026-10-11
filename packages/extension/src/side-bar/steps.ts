@@ -1,6 +1,7 @@
 import { parsePullRequestUrl, partsLeft, reviewedState, type AgentName, type Part, type ReviewedMarks, type ReviewResult } from '@second-look/engine';
 import type { AgentSettings } from '../agent-settings.js';
 import { partsInReadingOrder, type TreeSection } from '../tree.js';
+import { listedCount, type PullRequestPickerView } from './pull-requests.js';
 import type { SetupView } from './setup.js';
 
 /** Where one step of the review path stands. */
@@ -24,6 +25,8 @@ export interface SideBarState {
   storyRead: boolean;
   /** Step 1's setup form; while it is open, step 1 is the current step. */
   setup?: SetupView;
+  /** Step 2's list of the reviewer's open pull requests. */
+  pullRequests?: PullRequestPickerView;
 }
 
 /** One step's card, as its header shows it. */
@@ -85,7 +88,7 @@ export function sideBarSteps(state: SideBarState): Step[] {
   ];
   const summaries = [
     setupLine(state.settings),
-    open ? pullRequestLine(result) : running[1] ? 'reading the pull request…' : '',
+    open ? pullRequestLine(result) : running[1] ? 'reading the pull request…' : state.pullRequests?.list.state === 'listed' ? `${listedCount(state.pullRequests)} open` : '',
     !open ? '' : state.storyRead ? 'read' : result.story === undefined ? (running[2] ? 'being written…' : 'in the overview') : 'ready',
     !open ? '' : left === 0 ? 'every part reviewed' : `${left} of ${result.parts.length} left`,
     !open || result.claims === undefined ? '' : `${result.claims.claims.length} listed`,

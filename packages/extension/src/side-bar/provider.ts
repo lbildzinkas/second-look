@@ -11,9 +11,11 @@ import {
 import { isBannerPartRef } from '../part-banner.js';
 import { partAtAnchor, type PartAnchor } from '../tree.js';
 import { sideBarBody, sideBarHtml, type SideBarButton } from './page.js';
+import type { PullRequestPicker } from './pull-request-picker.js';
+import { pullRequestMessage, waitingBadge, type PullRequestMessage } from './pull-requests.js';
 import { setupMessage, type SetupMessage } from './setup.js';
 import type { SetupForm } from './setup-form.js';
-import { nextPartToReview, type SideBarState } from './steps.js';
+import { nextPartToReview, sideBarSteps, type SideBarState } from './steps.js';
 
 /** The existing command each card button runs, beside the ones that need a part. */
 const BUTTON_COMMANDS: Record<Exclude<SideBarButton, 'nextPart'>, string> = {
@@ -29,7 +31,8 @@ export type SideBarMessage =
   | { type: 'command'; command: SideBarButton }
   | { type: 'openPart'; anchor: PartAnchor }
   | { type: 'mark'; anchor: PartAnchor; reviewed: boolean }
-  | SetupMessage;
+  | SetupMessage
+  | PullRequestMessage;
 
 /** Reads a side-bar message out of what the webview delivered, if it is one. */
 export function sideBarMessage(value: unknown): SideBarMessage | undefined {
@@ -37,6 +40,7 @@ export function sideBarMessage(value: unknown): SideBarMessage | undefined {
   const { type, command, anchor, reviewed } = value as Record<string, unknown>;
   if (type === 'ready') return { type };
   if (type === 'setup') return setupMessage(value);
+  if (type === 'pullRequests') return pullRequestMessage(value);
   if (type === 'command' && (command === 'nextPart' || (typeof command === 'string' && Object.hasOwn(BUTTON_COMMANDS, command)))) {
     return { type, command: command as SideBarButton };
   }
@@ -53,7 +57,9 @@ export function sideBarMessage(value: unknown): SideBarMessage | undefined {
  * runs an existing command — the reviewed checkbox through the same
  * mark-reviewed path as the part banner — so the Command Palette and the
  * side bar act alike, except step 1's setup form, whose changes and
- * presses go to the form. The view's badge counts the parts left to review.
+ * presses go to the form, and step 2's list, whose typing and presses go
+ * to the list. The view's badge counts the parts left to review, and
+ * before a review opens the pull requests waiting on the reviewer.
  */
 export class SideBarProvider implements vscode.WebviewViewProvider {
   private view: vscode.WebviewView | undefined;
@@ -65,14 +71,28 @@ export class SideBarProvider implements vscode.WebviewViewProvider {
   /** Step 1's setup form, when the side bar carries one. */
   private readonly setup: SetupForm | undefined;
 
-  constructor(state: SideBarState, setup?: SetupForm) {
+  /** Step 2's list of the reviewer's pull requests, when the side bar carries one. */
+  private readonly picker: PullRequestPicker | undefined;
+
+  constructor(state: SideBarState, setup?: SetupForm, picker?: PullRequestPicker) {
     this.state = state;
     this.setup = setup;
+    this.picker = picker;
   }
 
-  /** What the side bar shows now, step 1's setup form included. */
+  /** What the side bar shows now, step 1's setup form and step 2's list included. */
   get current(): SideBarState {
-    return this.setup === undefined ? this.state : { ...this.state, setup: this.setup.current };
+    return {
+      ...this.state,
+      ...(this.setup !== undefined ? { setup: this.setup.current } : {}),
+      ...(this.picker !== undefined ? { pullRequests: this.picker.current } : {}),
+    };
+  }
+
+  /** The badge: the parts left while a review is open, else the pull requests waiting on the reviewer. */
+  private get shownBadge(): vscode.ViewBadge | undefined {
+    if (this.state.result !== undefined || this.picker === undefined) return this.badge;
+    return waitingBadge(this.picker.current);
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
@@ -83,8 +103,9 @@ export class SideBarProvider implements vscode.WebviewViewProvider {
     view.onDidDispose(() => {
       if (this.view === view) this.view = undefined;
     });
-    view.badge = this.badge;
+    view.badge = this.shownBadge;
     this.setup?.shown();
+    this.showList();
   }
 
   /** Draws the side bar again, such as when step 1's setup form changed. */
@@ -96,13 +117,21 @@ export class SideBarProvider implements vscode.WebviewViewProvider {
   update(state: SideBarState, badge: vscode.ViewBadge | undefined): void {
     this.state = state;
     this.badge = badge;
-    if (this.view === undefined) return;
-    this.view.badge = badge;
     this.post();
   }
 
   private post(): void {
-    void this.view?.webview.postMessage({ type: 'render', body: sideBarBody(this.current) });
+    if (this.view === undefined) return;
+    this.view.badge = this.shownBadge;
+    void this.view.webview.postMessage({ type: 'render', body: sideBarBody(this.current) });
+    this.showList();
+  }
+
+  /** Loads step 2's list once its card shows open, before any review. */
+  private showList(): void {
+    const current = this.current;
+    if (this.picker === undefined || current.result !== undefined || current.reviewing || sideBarSteps(current)[1]?.open !== true) return;
+    this.picker.shown();
   }
 
   private handle(value: unknown): void {
@@ -114,6 +143,12 @@ export class SideBarProvider implements vscode.WebviewViewProvider {
     }
     if (message.type === 'setup') {
       this.setup?.handle(message).then(undefined, (error: unknown) => {
+        void vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
+      });
+      return;
+    }
+    if (message.type === 'pullRequests') {
+      this.picker?.handle(message).then(undefined, (error: unknown) => {
         void vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
       });
       return;
