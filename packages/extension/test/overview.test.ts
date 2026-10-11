@@ -4,15 +4,18 @@ import {
   OVERVIEW_VIEW_TYPE,
   OverviewPanel,
   claimWhere,
+  clockText,
   escapeHtml,
   overviewHtml,
   sanitiseUntrusted,
+  stageAgentLine,
   stampText,
 } from '../src/overview.js';
 import { ElementDouble, PageDouble } from './overview-page.js';
 import {
   claimsResult,
   criteriaResult,
+  doneStages,
   fetchedResult,
   judgedResult,
   mappedCriteriaResult,
@@ -21,6 +24,7 @@ import {
   pipelineResult,
   storyResult,
   unexplainedResult,
+  verdictsRunningStages,
 } from './results.js';
 import { stub } from './vscode-stub.js';
 
@@ -106,13 +110,12 @@ describe('the sanitiser', () => {
 });
 
 describe('overviewHtml', () => {
-  it('follows the recorded overview tab: title, where it comes from, stage chips, the story, then the description and the stamps', () => {
+  it('follows the recorded overview tab: title, where it comes from, the story, then the description and the stamps', () => {
     const html = overviewHtml({ result: storyResult() }, 'NONCE');
 
     const order = [
       '<h1>Retry failed webhook sends</h1>',
       '<div class="meta">example-org/example-repo #42 · reviewer-login · retry-webhooks → master · head f00dcaf</div>',
-      '<div class="stages"><span class="stg done">parts</span><span class="stg done">noise checks</span><span class="stg done">story</span></div>',
       '<h2>Story <span class="stamp">pi · zai/glm-4.6 · default effort · story prompt v1</span></h2>',
       '<div class="story">',
       '<h2>Pull request description</h2>',
@@ -120,6 +123,9 @@ describe('overviewHtml', () => {
     ].map((piece) => html.indexOf(piece));
     expect(order.every((index) => index >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
+    // A result no stages came with shows no stage list.
+    expect(html).not.toContain('class="slist"');
+    expect(html).not.toContain('class="sdone"');
   });
 
   it('says under where it comes from which commit the last look was at, and nothing on a first look', () => {
@@ -181,11 +187,10 @@ describe('overviewHtml', () => {
     expect(html).toContain('<script nonce="NONCE">');
   });
 
-  it('says the story is still coming while a stage runs, and why there is none once the review is done', () => {
+  it('shows a skeleton and a being-checked line while the story is being written, and why there is none once the review is done', () => {
     const plain = mixedResult();
     const running = overviewHtml({ result: plain, running: 'writing the story with pi' }, 'N');
-    expect(running).toContain('<p class="note">The story comes once the agent has written it.</p>');
-    expect(running).toContain('<span class="stg run">writing the story with pi…</span>');
+    expect(running).toContain('<section id="story"><h2>Story</h2><div class="skel" aria-hidden="true"><span class="sk a"></span><span class="sk b"></span><span class="sk c"></span></div><p class="checking"><span class="ic run tone-info" aria-hidden="true">◌</span> Being checked.</p></section>');
 
     expect(overviewHtml({ result: plain }, 'N')).toContain('<p class="note">No story was written for this review.</p>');
 
@@ -195,7 +200,6 @@ describe('overviewHtml', () => {
     };
     const html = overviewHtml({ result: fellBack }, 'N');
     expect(html).toContain('<p class="note">No story: the agent gave no usable answer (timeout: too slow).</p>');
-    expect(html).toContain('<span class="stg done">no story</span>');
   });
 
   it('says who made each result: the plain pass, or the agent with its stamp, or why the plain result stayed', () => {
@@ -213,7 +217,6 @@ describe('overviewHtml', () => {
     expect(html).toContain('<li><b>Parts</b> plain grouping kept: the answer was invalid twice</li>');
     expect(html).toContain('<li><b>Ranking</b> ranked by pi · zai/glm-4.6 · effort high · ranking prompt v1: the validator accepted it</li>');
     expect(html).toContain('<li><b>Story</b> written by pi · zai/glm-4.6 · default effort · story prompt v1: the checks accepted the story');
-    expect(html).toContain('<span class="stg done">plain grouping kept</span><span class="stg done">ranked by the agent</span>');
     expect(overviewHtml({ result: mixedResult() }, 'N')).toContain('<li><b>Parts</b> grouped by the plain pass</li><li><b>Ranking</b> ranked by the plain rule</li>');
   });
 
@@ -293,7 +296,6 @@ describe('the verdicts on the overview', () => {
     expect(html).toContain('<div class="why">needs the source of requests, which the companion does not have</div>');
     expect(html).toContain('<div class="why">dropped to unverifiable: the model&#39;s memory never yields verified</div>');
     expect(html).toContain('Each is judged against the change, its read-only copy and any failed check&#39;s CI log by pi · zai/glm-4.6 · default effort · verdicts prompt v1;');
-    expect(html).toContain('<span class="stg done">claims</span><span class="stg done">verdicts</span>');
     expect(html).toContain('<li><b>Verdicts</b> judged by pi · zai/glm-4.6 · default effort · verdicts prompt v1: every citation was re-read in the head copy</li>');
   });
 
@@ -343,7 +345,6 @@ describe('the verdicts on the overview', () => {
     };
     const html = overviewHtml({ result: fellBack }, 'N');
     expect(html).toContain('None is checked: the agent gave no usable answer.');
-    expect(html).toContain('<span class="stg done">no verdicts</span>');
   });
 
   it('says a checked verdict came from the verify ask when the judging fell back', () => {
@@ -449,7 +450,6 @@ describe('the claims on the overview', () => {
     expect(html).toContain('<span class="where">comment · src/retry.py:9 · <button');
     expect(html).toContain('<span class="where">the companion&#39;s story, sentence 2 · <button type="button" class="pt" data-part="1">src/settings.ts</button>');
     expect(html).not.toContain('class="tg"');
-    expect(html).toContain('<span class="stg done">story</span><span class="stg done">claims</span>');
     expect(html).toContain('<li><b>Claims</b> listed by pi · zai/glm-4.6 · default effort · claims prompt v1: every quote was found in its source');
   });
 
@@ -469,11 +469,13 @@ describe('the claims on the overview', () => {
     expect(html).toContain('<span class="flag">hidden HTML comment</span>');
   });
 
-  it('says the claims are still coming, why there are none, or that the agent found none', () => {
+  it('shows a skeleton and a being-checked line naming the agent while the claims are listed, why there are none, or that the agent found none', () => {
     const plain = mixedResult();
-    expect(overviewHtml({ result: plain, running: 'listing the claims with pi' }, 'N')).toContain(
-      '<p class="note">The claims come once the agent has listed them.</p>',
-    );
+    const stages = verdictsRunningStages()
+      .slice(0, 6)
+      .map((record) => (record.id === 'claims' ? { ...record, state: 'running' as const, durationMs: undefined } : record));
+    const listing = overviewHtml({ result: { ...plain, stages }, running: 'listing the claims with pi' }, 'N');
+    expect(listing).toContain('<section id="claims"><h2>Claims</h2><div class="skel" aria-hidden="true"><span class="sk a"></span><span class="sk b"></span><span class="sk c"></span></div><p class="checking"><span class="ic run tone-info" aria-hidden="true">◌</span> Being checked by pi · zai/glm-4.6 · high.</p></section>');
     expect(overviewHtml({ result: plain }, 'N')).toContain('<p class="note">No claims were listed for this review.</p>');
 
     const shown = claimsResult();
@@ -483,7 +485,6 @@ describe('the claims on the overview', () => {
     };
     const html = overviewHtml({ result: fellBack }, 'N');
     expect(html).toContain('<p class="note">No claims: the agent gave no usable answer (timeout: too slow).</p>');
-    expect(html).toContain('<span class="stg done">no claims</span>');
     expect(html).toContain('<li><b>Claims</b> none: the agent gave no usable answer (timeout: too slow)</li>');
 
     const none: ReviewResult = { ...shown, claims: { ...shown.claims!, claims: [] } };
@@ -508,6 +509,169 @@ describe('stampText', () => {
 
   it("always shows the effort, naming the agent's default when the run asked for none", () => {
     expect(stampText(STAMP, 'story', '1')).toBe('pi · zai/glm-4.6 · default effort · story prompt v1');
+  });
+});
+
+describe('clockText', () => {
+  it('reads a duration or an elapsed time as m:ss, whole seconds', () => {
+    expect(clockText(0)).toBe('0:00');
+    expect(clockText(2_999)).toBe('0:02');
+    expect(clockText(102_000)).toBe('1:42');
+    expect(clockText(251_000)).toBe('4:11');
+    expect(clockText(-1)).toBe('0:00');
+  });
+});
+
+describe('stageAgentLine', () => {
+  it('names the agent, the model and the effort, naming each of the agent\u2019s own defaults', () => {
+    expect(stageAgentLine({ agent: 'claude-code', model: null, effort: null })).toBe('claude-code · default model · default effort');
+    expect(stageAgentLine({ agent: 'pi', model: 'zai/glm-4.6', effort: 'high' })).toBe('pi · zai/glm-4.6 · high');
+  });
+});
+
+describe('the stage list on the overview', () => {
+  it('replaces the chip row while a review runs: done stages with their durations, the running one with its agent and elapsed time, and the ones to come', () => {
+    const shown = { ...claimsResult(), stages: verdictsRunningStages() };
+    const html = overviewHtml({ result: shown, running: 'checking the claims with pi' }, 'N');
+
+    expect(html).not.toContain('class="stg');
+    expect(html).toContain('<div class="slist"><div class="shead"><span class="ic run tone-info" aria-hidden="true">◌</span><b>Review in progress</b> <span class="cnt">stage 7 of 9</span><span class="tm"><span class="elapsed" data-started="');
+    expect(html).toContain('</span> so far</span></div>');
+    expect(html).toContain('<div class="srow"><span class="ic tone-ok" aria-hidden="true">✓</span><span class="nm">Parts and noise checks</span><span class="w">0:03</span></div>');
+    expect(html).toContain('<span class="nm">Grouping <span class="who">by pi</span></span><span class="w">0:31</span>');
+    expect(html).toContain('<div class="srow"><span class="ic tone-warn" aria-hidden="true">⊘</span><span class="nm">Ranking <span class="fallback">plain ranking kept: no ranking evaluation for this combination</span></span><span class="w">0:00</span></div>');
+    expect(html).toContain('<span class="nm">Claims · 4 listed <span class="who">by pi</span></span><span class="w">0:21</span>');
+    expect(html).toContain(
+      '<div class="srow run"><span class="ic run tone-info" aria-hidden="true">◌</span><span class="nm">Verdicts: checking 4 claims <span class="who">· pi · zai/glm-4.6 · high</span></span>' +
+        '<span class="w tone-info elapsed" data-started="',
+    );
+    expect(html).toContain('<div class="srow todo"><span class="ic tone-mut" aria-hidden="true">○</span><span class="nm">Acceptance criteria</span><span class="w">next</span></div>');
+    expect(html).toContain('<div class="srow todo"><span class="ic tone-mut" aria-hidden="true">○</span><span class="nm">Documentation links</span><span class="w">to come</span></div>');
+  });
+
+  it('reads claims already listed as being checked while the verdicts run, never as finished', () => {
+    const shown = { ...claimsResult(), stages: verdictsRunningStages() };
+    const html = overviewHtml({ result: shown, running: 'checking the claims with pi' }, 'N');
+
+    expect(html).toContain(`<h2>Claims ${pill('info', '◌', '4 checking')} <span class="stamp">pi · zai/glm-4.6 · default effort · claims prompt v1</span></h2>`);
+    expect(html).toContain('<td><span class="pl tone-info"><span class="ic" aria-hidden="true">◌</span>checking</span></td>');
+    expect(html).not.toContain('not checked');
+    expect(html).toContain('Each is being checked by pi · zai/glm-4.6 · high.');
+    expect(html).toContain('<div class="big tone-info">4</div><div class="lb"><span class="tone-info" aria-hidden="true">◌</span> claims being checked</div>');
+    expect(html).toContain('<button type="button" class="ri" data-section="claims" aria-label="Claims, 4 checking"><span class="ic tone-info" aria-hidden="true">◌</span>Claims<span class="n tone-info">4</span></button>');
+  });
+
+  it('reads criteria not yet mapped as being checked while the mapping stage runs, never as finished', () => {
+    const stages = verdictsRunningStages().map((record) =>
+      record.id === 'verdicts'
+        ? { ...record, state: 'done' as const, durationMs: 102_000 }
+        : record.id === 'criteria'
+          ? { ...record, state: 'running' as const, startedAt: '2026-10-04T00:03:18.000Z' }
+          : record.id === 'docLinks'
+            ? { ...record, state: 'to come' as const }
+            : record,
+    );
+    const html = overviewHtml({ result: { ...criteriaResult(), stages }, running: 'mapping the acceptance criteria with pi' }, 'N');
+
+    expect(html).toContain('<td><span class="pl tone-info"><span class="ic" aria-hidden="true">◌</span>checking</span></td>');
+    expect(html).not.toContain('not checked');
+    expect(html).toContain('Each is being checked by pi · zai/glm-4.6 · high.');
+    expect(html).toContain('<div class="big tone-info">2</div><div class="lb"><span class="tone-info" aria-hidden="true">◌</span> criteria being checked</div>');
+    expect(html).toContain('Acceptance criteria<span class="n tone-info">');
+  });
+
+  it('folds into one Review complete line at the end, with each fallback and its reason, the list behind a fold', () => {
+    const shown = { ...judgedResult(), stages: doneStages() };
+    const html = overviewHtml({ result: shown }, 'N');
+
+    expect(html).not.toContain('class="stg');
+    expect(html).not.toContain('Review in progress');
+    expect(html).toContain(
+      '<div class="sdone"><span class="ic tone-ok" aria-hidden="true">✓</span> <b>Review complete</b> in 4:11 · 9 stages · pi · zai/glm-4.6 · high' +
+        '<details class="sfold"><summary>show stages</summary><div class="slist">',
+    );
+    expect(html).toContain(
+      '<div class="fbnote tone-warn"><span class="ic" aria-hidden="true">⊘</span><span><b>Ranking fell back</b>: plain ranking kept: no ranking evaluation for this combination</span></div>',
+    );
+    expect(html).not.toContain('fbnote tone-bad');
+    // The folded list still carries every stage with its time.
+    expect(html).toContain('<span class="nm">Verdicts <span class="who">by pi</span></span><span class="w">1:42</span>');
+  });
+
+  it('says Review stopped, and names the stage that was stopped, when the reviewer cancelled the review', () => {
+    const stages = doneStages().map((record) => (record.id === 'docLinks' ? { ...record, state: 'stopped' as const, durationMs: undefined, detail: 'the review was stopped before this stage finished' } : record));
+    const html = overviewHtml({ result: { ...judgedResult(), stages } }, 'N');
+
+    expect(html).toContain('<b>Review stopped</b>');
+    expect(html).toContain('<div class="fbnote tone-mut"><span class="ic" aria-hidden="true">□</span><span><b>Documentation links stopped</b>: the review was stopped before this stage finished</span></div>');
+    expect(html).toContain('<div class="srow todo" title="the review was stopped before this stage finished"><span class="ic tone-mut" aria-hidden="true">□</span><span class="nm">Documentation links</span><span class="w">stopped</span></div>');
+  });
+
+  it('says what happened to a section whose stage already ended, never that it is being checked or still to come', () => {
+    const failed = verdictsRunningStages().map((record) => {
+      if (record.id === 'story') return { ...record, state: 'failed' as const, detail: 'the agent run failed: exit 1' };
+      if (record.id === 'unexplained') return { ...record, state: 'running' as const, durationMs: undefined };
+      return record.id === 'verdicts' ? { ...record, state: 'to come' as const } : record;
+    });
+    const failedHtml = overviewHtml({ result: { ...mixedResult(), stages: failed }, running: 'comparing the change with its description and issues with pi' }, 'N');
+    expect(failedHtml).toContain('<section id="story"><h2>Story</h2><p class="note">Story failed: the agent run failed: exit 1.</p></section>');
+    const story = failedHtml.slice(failedHtml.indexOf('<section id="story">'), failedHtml.indexOf('<section id="criteria">'));
+    expect(story).not.toContain('skel');
+    expect(story).not.toContain('Being checked');
+
+    const skipped = doneStages().map((record) => {
+      if (record.id === 'criteria') return { ...record, state: 'skipped' as const, detail: 'this change gave it nothing to do' };
+      return record.id === 'docLinks' ? { ...record, state: 'running' as const, durationMs: undefined } : record;
+    });
+    const skippedHtml = overviewHtml({ result: { ...mixedResult(), stages: skipped }, running: 'suggesting documentation links with pi' }, 'N');
+    expect(skippedHtml).toContain('<section id="criteria"><h2>Acceptance criteria</h2><p class="note">Acceptance criteria skipped: this change gave it nothing to do.</p></section>');
+    const criteria = skippedHtml.slice(skippedHtml.indexOf('<section id="criteria">'), skippedHtml.indexOf('<section id="unexplained">'));
+    expect(criteria).not.toContain('skel');
+    expect(criteria).not.toContain('Still to come');
+  });
+
+  it('says how a verdicts or criteria pass that checked nothing ended, never that none is checked yet', () => {
+    const failed = verdictsRunningStages().map((record) => {
+      if (record.id === 'verdicts') return { ...record, state: 'failed' as const, detail: 'the agent run failed: exit 1' };
+      return record.id === 'criteria' ? { ...record, state: 'running' as const, startedAt: '2026-10-04T00:03:18.000Z' } : record;
+    });
+    const claimsHtml = overviewHtml({ result: { ...claimsResult(), stages: failed }, running: 'mapping the acceptance criteria with pi' }, 'N');
+    expect(claimsHtml).toContain('None is checked: Verdicts failed: the agent run failed: exit 1.');
+    expect(claimsHtml).not.toContain('None is checked yet');
+
+    const listed = claimsResult().claims!;
+    const asked = { ...listed.claims[0]!, asked: true as const, verdict: { kind: 'refuted' as const, source: 'the change itself' as const, reason: 'The loop runs five times.', evidence: [{ path: 'src/retry.py', line: 6, quote: 'for attempt in range(5):' }] } };
+    const askedHtml = overviewHtml({ result: { ...claimsResult(), claims: { ...listed, claims: [asked, ...listed.claims.slice(1)] }, stages: failed }, running: 'mapping the acceptance criteria with pi' }, 'N');
+    expect(askedHtml).toContain('Verdicts failed: the agent run failed: exit 1; the one checked verdict came from the Verify this claim ask.');
+    expect(askedHtml).not.toContain('The verdicts pass did not run');
+
+    const ended = doneStages().map((record) => {
+      if (record.id === 'verdicts') return { ...record, state: 'skipped' as const, detail: 'the review was asked not to run it' };
+      if (record.id === 'criteria') return { ...record, state: 'failed' as const, detail: 'the agent run failed: exit 1' };
+      return record.id === 'docLinks' ? { ...record, state: 'running' as const, durationMs: undefined } : record;
+    });
+    const criteriaHtml = overviewHtml({ result: { ...criteriaResult(), claims: claimsResult().claims, stages: ended }, running: 'suggesting documentation links with pi' }, 'N');
+    expect(criteriaHtml).toContain('None is checked: Acceptance criteria failed: the agent run failed: exit 1.');
+    expect(criteriaHtml).toContain('None is checked: Verdicts skipped: the review was asked not to run it.');
+    expect(criteriaHtml).not.toContain('None is checked yet');
+  });
+
+  it('renders the stage names, reasons and times as escaped text, never as markup', () => {
+    const hostile = verdictsRunningStages().map((record) =>
+      record.id === 'ranking'
+        ? { ...record, detail: REMOTE.split('\n')[0]! }
+        : record.id === 'verdicts'
+          ? { ...record, agent: { agent: '<img src=x>', model: '<a href="y">m</a>', effort: null }, startedAt: `" onmouseover="${REMOTE}" x="` }
+          : record,
+    );
+    const html = overviewHtml({ result: { ...claimsResult(), stages: hostile }, running: 'checking the claims with pi' }, 'N');
+
+    expect(loadsOrLinks(html)).toBe(false);
+    expect(html).toContain('&lt;img src=x&gt;');
+    expect(html).toContain('&lt;a href=&quot;y&quot;&gt;m&lt;/a&gt;');
+    // A start time that is no time carries no data-started mark at all, so nothing of it reaches an attribute.
+    expect(html).toContain('<span class="w tone-info elapsed">0:00</span>');
+    expect(html).not.toContain('onmouseover');
   });
 });
 
@@ -566,10 +730,10 @@ describe('the acceptance criteria on the overview', () => {
     expect(html).not.toContain('<table class="ct">');
   });
 
-  it('says the criteria are still coming, or why none was read', () => {
+  it('shows a skeleton and a still-to-come line while the criteria wait, or why none was read', () => {
     const plain = mixedResult();
-    expect(overviewHtml({ result: plain, running: 'reading the linked issues' }, 'N')).toContain(
-      '<p class="note">The criteria come once the linked issues are read.</p>',
+    expect(overviewHtml({ result: { ...plain, stages: verdictsRunningStages() }, running: 'checking the claims with pi' }, 'N')).toContain(
+      '<section id="criteria"><h2>Acceptance criteria</h2><div class="skel" aria-hidden="true"><span class="sk a"></span><span class="sk b"></span><span class="sk c"></span></div><p class="checking"><span class="ic run tone-info" aria-hidden="true">◌</span> Still to come; pi · zai/glm-4.6 · high will check it.</p></section>',
     );
     expect(overviewHtml({ result: plain }, 'N')).toContain('<p class="note">No criteria were read for this review.</p>');
 
@@ -619,7 +783,6 @@ describe('the criteria verdicts on the overview', () => {
     expect(html).toContain('<span class="label">Tests</span><span class="v"><span class="none">none</span></span>');
     expect(html).toContain('<span class="label">Manual</span><span class="v"><span class="cited">none reported in the pull request</span></span>');
     expect(html).toContain('Each is judged against the change, its read-only copy and the manual checks the description reports, by pi · zai/glm-4.6 · default effort · criteria-mapping prompt v1');
-    expect(html).toContain('<span class="stg done">criteria mapped</span>');
     expect(html).toContain('<li><b>Acceptance criteria</b> mapped by pi · zai/glm-4.6 · default effort · criteria-mapping prompt v1: every citation was re-read');
   });
 
@@ -662,7 +825,6 @@ describe('the criteria verdicts on the overview', () => {
     };
     const html = overviewHtml({ result: fellBack }, 'N');
     expect(html).toContain('None is checked: the agent gave no usable answer (timeout: no answer within 300 seconds).');
-    expect(html).toContain('<span class="stg done">criteria not mapped</span>');
     expect(html).not.toContain('class="evidence"');
   });
 
@@ -739,17 +901,19 @@ describe('the unexplained changes on the overview', () => {
         '<div class="where"><button type="button" class="pt issue" data-issue="0">#30 in example-org/example-repo</button> · line 3</div></td></tr>',
     );
     expect(html).toContain('<button type="button" class="pt draft" data-draft="described change" data-index="1">Draft comment</button>');
-    expect(html).toContain('<span class="stg done">unexplained changes</span>');
     expect(html).toContain('<li><b>Unexplained changes</b> compared by pi · zai/glm-4.6 · default effort · unexplained prompt v1: compared with the description and 2 linked issues;');
   });
 
-  it('says the comparison is still coming, why there is none, or that everything is explained', () => {
+  it('shows a skeleton and a being-checked line while the change is compared, why there is none, or that everything is explained', () => {
     const shown = unexplainedResult();
     const unexplained = shown.unexplained!;
     const page = (result: ReviewResult, running?: string): string => overviewHtml({ result, ...(running ? { running } : {}) }, 'N');
+    const stages = verdictsRunningStages()
+      .slice(0, 5)
+      .map((record) => (record.id === 'unexplained' ? { ...record, state: 'running' as const, durationMs: undefined } : record));
 
-    expect(page(criteriaResult(), 'comparing the change with its description and issues with pi')).toContain(
-      'The unexplained changes come once the agent has compared the change with its description and issues.',
+    expect(page({ ...criteriaResult(), stages }, 'comparing the change with its description and issues with pi')).toContain(
+      '<section id="unexplained"><h2>Unexplained changes</h2><div class="skel" aria-hidden="true"><span class="sk a"></span><span class="sk b"></span><span class="sk c"></span></div><p class="checking"><span class="ic run tone-info" aria-hidden="true">◌</span> Being checked by pi · zai/glm-4.6 · high.</p></section>',
     );
     expect(page(criteriaResult())).toContain('The change was not compared with its description and issues for this review.');
     expect(page({ ...shown, unexplained: { ...unexplained, outcome: 'fell back', detail: 'the agent gave no usable answer', parts: [], described: [] } })).toContain(
@@ -758,7 +922,6 @@ describe('the unexplained changes on the overview', () => {
     const { stamp: _stamp, ...unstamped } = unexplained;
     const notCompared = page({ ...shown, unexplained: { ...unstamped, outcome: 'not compared', detail: 'the pull request has no description', parts: [], described: [] } });
     expect(notCompared).toContain('<h2>Unexplained changes</h2><p class="note">Not compared: the pull request has no description.</p>');
-    expect(notCompared).toContain('<span class="stg done">no comparison</span>');
     expect(page({ ...shown, unexplained: { ...unexplained, parts: [], described: [] } })).toContain(
       'The agent found every part explained, and every change described in the diff.',
     );
@@ -814,7 +977,7 @@ describe('the dashboard and the contents rail', () => {
         tile('must', '★', 1, `of ${result.parts.length} parts must review`) +
         '</div>',
     );
-    expect(html.indexOf('<div class="dash">')).toBeGreaterThan(html.indexOf('<div class="stages">'));
+    expect(html.indexOf('<div class="dash">')).toBeGreaterThan(html.indexOf('<div class="meta">'));
     expect(html.indexOf('<div class="dash">')).toBeLessThan(html.indexOf('<section id="story">'));
   });
 
@@ -948,18 +1111,28 @@ describe('OverviewPanel', () => {
     expect(overview.open()).toBe(false);
     expect(stub.webviewPanels).toHaveLength(0);
 
-    overview.update(mixedResult(), 'grouping related hunks with pi');
+    overview.update(
+      {
+        ...mixedResult(),
+        stages: verdictsRunningStages().map((record) => {
+          if (record.id === 'grouping') return { ...record, state: 'running' as const, durationMs: undefined };
+          return record.id === 'plain' ? record : { ...record, state: 'to come' as const, startedAt: undefined, durationMs: undefined };
+        }),
+      },
+      'grouping related hunks with pi',
+    );
     expect(overview.open({ preserveFocus: true })).toBe(true);
 
     const panel = stub.webviewPanels[0]!;
     expect(panel.viewType).toBe(OVERVIEW_VIEW_TYPE);
     expect(panel.title).toBe('Second Look: #42 overview');
     expect(panel.webview.options).toEqual({ enableScripts: true, enableCommandUris: false, localResourceRoots: [] });
-    expect(panel.webview.html).toContain('grouping related hunks with pi…');
+    expect(panel.webview.html).toContain('class="srow run"');
 
     overview.update(storyResult());
     expect(stub.webviewPanels).toHaveLength(1);
     expect(panel.webview.html).toContain('<div class="story">');
+    expect(panel.webview.html).not.toContain('class="srow run"');
     expect(panel.webview.html).not.toContain('grouping related hunks with pi');
   });
 

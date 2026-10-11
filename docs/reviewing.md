@@ -34,7 +34,7 @@ An agent pass that fails or answers invalidly falls back to the plain result and
 
 ## The overview tab
 
-The **Second Look: #… overview** tab opens with the review: the pull request's title and where it comes from, the line saying which commit your last look was at and what changed since, a chip for each stage, then, as they land:
+The **Second Look: #… overview** tab opens with the review: the pull request's title and where it comes from, the line saying which commit your last look was at and what changed since, then — while the review runs — a stage list: each stage done with its duration, the one running with its agent, model, effort and elapsed time, and the ones to come, folding at the end into one line that says the review is complete, with each fallback and its reason. A section still being produced shows a skeleton and a line naming the agent checking it, and claims already listed read as being checked. Then, as they land:
 
 - **The story**, with its stamp — each part it mentions is a link that opens the part in the diff editor.
 - **The acceptance criteria**, each condition quoted from the checklist under the heading the `second-look.criteriaHeading` setting names, its issue a link, and its verdict — **met**, **partly met**, **not met**, **can't tell** or **needs manual check** — with the code and the tests it cites, each a link that opens the line read-only in the head copy, and the manual checks the description reports.

@@ -10,6 +10,7 @@ import {
   LIBRARY_ARCHIVES,
   PULL_REQUEST_GROUPS,
   REVIEW_RESULT_VERSION,
+  REVIEW_STAGE_IDS,
   type AskAnswer,
   type ChangeKind,
   type DiffLineKind,
@@ -29,6 +30,7 @@ import {
   type PullRequestList,
   type ReviewedMarks,
   type ReviewResult,
+  type ReviewStageRecord,
   type SentReview,
   type SyntaxCheck,
   type TestAgentRpcResult,
@@ -820,6 +822,39 @@ function isBudget(value: unknown): boolean {
   );
 }
 
+/** How a review stage can stand, as the result's stages record it. */
+const REVIEW_STAGE_STATES = ['to come', 'running', 'done', 'fell back', 'failed', 'skipped', 'stopped'] as const;
+
+/** The agent working on a stage, with the model and effort asked for, naming the agent's own defaults as nulls. */
+function isReviewStageAgent(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isString(value['agent']) &&
+    (value['model'] === null || isString(value['model'])) &&
+    (value['effort'] === null || isString(value['effort']))
+  );
+}
+
+/**
+ * Checks that a value read over the protocol is a review's stage records:
+ * each with its id, place and state, and the start time, duration,
+ * worker, stamp and reason it carries when it has them.
+ */
+function isReviewStages(value: unknown): value is ReviewStageRecord[] {
+  return (
+    Array.isArray(value) &&
+    value.every((record) => {
+      if (!isRecord(record) || !isOneOf(record['id'], REVIEW_STAGE_IDS) || !isOneOf(record['state'], REVIEW_STAGE_STATES)) return false;
+      if (!isNumber(record['position']) || !Number.isInteger(record['position']) || record['position'] < 1) return false;
+      if (!isNumber(record['total']) || !Number.isInteger(record['total']) || record['total'] < 1) return false;
+      if (!isOptionalString(record['startedAt']) || !isOptionalString(record['detail'])) return false;
+      if (record['durationMs'] !== undefined && !(isNumber(record['durationMs']) && record['durationMs'] >= 0)) return false;
+      if (record['stamp'] !== undefined && !isAgentStamp(record['stamp'])) return false;
+      return record['agent'] === undefined || isReviewStageAgent(record['agent']);
+    })
+  );
+}
+
 /**
  * Checks that a value read over the protocol is a review result of the
  * version this extension understands. The engine and the extension share
@@ -834,6 +869,7 @@ export function isReviewResult(value: unknown): value is ReviewResult {
   if (!isRecord(copies) || !isChangeCopy(copies['base']) || !isChangeCopy(copies['head'])) {
     return false;
   }
+  if (value['stages'] !== undefined && !isReviewStages(value['stages'])) return false;
   const parseTimeMs = value['parseTimeMs'];
   if (typeof parseTimeMs !== 'number' || !Number.isFinite(parseTimeMs) || parseTimeMs < 0) {
     return false;
