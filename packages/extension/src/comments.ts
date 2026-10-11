@@ -132,6 +132,20 @@ export function commentLocation(comment: Comment): string {
   return comment.kind === 'line' ? `${comment.path}:${comment.line}` : `${comment.path} (part)`;
 }
 
+/** One comment of the pending review, or one draft still open, as step 7 of the side bar lists it. */
+export interface ListedComment {
+  /** Stays the same while the comment or draft does — a draft added keeps its own — so a press names it. */
+  id: number;
+  /** A gathered comment, or a draft not yet added nor discarded. */
+  kind: 'comment' | 'draft';
+  /** Where it points: `path:line`, or `path (part)`. */
+  location: string;
+  /** Its text: a comment's as gathered, a draft's as drafted. */
+  body: string;
+  /** The finding a draft was drafted from. */
+  from?: string;
+}
+
 /** One pending comment shown in its thread, as the editor renders it. */
 function shownComment(body: string): vscode.Comment {
   return {
@@ -159,8 +173,13 @@ export class ReviewComments implements vscode.Disposable {
 
   private readonly threads = new Map<vscode.CommentThread, Comment>();
 
-  /** The drafts open for editing, each with its thread; none is in the pending review yet. */
-  private readonly drafts = new Map<vscode.Comment, vscode.CommentThread>();
+  /** The drafts open for editing, each with its thread, where it points and its finding; none is in the pending review yet. */
+  private readonly drafts = new Map<vscode.Comment, { thread: vscode.CommentThread; location: string; from: string }>();
+
+  /** Each thread's id, which the side bar's presses name it by. */
+  private readonly ids = new Map<vscode.CommentThread, number>();
+
+  private nextId = 1;
 
   private readonly changed = new vscode.EventEmitter<void>();
 
@@ -169,7 +188,7 @@ export class ReviewComments implements vscode.Disposable {
   /** True while the pending review's one write is under way. */
   private sending = false;
 
-  /** Fires whenever a comment joins or leaves the pending review. */
+  /** Fires whenever a comment joins or leaves the pending review, or a draft opens or closes. */
   readonly onDidChange = this.changed.event;
 
   constructor() {
@@ -201,6 +220,59 @@ export class ReviewComments implements vscode.Disposable {
     return [...this.threads.values()];
   }
 
+  /** Every gathered comment, then every draft still open, as step 7 lists them. */
+  listed(): ListedComment[] {
+    const comments = [...this.threads].map(([thread, comment]): ListedComment => ({ id: this.idOf(thread), kind: 'comment', location: commentLocation(comment), body: comment.body }));
+    const drafts = [...this.drafts].map(([comment, { thread, location, from }]): ListedComment => ({
+      id: this.idOf(thread),
+      kind: 'draft',
+      location,
+      body: typeof comment.body === 'string' ? comment.body : comment.body.value,
+      from,
+    }));
+    return [...comments, ...drafts];
+  }
+
+  private idOf(thread: vscode.CommentThread): number {
+    let id = this.ids.get(thread);
+    if (id === undefined) {
+      id = this.nextId++;
+      this.ids.set(thread, id);
+    }
+    return id;
+  }
+
+  /** The thread of a listed comment or draft, expanded so it shows once its file opens; undefined once it is gone. */
+  reveal(id: number): vscode.CommentThread | undefined {
+    const thread = this.threadOf(id);
+    if (thread !== undefined) thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+    return thread;
+  }
+
+  /**
+   * Acts on a listed comment or draft, as step 7's buttons press: discards
+   * a comment, thread and all, or adds a draft — with the text it holds,
+   * as drafted — or discards it. An id gone meanwhile does nothing.
+   */
+  act(id: number, action: 'discard' | 'add'): void {
+    const thread = this.threadOf(id);
+    if (thread === undefined) return;
+    if (this.threads.has(thread)) {
+      if (action === 'discard') this.discard(thread);
+      return;
+    }
+    const draft = [...this.drafts].find(([, entry]) => entry.thread === thread)?.[0];
+    if (draft === undefined) return;
+    if (action === 'add') this.addDraft(draft);
+    else this.discardDraft(draft);
+  }
+
+  private threadOf(id: number): vscode.CommentThread | undefined {
+    const thread = [...this.ids].find(([, each]) => each === id)?.[0];
+    if (thread === undefined) return undefined;
+    return this.threads.has(thread) || [...this.drafts.values()].some((entry) => entry.thread === thread) ? thread : undefined;
+  }
+
   /**
    * Performs the pending review's one write with the gathering sealed:
    * while the write is under way — the sign-in it may ask for, the
@@ -228,10 +300,11 @@ export class ReviewComments implements vscode.Disposable {
    */
   setReview(result: ReviewResult): void {
     this.result = result;
-    for (const thread of this.drafts.values()) {
+    for (const { thread } of this.drafts.values()) {
       thread.dispose();
     }
     this.drafts.clear();
+    this.ids.clear();
     this.clear();
   }
 
@@ -347,8 +420,10 @@ export class ReviewComments implements vscode.Disposable {
     thread.comments = [comment];
     thread.canReply = false;
     thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
-    thread.label = `Draft comment · ${target.kind === 'line' ? `${target.path}:${target.line}` : `${target.part.path} (part)`}`;
-    this.drafts.set(comment, thread);
+    const location = target.kind === 'line' ? `${target.path}:${target.line}` : `${target.part.path} (part)`;
+    thread.label = `Draft comment · ${location}`;
+    this.drafts.set(comment, { thread, location, from });
+    this.changed.fire();
   }
 
   /**
@@ -361,7 +436,7 @@ export class ReviewComments implements vscode.Disposable {
       this.refuseWhileSending();
       return;
     }
-    const thread = this.drafts.get(comment);
+    const thread = this.drafts.get(comment)?.thread;
     if (thread === undefined) {
       return;
     }
@@ -376,9 +451,12 @@ export class ReviewComments implements vscode.Disposable {
 
   /** Discards a draft, thread and all; it never joined the pending review. */
   discardDraft(comment: vscode.Comment): void {
-    const thread = this.drafts.get(comment);
+    const thread = this.drafts.get(comment)?.thread;
+    if (thread === undefined) return;
     this.drafts.delete(comment);
-    thread?.dispose();
+    this.ids.delete(thread);
+    thread.dispose();
+    this.changed.fire();
   }
 
   /** Discards one thread of the pending review, gathered comment and all. */
@@ -388,6 +466,7 @@ export class ReviewComments implements vscode.Disposable {
       return;
     }
     const gathered = this.threads.delete(thread);
+    this.ids.delete(thread);
     thread.dispose();
     if (gathered) {
       this.changed.fire();
@@ -439,6 +518,7 @@ export class ReviewComments implements vscode.Disposable {
   clear(): void {
     for (const thread of this.threads.keys()) {
       thread.dispose();
+      this.ids.delete(thread);
     }
     this.threads.clear();
     this.changed.fire();

@@ -209,7 +209,7 @@ export function pendingReviewSection(comments: readonly Comment[]): TreeSection 
 }
 
 /** The comment's first line, cut short for the row beside it. */
-function preview(body: string): string {
+export function preview(body: string): string {
   const firstLine = body.split('\n')[0] ?? '';
   return firstLine.length > 60 ? `${firstLine.slice(0, 57)}…` : firstLine;
 }

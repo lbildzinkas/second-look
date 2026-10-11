@@ -1,5 +1,6 @@
-import { parsePullRequestUrl, partsLeft, reviewedState, CRITERION_VERDICT_KINDS, type AgentName, type Part, type ReviewedMarks, type ReviewResult, type ReviewStageId } from '@second-look/engine';
+import { parsePullRequestUrl, partsLeft, reviewedState, CRITERION_VERDICT_KINDS, type AgentName, type Part, type ReviewedMarks, type ReviewResult, type ReviewStageId, type SubmitKind } from '@second-look/engine';
 import type { AgentSettings } from '../agent-settings.js';
+import type { ListedComment } from '../comments.js';
 import { partsInReadingOrder, type TreeSection } from '../tree.js';
 import type { ReviewProgress } from './progress.js';
 import { listedCount, type PullRequestPickerView } from './pull-requests.js';
@@ -33,6 +34,25 @@ export interface SideBarState {
   progress?: ReviewProgress;
   /** The steps' “I’ve checked these” ticks, as they stand for the review shown. */
   ticks?: StepTicks;
+  /** Step 7's list: the pending review's comments, then the drafts not yet added nor discarded. */
+  comments?: readonly ListedComment[];
+  /** True while step 4 shows only the parts changed since the reviewer's last look. */
+  onlyChanged?: boolean;
+  /** The review sent from the review shown, once Submit sent it. */
+  sent?: SentSummary;
+  /** Why the last send failed, every comment kept; cleared by the next send. */
+  sendFailure?: string;
+}
+
+/** A review that reached GitHub, as step 8 shows it. */
+export interface SentSummary {
+  submit: SubmitKind;
+  /** How many comments it carried. */
+  comments: number;
+  /** The head commit it is pinned to. */
+  commit: string;
+  /** The review on GitHub. */
+  url: string;
 }
 
 /** One step's card, as its header shows it. */
@@ -79,19 +99,32 @@ export function setupLine(settings: AgentSettings): string {
  * The eight steps of the review path (ADR 0008), each with its state: done
  * where it can be measured — the settings always choose an agent, unless
  * the setup form is open, a review is open, the story was read, every part is reviewed, the reviewer ticked
- * the step’s “I’ve checked these” box — running while its
+ * the step’s “I’ve checked these” box, no draft is left undecided once a
+ * comment is written or the review sent, the review was sent with nothing
+ * new written since — running while its
  * results are still arriving, waiting while the review stage producing
  * them has yet to start, and otherwise current or still to come. The
  * current step is the first one not done; its card is open and the others
- * fold. Steps 7 and 8 are never done yet: their cards point to the diff’s
- * threads and the Send review page.
+ * fold.
  */
 export function sideBarSteps(state: SideBarState): Step[] {
   const { result, reviewing } = state;
   const open = result !== undefined;
   const left = open ? partsLeft(result.parts, state.marks) : 0;
-  const comments = pendingComments(state.sections);
-  const done = [state.setup?.open !== true, open, open && state.storyRead, open && left === 0, state.ticks?.claims === true, state.ticks?.criteria === true, false, false];
+  const listed = state.comments ?? [];
+  const comments = listed.filter((comment) => comment.kind === 'comment').length;
+  const drafts = listed.length - comments;
+  const sent = open && state.sent !== undefined;
+  const done = [
+    state.setup?.open !== true,
+    open,
+    open && state.storyRead,
+    open && left === 0,
+    state.ticks?.claims === true,
+    state.ticks?.criteria === true,
+    open && drafts === 0 && (comments > 0 || sent),
+    sent && listed.length === 0,
+  ];
   // With the review's stages, a step runs while a stage producing it runs
   // and waits while one has yet to start; without them, while its results are missing.
   const stages = reviewing && open ? result.stages : undefined;
@@ -117,8 +150,8 @@ export function sideBarSteps(state: SideBarState): Step[] {
     !open ? '' : left === 0 ? 'every part reviewed' : `${left} of ${result.parts.length} left`,
     !open ? '' : claimsSummary(result),
     !open ? '' : criteriaSummary(result),
-    comments === 0 ? '' : `${comments} pending`,
-    '',
+    [comments === 0 ? '' : `${comments} pending`, drafts === 0 ? '' : `${drafts} draft${drafts === 1 ? '' : 's'}`].filter((part) => part !== '').join(' · '),
+    sent && listed.length === 0 ? 'sent' : comments === 0 ? '' : `${comments} comment${comments === 1 ? '' : 's'} ready`,
   ];
   const current = done.indexOf(false);
   return TITLES.map((title, index) => ({

@@ -981,14 +981,14 @@ export class AskProtocolError extends Error {
 /** Error thrown when a send's answer is not a sent review. */
 export class SendProtocolError extends Error {
   constructor() {
-    super(`the engine's answer is not the link of a sent review`);
+    super(`the engine's answer is not the link and commit of a sent review`);
     this.name = 'SendProtocolError';
   }
 }
 
 /**
- * Checks that a value read over the protocol is a sent review: the one
- * field it carries, the review's link, as a string.
+ * Checks that a value read over the protocol is a sent review: the
+ * review's link, as a string, and the head commit it is pinned to.
  */
 export function isSentReview(value: unknown): value is SentReview {
   return (
@@ -996,7 +996,9 @@ export function isSentReview(value: unknown): value is SentReview {
     value !== null &&
     !Array.isArray(value) &&
     typeof (value as { url?: unknown }).url === 'string' &&
-    (value as { url: string }).url.length > 0
+    (value as { url: string }).url.length > 0 &&
+    typeof (value as { commit?: unknown }).commit === 'string' &&
+    /^[0-9a-f]{40,64}$/i.test((value as { commit: string }).commit)
   );
 }
 

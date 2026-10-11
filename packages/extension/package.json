@@ -166,6 +166,11 @@
         "title": "Stop review",
         "category": "Second Look",
         "icon": "$(debug-stop)"
+      },
+      {
+        "command": "second-look.openSettings",
+        "title": "Open Second Look settings",
+        "category": "Second Look"
       }
     ],
     "menus": {
@@ -206,6 +211,11 @@
           "command": "second-look.openOverview",
           "when": "view == second-look.reviewTree",
           "group": "navigation"
+        },
+        {
+          "command": "second-look.openSettings",
+          "when": "view == second-look.reviewTree",
+          "group": "settings"
         }
       ],
       "commandPalette": [

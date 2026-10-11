@@ -1,6 +1,7 @@
 import { escapeHtml, claimWhere, issueName, sanitiseUntrusted, stageEndLine, STATES } from '../overview.js';
-import { isFinding, isUnmetCriterion, type AcceptanceCriterion, type Claim, type FindingRef, type LinkedIssue, type ReviewResult, type ReviewStageId } from '@second-look/engine';
-import { anchorOf, type PartAnchor, type TreeComment, type TreePart, type TreeSection } from '../tree.js';
+import { isFinding, isUnmetCriterion, type AcceptanceCriterion, type Claim, type FindingRef, type LinkedIssue, type ReviewResult, type ReviewStageId, type SubmitKind } from '@second-look/engine';
+import type { ListedComment } from '../comments.js';
+import { anchorOf, preview, type PartAnchor, type TreePart, type TreeSection } from '../tree.js';
 import { progressBody } from './progress.js';
 import { pullRequestsBody } from './pull-requests.js';
 import { setupFormBody } from './setup.js';
@@ -8,7 +9,15 @@ import type { StepTick } from './step-ticks.js';
 import { pullRequestLine, sideBarSteps, type SideBarState, type Step, type StepState } from './steps.js';
 
 /** The buttons the side bar's cards carry, each running an existing command. */
-export type SideBarButton = 'review' | 'overview' | 'nextPart' | 'allParts' | 'send' | 'verifyClaim' | 'criteriaHeading';
+export type SideBarButton = 'review' | 'overview' | 'nextPart' | 'allParts' | 'filterChanged' | 'partsMenu' | 'send' | 'openSent' | 'verifyClaim' | 'criteriaHeading';
+
+/** A part row's two menus: Ask… with the asks, and ⋯ with Comment on this part… and Why this matters. */
+export const PART_MENUS = ['ask', 'more'] as const;
+export type PartMenu = (typeof PART_MENUS)[number];
+
+/** The presses a step 7 row offers: open its thread, discard it, or add a draft to the review. */
+export const COMMENT_ACTIONS = ['open', 'discard', 'add'] as const;
+export type CommentAction = (typeof COMMENT_ACTIONS)[number];
 
 /** The actions a finding's row offers, each running the existing command for it. */
 export const FINDING_ACTIONS = ['draft', 'open', 'verify', 'fetch'] as const;
@@ -52,8 +61,9 @@ function partKey(anchor: PartAnchor): string {
 /**
  * A part's row: its reviewed checkbox, which Space ticks, the button that
  * opens it in the diff editor, which Enter presses, and what the tree
- * shows beside it, its tooltip on hover; a right click offers the asks,
- * Why this matters and Comment on this part, as the part banner does.
+ * shows beside it, its tooltip on hover; its Ask… button offers the asks,
+ * its ⋯ button Comment on this part… and Why this matters, and a right
+ * click all of them, as the part banner does.
  */
 function partRow(node: TreePart): string {
   if (node.part === undefined) return '';
@@ -71,14 +81,10 @@ function partRow(node: TreePart): string {
     `<li class="part ${node.kind}" data-vscode-context="${context}">` +
     `<input type="checkbox" id="mark-${key}" data-anchor="${data}" aria-label="Reviewed: ${label}"${checked}>` +
     `<span class="row"><button type="button" class="open" id="open-${key}" data-anchor="${data}"${title}>${label}</button>${description}</span>` +
+    `<span class="menus"><button type="button" class="link" id="ask-${key}" data-part-menu="ask" data-anchor="${data}" aria-label="Ask about ${label}">Ask…</button>` +
+    `<button type="button" class="link" id="more-${key}" data-part-menu="more" data-anchor="${data}" aria-label="More for ${label}">⋯</button></span>` +
     `</li>`
   );
-}
-
-function commentRow(node: TreeComment): string {
-  const title = node.tooltip === undefined ? '' : ` title="${escapeHtml(node.tooltip)}"`;
-  const description = node.description === undefined ? '' : `<span class="desc">${escapeHtml(node.description)}</span>`;
-  return `<li class="comment"${title}><span class="row"><span>${escapeHtml(node.label)}</span>${description}</span></li>`;
 }
 
 function isPartSection(section: TreeSection): boolean {
@@ -94,18 +100,65 @@ function partsBody(state: SideBarState, allReviewed: boolean): string {
       `<ul class="parts" aria-label="${escapeHtml(section.label)}">${section.parts.map((node) => partRow(node as TreePart)).join('')}</ul>`,
   );
   const message = state.message === undefined ? '' : note(state.message);
+  // The filter has something to show only on a second visit.
+  const filter = state.result.sinceLastLook === undefined ? '' : button(4, 'filterChanged', state.onlyChanged === true ? 'Show all parts' : 'Changed since last look');
   return (
     message +
     groups.join('') +
-    `<div class="actions">${button(4, 'nextPart', 'Open next part', { primary: true, disabled: allReviewed })}${button(4, 'allParts', 'All in order')}</div>`
+    `<div class="actions">${button(4, 'nextPart', 'Open next part', { primary: true, disabled: allReviewed })}${button(4, 'allParts', 'All in order')}${filter}</div>`
   );
 }
 
-/** Step 7's body: the pending review's comments, and the button that opens the diff they are written on. */
+/** A button on a step 7 row, carrying the comment's id so the press acts on that comment. */
+function commentButton(action: CommentAction, comment: ListedComment, label: string, attributes = ''): string {
+  return `<button type="button" id="step-7-${action}-${comment.id}" class="${action === 'open' ? 'open' : 'secondary'}" data-comment="${action}" data-id="${comment.id}"${attributes}>${label}</button>`;
+}
+
+/** Step 7's row for one pending comment or draft: where it points, which opens its thread, its first words, and its buttons. */
+function commentRow(comment: ListedComment): string {
+  const draft = comment.kind === 'draft';
+  const from = draft ? `<span class="pill tone-info"><span class="icon" aria-hidden="true">✎</span> draft</span><span class="where">${escapeHtml(`from the ${comment.from ?? 'finding'}`)}</span>` : '';
+  const actions = draft
+    ? commentButton('add', comment, 'Add to review') + commentButton('discard', comment, 'Discard draft')
+    : commentButton('discard', comment, 'Discard');
+  return (
+    `<li class="finding">` +
+    `<div class="head">${commentButton('open', comment, escapeHtml(comment.location), ` title="Open its thread"`)}${from}</div>` +
+    `<q class="quote">${sanitiseUntrusted(preview(comment.body)).html}</q>` +
+    `<div class="actions">${actions}</div>` +
+    `</li>`
+  );
+}
+
+/** Step 7's body: the pending comments and the drafts, each with its buttons, how to write more, and the button that opens the diff. */
 function commentsBody(state: SideBarState): string {
-  const comments = state.sections.filter((section) => !isPartSection(section)).flatMap((section) => section.parts as TreeComment[]);
-  const list = comments.length === 0 ? note('No comment yet: write them in threads on the diff.') : `<ul class="comments" aria-label="Pending review">${comments.map(commentRow).join('')}</ul>`;
-  return list + `<div class="actions">${button(7, 'allParts', 'Open the threads in the diff', { disabled: state.result === undefined })}</div>`;
+  const comments = state.comments ?? [];
+  const list = comments.length === 0 ? note('No comment yet.') : `<ul class="findings" aria-label="Pending comments and drafts">${comments.map(commentRow).join('')}</ul>`;
+  const drafted = comments.some((comment) => comment.kind === 'draft') ? note('Add takes a draft as drafted; to change it first, edit it in its thread and add it there.') : '';
+  return (
+    list +
+    drafted +
+    note('Add more: the + beside any diff line, or “Comment on this part…” in a part’s ⋯ menu.') +
+    `<div class="actions">${button(7, 'allParts', 'Open the threads in the diff', { disabled: state.result === undefined })}</div>`
+  );
+}
+
+/** How the page words each way of submitting a review. */
+const SUBMIT_WORDS: Record<SubmitKind, string> = { comment: 'Comment', approve: 'Approve', 'request changes': 'Request changes' };
+
+/** Step 8's body: the button that opens the Send review page, why the last send failed, and once sent, the review with its link. */
+function sendBody(state: SideBarState): string {
+  const { result, sent } = state;
+  const unsent = (state.comments ?? []).length > 0;
+  const failure = state.sendFailure === undefined ? '' : `<p class="note problem">${escapeHtml(`The send failed: ${state.sendFailure}. Every comment is kept.`)}</p>`;
+  const page = button(8, 'send', 'Open the Send review page', { primary: sent === undefined || unsent, disabled: result === undefined });
+  if (sent === undefined) return failure + note('Nothing reaches GitHub until you press Submit on the page.') + `<div class="actions">${page}</div>`;
+  const count = `${sent.comments} comment${sent.comments === 1 ? '' : 's'}`;
+  return (
+    `<p class="sent"><span class="tone-ok" aria-hidden="true">✓</span> ${escapeHtml(`Sent as ${SUBMIT_WORDS[sent.submit]} · ${count} · pinned to ${sent.commit.slice(0, 7)}`)}</p>` +
+    failure +
+    `<div class="actions">${button(8, 'openSent', 'Open on GitHub', { primary: !unsent })}${page}</div>`
+  );
 }
 
 /** A verdict or a state as a finding's row shows it: its glyph in its tone's colour, with its word. */
@@ -322,7 +375,7 @@ function stepBody(step: Step, state: SideBarState): string {
     case 7:
       return commentsBody(state);
     default:
-      return note('Every comment goes to GitHub as one review, only when you submit it.') + `<div class="actions">${button(8, 'send', 'Open the Send review page', { primary: true, disabled: result === undefined })}</div>`;
+      return sendBody(state);
   }
 }
 
@@ -332,8 +385,9 @@ function changeLink(step: Step, state: SideBarState): string {
   return '<button type="button" class="link" id="step-1-change" data-action="open" data-value="" aria-label="Change the agent, model and effort">change</button>';
 }
 
-/** Step 6's ⋯ link, which opens the editor's settings at the criteria heading setting. */
-function criteriaHeadingLink(step: Step): string {
+/** Step 4's ⋯ link, whose menu toggles mirroring the reviewed marks to GitHub's Viewed, and step 6's, which opens the editor's settings at the criteria heading setting. */
+function menuLink(step: Step): string {
+  if (step.number === 4) return '<button type="button" class="link" id="step-4-partsMenu" data-command="partsMenu" aria-label="Mirror reviewed files to GitHub’s Viewed">⋯</button>';
   if (step.number !== 6) return '';
   return '<button type="button" class="link" id="step-6-criteriaHeading" data-command="criteriaHeading" aria-label="Change the criteria heading setting">⋯</button>';
 }
@@ -352,7 +406,7 @@ function stepCard(step: Step, state: SideBarState): string {
     `<li class="step ${step.state.replace(' ', '-')}" id="${id}"${current}>` +
     `<h2><button type="button" class="fold" id="${id}-title" data-step="${step.number}" aria-expanded="${step.open}" aria-controls="${id}-body">` +
     `<span class="icon" aria-hidden="true">${STATE_ICONS[step.state]}</span>` +
-    `<span class="title">${step.number} ${escapeHtml(step.title)}</span>${summary}<span class="state">${step.state}</span></button>${changeLink(step, state)}${criteriaHeadingLink(step)}</h2>` +
+    `<span class="title">${step.number} ${escapeHtml(step.title)}</span>${summary}<span class="state">${step.state}</span></button>${changeLink(step, state)}${menuLink(step)}</h2>` +
     `<div class="body" id="${id}-body" role="region" aria-labelledby="${id}-title"${hidden}>${stepBody(step, state)}</div>` +
     `</li>`
   );
@@ -421,9 +475,12 @@ export function sideBarHtml(nonce: string, body: string): string {
   .note { margin: 4px 0; color: var(--vscode-descriptionForeground); }
   .pr { margin: 4px 0; overflow-wrap: anywhere; }
   .group { margin: 8px 0 2px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--vscode-descriptionForeground); }
-  .parts, .comments { list-style: none; margin: 0; padding: 0; }
-  .part, .comment { display: flex; align-items: flex-start; gap: 6px; padding: 2px 0; }
+  .parts { list-style: none; margin: 0; padding: 0; }
+  .part { display: flex; align-items: flex-start; gap: 6px; padding: 2px 0; }
   .row { display: flex; flex-direction: column; min-width: 0; }
+  .menus { display: flex; margin-left: auto; flex: none; }
+  .menus .link { padding: 0 4px; font-size: 12px; }
+  .sent { margin: 4px 0; overflow-wrap: anywhere; }
   .open { padding: 0; color: var(--vscode-foreground); background: none; border: none; text-align: left; overflow-wrap: anywhere; }
   .open:hover { color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground)); text-decoration: underline; }
   .desc { font-size: 12px; color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; }
@@ -519,6 +576,10 @@ export function sideBarHtml(nonce: string, body: string): string {
       setOpen(pressed, open);
       // Step 2's list loads the first time its card shows.
       if (open && pressed.getAttribute('data-step') === '2') vscode.postMessage({ type: 'pullRequests', action: 'show', value: '' });
+    } else if (pressed.hasAttribute('data-comment')) {
+      vscode.postMessage({ type: 'comment', action: pressed.getAttribute('data-comment'), id: Number(pressed.getAttribute('data-id')) });
+    } else if (pressed.hasAttribute('data-part-menu')) {
+      vscode.postMessage({ type: 'partMenu', menu: pressed.getAttribute('data-part-menu'), anchor: anchorOf(pressed) });
     } else if (pressed.classList.contains('open')) {
       vscode.postMessage({ type: 'openPart', anchor: anchorOf(pressed) });
     } else if (pressed.hasAttribute('data-finding')) {

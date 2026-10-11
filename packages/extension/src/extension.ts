@@ -10,6 +10,7 @@ import {
   ADD_DRAFT_COMMAND,
   CHOOSE_AGENT_COMMAND,
   COMMENT_ON_PART_COMMAND,
+  COMPANION_SETTINGS_QUERY,
   DISCARD_COMMENT_COMMAND,
   DISCARD_DRAFT_COMMAND,
   DRAFT_COMMENT_COMMAND,
@@ -17,10 +18,12 @@ import {
   FILTER_CHANGED_COMMAND,
   MARK_REVIEWED_COMMAND,
   OPEN_ALL_PARTS_COMMAND,
+  OPEN_COMPANION_SETTINGS_COMMAND,
   OPEN_LIBRARY_EVIDENCE_COMMAND,
   OPEN_OVERVIEW_COMMAND,
   OPEN_PART_COMMAND,
   OPEN_REVIEW_CONTAINER_COMMAND,
+  OPEN_SETTINGS_COMMAND,
   OPEN_SETUP_COMMAND,
   REFRESH_PULL_REQUESTS_COMMAND,
   REVIEW_COMMAND,
@@ -47,7 +50,8 @@ import { SideBarProvider } from './side-bar/provider.js';
 import { StepTickStore } from './side-bar/step-ticks.js';
 import { PullRequestPicker } from './side-bar/pull-request-picker.js';
 import { SetupForm } from './side-bar/setup-form.js';
-import type { SideBarState } from './side-bar/steps.js';
+import type { SentSummary, SideBarState } from './side-bar/steps.js';
+import type { CommentAction } from './side-bar/page.js';
 import { endNotice, finishedProgress, readingProgress, runningProgress, stoppedProgress, type ReviewProgress } from './side-bar/progress.js';
 import { draftTarget, ReviewComments } from './comments.js';
 import { escapeMarkdown, FindingThreads } from './findings.js';
@@ -236,6 +240,10 @@ class ReviewSession {
   private stopped = 0;
   /** The status bar entry, which names the stage running while a review runs. */
   private readonly status: AgentStatusBar;
+  /** The review sent from the review shown, which step 8 links to. */
+  private sent: SentSummary | undefined;
+  /** Why the last send failed, which step 8 says; cleared by the next send. */
+  private sendFailure: string | undefined;
 
   constructor(
     sideBar: SideBarProvider,
@@ -415,6 +423,8 @@ class ReviewSession {
       this.overview.clearAnswers();
       this.opened = undefined;
       this.storyRead = false;
+      this.sent = undefined;
+      this.sendFailure = undefined;
       if (previous !== result.pullRequest.url) this.onlyChanged = false;
     }
     this.render();
@@ -454,6 +464,10 @@ class ReviewSession {
       reviewing: this.running,
       storyRead: this.storyRead,
       ...(this.progress !== undefined ? { progress: this.progress } : {}),
+      comments: this.comments.listed(),
+      onlyChanged: this.onlyChanged,
+      ...(this.sent !== undefined ? { sent: this.sent } : {}),
+      ...(this.sendFailure !== undefined ? { sendFailure: this.sendFailure } : {}),
     };
     this.sideBar.update(state, this.result === undefined ? undefined : reviewBadge(this.result, marks));
     this.status.showProgress(this.running && this.progress?.state === 'running' ? this.progress.stage : undefined);
@@ -983,6 +997,25 @@ class ReviewSession {
   }
 
   /**
+   * Acts on one of step 7's rows: opens its thread, expanded, at its line
+   * — or at the top of its file, for a comment on a whole part — or
+   * discards the comment, or adds or discards the draft.
+   */
+  async commentAction(id: number, action: CommentAction): Promise<void> {
+    if (action !== 'open') {
+      this.comments.act(id, action);
+      return;
+    }
+    const thread = this.comments.reveal(id);
+    if (thread === undefined) return;
+    const at = thread.range?.start.line ?? 0;
+    await vscode.commands.executeCommand('vscode.open', thread.uri, {
+      selection: new vscode.Range(at, 0, at, 0),
+      preview: true,
+    });
+  }
+
+  /**
    * Submits the pending review through the Send review page: every
    * gathered comment together for one last pass, the overall comment and
    * the submit kind chosen on the page, and the one write only when its
@@ -1061,6 +1094,8 @@ class ReviewSession {
           { location: { viewId: REVIEW_TREE_VIEW }, title: 'Sending the review…' },
           () => this.engineSend(this.url!, session!.accessToken, review),
         );
+        this.sent = { submit: review.submit, comments: review.comments.length, commit: sent.commit, url: sent.url };
+        this.sendFailure = undefined;
         this.comments.clear();
         vscode.window.showInformationMessage(`Review sent: ${sent.url}`, 'Open on GitHub').then(
           (open) => {
@@ -1072,10 +1107,11 @@ class ReviewSession {
         );
         return true;
       } catch (error) {
-        // The send failed: every comment stays gathered for another try.
-        vscode.window.showErrorMessage(
-          error instanceof Error ? error.message : String(error),
-        );
+        // The send failed: every comment stays gathered for another try,
+        // and step 8 says why.
+        this.sendFailure = error instanceof Error ? error.message : String(error);
+        this.render();
+        vscode.window.showErrorMessage(this.sendFailure);
         return false;
       }
     });
@@ -1163,8 +1199,9 @@ class ReviewSession {
  * and the command it runs, which opens the quick pick that changes them,
  * and step 1's setup form, which opens by itself on the first open and
  * from the quick pick's last item, and step 2's list of the reviewer's
- * open pull requests, with the title button that reloads it, and the
- * Stop review title button that stops the review running.
+ * open pull requests, with the title button that reloads it, the
+ * Stop review title button that stops the review running, and the title
+ * bar's ⋯ item that opens the companion's settings.
  * Nothing here runs anything from the workspace — the engine is started
  * from the companion's own install, reads GitHub, and writes only the
  * one review the reviewer sends — and, only with the opt-in mirror
@@ -1194,6 +1231,7 @@ export function activate(
     {
       openLine: (path, line) => void session.openLine(path, line, 'head'),
       ticks: new StepTickStore(context.globalState),
+      comment: (id, action) => void session.commentAction(id, action),
     },
   );
   const copies = new ChangeCopiesProvider();
@@ -1270,6 +1308,9 @@ export function activate(
     }),
     vscode.commands.registerCommand(REFRESH_PULL_REQUESTS_COMMAND, () => picker.load()),
     vscode.commands.registerCommand(STOP_REVIEW_COMMAND, () => session.stopReview()),
+    vscode.commands.registerCommand(OPEN_COMPANION_SETTINGS_COMMAND, () =>
+      vscode.commands.executeCommand(OPEN_SETTINGS_COMMAND, COMPANION_SETTINGS_QUERY),
+    ),
   );
   return sideBar;
 }
