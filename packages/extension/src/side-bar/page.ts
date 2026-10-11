@@ -1,4 +1,4 @@
-import { escapeHtml, claimWhere, issueName, sanitiseUntrusted, stageEndLine } from '../overview.js';
+import { escapeHtml, claimWhere, issueName, sanitiseUntrusted, stageEndLine, STATES } from '../overview.js';
 import { isFinding, isUnmetCriterion, type AcceptanceCriterion, type Claim, type FindingRef, type LinkedIssue, type ReviewResult, type ReviewStageId } from '@second-look/engine';
 import { anchorOf, type PartAnchor, type TreeComment, type TreePart, type TreeSection } from '../tree.js';
 import { progressBody } from './progress.js';
@@ -13,20 +13,6 @@ export type SideBarButton = 'review' | 'overview' | 'nextPart' | 'allParts' | 's
 /** The actions a finding's row offers, each running the existing command for it. */
 export const FINDING_ACTIONS = ['draft', 'open', 'verify', 'fetch'] as const;
 export type FindingAction = (typeof FINDING_ACTIONS)[number];
-
-/** A verdict or a state as a finding's row shows it: its glyph in its tone's colour, with its word. */
-const FINDING_STATES: Record<string, { tone: string; icon: string }> = {
-  refuted: { tone: 'bad', icon: '✕' },
-  unverifiable: { tone: 'warn', icon: '?' },
-  verified: { tone: 'ok', icon: '✓' },
-  'not met': { tone: 'bad', icon: '✕' },
-  'partly met': { tone: 'warn', icon: '◐' },
-  'needs manual check': { tone: 'info', icon: '⚑' },
-  "can't tell": { tone: 'mut', icon: '○' },
-  met: { tone: 'ok', icon: '✓' },
-  'in the code, not explained': { tone: 'warn', icon: '!' },
-  'described, not in the code': { tone: 'warn', icon: '!' },
-};
 
 const STATE_ICONS: Record<StepState, string> = { done: '✓', current: '●', running: '↻', waiting: '◷', 'to come': '○' };
 
@@ -124,7 +110,7 @@ function commentsBody(state: SideBarState): string {
 
 /** A verdict or a state as a finding's row shows it: its glyph in its tone's colour, with its word. */
 function statePill(state: string): string {
-  const { tone, icon } = FINDING_STATES[state] ?? { tone: 'mut', icon: '○' };
+  const { tone, icon } = STATES[state] ?? { tone: 'mut', icon: '○' };
   return `<span class="pill tone-${tone}"><span class="icon" aria-hidden="true">${icon}</span> ${escapeHtml(state)}</span>`;
 }
 

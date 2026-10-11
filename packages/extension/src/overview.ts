@@ -592,10 +592,10 @@ function stampChip(text: string): string {
 }
 
 /** The theme colour a state shows in, always beside its icon and its word. */
-type Tone = 'ok' | 'bad' | 'warn' | 'info' | 'must' | 'mut';
+export type Tone = 'ok' | 'bad' | 'warn' | 'info' | 'must' | 'mut';
 
 /** How the page shows each state: its tone, and its icon as a text glyph, which needs no font the page's policy would block. */
-const STATES: Record<string, { tone: Tone; icon: string }> = {
+export const STATES: Record<string, { tone: Tone; icon: string }> = {
   verified: { tone: 'ok', icon: '✓' },
   refuted: { tone: 'bad', icon: '✕' },
   unverifiable: { tone: 'warn', icon: '?' },
