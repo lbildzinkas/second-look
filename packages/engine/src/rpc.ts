@@ -34,7 +34,7 @@ import type { AgentProbe } from './agent.js';
 import type { AgentTestResult } from './agent-test.js';
 import type { AgentName } from './agents.js';
 import type { AskKind } from './asks.js';
-import type { AskAnswer, AskedClaim, BudgetLimits, DraftComment, FindingRef, PendingReview, ReviewedMarks, ReviewResult, SentReview, ViewedFiles } from './protocol.js';
+import type { AskAnswer, AskedClaim, BudgetLimits, DraftComment, FindingRef, PendingReview, ReviewedMarks, ReviewResult, ReviewStageRecord, SentReview, ViewedFiles } from './protocol.js';
 import type { MarkedPart } from './reviewed-marks.js';
 import type { PullRequestList } from './protocol.js';
 
@@ -367,6 +367,8 @@ export interface ReviewStageParams {
   timeoutMs: number;
   /** The result so far. */
   result: ReviewResult;
+  /** The stage now running: its id, position, start time and the agent, model and effort working on it; the result's stages carry every stage. */
+  stage?: ReviewStageRecord;
 }
 
 /** A notification the engine writes: no id, a method and its params. */
@@ -427,3 +429,23 @@ export interface ListPullRequestsParams {
 
 /** The list request's result: the groups, or why the reviewer is not signed in or GitHub could not be reached. */
 export type ListPullRequestsRpcResult = PullRequestList;
+
+/**
+ * The request that cancels a running review, sent when the reviewer stops
+ * it: the stage running stops, its agent run with it, and the review
+ * request answers with the results that already landed, every stage not
+ * run marked stopped. A review stopped before its first result landed
+ * fails with a plain message instead.
+ */
+export const CANCEL_REVIEW_METHOD = 'review/cancel' as const;
+
+/** One cancel request: the review request to stop. */
+export interface CancelReviewParams {
+  /** The id of the review request to stop. */
+  id: number;
+}
+
+/** The cancel request's result: whether that review was running and is now stopping; false when it had already finished or never ran. */
+export interface CancelReviewRpcResult {
+  cancelled: boolean;
+}

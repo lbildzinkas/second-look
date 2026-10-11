@@ -17,6 +17,7 @@ import type { TestedRanking } from './ranking.js';
 import { isRepositoryName, listPullRequests } from './pull-request-list.js';
 import {
   ASK_METHOD,
+  CANCEL_REVIEW_METHOD,
   DRAFT_COMMENT_METHOD,
   ENGINE_FAILED_CODE,
   ENGINE_PROTOCOL_VERSION,
@@ -39,6 +40,7 @@ import {
   isRpcRequest,
   redactToken,
   type AskParams,
+  type CancelReviewParams,
   type DraftCommentParams,
   type FetchLibraryParams,
   type InitializeParams,
@@ -176,6 +178,12 @@ export interface RpcServerDeps {
  * groups with the request's token, reading each one's new-commits flag
  * from the last-look records and storing nothing; with no token, a token
  * GitHub refuses, or GitHub out of reach, it answers with the reason.
+ *
+ * `review/cancel` stops a running review by its request's id: the stage
+ * running stops, its agent run with it, and the review answers with the
+ * results that had landed, every stage not run marked stopped in the
+ * result's stages. Every stage notification and the response record each
+ * stage's id, position, start time, duration, agent and outcome.
  */
 export async function runRpcServer(
   source: RpcLineSource,
@@ -188,6 +196,8 @@ export async function runRpcServer(
   const reviews = new Map<string, ReviewResult>();
   /** The budget meter of each pull request's latest review, by its URL, which its later fetches, asks and drafts add to. */
   const meters = new Map<string, BudgetMeter>();
+  /** What stops each running review, by its request's id. */
+  const stops = new Map<number, AbortController>();
   for (;;) {
     const line = await source.readLine();
     if (line === null) {
@@ -223,7 +233,11 @@ export async function runRpcServer(
       continue;
     }
     if (value.method === REVIEW_METHOD) {
-      running.push(review(value.params, value.id, sink, initialized, deps, reviews, meters));
+      running.push(review(value.params, value.id, sink, initialized, deps, reviews, meters, stops));
+      continue;
+    }
+    if (value.method === CANCEL_REVIEW_METHOD) {
+      cancelReview(value.params, value.id, sink, initialized, stops);
       continue;
     }
     if (value.method === FETCH_LIBRARY_METHOD) {
@@ -263,7 +277,7 @@ export async function runRpcServer(
       failure(
         value.id,
         JSON_RPC_METHOD_NOT_FOUND,
-        `unknown method: ${value.method}; this engine speaks ${INITIALIZE_METHOD}, ${PROBE_AGENTS_METHOD}, ${TEST_AGENT_METHOD}, ${REVIEW_METHOD}, ${FETCH_LIBRARY_METHOD}, ${DRAFT_COMMENT_METHOD}, ${ASK_METHOD}, ${SEND_REVIEW_METHOD}, ${REVIEWED_MARKS_METHOD}, ${MARK_REVIEWED_METHOD}, ${MARK_VIEWED_METHOD} and ${LIST_PULL_REQUESTS_METHOD}`,
+        `unknown method: ${value.method}; this engine speaks ${INITIALIZE_METHOD}, ${PROBE_AGENTS_METHOD}, ${TEST_AGENT_METHOD}, ${REVIEW_METHOD}, ${CANCEL_REVIEW_METHOD}, ${FETCH_LIBRARY_METHOD}, ${DRAFT_COMMENT_METHOD}, ${ASK_METHOD}, ${SEND_REVIEW_METHOD}, ${REVIEWED_MARKS_METHOD}, ${MARK_REVIEWED_METHOD}, ${MARK_VIEWED_METHOD} and ${LIST_PULL_REQUESTS_METHOD}`,
       ),
     );
   }
@@ -454,6 +468,7 @@ async function review(
   deps: RpcServerDeps,
   reviews: Map<string, ReviewResult>,
   meters: Map<string, BudgetMeter>,
+  stops: Map<number, AbortController>,
 ): Promise<void> {
   if (!initialized) {
     respond(
@@ -495,12 +510,15 @@ async function review(
     return;
   }
   const meter = budgetMeter(budget ?? NO_BUDGET_LIMITS);
+  const stop = new AbortController();
+  stops.set(id, stop);
   try {
     const result = await reviewPullRequest(url, {
       token,
       cacheDir: deps.cacheDir,
       lastLook: true,
       budget: meter,
+      signal: stop.signal,
       ...(criteriaHeading !== undefined ? { criteriaHeading } : {}),
       ...(deps.fetch ? { fetch: deps.fetch } : {}),
       ...(deps.agent
@@ -518,9 +536,40 @@ async function review(
     meters.set(result.pullRequest.url, meter);
     respond(sink, { jsonrpc: '2.0', id, result });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = stop.signal.aborted
+      ? 'the review was stopped before its first result landed'
+      : error instanceof Error
+        ? error.message
+        : String(error);
     respond(sink, failure(id, ENGINE_FAILED_CODE, redactToken(message, token)));
+  } finally {
+    stops.delete(id);
   }
+}
+
+/**
+ * Cancels the running review the request names by its id, and answers
+ * whether one was running; the review itself answers with what had landed.
+ */
+function cancelReview(
+  params: unknown,
+  id: number,
+  sink: RpcLineSink,
+  initialized: boolean,
+  stops: Map<number, AbortController>,
+): void {
+  if (!initialized) {
+    respond(sink, failure(id, NOT_INITIALIZED_CODE, `the protocol starts with a version handshake: ${INITIALIZE_METHOD} before ${CANCEL_REVIEW_METHOD}`));
+    return;
+  }
+  const { id: reviewId } = (params ?? {}) as Partial<CancelReviewParams>;
+  if (typeof reviewId !== 'number' || !Number.isInteger(reviewId)) {
+    respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${CANCEL_REVIEW_METHOD} needs params: { "id": number }, the id of the review request to stop`));
+    return;
+  }
+  const stop = stops.get(reviewId);
+  stop?.abort();
+  respond(sink, { jsonrpc: '2.0', id, result: { cancelled: stop !== undefined } });
 }
 
 /**
