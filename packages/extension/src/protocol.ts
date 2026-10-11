@@ -31,6 +31,7 @@ import {
   type ReviewedMarks,
   type ReviewResult,
   type ReviewStageRecord,
+  type ReviewStageState,
   type SentReview,
   type SyntaxCheck,
   type TestAgentRpcResult,
@@ -822,36 +823,35 @@ function isBudget(value: unknown): boolean {
   );
 }
 
-/** How a review stage can stand, as the result's stages record it. */
-const REVIEW_STAGE_STATES = ['to come', 'running', 'done', 'fell back', 'failed', 'skipped', 'stopped'] as const;
-
-/** The agent working on a stage, with the model and effort asked for, naming the agent's own defaults as nulls. */
-function isReviewStageAgent(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    isString(value['agent']) &&
-    (value['model'] === null || isString(value['model'])) &&
-    (value['effort'] === null || isString(value['effort']))
-  );
-}
+/** How a review stage can stand, as the result's stages and a stage notification record it. */
+const REVIEW_STAGE_STATES: readonly ReviewStageState[] = ['to come', 'running', 'done', 'fell back', 'failed', 'skipped', 'stopped'];
 
 /**
- * Checks that a value read over the protocol is a review's stage records:
- * each with its id, place and state, and the start time, duration,
- * worker, stamp and reason it carries when it has them.
+ * One stage of a review, as the result's stages and a stage notification
+ * carry it: its id, its integer place of the total, how it stands, when it
+ * started, as a time that parses, how long it took, never negative, the
+ * agent, model and effort working on it, the stamp of its finished pass
+ * and why it ended so.
  */
-function isReviewStages(value: unknown): value is ReviewStageRecord[] {
+export function isReviewStageRecord(value: unknown): value is ReviewStageRecord {
+  if (!isRecord(value)) return false;
+  const { position, total, startedAt, durationMs, agent } = value;
   return (
-    Array.isArray(value) &&
-    value.every((record) => {
-      if (!isRecord(record) || !isOneOf(record['id'], REVIEW_STAGE_IDS) || !isOneOf(record['state'], REVIEW_STAGE_STATES)) return false;
-      if (!isNumber(record['position']) || !Number.isInteger(record['position']) || record['position'] < 1) return false;
-      if (!isNumber(record['total']) || !Number.isInteger(record['total']) || record['total'] < 1) return false;
-      if (!isOptionalString(record['startedAt']) || !isOptionalString(record['detail'])) return false;
-      if (record['durationMs'] !== undefined && !(isNumber(record['durationMs']) && record['durationMs'] >= 0)) return false;
-      if (record['stamp'] !== undefined && !isAgentStamp(record['stamp'])) return false;
-      return record['agent'] === undefined || isReviewStageAgent(record['agent']);
-    })
+    isOneOf(value['id'], REVIEW_STAGE_IDS) &&
+    isNumber(position) &&
+    isNumber(total) &&
+    Number.isInteger(position) &&
+    Number.isInteger(total) &&
+    position >= 1 &&
+    position <= total &&
+    isOneOf(value['state'], REVIEW_STAGE_STATES) &&
+    (startedAt === undefined || (isString(startedAt) && Number.isFinite(Date.parse(startedAt)))) &&
+    isOptionalNumber(durationMs) &&
+    (durationMs === undefined || durationMs >= 0) &&
+    (agent === undefined ||
+      (isRecord(agent) && isString(agent['agent']) && (agent['model'] === null || isString(agent['model'])) && (agent['effort'] === null || isString(agent['effort'])))) &&
+    (value['stamp'] === undefined || isAgentStamp(value['stamp'])) &&
+    isOptionalString(value['detail'])
   );
 }
 
@@ -869,7 +869,6 @@ export function isReviewResult(value: unknown): value is ReviewResult {
   if (!isRecord(copies) || !isChangeCopy(copies['base']) || !isChangeCopy(copies['head'])) {
     return false;
   }
-  if (value['stages'] !== undefined && !isReviewStages(value['stages'])) return false;
   const parseTimeMs = value['parseTimeMs'];
   if (typeof parseTimeMs !== 'number' || !Number.isFinite(parseTimeMs) || parseTimeMs < 0) {
     return false;
@@ -881,6 +880,7 @@ export function isReviewResult(value: unknown): value is ReviewResult {
   if (value['sinceLastLook'] !== undefined && !isSinceLastLook(value['sinceLastLook'])) return false;
   if (value['docLinks'] !== undefined && !isDocLinks(value['docLinks'])) return false;
   if (value['budget'] !== undefined && !isBudget(value['budget'])) return false;
+  if (value['stages'] !== undefined && !(Array.isArray(value['stages']) && value['stages'].every(isReviewStageRecord))) return false;
   const parts = value['parts'];
   if (!Array.isArray(parts) || !parts.every(isPart)) return false;
   const story = value['story'];

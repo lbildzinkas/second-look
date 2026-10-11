@@ -161,6 +161,8 @@ export interface StubState {
   executedCommands: StubExecutedCommand[];
   /** What each executed command's run settles with, in the order of executedCommands. */
   commandRuns: Promise<unknown>[];
+  /** The context keys the extension set through the editor's setContext command, which executedCommands leaves out. */
+  contextKeys: Record<string, unknown>;
   treeViews: StubTreeView[];
   fileSystemProviders: StubFileSystemProvider[];
   decorationTypes: StubDecorationType[];
@@ -224,6 +226,7 @@ export const stub: StubState = {
   commands: [],
   executedCommands: [],
   commandRuns: [],
+  contextKeys: {},
   treeViews: [],
   fileSystemProviders: [],
   decorationTypes: [],
@@ -256,6 +259,7 @@ export const stub: StubState = {
     stub.commands = [];
     stub.executedCommands = [];
     stub.commandRuns = [];
+    stub.contextKeys = {};
     stub.treeViews = [];
     stub.fileSystemProviders = [];
     stub.decorationTypes = [];
@@ -514,6 +518,11 @@ export const commands = {
     return { dispose: () => undefined };
   },
   executeCommand(id: string, ...args: unknown[]): PromiseLike<unknown> {
+    // The editor's setContext only sets a key a manifest's `when` reads.
+    if (id === 'setContext') {
+      stub.contextKeys[String(args[0])] = args[1];
+      return Promise.resolve(undefined);
+    }
     stub.executedCommands.push({ id, args });
     // The registry runs a command the extension registered; the editor's
     // own commands only record that they ran.

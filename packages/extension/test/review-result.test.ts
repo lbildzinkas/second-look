@@ -3,6 +3,7 @@ import { REVIEW_RESULT_VERSION, type NoiseAssessment, type ReviewResult } from '
 import { ProtocolError, isReviewResult, parseReviewResult } from '../src/index.js';
 import {
   REQUESTS_FETCH,
+  reviewStages,
   claimsResult,
   criteriaResult,
   doneStages,
@@ -779,6 +780,30 @@ describe('isReviewResult for the budget', () => {
       'unlimited',
     ];
     for (const each of cases) expect(isReviewResult({ ...sampleResult(), budget: each })).toBe(false);
+  });
+});
+
+describe('isReviewResult for the stages', () => {
+  it('accepts a result with its stages, running or ended, and one without, as a plain review is', () => {
+    expect(isReviewResult({ ...sampleResult(), stages: reviewStages('verdicts') })).toBe(true);
+    expect(isReviewResult({ ...sampleResult(), stages: reviewStages(undefined, { ranking: { state: 'fell back', detail: 'no evaluation' } }) })).toBe(true);
+    expect(isReviewResult(sampleResult())).toBe(true);
+  });
+
+  it('rejects a stage with an unknown id or state, a place outside the total, a start that is no time, or an agent with no name', () => {
+    const [plain, grouping] = reviewStages('grouping');
+    const cases = [
+      { ...grouping, id: 'linting' },
+      { ...grouping, state: 'paused' },
+      { ...grouping, position: 0 },
+      { ...grouping, position: 10 },
+      { ...grouping, startedAt: 'yesterday' },
+      { ...grouping, durationMs: -1 },
+      { ...grouping, agent: { model: null, effort: null } },
+      { ...grouping, detail: 3 },
+    ];
+    for (const each of cases) expect(isReviewResult({ ...sampleResult(), stages: [plain, each] })).toBe(false);
+    expect(isReviewResult({ ...sampleResult(), stages: 'running' })).toBe(false);
   });
 });
 

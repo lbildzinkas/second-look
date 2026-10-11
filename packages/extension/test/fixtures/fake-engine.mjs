@@ -25,6 +25,9 @@
 //                                 review/stage notification before the answer
 //   FAKE_ENGINE_STAGE_ONLY        send the stage notification, then never answer
 //   FAKE_ENGINE_ANSWER_DELAY_MS   wait this long after the stage before answering
+//   FAKE_ENGINE_STOPPED_RESULT    JSON review result to answer a review the review/cancel
+//                                 request stopped with; without it, the stopped review
+//                                 fails as one stopped before its first result
 //   FAKE_ENGINE_VIEWED_ERROR      answer markViewed with this plain error message
 //   FAKE_ENGINE_PROBE_RESULT      JSON probe of the installed agents to return for agents/probe
 //   FAKE_ENGINE_TEST_RESULT       JSON agent test result to return for agents/test
@@ -68,6 +71,9 @@ const answerDelayMs = Number(process.env.FAKE_ENGINE_ANSWER_DELAY_MS ?? '0');
 const viewedError = process.env.FAKE_ENGINE_VIEWED_ERROR;
 const probeResult = process.env.FAKE_ENGINE_PROBE_RESULT ? JSON.parse(process.env.FAKE_ENGINE_PROBE_RESULT) : { agents: [] };
 const testResult = process.env.FAKE_ENGINE_TEST_RESULT ? JSON.parse(process.env.FAKE_ENGINE_TEST_RESULT) : null;
+const stoppedResult = process.env.FAKE_ENGINE_STOPPED_RESULT ? JSON.parse(process.env.FAKE_ENGINE_STOPPED_RESULT) : null;
+/** The id of the review request not yet answered, which review/cancel stops. */
+let unanswered = null;
 const listResult = process.env.FAKE_ENGINE_LIST_RESULT ? JSON.parse(process.env.FAKE_ENGINE_LIST_RESULT) : { outcome: 'listed', groups: [] };
 let marks = [];
 
@@ -101,6 +107,8 @@ function handle(line) {
   }
   if (log) appendFileSync(log, `${JSON.stringify(request)}\n`);
   if (stallOn && request.method === stallOn) {
+    // A stalled review can still be cancelled, as one still reading the pull request can.
+    if (request.method === 'review') unanswered = request.id;
     return;
   }
   if (exitOn && request.method === exitOn) {
@@ -136,13 +144,27 @@ function handle(line) {
       fail(request.id, -32002, reviewError);
       return;
     }
+    unanswered = request.id;
     if (stage) {
       send({ jsonrpc: '2.0', method: 'review/stage', params: { id: request.id, ...stage } });
       if (stageOnly) return;
     }
-    const answer = () => send({ jsonrpc: '2.0', id: request.id, result: resultsByUrl?.[request.params.url] ?? reviewResult });
+    const answer = () => {
+      if (unanswered !== request.id) return;
+      unanswered = null;
+      send({ jsonrpc: '2.0', id: request.id, result: resultsByUrl?.[request.params.url] ?? reviewResult });
+    };
     if (answerDelayMs > 0) setTimeout(answer, answerDelayMs);
     else answer();
+    return;
+  }
+  if (request.method === 'review/cancel') {
+    const stopping = unanswered !== null && request.params.id === unanswered;
+    send({ jsonrpc: '2.0', id: request.id, result: { cancelled: stopping } });
+    if (!stopping) return;
+    unanswered = null;
+    if (stoppedResult) send({ jsonrpc: '2.0', id: request.params.id, result: stoppedResult });
+    else fail(request.params.id, -32002, 'the review was stopped before its first result landed');
     return;
   }
   if (request.method === 'sendReview') {

@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import {
   ASK_METHOD,
+  CANCEL_REVIEW_METHOD,
   DRAFT_COMMENT_METHOD,
   ENGINE_PROTOCOL_VERSION,
   FETCH_LIBRARY_METHOD,
@@ -33,6 +34,7 @@ import {
   type ReviewAgentChoice,
   type ReviewedMarks,
   type ReviewResult,
+  type ReviewStageRecord,
   type SentReview,
   type TestAgentRpcResult,
   type ViewedFiles,
@@ -52,6 +54,7 @@ import {
   isDraftComment,
   isPullRequestList,
   isReviewResult,
+  isReviewStageRecord,
   isReviewedMarks,
   isSentReview,
   isViewedFiles,
@@ -138,6 +141,9 @@ const MARK_VIEWED_TIMEOUT_MS = 60_000;
 /** How long a stalled engine gets to die from SIGTERM before it is killed outright. */
 const KILL_GRACE_MS = 2_000;
 
+/** How long the engine may take to answer a cancel: it stops the review and answers at once. */
+const CANCEL_TIMEOUT_MS = 10_000;
+
 /** What a review stage notification gives on top of the deadline the engine names for its stage. */
 const STAGE_GRACE_MS = 30_000;
 
@@ -146,6 +152,8 @@ export interface ReviewStageUpdate {
   /** The stage now running, in words for the reviewer. */
   running: string;
   result: ReviewResult;
+  /** The stage now running, with its place, start time and the agent, model and effort working on it, when the engine names it. */
+  stage?: ReviewStageRecord;
 }
 
 interface Pending {
@@ -170,10 +178,11 @@ function stageNotification(
   if (typeof value !== 'object' || value === null) return undefined;
   const { method, params } = value as { method?: unknown; params?: unknown };
   if (method !== REVIEW_STAGE_METHOD || typeof params !== 'object' || params === null) return undefined;
-  const { id, running, timeoutMs, result } = params as Record<string, unknown>;
+  const { id, running, timeoutMs, result, stage } = params as Record<string, unknown>;
   if (typeof id !== 'number' || typeof running !== 'string') return undefined;
   if (typeof timeoutMs !== 'number' || !(timeoutMs > 0) || !isReviewResult(result)) return undefined;
-  return { id, running, timeoutMs, result };
+  if (stage !== undefined && !isReviewStageRecord(stage)) return undefined;
+  return { id, running, timeoutMs, result, ...(stage !== undefined ? { stage } : {}) };
 }
 
 /** The id of a JSON-RPC response, when the line carries one. */
@@ -214,6 +223,8 @@ export class EngineClient {
   private readonly pending = new Map<number, Pending>();
   private nextId = 1;
   private handshaken = false;
+  /** The id of the review request in flight, which a cancel names; absent when none is. */
+  private reviewId: number | undefined;
 
   constructor(spawnEngine: SpawnEngine) {
     this.spawnEngine = spawnEngine;
@@ -329,22 +340,45 @@ export class EngineClient {
     // The heading names a checklist only once trimmed to something; an
     // empty one stays off the request, and the engine reads its default.
     const heading = criteriaHeading?.trim();
-    const result = await this.request(
-      REVIEW_METHOD,
-      {
-        url,
-        token,
-        ...(agent !== undefined ? { agent } : {}),
-        ...(heading !== undefined && heading !== '' ? { criteriaHeading: heading } : {}),
-        ...(budget !== undefined ? { budget } : {}),
-      },
-      REVIEW_TIMEOUT_MS,
-      onStage,
-    );
+    let sent: number | undefined;
+    let result: unknown;
+    try {
+      result = await this.request(
+        REVIEW_METHOD,
+        {
+          url,
+          token,
+          ...(agent !== undefined ? { agent } : {}),
+          ...(heading !== undefined && heading !== '' ? { criteriaHeading: heading } : {}),
+          ...(budget !== undefined ? { budget } : {}),
+        },
+        REVIEW_TIMEOUT_MS,
+        onStage,
+        (id) => (sent = this.reviewId = id),
+      );
+    } finally {
+      if (this.reviewId === sent) this.reviewId = undefined;
+    }
     if (!isReviewResult(result)) {
       throw new ProtocolError();
     }
     return result;
+  }
+
+  /**
+   * Stops the review request in flight, when the reviewer stops it: the
+   * engine stops the stage running, its agent run with it, and the review
+   * answers with the results that already landed, every stage not run
+   * marked stopped. Resolves whether a review was running and is now
+   * stopping; false when none was, such as one that just finished.
+   */
+  async cancelReview(): Promise<boolean> {
+    if (!this.handshaken || this.reviewId === undefined) return false;
+    const answer = await this.request(CANCEL_REVIEW_METHOD, { id: this.reviewId }, CANCEL_TIMEOUT_MS);
+    if (typeof answer !== 'object' || answer === null || typeof (answer as { cancelled?: unknown }).cancelled !== 'boolean') {
+      throw new Error(`the engine's answer to ${CANCEL_REVIEW_METHOD} is not one`);
+    }
+    return (answer as { cancelled: boolean }).cancelled;
   }
 
   /**
@@ -490,9 +524,11 @@ export class EngineClient {
     params: unknown,
     timeoutMs: number,
     onStage?: (stage: ReviewStageUpdate) => void,
+    onSent?: (id: number) => void,
   ): Promise<unknown> {
     const engine = this.ensureEngine();
     const id = this.nextId++;
+    onSent?.(id);
     const message = { jsonrpc: '2.0' as const, id, method, params };
     return new Promise<unknown>((resolve, reject) => {
       const expire = (): void => {
@@ -564,7 +600,7 @@ export class EngineClient {
       const pending = this.pending.get(stage.id);
       if (pending?.onStage === undefined) return;
       pending.restart(stage.timeoutMs + STAGE_GRACE_MS);
-      pending.onStage({ running: stage.running, result: stage.result });
+      pending.onStage({ running: stage.running, result: stage.result, ...(stage.stage !== undefined ? { stage: stage.stage } : {}) });
       return;
     }
     const id = responseId(value);

@@ -1,5 +1,6 @@
 import { escapeHtml } from '../overview.js';
 import { anchorOf, type PartAnchor, type TreeComment, type TreePart, type TreeSection } from '../tree.js';
+import { progressBody } from './progress.js';
 import { pullRequestsBody } from './pull-requests.js';
 import { setupFormBody } from './setup.js';
 import { pullRequestLine, sideBarSteps, type SideBarState, type Step, type StepState } from './steps.js';
@@ -7,7 +8,7 @@ import { pullRequestLine, sideBarSteps, type SideBarState, type Step, type StepS
 /** The buttons the side bar's cards carry, each running an existing command. */
 export type SideBarButton = 'review' | 'overview' | 'nextPart' | 'allParts' | 'send';
 
-const STATE_ICONS: Record<StepState, string> = { done: '✓', current: '●', running: '↻', 'to come': '○' };
+const STATE_ICONS: Record<StepState, string> = { done: '✓', current: '●', running: '↻', waiting: '◷', 'to come': '○' };
 
 /** A button on a card, known by a stable id so the keyboard focus survives a redraw. */
 function button(step: number, command: SideBarButton, label: string, options: { primary?: boolean; disabled?: boolean } = {}): string {
@@ -141,11 +142,11 @@ function stepCard(step: Step, state: SideBarState): string {
   );
 }
 
-/** The side bar's content: the eight step cards, every piece of text escaped. */
-export function sideBarBody(state: SideBarState): string {
+/** The side bar's content: the review's count tiles and progress strip, then the eight step cards, every piece of text escaped. */
+export function sideBarBody(state: SideBarState, now: number = Date.now()): string {
   const steps = sideBarSteps(state);
   const current = steps.find((step) => step.open)?.number ?? 0;
-  return `<ol class="steps" aria-label="Review path" data-current="${current}">${steps.map((step) => stepCard(step, state)).join('')}</ol>`;
+  return `${progressBody(state, now)}<ol class="steps" aria-label="Review path" data-current="${current}">${steps.map((step) => stepCard(step, state)).join('')}</ol>`;
 }
 
 /**
@@ -154,7 +155,8 @@ export function sideBarBody(state: SideBarState): string {
  * page's own style and script, marked with this render's nonce: no image,
  * font, frame or connection of any origin. The script redraws the cards
  * the extension posts, keeping the keyboard focus and the cards the
- * reviewer folded or opened, and reports each press as a message.
+ * reviewer folded or opened, ticks the running stage's time each second,
+ * and reports each press as a message.
  */
 export function sideBarHtml(nonce: string, body: string): string {
   return `<!DOCTYPE html>
@@ -177,9 +179,24 @@ export function sideBarHtml(nonce: string, body: string): string {
   .title { white-space: nowrap; flex: none; }
   .done .icon { color: var(--vscode-testing-iconPassed, var(--vscode-foreground)); }
   .current .icon, .running .icon { color: var(--vscode-progressBar-background, var(--vscode-focusBorder)); }
-  .running .icon { animation: spin 1.2s linear infinite; }
+  .running .icon, .spin { display: inline-block; animation: spin 1.2s linear infinite; }
+  .waiting .icon { color: var(--vscode-descriptionForeground); }
   @keyframes spin { to { transform: rotate(360deg); } }
-  @media (prefers-reduced-motion: reduce) { .running .icon { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .running .icon, .spin { animation: none; } }
+  .progress { margin-bottom: 6px; }
+  .tiles { list-style: none; margin: 0 0 5px; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+  .tile { display: flex; flex-direction: column; padding: 4px 6px; border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); border-radius: 4px; min-width: 0; }
+  .tile .big { font-size: 16px; font-weight: 700; line-height: 1.2; }
+  .tile small { font-size: 11px; font-weight: 400; color: var(--vscode-descriptionForeground); }
+  .tile .lb { font-size: 11px; color: var(--vscode-descriptionForeground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .strip { margin: 0; padding: 5px 8px; border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); border-radius: 4px; overflow-wrap: anywhere; }
+  .strip.running .icon { color: var(--vscode-progressBar-background, var(--vscode-focusBorder)); }
+  .strip.complete .icon { color: var(--vscode-testing-iconPassed, var(--vscode-foreground)); }
+  .stage-notes { list-style: none; margin: 4px 0 0; padding: 0 8px; font-size: 12px; }
+  .stage-notes li { margin: 2px 0; overflow-wrap: anywhere; }
+  .stage-notes .fell-back .icon { color: var(--vscode-editorWarning-foreground, var(--vscode-foreground)); }
+  .stage-notes .failed .icon { color: var(--vscode-errorForeground); }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .summary { margin-left: auto; font-weight: 400; color: var(--vscode-descriptionForeground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .state { font-weight: 400; font-size: 11px; color: var(--vscode-descriptionForeground); white-space: nowrap; }
   .summary + .state::before { content: "· "; }
@@ -315,6 +332,21 @@ export function sideBarHtml(nonce: string, body: string): string {
     if (again !== null) again.focus();
     if (again !== null && caret !== null && typeof again.setSelectionRange === 'function') again.setSelectionRange(caret[0], caret[1]);
   });
+  // The running stage's time so far, as the extension wrote it, moves on each second.
+  function elapsed(ms) {
+    var seconds = Math.max(0, Math.floor(ms / 1000));
+    var hours = Math.floor(seconds / 3600);
+    var minutes = Math.floor((seconds % 3600) / 60);
+    var rest = seconds % 60;
+    var ss = (rest < 10 ? '0' : '') + rest;
+    return hours > 0 ? hours + ':' + (minutes < 10 ? '0' : '') + minutes + ':' + ss : minutes + ':' + ss;
+  }
+  window.setInterval(function () {
+    Array.prototype.forEach.call(root.querySelectorAll('.elapsed'), function (span) {
+      var started = Number(span.getAttribute('data-started') || NaN);
+      if (isFinite(started)) span.textContent = elapsed(Date.now() - started);
+    });
+  }, 1000);
   keepFolds();
   vscode.postMessage({ type: 'ready' });
 }());
