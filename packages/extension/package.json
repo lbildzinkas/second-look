@@ -160,6 +160,12 @@
         "title": "Reload the pull request list",
         "category": "Second Look",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "second-look.stopReview",
+        "title": "Stop review",
+        "category": "Second Look",
+        "icon": "$(debug-stop)"
       }
     ],
     "menus": {
@@ -167,6 +173,11 @@
         {
           "command": "second-look.refreshPullRequests",
           "when": "view == second-look.reviewTree",
+          "group": "navigation"
+        },
+        {
+          "command": "second-look.stopReview",
+          "when": "view == second-look.reviewTree && second-look.reviewing",
           "group": "navigation"
         },
         {
@@ -198,6 +209,10 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "second-look.stopReview",
+          "when": "second-look.reviewing"
+        },
         {
           "command": "second-look.openPart",
           "when": "false"

@@ -133,7 +133,8 @@ describe("the side bar's page", () => {
 
   it('draws eight cards, the current one open and marked as the current step, the others folded', () => {
     const body = sideBarBody(reviewState());
-    expect(body).toMatch(/^<ol class="steps" aria-label="Review path" data-current="3">/);
+    // The review's count tiles sit above the cards.
+    expect(body).toMatch(/^<section class="progress" aria-label="Review progress">.*<\/section><ol class="steps" aria-label="Review path" data-current="3">/s);
     expect(body.match(/<li class="step /g)).toHaveLength(8);
     expect(body).toContain('<li class="step current" id="step-3" aria-current="step">');
     expect(body).toContain('<button type="button" class="fold" id="step-3-title" data-step="3" aria-expanded="true" aria-controls="step-3-body">');

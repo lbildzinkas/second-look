@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { REFRESH_PULL_REQUESTS_COMMAND, REVIEW_COMMAND, REVIEW_TREE_VIEW } from '../src/commands.js';
+import { REFRESH_PULL_REQUESTS_COMMAND, REVIEW_COMMAND, REVIEW_TREE_VIEW, REVIEWING_CONTEXT, STOP_REVIEW_COMMAND } from '../src/commands.js';
 import { viewContainerIconFiles } from '../src/packaging.js';
 
 interface Manifest {
@@ -50,5 +50,12 @@ describe('the side bar in the Activity Bar', () => {
     const { commands, menus } = MANIFEST.contributes;
     expect(menus['view/title']![0]).toEqual({ command: REFRESH_PULL_REQUESTS_COMMAND, when: `view == ${REVIEW_TREE_VIEW}`, group: 'navigation' });
     expect(commands.find((command) => command.command === REFRESH_PULL_REQUESTS_COMMAND)?.icon).toBe('$(refresh)');
+  });
+
+  it('stops a running review from a Stop review button in the title bar, shown only while one runs', () => {
+    const { commands, menus } = MANIFEST.contributes;
+    expect(menus['view/title']).toContainEqual({ command: STOP_REVIEW_COMMAND, when: `view == ${REVIEW_TREE_VIEW} && ${REVIEWING_CONTEXT}`, group: 'navigation' });
+    expect(menus['commandPalette']).toContainEqual({ command: STOP_REVIEW_COMMAND, when: REVIEWING_CONTEXT });
+    expect(commands.find((command) => command.command === STOP_REVIEW_COMMAND)).toMatchObject({ title: 'Stop review', icon: '$(debug-stop)' });
   });
 });

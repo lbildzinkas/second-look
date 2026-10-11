@@ -16,6 +16,7 @@ import {
 } from '../src/agent-settings.js';
 import { CHOOSE_AGENT_COMMAND } from '../src/commands.js';
 import type { TestedModel } from '@second-look/engine';
+import { reviewStages } from './results.js';
 
 const CLAUDE_CODE: AgentSettings = { agent: 'claude-code', model: 'sonnet', effort: '', account: 'Claude Max (work)' };
 
@@ -261,6 +262,24 @@ describe('AgentStatusBar', () => {
     expect(item!.text).toBe('$(beaker) Second Look: Claude Code · claude-opus-5-5 · effort max');
     expect(item!.tooltip).toContain(untestedModelWarning(readAgentSettings()));
     expect(item!.backgroundColor).toBeUndefined();
+    bar.dispose();
+  });
+
+  it('spins while a review runs, naming the stage place and the agent, model and effort on it, then shows the settings again', () => {
+    stub.configuration = { 'second-look.agent': 'claude-code', 'second-look.agentModel': 'claude-sonnet-5-5', 'second-look.agentEffort': 'high' };
+    const bar = new AgentStatusBar({});
+    bar.refresh();
+    const [item] = stub.statusBarItems;
+    bar.showProgress(reviewStages('verdicts')[6]);
+    expect(item!.text).toBe('$(loading~spin) 7/9 Second Look: Claude Code · claude-sonnet-5-5 · effort high');
+    expect(item!.tooltip!.split('\n')[0]).toBe('Reviewing: checking the claims, stage 7 of 9');
+    expect(item!.command).toBe(CHOOSE_AGENT_COMMAND);
+    // A settings change mid-review keeps the stage in view.
+    stub.fireConfigurationChange();
+    expect(item!.text).toBe('$(loading~spin) 7/9 Second Look: Claude Code · claude-sonnet-5-5 · effort high');
+    bar.showProgress(undefined);
+    expect(item!.text).toBe('Second Look: Claude Code · claude-sonnet-5-5 · effort high');
+    expect(item!.tooltip).not.toContain('Reviewing');
     bar.dispose();
   });
 

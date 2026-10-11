@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { applyMark, markedPart, NO_MARKS, type Comment, type ListedPullRequest, type Part, type PullRequestList, type ReviewedMarks } from '@second-look/engine';
 import {
   MARK_REVIEWED_COMMAND,
@@ -14,7 +14,7 @@ import { PullRequestPicker } from '../src/side-bar/pull-request-picker.js';
 import { SetupForm } from '../src/side-bar/setup-form.js';
 import type { SideBarState } from '../src/side-bar/steps.js';
 import { anchorOf, buildTree, pendingReviewSection } from '../src/tree.js';
-import { mixedResult } from './results.js';
+import { mixedResult, reviewStages, STAGE_MS, STAGES_START } from './results.js';
 import { ConfigurationTarget, stub, stubContext, window } from './vscode-stub.js';
 
 /**
@@ -86,6 +86,9 @@ class Element {
   set value(value: string) {
     this.typed = value;
   }
+
+  /** The text the page's script wrote into the element; the markup's own text is never read. */
+  textContent = '';
 
   /** Hides or shows the element, as assigning the hidden property does. */
   set hidden(hidden: boolean) {
@@ -249,9 +252,20 @@ function parse(html: string): Element[] {
   return root.children;
 }
 
-/** The window the page's script listens on, and the message the editor would deliver. */
+/** The window the page's script listens on, the message the editor would deliver, and the clock it ticks on, which a test moves. */
 class WindowShim {
   private readonly listeners = new Set<(event: { data: unknown }) => void>();
+  private readonly timers: (() => void)[] = [];
+
+  setInterval(callback: () => void): number {
+    this.timers.push(callback);
+    return this.timers.length;
+  }
+
+  /** Runs every repeating timer once, as a second passing does. */
+  tick(): void {
+    for (const timer of this.timers) timer();
+  }
 
   addEventListener(type: string, listener: (event: { data: unknown }) => void): void {
     if (type === 'message') this.listeners.add(listener);
@@ -287,6 +301,11 @@ class LoadedPage {
   /** Delivers a render the extension posted. */
   render(body: string): void {
     this.windowShim.deliver({ type: 'render', body });
+  }
+
+  /** Lets a second pass on the page's clock. */
+  passSecond(): void {
+    this.windowShim.tick();
   }
 
   /** The element with this id, as the script would look it up. */
@@ -601,5 +620,26 @@ describe("the side bar's page script", () => {
     page.click('step-2-title');
     await settle();
     expect(asked).toHaveLength(2);
+  });
+
+  it("ticks the running stage's time so far each second, with no message from the extension", () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const stages = reviewStages('verdicts');
+      const started = STAGES_START + 6 * STAGE_MS;
+      vi.setSystemTime(started + 102_000);
+      const { page } = loadSideBar(reviewState({ result: { ...mixedResult(), stages }, reviewing: true, progress: { state: 'running', stage: stages[6]! } }));
+      const [elapsed] = page.root.querySelectorAll('span.elapsed');
+      expect(elapsed!.getAttribute('data-started')).toBe(String(started));
+
+      vi.setSystemTime(started + 103_000);
+      page.passSecond();
+      expect(elapsed!.textContent).toBe('1:43');
+      vi.setSystemTime(started + 3_600_000 + 61_000);
+      page.passSecond();
+      expect(elapsed!.textContent).toBe('1:01:01');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { ProtocolError } from '../src/protocol.js';
 import { EngineClient, spawnEngineProcess, type ReviewStageUpdate } from '../src/engine-client.js';
-import { criteriaResult, fetchedResult, mixedResult } from './results.js';
+import { criteriaResult, fetchedResult, mixedResult, reviewStages } from './results.js';
 
 const FAKE_ENGINE = fileURLToPath(new URL('./fixtures/fake-engine.mjs', import.meta.url));
 const PR_URL = 'https://github.com/example-org/example-repo/pull/42';
@@ -38,6 +38,7 @@ interface FakeEngineOptions {
   probeResult?: unknown;
   testResult?: unknown;
   listResult?: unknown;
+  stoppedResult?: unknown;
 }
 
 /** Starts the fake engine as a separate process, speaking real stdio. */
@@ -71,6 +72,7 @@ function fakeEngine(options: FakeEngineOptions = {}): ChildProcessWithoutNullStr
       ...(options.probeResult !== undefined ? { FAKE_ENGINE_PROBE_RESULT: JSON.stringify(options.probeResult) } : {}),
       ...(options.testResult !== undefined ? { FAKE_ENGINE_TEST_RESULT: JSON.stringify(options.testResult) } : {}),
       ...(options.listResult !== undefined ? { FAKE_ENGINE_LIST_RESULT: JSON.stringify(options.listResult) } : {}),
+      ...(options.stoppedResult !== undefined ? { FAKE_ENGINE_STOPPED_RESULT: JSON.stringify(options.stoppedResult) } : {}),
     },
   });
 }
@@ -630,6 +632,47 @@ describe('EngineClient against a fake engine', () => {
 
     expect(stages).toEqual([{ running: 'grouping related hunks with pi', result: plain }]);
     expect(result).toEqual(final);
+    client.dispose();
+  });
+
+  it('hands on the stage record a notification names, and drops a notification whose record is malformed', async () => {
+    const stages = reviewStages('verdicts');
+    const result = { ...mixedResult(), stages };
+    const named = new EngineClient(() => fakeEngine({ result: mixedResult(), stage: { running: 'checking the claims with claude-code', timeoutMs: 1000, result, stage: stages[6] } }));
+    const heard: ReviewStageUpdate[] = [];
+    await named.initialize();
+    await named.review(PR_URL, TOKEN, undefined, (stage) => heard.push(stage));
+    expect(heard).toEqual([{ running: 'checking the claims with claude-code', result, stage: stages[6] }]);
+    named.dispose();
+
+    const malformed = new EngineClient(() =>
+      fakeEngine({ result: mixedResult(), stage: { running: 'checking the claims', timeoutMs: 1000, result, stage: { ...stages[6], position: 10 } } }),
+    );
+    const dropped: ReviewStageUpdate[] = [];
+    await malformed.initialize();
+    await malformed.review(PR_URL, TOKEN, undefined, (stage) => dropped.push(stage));
+    expect(dropped).toEqual([]);
+    malformed.dispose();
+  });
+
+  it('stops the review in flight by its request id, which answers with what landed, and stops nothing once none runs', async () => {
+    const stopped = { ...mixedResult(), stages: reviewStages(undefined, { docLinks: { state: 'stopped', detail: 'the review was stopped before this stage finished' } }) };
+    const client = new EngineClient(() =>
+      fakeEngine({ stage: { running: 'grouping', timeoutMs: 60_000, result: mixedResult() }, stageOnly: true, stoppedResult: stopped, logName: 'cancel.log' }),
+    );
+    await client.initialize();
+    expect(await client.cancelReview()).toBe(false);
+    let staged!: () => void;
+    const stageArrived = new Promise<void>((done) => (staged = done));
+    const review = client.review(PR_URL, TOKEN, undefined, () => staged());
+    await stageArrived;
+
+    expect(await client.cancelReview()).toBe(true);
+    expect(await review).toEqual(stopped);
+    expect(await client.cancelReview()).toBe(false);
+    const requests = loggedRequests('cancel.log') as { id: number; method: string; params: unknown }[];
+    const reviewId = requests.find((request) => request.method === 'review')!.id;
+    expect(requests.filter((request) => request.method === 'review/cancel').map((request) => request.params)).toEqual([{ id: reviewId }]);
     client.dispose();
   });
 

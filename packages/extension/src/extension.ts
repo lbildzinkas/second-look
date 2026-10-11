@@ -25,6 +25,8 @@ import {
   REFRESH_PULL_REQUESTS_COMMAND,
   REVIEW_COMMAND,
   REVIEW_TREE_VIEW,
+  REVIEWING_CONTEXT,
+  STOP_REVIEW_COMMAND,
   SUBMIT_REVIEW_COMMAND,
   WHY_THIS_MATTERS_COMMAND,
   askCommand,
@@ -45,6 +47,7 @@ import { SideBarProvider } from './side-bar/provider.js';
 import { PullRequestPicker } from './side-bar/pull-request-picker.js';
 import { SetupForm } from './side-bar/setup-form.js';
 import type { SideBarState } from './side-bar/steps.js';
+import { endNotice, finishedProgress, readingProgress, runningProgress, stoppedProgress, type ReviewProgress } from './side-bar/progress.js';
 import { draftTarget, ReviewComments } from './comments.js';
 import { escapeMarkdown, FindingThreads } from './findings.js';
 import { isSubmitKind, SendReviewPage } from './send-page.js';
@@ -159,6 +162,13 @@ function carriedPart(arg: unknown): Part | undefined {
  * and the open diff editor stays as it is. A new review replaces one
  * still running.
  *
+ * While it runs, the side bar's count tiles and progress strip and the
+ * status bar name the stage running, its place, and the agent, model and
+ * effort working on it; the Stop review title button stops it, keeping
+ * what landed. At the end the strip says how long it took and which
+ * stages fell back, failed or were stopped, and why; a notification
+ * appears only when a stage fell back or failed.
+ *
  * The session keeps the result it shows, so a part click can open the
  * multi-file diff from the same copies the engine downloaded. The review's
  * overview opens with its first result, without taking the focus from the
@@ -219,6 +229,12 @@ class ReviewSession {
   private stage: string | undefined;
   /** True once the reviewer opened the story, or moved on to the parts, in the review shown. */
   private storyRead = false;
+  /** How the review stands, for the progress strip and the status bar: the stage running, or how the review ended. */
+  private progress: ReviewProgress | undefined;
+  /** The count of the review the reviewer stopped, so its early end reads as stopped, not as a failure. */
+  private stopped = 0;
+  /** The status bar entry, which names the stage running while a review runs. */
+  private readonly status: AgentStatusBar;
 
   constructor(
     sideBar: SideBarProvider,
@@ -226,8 +242,10 @@ class ReviewSession {
     marker: PartMarker,
     comments: ReviewComments,
     deps: ExtensionDeps,
+    status: AgentStatusBar,
   ) {
     this.sideBar = sideBar;
+    this.status = status;
     this.copies = copies;
     this.marker = marker;
     this.comments = comments;
@@ -281,6 +299,8 @@ class ReviewSession {
     // only once they are in.
     let marksRead: Promise<void> = Promise.resolve();
     this.running = true;
+    this.progress = readingProgress(new Date());
+    void vscode.commands.executeCommand('setContext', REVIEWING_CONTEXT, true);
     this.render();
     try {
       const result = await vscode.window.withProgress(
@@ -292,6 +312,7 @@ class ReviewSession {
             (stage) => {
               if (!current()) return;
               this.stage = stage.running;
+              this.progress = runningProgress(stage) ?? this.progress;
               void this.show(stage.result, shown, stage.running);
               shown = true;
             },
@@ -300,7 +321,9 @@ class ReviewSession {
       );
       if (!current()) return;
       this.stage = undefined;
+      this.progress = finishedProgress(result);
       await this.show(result, shown);
+      this.noticeEnd(result);
       await marksRead;
       if (!current()) return;
       this.running = false;
@@ -309,16 +332,63 @@ class ReviewSession {
     } catch (error) {
       if (!current()) return;
       this.stage = undefined;
-      vscode.window.showErrorMessage(
-        error instanceof Error ? error.message : String(error),
-      );
+      // A stopped review is no failure: the strip says it stopped before its
+      // first result landed, or with the results that already landed.
+      this.progress =
+        this.stopped !== review
+          ? undefined
+          : shown
+            ? stoppedProgress(this.result!)
+            : { state: 'stopped early' };
+      if (this.stopped !== review) {
+        vscode.window.showErrorMessage(
+          error instanceof Error ? error.message : String(error),
+        );
+      }
     } finally {
       await marksRead;
       if (current() && this.running) {
         this.running = false;
         this.render();
       }
+      if (current()) void vscode.commands.executeCommand('setContext', REVIEWING_CONTEXT, false);
     }
+  }
+
+  /**
+   * Stops the review running, from the side bar's Stop review title button:
+   * the engine stops the stage running, its agent run with it, and answers
+   * with what already landed, every stage not run marked stopped, which
+   * the progress strip lists. A stop pressed while the review is still
+   * starting — its engine spawning, its request not yet sent — says so,
+   * for nothing has reached the engine to stop yet.
+   */
+  async stopReview(): Promise<void> {
+    if (!this.running) {
+      vscode.window.showInformationMessage('No review is running.');
+      return;
+    }
+    const review = this.reviews;
+    try {
+      if ((await this.engine?.cancelReview()) !== true) {
+        vscode.window.showInformationMessage('The review has not reached the engine yet. Stop it again in a moment.');
+        return;
+      }
+    } catch (error) {
+      this.stopped = review;
+      vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
+      return;
+    }
+    this.stopped = review;
+  }
+
+  /** The end of a review: a notification only when a stage fell back or failed, offering the overview. */
+  private noticeEnd(result: ReviewResult): void {
+    const notice = endNotice(result);
+    if (notice === undefined) return;
+    void vscode.window.showWarningMessage(notice, 'Open overview').then((choice) => {
+      if (choice === 'Open overview') void vscode.commands.executeCommand(OPEN_OVERVIEW_COMMAND);
+    });
   }
 
   /**
@@ -382,8 +452,10 @@ class ReviewSession {
       ...(message !== undefined ? { message } : {}),
       reviewing: this.running,
       storyRead: this.storyRead,
+      ...(this.progress !== undefined ? { progress: this.progress } : {}),
     };
     this.sideBar.update(state, this.result === undefined ? undefined : reviewBadge(this.result, marks));
+    this.status.showProgress(this.running && this.progress?.state === 'running' ? this.progress.stage : undefined);
   }
 
   /** Shows the session again, such as after the agent settings changed. */
@@ -1051,7 +1123,8 @@ class ReviewSession {
  * and the command it runs, which opens the quick pick that changes them,
  * and step 1's setup form, which opens by itself on the first open and
  * from the quick pick's last item, and step 2's list of the reviewer's
- * open pull requests, with the title button that reloads it.
+ * open pull requests, with the title button that reloads it, and the
+ * Stop review title button that stops the review running.
  * Nothing here runs anything from the workspace — the engine is started
  * from the companion's own install, reads GitHub, and writes only the
  * one review the reviewer sends — and, only with the opt-in mirror
@@ -1078,9 +1151,9 @@ export function activate(
   const copies = new ChangeCopiesProvider();
   const marker = new PartMarker();
   const comments = new ReviewComments();
-  const session = new ReviewSession(sideBar, copies, marker, comments, deps);
   const agentStatusBar = new AgentStatusBar(deps.env);
   agentStatusBar.refresh();
+  const session = new ReviewSession(sideBar, copies, marker, comments, deps, agentStatusBar);
   // The untested-combination warning (issue 3): once for the settings the
   // reviewer arrives with, then whenever they choose an agent, model or effort.
   warnUntestedModelChoice();
@@ -1148,6 +1221,7 @@ export function activate(
       setup.open();
     }),
     vscode.commands.registerCommand(REFRESH_PULL_REQUESTS_COMMAND, () => picker.load()),
+    vscode.commands.registerCommand(STOP_REVIEW_COMMAND, () => session.stopReview()),
   );
   return sideBar;
 }

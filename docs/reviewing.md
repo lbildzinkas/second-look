@@ -6,7 +6,7 @@ This page follows one review from start to sent. The words are the project's [gl
 
 ## The side bar
 
-The side bar walks the review as eight steps, each on a card that shows whether it is **done**, **current**, **running** or still to come: 1 the agent, model and effort every agent pass runs on; 2 the pull request, or the list that starts a review; 3 the story, with a button that opens the overview; 4 the parts; 5 the claims and 6 the acceptance criteria and unexplained changes, each with a button that opens the overview; 7 the pending comments, with a button that opens the diff they are written on; and 8 a button that opens the Send review page. The current step is the first one not done — the story counts as read once you open the overview or move on to the parts — and its card is open while the others fold; any card opens with a click. Every button runs the same command the Command Palette offers. The side bar follows your colour theme, and works from the keyboard: Tab moves between the cards' controls, Space ticks a part's checkbox and Enter opens a part or presses a button ([ADR 0008](adr/0008-webview-side-bar.md) says why it is one webview).
+The side bar walks the review as eight steps, each on a card that shows whether it is **done**, **current**, **running**, **waiting** for the stage that produces it, or still to come: 1 the agent, model and effort every agent pass runs on; 2 the pull request, or the list that starts a review; 3 the story, with a button that opens the overview; 4 the parts; 5 the claims and 6 the acceptance criteria and unexplained changes, each with a button that opens the overview; 7 the pending comments, with a button that opens the diff they are written on; and 8 a button that opens the Send review page. The current step is the first one not done — the story counts as read once you open the overview or move on to the parts — and its card is open while the others fold; any card opens with a click. Every button runs the same command the Command Palette offers. The side bar follows your colour theme, and works from the keyboard: Tab moves between the cards' controls, Space ticks a part's checkbox and Enter opens a part or presses a button ([ADR 0008](adr/0008-webview-side-bar.md) says why it is one webview).
 
 ## The ranked parts
 
@@ -31,6 +31,10 @@ Results arrive in stages, and the side bar fills in as they land. A status line 
 9. **The documentation links** — the library APIs the change uses linked to their documentation.
 
 An agent pass that fails or answers invalidly falls back to the plain result and says why; nothing is guessed. A new review replaces one still running.
+
+While a review runs, the side bar shows count tiles — the parts left, the claims, the criteria and the comments — and a progress strip naming the stage running, the agent, model and effort working on it, its time so far and its place, such as "stage 7 of 9". The step being produced spins, and a step waiting for its stage shows a clock. The status bar shows the same, visible with the side bar closed: `7/9 Second Look: Claude Code · claude-sonnet-5-5 · effort high`, with a spinner. The **Stop review** button in the side bar's title bar stops the review: what already landed stays, and the strip lists the stages it stopped.
+
+At the end the strip reads "Review complete in 4:12", followed by each stage that fell back or failed, and why. A notification appears only when a stage fell back or failed; a clean finish only changes the strip and the status bar.
 
 ## The overview tab
 

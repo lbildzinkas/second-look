@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import type { ReviewStageRecord } from '@second-look/engine';
 import {
   apiKeyOverrideWarning,
   agentStatusBarText,
@@ -8,6 +9,7 @@ import {
   type AgentSettings,
 } from './agent-settings.js';
 import { CHOOSE_AGENT_COMMAND } from './commands.js';
+import { reviewStatusText, reviewStatusTooltip } from './side-bar/progress.js';
 
 /**
  * The status bar entry for the agent in use: the agent, model and effort
@@ -19,12 +21,16 @@ import { CHOOSE_AGENT_COMMAND } from './commands.js';
  * Clicking it opens the quick pick that changes them (issue 134). Every result
  * the companion shows is stamped with the same agent, version, model,
  * effort, login and account label by the engine, so what the reviewer reads here
- * is what answered.
+ * is what answered. While a review runs, it spins and names the stage's
+ * place and the agent, model and effort working on it, such as
+ * `7/9 Second Look: Claude Code · claude-sonnet-5-5 · effort high`.
  */
 export class AgentStatusBar {
   private readonly item: vscode.StatusBarItem;
   private readonly env: NodeJS.ProcessEnv;
   private readonly watchConfiguration: vscode.Disposable;
+  /** The review stage running, while a review runs. */
+  private running: ReviewStageRecord | undefined;
 
   constructor(env: NodeJS.ProcessEnv = process.env) {
     this.env = env;
@@ -35,15 +41,23 @@ export class AgentStatusBar {
     });
   }
 
-  /** Rereads the settings and shows the agent, model and effort in use. */
+  /** Shows the review stage running, or the settings again once no stage runs. */
+  showProgress(stage: ReviewStageRecord | undefined): void {
+    this.running = stage;
+    this.refresh();
+  }
+
+  /** Rereads the settings and shows the agent, model and effort in use, or the stage running and who works on it. */
   refresh(): void {
     const settings = readAgentSettings();
     const warning = apiKeyOverrideWarning(settings, this.env);
     const untested = untestedModelWarning(settings);
     const isChosen = isAgentChosen();
     const icon = warning !== undefined ? '$(warning) ' : untested !== undefined ? '$(beaker) ' : isChosen ? '' : '$(settings-gear) ';
-    this.item.text = `${icon}${agentStatusBarText(settings)}`;
-    this.item.tooltip = tooltip(settings, isChosen, [warning, untested]);
+    const { running } = this;
+    this.item.text = running === undefined ? `${icon}${agentStatusBarText(settings)}` : `$(loading~spin) ${reviewStatusText(running, settings)}`;
+    const lines = tooltip(settings, isChosen, [warning, untested]);
+    this.item.tooltip = running === undefined ? lines : `${reviewStatusTooltip(running)}\n\n${lines}`;
     this.item.backgroundColor =
       warning === undefined ? undefined : new vscode.ThemeColor('statusBarItem.warningBackground');
     this.item.show();

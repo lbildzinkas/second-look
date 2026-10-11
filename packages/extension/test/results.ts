@@ -1,9 +1,11 @@
 import {
   REVIEW_RESULT_VERSION,
+  REVIEW_STAGE_IDS,
   type Hunk,
   type NoiseAssessment,
   type Part,
   type ReviewResult,
+  type ReviewStageId,
   type ReviewStageRecord,
 } from '@second-look/engine';
 
@@ -622,4 +624,31 @@ export function doneStages(): ReviewStageRecord[] {
   return verdictsRunningStages().map((record) =>
     ends[record.id] === undefined ? record : { ...record, state: 'done' as const, durationMs: ends[record.id] },
   );
+}
+
+/** When the staged reviews below start, and how long each of their finished stages takes: nine of them, 4:12 in all. */
+export const STAGES_START = Date.parse('2026-10-11T10:00:00.000Z');
+export const STAGE_MS = 28_000;
+
+/**
+ * A review's stages as the engine records them: every stage before
+ * `running` done, `running` running since its start, the rest to come —
+ * or, with no stage running, every one done — each stage that ran with
+ * Claude Code on claude-sonnet-5-5 at high, the plain pass with no agent,
+ * then `changes` applied to the stages they name.
+ */
+export function reviewStages(running?: ReviewStageId, changes: Partial<Record<ReviewStageId, Partial<ReviewStageRecord>>> = {}): ReviewStageRecord[] {
+  const at = running === undefined ? REVIEW_STAGE_IDS.length : REVIEW_STAGE_IDS.indexOf(running);
+  return REVIEW_STAGE_IDS.map((id, index): ReviewStageRecord => {
+    const ran =
+      index > at
+        ? { state: 'to come' as const }
+        : {
+            state: index === at ? ('running' as const) : ('done' as const),
+            startedAt: new Date(STAGES_START + index * STAGE_MS).toISOString(),
+            ...(index === at ? {} : { durationMs: STAGE_MS }),
+            ...(id === 'plain' ? {} : { agent: { agent: 'claude-code', model: 'claude-sonnet-5-5', effort: 'high' } }),
+          };
+    return { id, position: index + 1, total: REVIEW_STAGE_IDS.length, ...ran, ...changes[id] };
+  });
 }

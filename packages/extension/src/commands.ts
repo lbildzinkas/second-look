@@ -114,5 +114,14 @@ export const CHOOSE_AGENT_COMMAND = 'second-look.chooseAgent' as const;
 /** The command that opens step 1's setup form in the side bar, which the agent quick pick's last item runs. */
 export const OPEN_SETUP_COMMAND = 'second-look.openSetup' as const;
 
+/**
+ * Stops the review running: the side bar's Stop review title button. What
+ * already landed stays, and every stage not run is marked stopped.
+ */
+export const STOP_REVIEW_COMMAND = 'second-look.stopReview' as const;
+
+/** The context key that is true while a review runs, which shows the Stop review title button. */
+export const REVIEWING_CONTEXT = 'second-look.reviewing' as const;
+
 /** Reloads step 2's list of the reviewer's open pull requests: the side bar's refresh title button. */
 export const REFRESH_PULL_REQUESTS_COMMAND = 'second-look.refreshPullRequests' as const;
