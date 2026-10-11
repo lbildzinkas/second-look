@@ -470,8 +470,8 @@ export function sideBarHtml(nonce: string, body: string): string {
   .flag { color: var(--vscode-editorWarning-foreground, var(--vscode-foreground)); font-size: 11px; font-weight: 600; margin-right: 6px; }
   .shown { font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; }
   .finding .meta { display: flex; align-items: center; gap: 4px 6px; flex-wrap: wrap; margin-top: 2px; font-size: 12px; color: var(--vscode-descriptionForeground); }
-  .pill { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; border: 1px solid currentColor; border-radius: 4px; padding: 0 5px; line-height: 16px; white-space: nowrap; }
-  .pill .icon { width: 1em; text-align: center; }
+  .finding .pill { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; border: 1px solid currentColor; border-radius: 4px; padding: 0 5px; line-height: 16px; white-space: nowrap; }
+  .finding .pill .icon { width: 1em; text-align: center; }
   .tone-ok { color: var(--vscode-testing-iconPassed, var(--vscode-foreground)); }
   .tone-bad { color: var(--vscode-errorForeground, var(--vscode-foreground)); }
   .tone-warn { color: var(--vscode-editorWarning-foreground, var(--vscode-foreground)); }
