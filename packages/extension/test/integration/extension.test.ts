@@ -138,6 +138,7 @@ async function reviewWithFakeEngine(options: FakeEngineOptions): Promise<SideBar
     askCommand('cover'),
     MARK_REVIEWED_COMMAND,
     CHOOSE_AGENT_COMMAND,
+    OPEN_SETUP_COMMAND,
   ]);
 
   stub.inputBoxResult = PR_URL;
