@@ -536,6 +536,18 @@ function progressBlock(state: OverviewState): string {
 }
 
 /**
+ * One stage of the review shown that already ended, in the words the
+ * page says of it — its name, how it ended, and why — or undefined
+ * while it runs or is yet to come.
+ */
+function endedStage(state: OverviewState, id: ReviewStageId): string | undefined {
+  const own = stageOf(state, id);
+  if (own === undefined || own.state === 'running' || own.state === 'to come') return undefined;
+  const detail = own.detail === undefined ? '' : `: ${own.detail}`;
+  return `${STAGE_NAMES[own.id]} ${own.state}${detail}`;
+}
+
+/**
  * A section the review is still producing: a skeleton where its rows
  * will land, and a line naming the agent checking it — never a quiet
  * note that reads empty or finished. A section whose stage already
@@ -543,11 +555,9 @@ function progressBlock(state: OverviewState): string {
  * folded stage list uses, since nothing is checking it and none will.
  */
 function beingChecked(state: OverviewState, id: ReviewStageId): string {
+  const ended = endedStage(state, id);
+  if (ended !== undefined) return `<p class="note">${escapeHtml(`${ended}.`)}</p>`;
   const own = stageOf(state, id);
-  if (own !== undefined && own.state !== 'running' && own.state !== 'to come') {
-    const detail = own.detail === undefined ? '' : `: ${own.detail}`;
-    return `<p class="note">${escapeHtml(`${STAGE_NAMES[own.id]} ${own.state}${detail}.`)}</p>`;
-  }
   const line = own?.agent !== undefined ? stageAgentLine(own.agent) : reviewAgentLine(state);
   const words =
     own?.state === 'to come'
@@ -880,10 +890,14 @@ function criterionRow(criterion: AcceptanceCriterion, index: number, criteria: N
   return tableRow(`criterion-${index}`, index + 1, state, cells, criterionEvidence(criterion, index), open);
 }
 
-/** What the criteria section says of their verdicts: mapped, why none was, being checked, or that none is yet. */
-function mappingNote(criteria: NonNullable<ReviewResult['criteria']>, checking?: string): string {
+/** What the criteria section says of their verdicts: mapped, why none was, being checked, how the stage ended, or that none is yet. */
+function mappingNote(criteria: NonNullable<ReviewResult['criteria']>, checking?: string, ended?: string): string {
   const mapping = criteria.mapping;
-  if (mapping === undefined) return checking === undefined ? 'None is checked yet.' : `Each is being checked by ${checking}.`;
+  if (mapping === undefined) {
+    if (checking !== undefined) return `Each is being checked by ${checking}.`;
+    if (ended !== undefined) return `None is checked: ${ended}.`;
+    return 'None is checked yet.';
+  }
   if (mapping.outcome === 'fell back') return `None is checked: ${mapping.detail}.`;
   return (
     'Each is judged against the change, its read-only copy and the manual checks the description reports, ' +
@@ -925,7 +939,7 @@ function criteriaSection(state: OverviewState): string {
   }
   const heading = `, quoted from the checklist under ${escapeHtml(JSON.stringify(criteria.heading))}`;
   const checking = stageRunning(state, 'criteria') ? reviewAgentLine(state) : undefined;
-  const note = `<p class="note">Each condition listed in the issues this pull request links${heading}. Issue text is untrusted: its hidden content is shown and flagged. ${escapeHtml(mappingNote(criteria, checking))}</p>`;
+  const note = `<p class="note">Each condition listed in the issues this pull request links${heading}. Issue text is untrusted: its hidden content is shown and flagged. ${escapeHtml(mappingNote(criteria, checking, endedStage(state, 'criteria')))}</p>`;
   const rows = byState(criteria.criteria, (criterion) => (criterion.verdict.kind === 'not checked' && checking !== undefined ? 'checking' : criterion.verdict.kind), checkingOrder(CRITERION_ORDER)).map(([criterion, index], at) =>
     criterionRow(criterion, index, criteria, at === 0 && isUnmetCriterion(criterion), checking !== undefined),
   );
@@ -1081,13 +1095,14 @@ function claimRow(claim: Claim, index: number, result: ReviewResult, open: boole
   return tableRow(`claim-${index}`, index + 1, state, cells, verdictDetail(claim, index), open);
 }
 
-/** What the claims section says of their verdicts: judged, why none was, being checked, or that none is yet. */
-function verdictsNote(claims: NonNullable<ReviewResult['claims']>, checking?: string): string {
+/** What the claims section says of their verdicts: judged, why none was, being checked, how the stage ended, or that none is yet. */
+function verdictsNote(claims: NonNullable<ReviewResult['claims']>, checking?: string, ended?: string): string {
   const asked = claims.claims.filter((claim) => claim.asked === true).length;
   const counted = asked === 1 ? 'one checked verdict' : `${asked} checked verdicts`;
   const judging = claims.judging;
   if (judging === undefined) {
     if (checking !== undefined) return `Each is being checked by ${checking}.`;
+    if (ended !== undefined) return asked === 0 ? `None is checked: ${ended}.` : `${ended}; the ${counted} came from the Verify this claim ask.`;
     return asked === 0 ? 'None is checked yet.' : `The verdicts pass did not run; the ${counted} came from the Verify this claim ask.`;
   }
   if (judging.outcome === 'fell back') return asked === 0 ? `None is checked: ${judging.detail}.` : `The judging pass fell back (${judging.detail}); the ${counted} came from the Verify this claim ask.`;
@@ -1113,7 +1128,7 @@ function claimsSection(state: OverviewState): string {
   const who = checking ? reviewAgentLine(state) : undefined;
   const note =
     '<p class="note">Statements about how code or a library behaves, from a fresh pipeline report, the description, the docstrings and comments ' +
-    `the change adds, and the story, in that order. ${escapeHtml(verdictsNote(claims, who))}</p>`;
+    `the change adds, and the story, in that order. ${escapeHtml(verdictsNote(claims, who, endedStage(state, 'verdicts')))}</p>`;
   const askedListed = claims.claims.some((claim) => claim.asked === true);
   const fellBack =
     claims.outcome === 'fell back'

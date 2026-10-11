@@ -630,6 +630,32 @@ describe('the stage list on the overview', () => {
     expect(criteria).not.toContain('Still to come');
   });
 
+  it('says how a verdicts or criteria pass that checked nothing ended, never that none is checked yet', () => {
+    const failed = verdictsRunningStages().map((record) => {
+      if (record.id === 'verdicts') return { ...record, state: 'failed' as const, detail: 'the agent run failed: exit 1' };
+      return record.id === 'criteria' ? { ...record, state: 'running' as const, startedAt: '2026-10-04T00:03:18.000Z' } : record;
+    });
+    const claimsHtml = overviewHtml({ result: { ...claimsResult(), stages: failed }, running: 'mapping the acceptance criteria with pi' }, 'N');
+    expect(claimsHtml).toContain('None is checked: Verdicts failed: the agent run failed: exit 1.');
+    expect(claimsHtml).not.toContain('None is checked yet');
+
+    const listed = claimsResult().claims!;
+    const asked = { ...listed.claims[0]!, asked: true as const, verdict: { kind: 'refuted' as const, source: 'the change itself' as const, reason: 'The loop runs five times.', evidence: [{ path: 'src/retry.py', line: 6, quote: 'for attempt in range(5):' }] } };
+    const askedHtml = overviewHtml({ result: { ...claimsResult(), claims: { ...listed, claims: [asked, ...listed.claims.slice(1)] }, stages: failed }, running: 'mapping the acceptance criteria with pi' }, 'N');
+    expect(askedHtml).toContain('Verdicts failed: the agent run failed: exit 1; the one checked verdict came from the Verify this claim ask.');
+    expect(askedHtml).not.toContain('The verdicts pass did not run');
+
+    const ended = doneStages().map((record) => {
+      if (record.id === 'verdicts') return { ...record, state: 'skipped' as const, detail: 'the review was asked not to run it' };
+      if (record.id === 'criteria') return { ...record, state: 'failed' as const, detail: 'the agent run failed: exit 1' };
+      return record.id === 'docLinks' ? { ...record, state: 'running' as const, durationMs: undefined } : record;
+    });
+    const criteriaHtml = overviewHtml({ result: { ...criteriaResult(), claims: claimsResult().claims, stages: ended }, running: 'suggesting documentation links with pi' }, 'N');
+    expect(criteriaHtml).toContain('None is checked: Acceptance criteria failed: the agent run failed: exit 1.');
+    expect(criteriaHtml).toContain('None is checked: Verdicts skipped: the review was asked not to run it.');
+    expect(criteriaHtml).not.toContain('None is checked yet');
+  });
+
   it('renders the stage names, reasons and times as escaped text, never as markup', () => {
     const hostile = verdictsRunningStages().map((record) =>
       record.id === 'ranking'
