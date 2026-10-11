@@ -70,7 +70,7 @@ interface FakeEngineOptions {
   stage?: { running: string; timeoutMs: number; result: unknown; stage?: unknown };
   /** Send the stage notification, then answer only a cancel. */
   stageOnly?: boolean;
-  /** Receive this method and answer nothing, as a stalled engine does. */
+  /** Receive these methods — a comma-separated list — and answer nothing, as a stalled engine does. */
   stallOn?: string;
   /** The result a review the cancel stopped answers with; without it, the review fails as one stopped before its first result. */
   stoppedResult?: unknown;
@@ -803,6 +803,34 @@ describe('progress in the side bar and the status bar', () => {
     await reviewed;
     expect(stub.errorMessages).toEqual(['the engine failed the review']);
     expect(drawn(view)).not.toContain('Review stopped');
+    expect(stub.contextKeys[REVIEWING_CONTEXT]).toBe(false);
+  });
+
+  it('never marks the review that replaced one a stop was pressed for', async () => {
+    let engines = 0;
+    activate(stubContext() as unknown as vscode.ExtensionContext, {
+      spawnEngine: () =>
+        fakeEngine(
+          ++engines === 1
+            ? { stallOn: 'review,review/cancel', logName: 'stop-replace-1.log' }
+            : { error: 'the engine failed the review', logName: 'stop-replace-2.log' },
+        ),
+    });
+    stub.inputBoxResult = PR_URL;
+    stub.session = { accessToken: TOKEN };
+    const first = registeredCommands().get(REVIEW_COMMAND)!() as Promise<void>;
+    const firstLog = join(workDir, 'stop-replace-1.log');
+    await until('the review sent', () => existsSync(firstLog) && readFileSync(firstLog, 'utf8').includes('"method":"review"'));
+
+    const stopping = registeredCommands().get(STOP_REVIEW_COMMAND)!() as Promise<void>;
+    await until('the cancel sent', () => readFileSync(firstLog, 'utf8').includes('"method":"review/cancel"'));
+
+    const second = registeredCommands().get(REVIEW_COMMAND)!() as Promise<void>;
+    await Promise.all([first, second, stopping]);
+
+    expect(stub.informationMessages).toEqual([]);
+    expect(stub.errorMessages).toEqual(['the engine was stopped', 'the engine failed the review']);
+    expect(drawn(sideBar())).not.toContain('Review stopped');
     expect(stub.contextKeys[REVIEWING_CONTEXT]).toBe(false);
   });
 

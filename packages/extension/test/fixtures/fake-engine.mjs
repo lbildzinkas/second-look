@@ -20,7 +20,8 @@
 //   FAKE_ENGINE_INIT_DELAY_MS     wait this long before answering initialize, as an
 //                                  engine slow to start does
 //   FAKE_ENGINE_EXIT_ON           exit right after this method, answering nothing
-//   FAKE_ENGINE_STALL_ON          receive this method, answer nothing, stay alive
+//   FAKE_ENGINE_STALL_ON          receive these methods (comma-separated), answer
+//                                  nothing, stay alive
 //   FAKE_ENGINE_IGNORE_SIGTERM    stay alive when sent SIGTERM, like a frozen engine
 //   FAKE_ENGINE_LOG               path to append every request it received
 //   FAKE_ENGINE_STAGE             JSON { running, timeoutMs, result } to send as a
@@ -66,7 +67,9 @@ const askResult = process.env.FAKE_ENGINE_ASK_RESULT ? JSON.parse(process.env.FA
 const askError = process.env.FAKE_ENGINE_ASK_ERROR;
 const sendDelayMs = Number(process.env.FAKE_ENGINE_SEND_DELAY_MS ?? '0');
 const exitOn = process.env.FAKE_ENGINE_EXIT_ON;
-const stallOn = process.env.FAKE_ENGINE_STALL_ON;
+const stallOn = process.env.FAKE_ENGINE_STALL_ON
+  ? process.env.FAKE_ENGINE_STALL_ON.split(',').map((method) => method.trim())
+  : null;
 const log = process.env.FAKE_ENGINE_LOG;
 const stage = process.env.FAKE_ENGINE_STAGE ? JSON.parse(process.env.FAKE_ENGINE_STAGE) : null;
 const stageOnly = Boolean(process.env.FAKE_ENGINE_STAGE_ONLY);
@@ -109,7 +112,7 @@ function handle(line) {
     return;
   }
   if (log) appendFileSync(log, `${JSON.stringify(request)}\n`);
-  if (stallOn && request.method === stallOn) {
+  if (stallOn?.includes(request.method)) {
     // A stalled review can still be cancelled, as one still reading the pull request can.
     if (request.method === 'review') unanswered = request.id;
     return;

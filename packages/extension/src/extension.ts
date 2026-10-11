@@ -368,17 +368,18 @@ class ReviewSession {
       vscode.window.showInformationMessage('No review is running.');
       return;
     }
+    const review = this.reviews;
     try {
       if ((await this.engine?.cancelReview()) !== true) {
         vscode.window.showInformationMessage('The review has not reached the engine yet. Stop it again in a moment.');
         return;
       }
     } catch (error) {
-      this.stopped = this.reviews;
+      this.stopped = review;
       vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
       return;
     }
-    this.stopped = this.reviews;
+    this.stopped = review;
   }
 
   /** The end of a review: a notification only when a stage fell back or failed, offering the overview. */
