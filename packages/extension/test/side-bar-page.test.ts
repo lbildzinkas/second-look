@@ -3,6 +3,7 @@ import { applyMark, markedPart, NO_MARKS, type Comment, type ListedPullRequest, 
 import {
   DRAFT_COMMENT_COMMAND,
   FETCH_LIBRARY_COMMAND,
+  FILTER_CHANGED_COMMAND,
   MARK_REVIEWED_COMMAND,
   OPEN_ALL_PARTS_COMMAND,
   OPEN_LIBRARY_EVIDENCE_COMMAND,
@@ -12,6 +13,7 @@ import {
   REVIEW_COMMAND,
   REVIEW_TREE_VIEW,
   SUBMIT_REVIEW_COMMAND,
+  WHY_THIS_MATTERS_COMMAND,
   askCommand,
 } from '../src/commands.js';
 import { SideBarProvider, type SideBarDeps } from '../src/side-bar/provider.js';
@@ -652,7 +654,7 @@ describe("the side bar's page script", () => {
   it("works steps 5 and 6 from the keyboard: every finding action runs its command, the issue opens on GitHub, the setting in the Settings editor", async () => {
     const result = { ...offeredResult(), criteria: mappedCriteriaResult().criteria, unexplained: unexplainedResult().unexplained };
     const opened: [string, number][] = [];
-    const deps: SideBarDeps = { openLine: (path, line) => opened.push([path, line]), ticks: new StepTickStore(stubContext().globalState) };
+    const deps: SideBarDeps = { openLine: (path, line) => opened.push([path, line]), ticks: new StepTickStore(stubContext().globalState), comment: () => undefined };
     const { page } = loadSideBar(reviewState({ result, storyRead: true, marks: marked(...mixedResult().parts) }), undefined, undefined, deps);
     const part = result.parts[result.claims!.claims[1]!.part]!;
 
@@ -690,7 +692,7 @@ describe("the side bar's page script", () => {
       ...result.claims!,
       claims: result.claims!.claims.map((claim, index) => (index === 2 ? { ...claim, source: 'description', location: { kind: 'description', line: 2 } } : claim)),
     };
-    const deps: SideBarDeps = { openLine: () => undefined, ticks: new StepTickStore(stubContext().globalState) };
+    const deps: SideBarDeps = { openLine: () => undefined, ticks: new StepTickStore(stubContext().globalState), comment: () => undefined };
     const { page } = loadSideBar(reviewState({ result, storyRead: true, marks: marked(...mixedResult().parts) }), undefined, undefined, deps);
 
     page.click('step-5-open-claim-2');
@@ -702,7 +704,7 @@ describe("the side bar's page script", () => {
     const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
     const result = judgedResult();
     const ticks = new StepTickStore(stubContext().globalState);
-    const { provider, page, view } = loadSideBar(reviewState({ result, storyRead: true, marks: marked(...mixedResult().parts) }), undefined, undefined, { openLine: () => undefined, ticks });
+    const { provider, page, view } = loadSideBar(reviewState({ result, storyRead: true, marks: marked(...mixedResult().parts) }), undefined, undefined, { openLine: () => undefined, ticks, comment: () => undefined });
     expect(page.element('step-5-tick').hasAttribute('checked')).toBe(false);
 
     page.tick('step-5-tick', true);
@@ -747,5 +749,46 @@ describe("the side bar's page script", () => {
     for (const pill of page.root.querySelectorAll('span.pill')) {
       expect(pill.querySelector('span.icon')).not.toBeNull();
     }
+  });
+
+  it("works steps 4, 7 and 8 from the keyboard: a part's Ask… and ⋯, step 4's ⋯ and filter, each comment's and draft's buttons, and the review sent", async () => {
+    const result = { ...mixedResult(), sinceLastLook: { commit: mixedResult().copies.base.commit, changedParts: [0] } } as unknown as ReturnType<typeof mixedResult>;
+    const pressed: [number, string][] = [];
+    const deps: SideBarDeps = { openLine: () => undefined, ticks: new StepTickStore(stubContext().globalState), comment: (id, action) => pressed.push([id, action]) };
+    const comments = [
+      { id: 1, kind: 'comment' as const, location: 'src/retry.py:5', body: 'Why five?' },
+      { id: 2, kind: 'draft' as const, location: 'src/retry.py:3', body: 'The loop runs five.', from: 'refuted claim' },
+    ];
+    const sent = { submit: 'approve' as const, comments: 1, commit: '998ded4a1234567890abcdef1234567890abcdef', url: 'https://github.com/example-org/example-repo/pull/42#pullrequestreview-1' };
+    const { page } = loadSideBar(reviewState({ result, comments, sent }), undefined, undefined, deps);
+    const anchor = anchorOf(result.parts[0]!);
+    const key = `${anchor.path}@${anchor.hunk?.oldStart ?? ''},${anchor.hunk?.newStart ?? ''}`;
+    const picks = ['What covers this?', 'Why this matters', 'Mirror reviewed files to GitHub’s Viewed'];
+    stub.quickPickResult = (items: { label: string }[]) => items.find((item) => item.label === picks[stub.quickPicks.length - 1]);
+    const settle = (): Promise<void> => new Promise((done) => setTimeout(done, 0));
+
+    page.click(`ask-${key}`);
+    await settle();
+    page.click(`more-${key}`);
+    await settle();
+    page.click('step-4-partsMenu');
+    await settle();
+    page.click('step-4-filterChanged');
+    page.click('step-7-open-1');
+    page.click('step-7-discard-1');
+    page.click('step-7-add-2');
+    page.click('step-7-discard-2');
+    page.click('step-8-openSent');
+    page.click('step-8-send');
+
+    expect(stub.executedCommands).toEqual([
+      { id: askCommand('cover'), args: [{ anchor }] },
+      { id: WHY_THIS_MATTERS_COMMAND, args: [{ anchor }] },
+      { id: FILTER_CHANGED_COMMAND, args: [] },
+      { id: SUBMIT_REVIEW_COMMAND, args: [] },
+    ]);
+    expect(stub.configurationUpdates).toEqual([{ key: 'second-look.mirrorViewedToGitHub', value: true, target: ConfigurationTarget.Global }]);
+    expect(pressed).toEqual([[1, 'open'], [1, 'discard'], [2, 'add'], [2, 'discard']]);
+    expect(stub.openedExternals).toEqual([sent.url]);
   });
 });

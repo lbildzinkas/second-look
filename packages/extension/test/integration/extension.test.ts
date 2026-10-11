@@ -27,7 +27,7 @@ import {
   activate,
 } from '../../src/extension.js';
 import { CHANGE_SCHEME, changeUri, libraryUri } from '../../src/change-copies.js';
-import { CHOOSE_AGENT_COMMAND, OPEN_SETUP_COMMAND, REFRESH_PULL_REQUESTS_COMMAND, REVIEWING_CONTEXT, STOP_REVIEW_COMMAND, askCommand } from '../../src/commands.js';
+import { CHOOSE_AGENT_COMMAND, OPEN_COMPANION_SETTINGS_COMMAND, OPEN_SETUP_COMMAND, REFRESH_PULL_REQUESTS_COMMAND, REVIEWING_CONTEXT, STOP_REVIEW_COMMAND, askCommand } from '../../src/commands.js';
 import { SETUP_SEEN_KEY } from '../../src/side-bar/setup-form.js';
 import { escapeMarkdown } from '../../src/findings.js';
 import { SEND_REVIEW_VIEW_TYPE } from '../../src/send-page.js';
@@ -158,6 +158,7 @@ async function reviewWithFakeEngine(options: FakeEngineOptions): Promise<SideBar
     OPEN_SETUP_COMMAND,
     REFRESH_PULL_REQUESTS_COMMAND,
     STOP_REVIEW_COMMAND,
+    OPEN_COMPANION_SETTINGS_COMMAND,
   ]);
 
   stub.inputBoxResult = PR_URL;
@@ -307,6 +308,7 @@ describe('activating the companion', () => {
       OPEN_SETUP_COMMAND,
       REFRESH_PULL_REQUESTS_COMMAND,
       STOP_REVIEW_COMMAND,
+      OPEN_COMPANION_SETTINGS_COMMAND,
     ]);
     expect(stub.treeViews).toEqual([]);
     expect(stub.webviewViewProviders.map((entry) => entry.id)).toEqual([REVIEW_TREE_VIEW]);
@@ -1476,6 +1478,56 @@ describe('the pending review and sending it', () => {
         },
       },
     });
+  });
+
+  it('drafts, lists, opens, adds and sends from the side bar alone, then links the review sent on step 8', async () => {
+    const draft = draftOf({ kind: 'claim', index: 1 }, 'Gives up after three attempts, whatever the status.', 'The docstring says three attempts; the loop runs five.');
+    const view = await reviewWithFakeEngine({ result: judgedResult(), draftResult: draft, logName: 'side-bar-send.log' });
+    const settle = async (): Promise<void> => {
+      for (let turn = 0; turn < 5; turn++) await new Promise((done) => setTimeout(done, 0));
+    };
+
+    // Step 5's Draft comment: the draft lists on step 7, undecided.
+    await press(view, { type: 'finding', action: 'draft', kind: 'claim', index: 1 });
+    await eventually('the draft to list', () => (view.provider.current.comments?.length === 1 ? true : undefined));
+    const [listed] = view.provider.current.comments!;
+    expect(listed).toMatchObject({ kind: 'draft', location: 'src/retry.py:3', body: escapeMarkdown(draft.body), from: 'refuted claim' });
+    expect(view.page.webview.posted.at(-1)).toMatchObject({ type: 'render' });
+    expect((view.page.webview.posted.at(-1) as { body: string }).body).toContain(`id="step-7-add-${listed!.id}"`);
+
+    // Its row opens its thread at its line, then adds it to the pending review.
+    await press(view, { type: 'comment', action: 'open', id: listed!.id });
+    await settle();
+    expect(stub.executedCommands.at(-1)).toEqual({ id: 'vscode.open', args: [head('src/retry.py'), { selection: new Range(2, 0, 2, 0), preview: true }] });
+    await press(view, { type: 'comment', action: 'add', id: listed!.id });
+    expect(view.provider.current.comments).toEqual([{ id: listed!.id, kind: 'comment', location: 'src/retry.py:3', body: escapeMarkdown(draft.body) }]);
+
+    // Step 8 opens the Send review page; after Submit it shows the review sent and links it.
+    await press(view, { type: 'command', command: 'send' });
+    drive(sendPage(), { type: 'submit' });
+    await eventually('the review to be sent', () => (view.provider.current.sent !== undefined ? true : undefined));
+    expect(view.provider.current.sent).toEqual({ submit: 'comment', comments: 1, commit: 'f00dcafe1234567890abcdef1234567890abcdef12', url: SENT_URL });
+    expect(view.provider.current.comments).toEqual([]);
+    expect((view.page.webview.posted.at(-1) as { body: string }).body).toContain('Sent as Comment · 1 comment · pinned to f00dcaf');
+    await press(view, { type: 'command', command: 'openSent' });
+    expect(stub.openedExternals.at(-1)).toBe(SENT_URL);
+
+    // The title bar's ⋯ opens every one of the companion's settings.
+    await registeredCommands().get(OPEN_COMPANION_SETTINGS_COMMAND)!();
+    expect(stub.executedCommands.at(-1)).toEqual({ id: 'workbench.action.openSettings', args: ['@ext:lbildzinkas.second-look-extension'] });
+  });
+
+  it('says on step 8 why a send failed, every comment kept', async () => {
+    const view = await reviewWithFakeEngine({ result: mixedResult(), sendError: 'GitHub refused the review', logName: 'side-bar-send-failed.log' });
+    const line = stub.commentControllers[0]!.createCommentThread(head('src/retry.py'), new Range(4, 0, 4, 0), []);
+    await registeredCommands().get(ADD_COMMENT_COMMAND)!({ thread: line, text: 'a cap, please' });
+
+    await press(view, { type: 'command', command: 'send' });
+    drive(sendPage(), { type: 'submit' });
+    await eventually('the send to fail', () => (view.provider.current.sendFailure !== undefined ? true : undefined));
+    expect(view.provider.current.sendFailure).toContain('GitHub refused the review');
+    expect(view.provider.current.sent).toBeUndefined();
+    expect(view.provider.current.comments).toHaveLength(1);
   });
 
   it('discards a draft with no trace in the pending review', async () => {

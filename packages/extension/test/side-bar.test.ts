@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { applyMark, markedPart, NO_MARKS, type Comment, type Part, type ReviewedMarks } from '@second-look/engine';
 import {
+  COMMENT_ON_PART_COMMAND,
   DRAFT_COMMENT_COMMAND,
   FETCH_LIBRARY_COMMAND,
+  FILTER_CHANGED_COMMAND,
   MARK_REVIEWED_COMMAND,
   OPEN_ALL_PARTS_COMMAND,
   OPEN_OVERVIEW_COMMAND,
@@ -11,15 +13,17 @@ import {
   REVIEW_COMMAND,
   REVIEW_TREE_VIEW,
   SUBMIT_REVIEW_COMMAND,
+  WHY_THIS_MATTERS_COMMAND,
   askCommand,
 } from '../src/commands.js';
+import { commentLocation, type ListedComment } from '../src/comments.js';
 import { sideBarBody, sideBarHtml } from '../src/side-bar/page.js';
 import { SideBarProvider, sideBarMessage, type SideBarDeps } from '../src/side-bar/provider.js';
 import { StepTickStore } from '../src/side-bar/step-ticks.js';
 import { nextPartToReview, setupLine, sideBarSteps, type SideBarState } from '../src/side-bar/steps.js';
 import { anchorOf, buildTree, pendingReviewSection } from '../src/tree.js';
 import { REQUESTS_FETCH, claimsResult, criteriaResult, judgedResult, mappedCriteriaResult, mixedResult, nonDefaultBranchResult, offeredResult, reviewStages, unexplainedResult } from './results.js';
-import { stub, stubContext, window, type StubWebviewView } from './vscode-stub.js';
+import { ConfigurationTarget, stub, stubContext, window, type StubWebviewView } from './vscode-stub.js';
 
 const NOW = new Date('2026-10-06T12:00:00Z');
 const SETTINGS = { agent: 'claude-code' as const, model: 'sonnet', effort: 'high', account: '' };
@@ -39,9 +43,16 @@ function reviewState(overrides: Partial<SideBarState> = {}, comments: Comment[] 
     sections: [...(comments.length > 0 ? [pendingReviewSection(comments)] : []), ...buildTree(result, marks)],
     reviewing: false,
     storyRead: false,
+    comments: comments.map((comment, index) => ({ id: index + 1, kind: 'comment', location: commentLocation(comment), body: comment.body })),
     ...overrides,
   };
 }
+
+/** A draft as step 7 lists it. */
+const DRAFT: ListedComment = { id: 9, kind: 'draft', location: 'src/retry.py:3', body: 'The docstring says three attempts; the loop runs five.', from: 'refuted claim' };
+
+/** A review sent, as step 8 shows it. */
+const SENT = { submit: 'comment' as const, comments: 2, commit: '998ded4a1234567890abcdef1234567890abcdef', url: 'https://github.com/example-org/example-repo/pull/42#pullrequestreview-4242' };
 
 const EMPTY: SideBarState = { settings: SETTINGS, marks: NO_MARKS, sections: [], reviewing: false, storyRead: false };
 
@@ -128,6 +139,24 @@ describe('the review path', () => {
     expect(states(both)).toEqual(['done', 'done', 'done', 'done', 'done', 'done', 'current', 'to come']);
   });
 
+  it('ticks step 7 once a comment is written and no draft is left undecided, and step 8 once the review is sent', () => {
+    const comment: Comment = { kind: 'line', path: 'src/retry.py', line: 5, side: 'head', body: 'Why five?' };
+    const base = { storyRead: true, marks: marked(...mixedResult().parts), result: judgedResult(), ticks: { claims: true, criteria: true } } as const;
+    // No comment yet: step 7 is the step to work on, with nothing to count.
+    expect(states(reviewState(base))).toEqual(['done', 'done', 'done', 'done', 'done', 'done', 'current', 'to come']);
+    const drafting = reviewState({ ...base, comments: [...reviewState({}, [comment]).comments!, DRAFT] }, [comment]);
+    expect(states(drafting).slice(6)).toEqual(['current', 'to come']);
+    expect(sideBarSteps(drafting)[6]!.summary).toBe('1 pending · 1 draft');
+    expect(sideBarSteps(drafting)[7]!.summary).toBe('1 comment ready');
+    const written = reviewState(base, [comment]);
+    expect(states(written).slice(6)).toEqual(['done', 'current']);
+    const sent = reviewState({ ...base, sent: SENT });
+    expect(states(sent).slice(6)).toEqual(['done', 'done']);
+    expect(sideBarSteps(sent)[7]!.summary).toBe('sent');
+    // A comment written after the send re-opens step 8.
+    expect(states(reviewState({ ...base, sent: SENT }, [comment])).slice(6)).toEqual(['done', 'current']);
+  });
+
   it('opens next the first part in reading order not yet reviewed', () => {
     const result = mixedResult();
     expect(nextPartToReview(result, NO_MARKS)).toBe(result.parts[0]);
@@ -211,13 +240,59 @@ describe("the side bar's page", () => {
     expect(body).not.toMatch(/<img|<script/);
   });
 
-  it('lists the pending comments on step 7, with the button that opens their threads in the diff', () => {
-    const comment: Comment = { kind: 'line', path: 'src/retry.py', line: 5, side: 'head', body: 'Why five?' };
-    const body = sideBarBody(reviewState({}, [comment]));
-    expect(body).toContain('<ul class="comments" aria-label="Pending review"><li class="comment" title="Why five?"><span class="row"><span>src/retry.py:5</span><span class="desc">Why five?</span></span></li></ul>');
+  it('lists the pending comments and drafts on step 7, each opening its thread, with discard, or add and discard, and how to write more', () => {
+    const comment: Comment = { kind: 'line', path: 'src/retry.py', line: 5, side: 'head', body: 'Why five?\nThe docstring says three.' };
+    const state = reviewState({}, [comment]);
+    const body = sideBarBody({ ...state, comments: [...state.comments!, DRAFT] });
+    expect(body).toContain(
+      '<ul class="findings" aria-label="Pending comments and drafts">' +
+        '<li class="finding"><div class="head"><button type="button" id="step-7-open-1" class="open" data-comment="open" data-id="1" title="Open its thread">src/retry.py:5</button></div>' +
+        '<q class="quote">Why five?</q>' +
+        '<div class="actions"><button type="button" id="step-7-discard-1" class="secondary" data-comment="discard" data-id="1">Discard</button></div></li>' +
+        '<li class="finding"><div class="head"><button type="button" id="step-7-open-9" class="open" data-comment="open" data-id="9" title="Open its thread">src/retry.py:3</button><span class="pill tone-info"><span class="icon" aria-hidden="true">✎</span> draft</span><span class="where">from the refuted claim</span></div>' +
+        '<q class="quote">The docstring says three attempts; the loop runs five.</q>' +
+        '<div class="actions"><button type="button" id="step-7-add-9" class="secondary" data-comment="add" data-id="9">Add to review</button><button type="button" id="step-7-discard-9" class="secondary" data-comment="discard" data-id="9">Discard draft</button></div></li></ul>',
+    );
+    expect(body).toContain('<p class="note">Add takes a draft as drafted; to change it first, edit it in its thread and add it there.</p>');
+    expect(body).toContain('<p class="note">Add more: the + beside any diff line, or “Comment on this part…” in a part’s ⋯ menu.</p>');
     expect(body).toContain('id="step-7-allParts" class="secondary" data-command="allParts">Open the threads in the diff</button>');
     expect(body).toContain('id="step-8-send" class="primary" data-command="send">Open the Send review page</button>');
+    expect(body).toContain('<p class="note">Nothing reaches GitHub until you press Submit on the page.</p>');
     expect(body).toContain('id="step-5-overview" class="secondary" data-command="overview">Open the overview</button>');
+  });
+
+  it("keeps a comment's and a draft's text as text on step 7", () => {
+    const hostile: ListedComment = { ...DRAFT, location: '<b>x</b>:1', body: '<img src=x onerror=alert(1)> \u200b hidden' };
+    const body = sideBarBody(reviewState({ comments: [hostile] }));
+    expect(body).toContain('&lt;b&gt;x&lt;/b&gt;:1');
+    expect(body).toContain('&lt;img src=x onerror=alert(1)&gt;');
+    expect(body).toContain('<span class="hidden" data-kind="zero-width characters">');
+    expect(body).not.toMatch(/<img|<b>x/);
+  });
+
+  it('shows the review sent on step 8, its type, count and head commit, with its link; and why a send failed', () => {
+    const sent = sideBarBody(reviewState({ sent: SENT }));
+    expect(sent).toContain('<p class="sent"><span class="tone-ok" aria-hidden="true">✓</span> Sent as Comment · 2 comments · pinned to 998ded4</p>');
+    expect(sent).toContain('<button type="button" id="step-8-openSent" class="primary" data-command="openSent">Open on GitHub</button>');
+    expect(sent).toContain('<button type="button" id="step-8-send" class="secondary" data-command="send">Open the Send review page</button>');
+    const failed = sideBarBody(reviewState({ sendFailure: 'GitHub refused the review <now>' }));
+    expect(failed).toContain('<p class="note problem">The send failed: GitHub refused the review &lt;now&gt;. Every comment is kept.</p>');
+    expect(failed).not.toContain('step-8-openSent');
+  });
+
+  it("gives each part row its Ask… and ⋯ buttons, step 4 its ⋯ menu, and the filter only on a second visit", () => {
+    const result = mixedResult();
+    const anchor = anchorOf(result.parts[0]!);
+    const data = JSON.stringify(anchor).replace(/"/g, '&quot;');
+    const key = `${anchor.path}@${anchor.hunk?.oldStart ?? ''},${anchor.hunk?.newStart ?? ''}`;
+    const body = sideBarBody(reviewState());
+    expect(body).toContain(`<button type="button" class="link" id="ask-${key}" data-part-menu="ask" data-anchor="${data}" aria-label="Ask about ${result.parts[0]!.name}">Ask…</button>`);
+    expect(body).toContain(`<button type="button" class="link" id="more-${key}" data-part-menu="more" data-anchor="${data}" aria-label="More for ${result.parts[0]!.name}">⋯</button>`);
+    expect(body).toContain('<button type="button" class="link" id="step-4-partsMenu" data-command="partsMenu" aria-label="Mirror reviewed files to GitHub’s Viewed">⋯</button>');
+    expect(body).not.toContain('step-4-filterChanged');
+    const second = { ...result, sinceLastLook: { commit: result.copies.base.commit, changedParts: [0] } } as unknown as typeof result;
+    expect(sideBarBody(reviewState({ result: second }))).toContain('data-command="filterChanged">Changed since last look</button>');
+    expect(sideBarBody(reviewState({ result: second, onlyChanged: true }))).toContain('data-command="filterChanged">Show all parts</button>');
   });
 
   it('lists the claim findings on step 5, each with its verdict, where it is made, and the existing actions', () => {
@@ -386,6 +461,15 @@ describe('the side bar messages', () => {
     expect(sideBarMessage({ type: 'finding', action: 'fetch', kind: 'criterion', index: 0 })).toEqual({ type: 'finding', action: 'fetch', finding: { kind: 'criterion', index: 0 } });
     expect(sideBarMessage({ type: 'openIssue', issue: 1 })).toEqual({ type: 'openIssue', issue: 1 });
     expect(sideBarMessage({ type: 'tick', step: 'criteria', checked: true })).toEqual({ type: 'tick', step: 'criteria', checked: true });
+    for (const command of ['filterChanged', 'partsMenu', 'openSent']) expect(sideBarMessage({ type: 'command', command })).toEqual({ type: 'command', command });
+    expect(sideBarMessage({ type: 'partMenu', menu: 'ask', anchor })).toEqual({ type: 'partMenu', menu: 'ask', anchor });
+    expect(sideBarMessage({ type: 'partMenu', menu: 'more', anchor })).toEqual({ type: 'partMenu', menu: 'more', anchor });
+    expect(sideBarMessage({ type: 'comment', action: 'open', id: 3 })).toEqual({ type: 'comment', action: 'open', id: 3 });
+    expect(sideBarMessage({ type: 'comment', action: 'add', id: 3 })).toEqual({ type: 'comment', action: 'add', id: 3 });
+    expect(sideBarMessage({ type: 'partMenu', menu: 'delete', anchor })).toBeUndefined();
+    expect(sideBarMessage({ type: 'partMenu', menu: 'ask', anchor: { path: 3 } })).toBeUndefined();
+    expect(sideBarMessage({ type: 'comment', action: 'send', id: 3 })).toBeUndefined();
+    expect(sideBarMessage({ type: 'comment', action: 'discard', id: '3' })).toBeUndefined();
     expect(sideBarMessage({ type: 'command', command: 'workbench.action.terminal.new' })).toBeUndefined();
     expect(sideBarMessage({ type: 'command', command: 'toString' })).toBeUndefined();
     expect(sideBarMessage({ type: 'mark', anchor, reviewed: 'yes' })).toBeUndefined();
@@ -457,6 +541,7 @@ describe('the side bar view', () => {
     const deps: SideBarDeps = {
       openLine: (path, line) => opened.push([path, line]),
       ticks: new StepTickStore(stubContext().globalState),
+      comment: () => undefined,
     };
     const provider = new SideBarProvider(reviewState({ result, storyRead: true, marks: marked(...mixedResult().parts) }), undefined, undefined, deps);
     window.registerWebviewViewProvider(REVIEW_TREE_VIEW, provider);
@@ -495,7 +580,7 @@ describe('the side bar view', () => {
 
   it('keeps the steps\u2019 ticks per pull request, and redraws the cards with the tick the reviewer pressed', async () => {
     const result = judgedResult();
-    const deps: SideBarDeps = { openLine: () => undefined, ticks: new StepTickStore(stubContext().globalState) };
+    const deps: SideBarDeps = { openLine: () => undefined, ticks: new StepTickStore(stubContext().globalState), comment: () => undefined };
     const provider = new SideBarProvider(reviewState({ result, storyRead: true, marks: marked(...mixedResult().parts) }), undefined, undefined, deps);
     window.registerWebviewViewProvider(REVIEW_TREE_VIEW, provider);
     const view = stub.webviewViewProviders[0]!.resolve();
@@ -524,5 +609,78 @@ describe('the side bar view', () => {
     view.webview.receive({ type: 'tick', step: 'claims', checked: false });
     await until(() => !lastBody().includes('aria-label="I&#39;ve checked the claims" checked'));
     expect(deps.ticks.read(result.pullRequest.url, result.pullRequest.headSha)).toEqual({ claims: false, criteria: false });
+  });
+
+  it("offers a part row's Ask… and ⋯ menus as quick picks, and runs the picked command with the part, as its context menu does", async () => {
+    const result = mixedResult();
+    const { view } = resolved(reviewState());
+    const anchor = anchorOf(result.parts[0]!);
+    const picks = ['Explain this part', 'Why this matters', undefined];
+    stub.quickPickResult = (items: { label: string }[]) => items.find((item) => item.label === picks[stub.quickPicks.length - 1]);
+
+    view.webview.receive({ type: 'partMenu', menu: 'ask', anchor });
+    await new Promise((done) => setTimeout(done, 0));
+    view.webview.receive({ type: 'partMenu', menu: 'more', anchor });
+    await new Promise((done) => setTimeout(done, 0));
+    view.webview.receive({ type: 'partMenu', menu: 'more', anchor });
+    view.webview.receive({ type: 'partMenu', menu: 'ask', anchor: { path: 'nowhere.ts' } });
+    await new Promise((done) => setTimeout(done, 0));
+
+    expect(stub.quickPicks.map((pick) => [pick.title, (pick.items as { label: string }[]).map((item) => item.label)])).toEqual([
+      [`Ask about ${result.parts[0]!.name}`, ['Explain this part', 'Verify this claim', 'What covers this?']],
+      [result.parts[0]!.name, ['Comment on this part…', 'Why this matters']],
+      [result.parts[0]!.name, ['Comment on this part…', 'Why this matters']],
+    ]);
+    expect(stub.executedCommands).toEqual([
+      { id: askCommand('explain'), args: [{ anchor }] },
+      { id: WHY_THIS_MATTERS_COMMAND, args: [{ anchor }] },
+    ]);
+    expect(COMMENT_ON_PART_COMMAND).toBe('second-look.commentOnPart');
+  });
+
+  it("toggles mirroring the reviewed marks to GitHub's Viewed from step 4's ⋯, where the setting is set", async () => {
+    const { view } = resolved(reviewState());
+    stub.quickPickResult = (items: unknown[]) => items[0];
+    const settle = (): Promise<void> => new Promise((done) => setTimeout(done, 0));
+
+    view.webview.receive({ type: 'command', command: 'partsMenu' });
+    await settle();
+    expect(stub.quickPicks[0]!.items).toEqual([{ label: 'Mirror reviewed files to GitHub’s Viewed', description: 'off: pick to turn on' }]);
+    expect(stub.configurationUpdates).toEqual([{ key: 'second-look.mirrorViewedToGitHub', value: true, target: ConfigurationTarget.Global }]);
+
+    view.webview.receive({ type: 'command', command: 'partsMenu' });
+    await settle();
+    expect(stub.quickPicks[1]!.items).toEqual([{ label: '$(check) Mirror reviewed files to GitHub’s Viewed', description: 'on: pick to turn off' }]);
+    expect(stub.configurationUpdates.at(-1)).toEqual({ key: 'second-look.mirrorViewedToGitHub', value: false, target: ConfigurationTarget.Global });
+
+    // A workspace that sets it is where it turns.
+    stub.workspaceConfiguration['second-look.mirrorViewedToGitHub'] = true;
+    view.webview.receive({ type: 'command', command: 'partsMenu' });
+    await settle();
+    expect(stub.configurationUpdates.at(-1)).toEqual({ key: 'second-look.mirrorViewedToGitHub', value: false, target: ConfigurationTarget.Workspace });
+
+    // Dismissed, nothing changes.
+    stub.quickPickResult = undefined;
+    view.webview.receive({ type: 'command', command: 'partsMenu' });
+    await settle();
+    expect(stub.configurationUpdates).toHaveLength(3);
+  });
+
+  it("hands step 7's presses to the session, runs the filter, and opens the review sent on GitHub", () => {
+    const pressed: [number, string][] = [];
+    const deps: SideBarDeps = { openLine: () => undefined, ticks: new StepTickStore(stubContext().globalState), comment: (id, action) => pressed.push([id, action]) };
+    const provider = new SideBarProvider(reviewState({ sent: SENT, comments: [DRAFT] }), undefined, undefined, deps);
+    window.registerWebviewViewProvider(REVIEW_TREE_VIEW, provider);
+    const view = stub.webviewViewProviders[0]!.resolve();
+
+    view.webview.receive({ type: 'comment', action: 'open', id: 9 });
+    view.webview.receive({ type: 'comment', action: 'add', id: 9 });
+    view.webview.receive({ type: 'comment', action: 'discard', id: 1 });
+    view.webview.receive({ type: 'command', command: 'filterChanged' });
+    view.webview.receive({ type: 'command', command: 'openSent' });
+
+    expect(pressed).toEqual([[9, 'open'], [9, 'add'], [1, 'discard']]);
+    expect(stub.executedCommands).toEqual([{ id: FILTER_CHANGED_COMMAND, args: [] }]);
+    expect(stub.openedExternals).toEqual([SENT.url]);
   });
 });

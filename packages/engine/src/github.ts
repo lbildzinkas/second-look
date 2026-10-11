@@ -334,7 +334,7 @@ export class GitHubClient {
           : { subject_type: 'file' }),
       })) as NonNullable<Parameters<typeof this.octokit.pulls.createReview>[0]>['comments'],
     });
-    return { url: data.html_url };
+    return { url: data.html_url, commit: review.commitId };
   }
 
   /**

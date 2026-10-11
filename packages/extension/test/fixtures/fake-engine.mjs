@@ -57,7 +57,7 @@ const resultsByUrl = process.env.FAKE_ENGINE_RESULTS_BY_URL
 const reviewError = process.env.FAKE_ENGINE_ERROR;
 const sendResult = process.env.FAKE_ENGINE_SEND_RESULT
   ? JSON.parse(process.env.FAKE_ENGINE_SEND_RESULT)
-  : { url: 'https://github.com/example-org/example-repo/pull/42#pullrequestreview-4242' };
+  : { url: 'https://github.com/example-org/example-repo/pull/42#pullrequestreview-4242', commit: 'f00dcafe1234567890abcdef1234567890abcdef12' };
 const sendError = process.env.FAKE_ENGINE_SEND_ERROR;
 const fetchResult = process.env.FAKE_ENGINE_FETCH_RESULT ? JSON.parse(process.env.FAKE_ENGINE_FETCH_RESULT) : null;
 const fetchError = process.env.FAKE_ENGINE_FETCH_ERROR;

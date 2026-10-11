@@ -449,7 +449,8 @@ describe('ReviewComments drafts', () => {
     expect(thread.comments[0]).toMatchObject({ label: 'pending', mode: CommentMode.Preview });
     expect(thread.contextValue).toBe('second-look-pending');
     expect(thread.label).toBe('src/retry.py:3');
-    expect(changes).toBe(1);
+    // Once as the draft opened, once as it joined the pending review.
+    expect(changes).toBe(2);
     // Added once: pressing add again adds nothing more.
     comments.addDraft(draft);
     expect(comments.pending()).toHaveLength(1);
@@ -502,5 +503,78 @@ describe('ReviewComments drafts', () => {
 
     comments.setReview(mixedResult());
     expect(stub.commentControllers[0]!.threads).toEqual([]);
+  });
+});
+
+describe('ReviewComments as step 7 lists them', () => {
+  beforeEach(() => {
+    stub.reset();
+  });
+
+  it('lists the pending comments, then the open drafts, each with an id that stays while it does', () => {
+    const result = judgedResult();
+    const comments = new ReviewComments();
+    comments.setReview(result);
+    let changes = 0;
+    comments.onDidChange(() => changes++);
+    comments.add(replyOf(threadOn(docs(result, 'src/retry.py').head, 4), 'this retry loop needs a cap'));
+    comments.draft({ kind: 'line', path: 'src/retry.py', line: 3 }, 'The docstring says three attempts.', 'refuted claim');
+
+    const listed = comments.listed();
+    expect(listed).toEqual([
+      { id: listed[0]!.id, kind: 'comment', location: 'src/retry.py:5', body: 'this retry loop needs a cap' },
+      { id: listed[1]!.id, kind: 'draft', location: 'src/retry.py:3', body: 'The docstring says three attempts.', from: 'refuted claim' },
+    ]);
+    expect(listed[0]!.id).not.toBe(listed[1]!.id);
+    // The draft opening tells the side bar, as the comment joining did.
+    expect(changes).toBe(2);
+
+    // Added, the draft keeps its id and joins the pending comments.
+    comments.act(listed[1]!.id, 'add');
+    expect(comments.listed()).toEqual([
+      { id: listed[0]!.id, kind: 'comment', location: 'src/retry.py:5', body: 'this retry loop needs a cap' },
+      { id: listed[1]!.id, kind: 'comment', location: 'src/retry.py:3', body: 'The docstring says three attempts.' },
+    ]);
+  });
+
+  it('discards a comment or a draft by its id, thread and all, and does nothing for an id gone', () => {
+    const result = judgedResult();
+    const comments = new ReviewComments();
+    comments.setReview(result);
+    const written = threadOn(docs(result, 'src/retry.py').head, 4);
+    comments.add(replyOf(written, 'a cap, please'));
+    comments.draft({ kind: 'line', path: 'src/retry.py', line: 3 }, 'drafted', 'refuted claim');
+    const [comment, draft] = comments.listed();
+
+    comments.act(draft!.id, 'discard');
+    expect(comments.listed().map((each) => each.id)).toEqual([comment!.id]);
+    expect(stub.commentControllers[0]!.threads).toEqual([written]);
+    // Add means nothing for a comment already gathered.
+    comments.act(comment!.id, 'add');
+    expect(comments.pending()).toHaveLength(1);
+    comments.act(comment!.id, 'discard');
+    expect(comments.listed()).toEqual([]);
+    expect(stub.commentControllers[0]!.threads).toEqual([]);
+    comments.act(comment!.id, 'discard');
+    expect(comments.reveal(comment!.id)).toBeUndefined();
+  });
+
+  it('reveals a listed comment\'s thread, expanded, and refuses a step 7 press while the review is being sent', async () => {
+    const result = judgedResult();
+    const comments = new ReviewComments();
+    comments.setReview(result);
+    const written = threadOn(docs(result, 'src/retry.py').head, 4);
+    comments.add(replyOf(written, 'a cap, please'));
+    written.collapsibleState = 0;
+    const [comment] = comments.listed();
+
+    expect(comments.reveal(comment!.id)).toBe(written);
+    expect(written.collapsibleState).toBe(1);
+
+    await comments.sendWhileSealed(async () => {
+      comments.act(comment!.id, 'discard');
+    });
+    expect(stub.warningMessages).toEqual(['The review is being sent: try again once it finishes.']);
+    expect(comments.pending()).toHaveLength(1);
   });
 });

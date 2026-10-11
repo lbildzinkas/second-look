@@ -150,10 +150,12 @@ export interface PendingReview {
   comments: Comment[];
 }
 
-/** The review that reached GitHub, with the link the reviewer reads it at. */
+/** The review that reached GitHub, with the link the reviewer reads it at and the head commit it is pinned to. */
 export interface SentReview {
   /** The review's HTML URL on GitHub. */
   url: string;
+  /** The head commit the review is pinned to: the one whose diff its comments were mapped against. */
+  commit: string;
 }
 
 /**

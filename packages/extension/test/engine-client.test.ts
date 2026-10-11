@@ -4,8 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it, vi } from 'vitest';
-import { ProtocolError } from '../src/protocol.js';
+import { ProtocolError, SendProtocolError } from '../src/protocol.js';
 import { EngineClient, spawnEngineProcess, type ReviewStageUpdate } from '../src/engine-client.js';
+import type { PendingReview } from '@second-look/engine';
 import { criteriaResult, fetchedResult, mixedResult, reviewStages } from './results.js';
 
 const FAKE_ENGINE = fileURLToPath(new URL('./fixtures/fake-engine.mjs', import.meta.url));
@@ -35,6 +36,7 @@ interface FakeEngineOptions {
   viewedError?: string;
   askResult?: unknown;
   askError?: string;
+  sendResult?: unknown;
   probeResult?: unknown;
   testResult?: unknown;
   listResult?: unknown;
@@ -69,6 +71,7 @@ function fakeEngine(options: FakeEngineOptions = {}): ChildProcessWithoutNullStr
       ...(options.viewedError !== undefined ? { FAKE_ENGINE_VIEWED_ERROR: options.viewedError } : {}),
       ...(options.askResult !== undefined ? { FAKE_ENGINE_ASK_RESULT: JSON.stringify(options.askResult) } : {}),
       ...(options.askError !== undefined ? { FAKE_ENGINE_ASK_ERROR: options.askError } : {}),
+      ...(options.sendResult !== undefined ? { FAKE_ENGINE_SEND_RESULT: JSON.stringify(options.sendResult) } : {}),
       ...(options.probeResult !== undefined ? { FAKE_ENGINE_PROBE_RESULT: JSON.stringify(options.probeResult) } : {}),
       ...(options.testResult !== undefined ? { FAKE_ENGINE_TEST_RESULT: JSON.stringify(options.testResult) } : {}),
       ...(options.listResult !== undefined ? { FAKE_ENGINE_LIST_RESULT: JSON.stringify(options.listResult) } : {}),
@@ -289,6 +292,37 @@ describe('EngineClient against a fake engine', () => {
     await malformed.initialize();
     await expect(malformed.ask(PR_URL, 'explain', 0)).rejects.toThrow("the engine's answer is not the answer to an ask");
     malformed.dispose();
+  });
+
+  it('sends the pending review with the request’s token, and returns the link with the head commit it is pinned to', async () => {
+    const sent = { url: 'https://github.com/example-org/example-repo/pull/42#pullrequestreview-4242', commit: 'f00dcafe1234567890abcdef1234567890abcdef12' };
+    const client = new EngineClient(() => fakeEngine({ sendResult: sent, logName: 'send-review.log' }));
+    const review: PendingReview = {
+      submit: 'comment',
+      body: 'One deliberate pass.',
+      comments: [{ kind: 'line', path: 'src/retry.py', side: 'head', line: 5, body: 'a cap, please' }],
+    };
+
+    await client.initialize();
+    expect(await client.sendReview(PR_URL, TOKEN, review)).toEqual(sent);
+    const request = loggedRequests('send-review.log').find((each) => (each as { method: string }).method === 'sendReview') as { params: unknown };
+    expect(request.params).toEqual({ url: PR_URL, token: TOKEN, review });
+    client.dispose();
+  });
+
+  it('refuses a sent review that carries no head commit, or one that is not a commit', async () => {
+    // The link alone is the answer an older engine gives: a review it sent
+    // cannot be pinned to a commit, so step 8 cannot show it as sent.
+    const answers = [
+      { url: 'https://github.com/example-org/example-repo/pull/42#pullrequestreview-4242' },
+      { url: 'https://github.com/example-org/example-repo/pull/42#pullrequestreview-4242', commit: 'not-a-commit' },
+    ];
+    for (const answer of answers) {
+      const client = new EngineClient(() => fakeEngine({ sendResult: answer }));
+      await client.initialize();
+      await expect(client.sendReview(PR_URL, TOKEN, { submit: 'approve', comments: [] })).rejects.toThrow(SendProtocolError);
+      client.dispose();
+    }
   });
 
   it('ticks and clears a part’s reviewed checkbox, and reads the marks back', async () => {

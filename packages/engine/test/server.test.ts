@@ -33,6 +33,7 @@ import {
   answeringAgent,
   fixtureFetch,
   offeredParts,
+  pull42,
   pull7,
   pypiFetch,
   recordedFetch,
@@ -298,7 +299,7 @@ describe('runRpcServer', () => {
       transport.fetch,
     );
 
-    expect(responses[1]!.result).toEqual({ url: SENT_REVIEW_URL });
+    expect(responses[1]!.result).toEqual({ url: SENT_REVIEW_URL, commit: pull42().headSha });
     // Only the send wrote, and it wrote once, with the request's token.
     const writes = transport.requests.filter((served) => served.method === 'POST');
     expect(writes).toHaveLength(1);
@@ -562,7 +563,7 @@ describe('runRpcServer with an agent', () => {
     const send = responses.find((response) => response.id === 3);
     const review = responses.find((response) => response.id === 2);
     expect(responses.indexOf(send!)).toBeLessThan(responses.indexOf(review!));
-    expect(send!.result).toEqual({ url: SENT_REVIEW_URL });
+    expect(send!.result).toEqual({ url: SENT_REVIEW_URL, commit: pull7().headSha });
     expect(review!.result).toMatchObject({ grouping: { by: 'agent' } });
     expect((review!.result as { parts: unknown[] }).parts).toHaveLength(2);
   });

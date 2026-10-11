@@ -169,7 +169,7 @@ describe('GitHubClient against recorded responses', () => {
     });
   });
 
-  it('submits one review: every comment in one POST, answered with its link', async () => {
+  it('submits one review: every comment in one POST, answered with its link and the commit it is pinned to', async () => {
     const transport = fixtureFetch();
     const client = new GitHubClient({ token: 'test-token', fetch: transport.fetch });
     const sent = await client.submitReview(ref, {
@@ -182,7 +182,7 @@ describe('GitHubClient against recorded responses', () => {
       ],
     });
 
-    expect(sent).toEqual({ url: SENT_REVIEW_URL });
+    expect(sent).toEqual({ url: SENT_REVIEW_URL, commit: 'f00dcafe1234567890abcdef1234567890abcdef' });
     expect(transport.requests).toHaveLength(1);
     expect(transport.requests[0]).toMatchObject({
       url: 'https://api.github.com/repos/example-org/example-repo/pulls/42/reviews',

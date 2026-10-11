@@ -114,6 +114,12 @@ export const CHOOSE_AGENT_COMMAND = 'second-look.chooseAgent' as const;
 /** The editor's own command that opens its Settings editor, which step 6's ⋯ opens at the criteria heading setting. */
 export const OPEN_SETTINGS_COMMAND = 'workbench.action.openSettings' as const;
 
+/** Opens the editor's Settings at every one of the companion's settings: the side bar title's ⋯ menu. */
+export const OPEN_COMPANION_SETTINGS_COMMAND = 'second-look.openSettings' as const;
+
+/** The Settings editor's search for the companion's own settings, by its id in the manifest (publisher.name). */
+export const COMPANION_SETTINGS_QUERY = '@ext:lbildzinkas.second-look-extension' as const;
+
 /** The command that opens step 1's setup form in the side bar, which the agent quick pick's last item runs. */
 export const OPEN_SETUP_COMMAND = 'second-look.openSetup' as const;
 

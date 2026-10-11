@@ -41,7 +41,7 @@ One optional extra: when a review's finding offers to decompile a .NET package t
 
 ## Choosing the agent, model, effort and account
 
-The settings live under the `second-look` section (Settings, then search for "second look"):
+The settings live under the `second-look` section of the editor's Settings — opened straight at the companion's own settings by the Second Look side bar's title `⋯` menu, **Open Second Look settings** — or by searching Settings for "second look":
 
 | Setting | What it picks | Default |
 | --- | --- | --- |
