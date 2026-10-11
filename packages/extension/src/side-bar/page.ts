@@ -1,12 +1,32 @@
-import { escapeHtml } from '../overview.js';
+import { escapeHtml, claimWhere, issueName } from '../overview.js';
+import { isFinding, isUnmetCriterion, type AcceptanceCriterion, type Claim, type FindingRef, type LinkedIssue, type ReviewResult } from '@second-look/engine';
 import { anchorOf, type PartAnchor, type TreeComment, type TreePart, type TreeSection } from '../tree.js';
 import { progressBody } from './progress.js';
 import { pullRequestsBody } from './pull-requests.js';
 import { setupFormBody } from './setup.js';
+import type { StepTick } from './step-ticks.js';
 import { pullRequestLine, sideBarSteps, type SideBarState, type Step, type StepState } from './steps.js';
 
 /** The buttons the side bar's cards carry, each running an existing command. */
-export type SideBarButton = 'review' | 'overview' | 'nextPart' | 'allParts' | 'send';
+export type SideBarButton = 'review' | 'overview' | 'nextPart' | 'allParts' | 'send' | 'verifyClaim' | 'criteriaHeading';
+
+/** The actions a finding's row offers, each running the existing command for it. */
+export const FINDING_ACTIONS = ['draft', 'open', 'verify', 'fetch'] as const;
+export type FindingAction = (typeof FINDING_ACTIONS)[number];
+
+/** A verdict or a state as a finding's row shows it: its glyph in its tone's colour, with its word. */
+const FINDING_STATES: Record<string, { tone: string; icon: string }> = {
+  refuted: { tone: 'bad', icon: '✕' },
+  unverifiable: { tone: 'warn', icon: '?' },
+  verified: { tone: 'ok', icon: '✓' },
+  'not met': { tone: 'bad', icon: '✕' },
+  'partly met': { tone: 'warn', icon: '◐' },
+  'needs manual check': { tone: 'info', icon: '⚑' },
+  "can't tell": { tone: 'mut', icon: '○' },
+  met: { tone: 'ok', icon: '✓' },
+  'in the code, not explained': { tone: 'warn', icon: '!' },
+  'described, not in the code': { tone: 'warn', icon: '!' },
+};
 
 const STATE_ICONS: Record<StepState, string> = { done: '✓', current: '●', running: '↻', waiting: '◷', 'to come': '○' };
 
@@ -85,6 +105,164 @@ function commentsBody(state: SideBarState): string {
   return list + `<div class="actions">${button(7, 'allParts', 'Open the threads in the diff', { disabled: state.result === undefined })}</div>`;
 }
 
+/** A verdict or a state as a finding's row shows it: its glyph in its tone's colour, with its word. */
+function statePill(state: string): string {
+  const { tone, icon } = FINDING_STATES[state] ?? { tone: 'mut', icon: '○' };
+  return `<span class="pill tone-${tone}"><span class="icon" aria-hidden="true">${icon}</span> ${escapeHtml(state)}</span>`;
+}
+
+/** A button on a finding's row, carrying the finding so the press runs the existing command for its action. */
+function findingButton(step: number, action: FindingAction, finding: FindingRef, label: string): string {
+  const key = `${finding.kind.replace(/ /g, '-')}-${finding.index}`;
+  return `<button type="button" id="step-${step}-${action}-${key}" class="secondary" data-finding="${action}" data-kind="${escapeHtml(finding.kind)}" data-index="${finding.index}">${escapeHtml(label)}</button>`;
+}
+
+/** The step's “I've checked these” tick, kept per pull request and re-opened by new commits. */
+function tickRow(step: number, tick: StepTick, checked: boolean, label: string): string {
+  return `<div class="tick"><input type="checkbox" id="step-${step}-tick" data-tick="${tick}" aria-label="${escapeHtml(label)}"${checked ? ' checked' : ''}><label for="step-${step}-tick">${escapeHtml(label)}</label></div>`;
+}
+
+/** Step 5's row for one claim finding: its verdict and where it is made, its quote, and its actions. */
+function claimFindingRow(claim: Claim, index: number): string {
+  const verdict = claim.verdict.kind === 'not checked' ? undefined : claim.verdict;
+  const offer = verdict === undefined || verdict.library !== undefined ? undefined : verdict.libraryFetch;
+  const fetch = offer === undefined ? '' : findingButton(5, 'fetch', { kind: 'claim', index }, offer.decompile === undefined ? 'Fetch library' : 'Decompile');
+  const finding = { kind: 'claim' as const, index };
+  return (
+    `<li class="finding">` +
+    `<div class="head">${statePill(claim.verdict.kind)}<span class="where">${escapeHtml(claimWhere(claim))}</span></div>` +
+    `<q class="quote">${escapeHtml(claim.quote)}</q>` +
+    `<div class="actions">${findingButton(5, 'draft', finding, 'Draft comment')}${findingButton(5, 'open', finding, 'Open')}${findingButton(5, 'verify', finding, 'Verify again')}${fetch}</div>` +
+    `</li>`
+  );
+}
+
+/** Step 5's body: the claim findings with their actions, the verified claims folded below them, the verify ask, and the tick. */
+function claimsBody(state: SideBarState): string {
+  const { result, ticks } = state;
+  if (result === undefined) return note('The claims and their verdicts show here once a review opens.');
+  const claims = result.claims?.claims ?? [];
+  const judged = claims.some((claim) => claim.verdict.kind !== 'not checked');
+  if (!judged) return note(result.claims === undefined ? 'The claims show here once the review lists them.' : 'The verdicts show here once the claims are checked.') + `<div class="actions">${button(5, 'overview', 'Open the overview')}</div>`;
+  const rows: string[] = [];
+  let verified = 0;
+  for (const [index, claim] of claims.entries()) {
+    if (isFinding(claim)) rows.push(claimFindingRow(claim, index));
+    else if (claim.verdict.kind === 'verified') verified += 1;
+  }
+  const list = rows.length === 0 ? note('No refuted or unverifiable claim.') : `<ul class="findings" aria-label="Claim findings">${rows.join('')}</ul>`;
+  const folded = verified === 0 ? '' : `<p class="folded"><span class="tone-ok" aria-hidden="true">✓</span> ${verified} verified</p>`;
+  return (
+    list +
+    folded +
+    `<div class="actions">${button(5, 'verifyClaim', 'Verify a claim…')}${button(5, 'overview', 'Open the overview')}</div>` +
+    tickRow(5, 'claims', ticks?.claims === true, "I've checked the claims")
+  );
+}
+
+/** The linked issue a criterion comes from, as a button that opens it on GitHub. */
+function issueButton(issue: LinkedIssue, id: string, index: number): string {
+  return `<button type="button" class="issue" id="${id}" data-issue="${index}" aria-label="Open ${escapeHtml(issueName(issue))} on GitHub">${escapeHtml(issueName(issue))}</button>`;
+}
+
+/** Step 6's row for one criterion not fully met: its verdict, its quote, its issue link, and the draft. */
+function criterionRow(criterion: AcceptanceCriterion, index: number, issues: readonly LinkedIssue[]): string {
+  const issue = issues[criterion.issue];
+  const from = issue === undefined ? '' : `<div class="meta">${issueButton(issue, `step-6-issue-criterion-${index}`, criterion.issue)} · ${escapeHtml(issue.link)}</div>`;
+  const draft = isUnmetCriterion(criterion) ? `<div class="actions">${findingButton(6, 'draft', { kind: 'criterion', index }, 'Draft comment')}</div>` : '';
+  return (
+    `<li class="finding">` +
+    `<div class="head">${statePill(criterion.verdict.kind)}</div>` +
+    `<q class="quote">${escapeHtml(criterion.quote)}</q>` +
+    from +
+    draft +
+    `</li>`
+  );
+}
+
+/** Where a described change is quoted from: a description line, or a linked issue as a button, with its line. */
+function describedWhere(change: { location: { kind: 'description'; line: number } | { kind: 'issue'; issue: number; line: number } }, index: number, issues: readonly LinkedIssue[]): string {
+  const { location } = change;
+  if (location.kind === 'description') return `<span>${escapeHtml(`pull request description, line ${location.line}`)}</span>`;
+  const issue = issues[location.issue];
+  return issue === undefined
+    ? `<span>${escapeHtml(`linked issue, line ${location.line}`)}</span>`
+    : `${issueButton(issue, `step-6-issue-described-${index}`, location.issue)} <span>${escapeHtml(`line ${location.line}`)}</span>`;
+}
+
+/** Step 6's rows for the unexplained changes in both directions: the parts nothing explains, then the changes described that the diff lacks. */
+function unexplainedRows(result: ReviewResult): { heading: boolean; body: string } {
+  const unexplained = result.unexplained;
+  if (unexplained === undefined) return { heading: false, body: note('The unexplained changes show here once the change is compared with its description.') };
+  if (unexplained.outcome !== 'compared') return { heading: false, body: note(`Not compared: ${unexplained.detail}.`) };
+  if (unexplained.parts.length === 0 && unexplained.described.length === 0) {
+    return { heading: false, body: `<p class="folded"><span class="tone-ok" aria-hidden="true">✓</span> Every part is explained, and every change the description promises is in the diff.</p>` };
+  }
+  const issues = result.criteria?.issues ?? [];
+  const parts = unexplained.parts.map(({ part, reason }, index) => {
+    const shown = result.parts[part];
+    const open = shown === undefined ? escapeHtml(reason) : `<button type="button" class="open" data-anchor="${escapeHtml(JSON.stringify(anchorOf(shown)))}">${escapeHtml(shown.name ?? shown.path)}</button><span class="where">${escapeHtml(reason)}</span>`;
+    return (
+      `<li class="finding">` +
+      `<div class="head">${statePill('in the code, not explained')}</div>` +
+      `<div class="meta">${open}</div>` +
+      `<div class="actions">${findingButton(6, 'draft', { kind: 'unexplained part', index }, 'Draft comment')}</div>` +
+      `</li>`
+    );
+  });
+  const described = unexplained.described.map((change, index) => (
+    `<li class="finding">` +
+    `<div class="head">${statePill('described, not in the code')}</div>` +
+    `<q class="quote">${escapeHtml(change.quote)}</q>` +
+    `<div class="meta">${describedWhere(change, index, issues)}</div>` +
+    `<div class="actions">${findingButton(6, 'draft', { kind: 'described change', index }, 'Draft comment')}</div>` +
+    `</li>`
+  ));
+  return { heading: true, body: `<ul class="findings" aria-label="Unexplained changes">${[...parts, ...described].join('')}</ul>` };
+}
+
+/** Step 6's body: the criteria not fully met with their issue links and drafts, the met ones folded, the unexplained changes, and the tick. */
+function criteriaBody(state: SideBarState): string {
+  const { result, ticks } = state;
+  if (result === undefined) return note('The acceptance criteria and the unexplained changes show here once a review opens.');
+  const criteria = result.criteria;
+  const rows: string[] = [];
+  let met = 0;
+  if (criteria !== undefined) {
+    for (const [index, criterion] of criteria.criteria.entries()) {
+      const { kind } = criterion.verdict;
+      if (kind === 'not checked') continue;
+      if (kind === 'met') met += 1;
+      else rows.push(criterionRow(criterion, index, criteria.issues));
+    }
+  }
+  // The tick shows once the step's results are in: any criterion mapped, or the comparison done when there is no criterion to map.
+  const settled =
+    criteria?.criteria.some((criterion) => criterion.verdict.kind !== 'not checked') === true ||
+    (result.unexplained?.outcome === 'compared' && (criteria === undefined || criteria.criteria.length === 0));
+  const unexplained = unexplainedRows(result);
+  const list =
+    criteria === undefined
+      ? note('The acceptance criteria show here once the review reads the linked issues.')
+      : rows.length === 0 && criteria.criteria.some((criterion) => criterion.verdict.kind !== 'not checked')
+        ? note('Every criterion is met.')
+        : rows.length === 0 && criteria.criteria.length > 0
+          ? note('The verdicts show here once the criteria are mapped.')
+          : rows.length === 0
+            ? ''
+            : `<ul class="findings" aria-label="Criteria not fully met">${rows.join('')}</ul>`;
+  const folded = met === 0 ? '' : `<p class="folded"><span class="tone-ok" aria-hidden="true">✓</span> ${met} met</p>`;
+  const unexplainedHeading = unexplained.heading ? '<h3 class="group">Unexplained changes</h3>' : '';
+  return (
+    list +
+    folded +
+    unexplainedHeading +
+    unexplained.body +
+    `<div class="actions">${button(6, 'overview', 'Open the overview')}</div>` +
+    (settled ? tickRow(6, 'criteria', ticks?.criteria === true, "I've checked the criteria") : '')
+  );
+}
+
 function stepBody(step: Step, state: SideBarState): string {
   const { result } = state;
   switch (step.number) {
@@ -106,9 +284,9 @@ function stepBody(step: Step, state: SideBarState): string {
     case 4:
       return partsBody(state, step.state === 'done');
     case 5:
-      return note('The claims and their verdicts are in the overview.') + `<div class="actions">${button(5, 'overview', 'Open the overview', { disabled: result === undefined })}</div>`;
+      return claimsBody(state);
     case 6:
-      return note('The acceptance criteria and the unexplained changes are in the overview.') + `<div class="actions">${button(6, 'overview', 'Open the overview', { disabled: result === undefined })}</div>`;
+      return criteriaBody(state);
     case 7:
       return commentsBody(state);
     default:
@@ -120,6 +298,12 @@ function stepBody(step: Step, state: SideBarState): string {
 function changeLink(step: Step, state: SideBarState): string {
   if (step.number !== 1 || state.setup === undefined || state.setup.open) return '';
   return '<button type="button" class="link" id="step-1-change" data-action="open" data-value="" aria-label="Change the agent, model and effort">change</button>';
+}
+
+/** Step 6's ⋯ link, which opens the editor's settings at the criteria heading setting. */
+function criteriaHeadingLink(step: Step): string {
+  if (step.number !== 6) return '';
+  return '<button type="button" class="link" id="step-6-criteriaHeading" data-command="criteriaHeading" aria-label="Change the criteria heading setting">⋯</button>';
 }
 
 /**
@@ -136,7 +320,7 @@ function stepCard(step: Step, state: SideBarState): string {
     `<li class="step ${step.state.replace(' ', '-')}" id="${id}"${current}>` +
     `<h2><button type="button" class="fold" id="${id}-title" data-step="${step.number}" aria-expanded="${step.open}" aria-controls="${id}-body">` +
     `<span class="icon" aria-hidden="true">${STATE_ICONS[step.state]}</span>` +
-    `<span class="title">${step.number} ${escapeHtml(step.title)}</span>${summary}<span class="state">${step.state}</span></button>${changeLink(step, state)}</h2>` +
+    `<span class="title">${step.number} ${escapeHtml(step.title)}</span>${summary}<span class="state">${step.state}</span></button>${changeLink(step, state)}${criteriaHeadingLink(step)}</h2>` +
     `<div class="body" id="${id}-body" role="region" aria-labelledby="${id}-title"${hidden}>${stepBody(step, state)}</div>` +
     `</li>`
   );
@@ -245,6 +429,24 @@ export function sideBarHtml(nonce: string, body: string): string {
   .pr-size .del { color: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-foreground)); }
   .pr-meta button { margin-left: auto; }
   .test { overflow-wrap: anywhere; }
+  .findings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .finding { padding: 6px 8px; border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); border-radius: 4px; }
+  .finding .head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .finding .where { color: var(--vscode-descriptionForeground); font-size: 12px; overflow-wrap: anywhere; }
+  .finding .quote { display: block; margin: 3px 0; overflow-wrap: anywhere; }
+  .finding .meta { display: flex; align-items: center; gap: 4px 6px; flex-wrap: wrap; margin-top: 2px; font-size: 12px; color: var(--vscode-descriptionForeground); }
+  .pill { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; border: 1px solid currentColor; border-radius: 4px; padding: 0 5px; line-height: 16px; white-space: nowrap; }
+  .pill .icon { width: 1em; text-align: center; }
+  .tone-ok { color: var(--vscode-testing-iconPassed, var(--vscode-foreground)); }
+  .tone-bad { color: var(--vscode-errorForeground, var(--vscode-foreground)); }
+  .tone-warn { color: var(--vscode-editorWarning-foreground, var(--vscode-foreground)); }
+  .tone-info { color: var(--vscode-editorInfo-foreground, var(--vscode-textLink-foreground, var(--vscode-foreground))); }
+  .tone-mut { color: var(--vscode-descriptionForeground); }
+  .folded { display: flex; align-items: center; gap: 6px; margin: 6px 0 0; font-size: 12px; color: var(--vscode-descriptionForeground); }
+  .issue { padding: 0; color: var(--vscode-textLink-foreground); background: none; border: none; font-size: 12px; }
+  .issue:hover { color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground)); text-decoration: underline; }
+  .tick { display: flex; align-items: center; gap: 6px; margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--vscode-widget-border, var(--vscode-panel-border)); }
+  .tick label { font-size: 12px; }
 </style>
 </head>
 <body>
@@ -284,6 +486,10 @@ export function sideBarHtml(nonce: string, body: string): string {
       if (open && pressed.getAttribute('data-step') === '2') vscode.postMessage({ type: 'pullRequests', action: 'show', value: '' });
     } else if (pressed.classList.contains('open')) {
       vscode.postMessage({ type: 'openPart', anchor: anchorOf(pressed) });
+    } else if (pressed.hasAttribute('data-finding')) {
+      vscode.postMessage({ type: 'finding', action: pressed.getAttribute('data-finding'), kind: pressed.getAttribute('data-kind'), index: Number(pressed.getAttribute('data-index')) });
+    } else if (pressed.hasAttribute('data-issue')) {
+      vscode.postMessage({ type: 'openIssue', issue: Number(pressed.getAttribute('data-issue')) });
     } else if (pressed.hasAttribute('data-pr-action')) {
       vscode.postMessage({ type: 'pullRequests', action: pressed.getAttribute('data-pr-action'), value: pressed.getAttribute('data-value') });
     } else if (pressed.hasAttribute('data-command')) {
@@ -303,6 +509,10 @@ export function sideBarHtml(nonce: string, body: string): string {
       return;
     }
     if (box.type !== 'checkbox') return;
+    if (box.hasAttribute('data-tick')) {
+      vscode.postMessage({ type: 'tick', step: box.getAttribute('data-tick'), checked: box.checked });
+      return;
+    }
     vscode.postMessage({ type: 'mark', anchor: anchorOf(box), reviewed: box.checked });
   });
   // The list's box filters as the reviewer types; a paste or Enter can start a review of the URL in it.

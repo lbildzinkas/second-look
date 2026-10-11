@@ -44,6 +44,7 @@ import {
   type TreeSection,
 } from './tree.js';
 import { SideBarProvider } from './side-bar/provider.js';
+import { StepTickStore } from './side-bar/step-ticks.js';
 import { PullRequestPicker } from './side-bar/pull-request-picker.js';
 import { SetupForm } from './side-bar/setup-form.js';
 import type { SideBarState } from './side-bar/steps.js';
@@ -812,22 +813,42 @@ class ReviewSession {
    * the part is read out of whatever the argument carries, and found in
    * the result shown by where it starts. Verify this claim
    * checks the text selected on the head side of the part's diff, or else
-   * the claim the reviewer picks, and its judged claim joins the review
-   * shown, as a finding with any library fetch it offers.
+   * the claim the reviewer picks — the claim the argument names, when a
+   * side bar finding's Verify again carries it — and without a part, the
+   * claim the reviewer picks from the whole review, the way the side
+   * bar's Verify a claim… button runs the ask. Its judged claim joins the
+   * review shown, as a finding with any library fetch it offers.
    */
   async ask(kind: AskKind, arg?: unknown): Promise<void> {
+    if (this.result === undefined || this.url === undefined) {
+      vscode.window.showWarningMessage('Review a pull request first, then ask about its parts.');
+      return;
+    }
     const part = this.partOf(arg);
     const anchor = part === undefined ? undefined : JSON.stringify(anchorOf(part));
-    const index = this.result?.parts.findIndex((each) => JSON.stringify(anchorOf(each)) === anchor) ?? -1;
-    if (this.result === undefined || this.url === undefined || index < 0) {
+    let index = this.result.parts.findIndex((each) => JSON.stringify(anchorOf(each)) === anchor);
+    let claim: AskedClaim | undefined;
+    if (ASKS[kind].takesClaim) {
+      const named = isBannerPartRef(arg) ? (arg as { claim?: unknown }).claim : undefined;
+      if (typeof named === 'number' && Number.isInteger(named) && this.result.claims?.claims[named]?.part === index) {
+        claim = { index: named };
+      } else if (index >= 0) {
+        claim = await this.claimToVerify(this.result, index);
+      } else {
+        claim = await this.anyClaimToVerify(this.result);
+        const at = claim === undefined ? undefined : this.result.claims?.claims[claim.index]?.part;
+        if (at === undefined) return;
+        index = at;
+      }
+      if (claim === undefined) return;
+    }
+    if (index < 0) {
       vscode.window.showWarningMessage('Review a pull request first, then ask about its parts.');
       return;
     }
     this.moveOnFromStory();
     const review = this.reviews;
     const asked = this.result.parts[index]!;
-    const claim = ASKS[kind].takesClaim ? await this.claimToVerify(this.result, index) : undefined;
-    if (ASKS[kind].takesClaim && claim === undefined) return;
     try {
       const answer = await vscode.window.withProgress(
         { location: { viewId: REVIEW_TREE_VIEW }, title: `${ASKS[kind].title}: asking the agent…` },
@@ -874,6 +895,25 @@ class ReviewSession {
     const picked = await vscode.window.showQuickPick(
       claims.map(({ index, claim }) => ({ label: claim.quote, description: claimWhere(claim), detail: claim.verdict.kind, index })),
       { title: 'Verify this claim', placeHolder: "Pick a claim, or select text on the head side of the part's diff" },
+    );
+    return picked === undefined ? undefined : { index: picked.index };
+  }
+
+  /**
+   * The claim a verify ask checks when it names no part, as the side
+   * bar's Verify a claim… button runs it: any claim of the review, picked
+   * from them all. Undefined, having said why, when there is none or the
+   * reviewer dismissed the pick.
+   */
+  private async anyClaimToVerify(result: ReviewResult): Promise<{ index: number } | undefined> {
+    const claims = (result.claims?.claims ?? []).flatMap((claim, index) => (claim.part >= 0 && claim.part < result.parts.length ? [{ index, claim }] : []));
+    if (claims.length === 0) {
+      vscode.window.showInformationMessage('No claim to verify: it shows once the review lists the claims.');
+      return undefined;
+    }
+    const picked = await vscode.window.showQuickPick(
+      claims.map(({ index, claim }) => ({ label: claim.quote, description: claimWhere(claim), detail: claim.verdict.kind, index })),
+      { title: 'Verify this claim', placeHolder: 'Pick a claim to verify' },
     );
     return picked === undefined ? undefined : { index: picked.index };
   }
@@ -1147,7 +1187,15 @@ export function activate(
     engine: (): Promise<EngineClient> => session.readyEngine(),
     onChange: () => sideBar.redraw(),
   });
-  const sideBar: SideBarProvider = new SideBarProvider({ settings: readAgentSettings(), marks: NO_MARKS, sections: [], reviewing: false, storyRead: false }, setup, picker);
+  const sideBar: SideBarProvider = new SideBarProvider(
+    { settings: readAgentSettings(), marks: NO_MARKS, sections: [], reviewing: false, storyRead: false },
+    setup,
+    picker,
+    {
+      openLine: (path, line) => void session.openLine(path, line, 'head'),
+      ticks: new StepTickStore(context.globalState),
+    },
+  );
   const copies = new ChangeCopiesProvider();
   const marker = new PartMarker();
   const comments = new ReviewComments();

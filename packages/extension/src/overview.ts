@@ -824,7 +824,7 @@ const ISSUE_LINKS: Record<LinkedIssue['link'], string> = {
 };
 
 /** A linked issue as the page names it: its number in its repository. */
-function issueName(issue: LinkedIssue): string {
+export function issueName(issue: LinkedIssue): string {
   return `#${issue.number} in ${issue.repository}`;
 }
 

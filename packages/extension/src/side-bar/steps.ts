@@ -1,9 +1,10 @@
-import { parsePullRequestUrl, partsLeft, reviewedState, type AgentName, type Part, type ReviewedMarks, type ReviewResult, type ReviewStageId } from '@second-look/engine';
+import { parsePullRequestUrl, partsLeft, reviewedState, CRITERION_VERDICT_KINDS, type AgentName, type Part, type ReviewedMarks, type ReviewResult, type ReviewStageId } from '@second-look/engine';
 import type { AgentSettings } from '../agent-settings.js';
 import { partsInReadingOrder, type TreeSection } from '../tree.js';
 import type { ReviewProgress } from './progress.js';
 import { listedCount, type PullRequestPickerView } from './pull-requests.js';
 import type { SetupView } from './setup.js';
+import type { StepTicks } from './step-ticks.js';
 
 /** Where one step of the review path stands: **waiting** while the stage that produces it has yet to start. */
 export type StepState = 'done' | 'current' | 'running' | 'waiting' | 'to come';
@@ -30,6 +31,8 @@ export interface SideBarState {
   pullRequests?: PullRequestPickerView;
   /** How the review stands: the stage running, or how it ended; absent before any review and for one that ran no stage. */
   progress?: ReviewProgress;
+  /** The steps' “I’ve checked these” ticks, as they stand for the review shown. */
+  ticks?: StepTicks;
 }
 
 /** One step's card, as its header shows it. */
@@ -75,19 +78,20 @@ export function setupLine(settings: AgentSettings): string {
 /**
  * The eight steps of the review path (ADR 0008), each with its state: done
  * where it can be measured — the settings always choose an agent, unless
- * the setup form is open, a review is open, the story was read, every part is reviewed — running while its
+ * the setup form is open, a review is open, the story was read, every part is reviewed, the reviewer ticked
+ * the step’s “I’ve checked these” box — running while its
  * results are still arriving, waiting while the review stage producing
  * them has yet to start, and otherwise current or still to come. The
  * current step is the first one not done; its card is open and the others
- * fold. Steps 5 to 8 are never done yet: their cards point to the overview,
- * the diff's threads and the Send review page.
+ * fold. Steps 7 and 8 are never done yet: their cards point to the diff’s
+ * threads and the Send review page.
  */
 export function sideBarSteps(state: SideBarState): Step[] {
   const { result, reviewing } = state;
   const open = result !== undefined;
   const left = open ? partsLeft(result.parts, state.marks) : 0;
   const comments = pendingComments(state.sections);
-  const done = [state.setup?.open !== true, open, open && state.storyRead, open && left === 0, false, false, false, false];
+  const done = [state.setup?.open !== true, open, open && state.storyRead, open && left === 0, state.ticks?.claims === true, state.ticks?.criteria === true, false, false];
   // With the review's stages, a step runs while a stage producing it runs
   // and waits while one has yet to start; without them, while its results are missing.
   const stages = reviewing && open ? result.stages : undefined;
@@ -111,8 +115,8 @@ export function sideBarSteps(state: SideBarState): Step[] {
     open ? pullRequestLine(result) : running[1] ? 'reading the pull request…' : state.pullRequests?.list.state === 'listed' ? `${listedCount(state.pullRequests)} open` : '',
     !open ? '' : state.storyRead ? 'read' : result.story === undefined ? (running[2] ? 'being written…' : waiting[2] ? 'to be written' : 'in the overview') : 'ready',
     !open ? '' : left === 0 ? 'every part reviewed' : `${left} of ${result.parts.length} left`,
-    !open || result.claims === undefined ? '' : `${result.claims.claims.length} listed`,
-    !open || result.criteria === undefined ? '' : `${result.criteria.criteria.length} criteria`,
+    !open ? '' : claimsSummary(result),
+    !open ? '' : criteriaSummary(result),
     comments === 0 ? '' : `${comments} pending`,
     '',
   ];
@@ -130,6 +134,34 @@ export function sideBarSteps(state: SideBarState): Step[] {
 export function pullRequestLine(result: ReviewResult): string {
   const ref = parsePullRequestUrl(result.pullRequest.url);
   return ref === null ? `#${result.pullRequest.number}` : `${ref.owner}/${ref.repo} #${result.pullRequest.number}`;
+}
+
+/** Step 5’s summary: the claims’ verdicts once judged, findings first, else how many are listed. */
+function claimsSummary(result: ReviewResult): string {
+  const claims = result.claims?.claims ?? [];
+  const judged = claims.filter((claim) => claim.verdict.kind !== 'not checked');
+  if (judged.length === 0) return claims.length === 0 ? '' : `${claims.length} listed`;
+  return (['refuted', 'unverifiable', 'verified'] as const)
+    .map((kind) => ({ kind, count: judged.filter((claim) => claim.verdict.kind === kind).length }))
+    .filter(({ count }) => count > 0)
+    .map(({ kind, count }) => `${count} ${kind}`)
+    .join(' · ');
+}
+
+/** Step 6’s summary: the criteria’s verdicts once mapped, findings first, with the unexplained changes counted, else how many criteria. */
+function criteriaSummary(result: ReviewResult): string {
+  const criteria = result.criteria?.criteria ?? [];
+  const mapped = criteria.filter((criterion) => criterion.verdict.kind !== 'not checked');
+  const unexplained = result.unexplained?.outcome === 'compared' ? result.unexplained.parts.length + result.unexplained.described.length : 0;
+  if (mapped.length === 0) {
+    if (criteria.length === 0) return unexplained === 0 ? '' : `${unexplained} unexplained`;
+    return `${criteria.length} criteria${unexplained > 0 ? ` · ${unexplained} unexplained` : ''}`;
+  }
+  const parts = CRITERION_VERDICT_KINDS.map((kind) => ({ kind, count: mapped.filter((criterion) => criterion.verdict.kind === kind).length }))
+    .filter(({ count }) => count > 0)
+    .map(({ kind, count }) => `${count} ${kind}`);
+  if (unexplained > 0) parts.push(`${unexplained} unexplained`);
+  return parts.join(' · ');
 }
 
 /** The part Open next part opens: the first in reading order the reviewer has not marked reviewed. */

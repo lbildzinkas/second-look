@@ -6,7 +6,7 @@ This page follows one review from start to sent. The words are the project's [gl
 
 ## The side bar
 
-The side bar walks the review as eight steps, each on a card that shows whether it is **done**, **current**, **running**, **waiting** for the stage that produces it, or still to come: 1 the agent, model and effort every agent pass runs on; 2 the pull request, or the list that starts a review; 3 the story, with a button that opens the overview; 4 the parts; 5 the claims and 6 the acceptance criteria and unexplained changes, each with a button that opens the overview; 7 the pending comments, with a button that opens the diff they are written on; and 8 a button that opens the Send review page. The current step is the first one not done — the story counts as read once you open the overview or move on to the parts — and its card is open while the others fold; any card opens with a click. Every button runs the same command the Command Palette offers. The side bar follows your colour theme, and works from the keyboard: Tab moves between the cards' controls, Space ticks a part's checkbox and Enter opens a part or presses a button ([ADR 0008](adr/0008-webview-side-bar.md) says why it is one webview).
+The side bar walks the review as eight steps, each on a card that shows whether it is **done**, **current**, **running**, **waiting** for the stage that produces it, or still to come: 1 the agent, model and effort every agent pass runs on; 2 the pull request, or the list that starts a review; 3 the story, with a button that opens the overview; 4 the parts; 5 the claims — each refuted or unverifiable one a finding on its card, with **Draft comment**, **Open** (the line, read-only), **Verify again** and, when it is offered, **Fetch library** or **Decompile**, the verified ones folded into one line, and a **Verify a claim…** button that runs the verify ask; 6 the acceptance criteria not fully met, each with **Draft comment** and its issue link, the met ones folded, then the unexplained changes in both directions — and 7 the pending comments, with a button that opens the diff they are written on; and 8 a button that opens the Send review page. Steps 5 and 6 each end in an **I've checked these** tick, kept locally per pull request: new commits re-open the step, since its findings may have moved. Step 6's **⋯** opens the editor's settings at `second-look.criteriaHeading`. The current step is the first one not done — the story counts as read once you open the overview or move on to the parts — and its card is open while the others fold; any card opens with a click. Every button runs the same command the Command Palette offers, the findings' included. The side bar follows your colour theme, and works from the keyboard: Tab moves between the cards' controls, Space ticks a part's checkbox or a step's tick and Enter opens a part or presses a button ([ADR 0008](adr/0008-webview-side-bar.md) says why it is one webview).
 
 ## The ranked parts
 
@@ -69,7 +69,7 @@ A **claim** is a statement about how the code or a library behaves, quoted as wr
 
 Every verdict names its **evidence source**, from the [glossary](../CONTEXT.md)'s list — and the model's memory alone never yields **verified**. The engine re-reads every line a verdict cites before showing it: a citation that does not match drops the verdict to unverifiable and says why.
 
-A refuted or unverifiable claim is a **finding**, shown as the companion's own comment thread on the exact line that makes it, and badged on the part in the side bar.
+A refuted or unverifiable claim is a **finding**, shown as the companion's own comment thread on the exact line that makes it, badged on the part in the side bar, and listed on step 5's card with its verdict, where it is made, and its actions — every one the thread and the overview offer, including the library fetch below. **Verify again** re-runs the verify ask on that claim alone; **Verify a claim…** runs it over them all.
 
 ### The library fetch
 
@@ -77,18 +77,18 @@ When a claim turns on how a third-party library behaves and the head copy pins t
 
 ## The acceptance criteria
 
-The review reads the issues the pull request links — closing references and mentions alike — and lists each condition from the checklist under the configured heading, quoted and not checked until the agent maps it to the change. A criterion's verdict names where the change shows it: the lines of code that implement it, the tests that cover it, and the manual checks the description reports, each a link. A criterion only a person trying the change can settle, such as how something looks on screen, needs a manual check unless the description reports one that settles it. A not met or partly met criterion is a finding.
+The review reads the issues the pull request links — closing references and mentions alike — and lists each condition from the checklist under the configured heading, quoted and not checked until the agent maps it to the change. A criterion's verdict names where the change shows it: the lines of code that implement it, the tests that cover it, and the manual checks the description reports, each a link. A criterion only a person trying the change can settle, such as how something looks on screen, needs a manual check unless the description reports one that settles it. A not met or partly met criterion is a finding: step 6 lists every criterion not fully met with **Draft comment** and its issue link, folds the met ones, and its **⋯** opens the settings at the heading the checklist sits under.
 
 ## The unexplained changes
 
-The comparison runs in both directions. A part neither the description nor a linked issue explains — an unrelated refactor, a fix they never mention — carries the **? unexplained** badge in the side bar with its one-line reason. A statement that describes a change the diff does not contain — a promised test or document no part makes — is listed in the overview, quoted from where it is made. Both are findings.
+The comparison runs in both directions. A part neither the description nor a linked issue explains — an unrelated refactor, a fix they never mention — carries the **? unexplained** badge in the side bar with its one-line reason. A statement that describes a change the diff does not contain — a promised test or document no part makes — is listed in the overview, quoted from where it is made. Both are findings, listed on step 6's card below the criteria with **Draft comment** each.
 
 ## Asks
 
 An **ask** is a fixed, typed request about one part, never free chat. Right-click a part in the side bar, or use the banner above its diff, and you are offered:
 
 - **Explain this part** — what the part does and why it matters to the change, each line it cites a link that opens it read-only.
-- **Verify this claim** — judges the text you selected on the head side of the part's diff, or one of the part's claims you pick, and the verdict joins the review with its evidence.
+- **Verify this claim** — judges the text you selected on the head side of the part's diff, or one of the part's claims you pick, and the verdict joins the review with its evidence. From step 5, **Verify again** names the claim to judge, and **Verify a claim…** offers every claim of the review to pick from.
 - **What covers this?** — the automated tests, in the change or anywhere in the head copy, that exercise the part, and the manual checks the description reports for it; none found is a valid answer that says where it looked.
 
 The answers open at the top of the overview with their stamp. Nothing of an ask reaches GitHub.
@@ -105,7 +105,7 @@ Any finding offers **Draft comment**: the agent writes a short draft from the fi
 
 Each review records the head commit it opened at. Review again after new commits and each part changed since your last look says **changed since your last look**, the line above the parts names the commit that look was at, and the side bar's filter button shows only those parts. The change at that commit is compared with the current one, each against its own merge base, so after a rebase onto newer master with one real edit, only the edited part is flagged. With no local record, the last look is the commit of your last submitted GitHub review.
 
-Reviewed marks are kept locally per pull request and never sent anywhere by themselves; with the `second-look.mirrorViewedToGitHub` setting on, a file whose every part is marked is also marked **Viewed** on GitHub — a file only partly reviewed never is, and nothing is unmarked there.
+Reviewed marks are kept locally per pull request and never sent anywhere by themselves; with the `second-look.mirrorViewedToGitHub` setting on, a file whose every part is marked is also marked **Viewed** on GitHub — a file only partly reviewed never is, and nothing is unmarked there. The steps' **I've checked these** ticks are kept the same way: per pull request, at the head commit they were ticked on, so a review after new commits starts with the steps re-opened.
 
 ## Documentation links
 
