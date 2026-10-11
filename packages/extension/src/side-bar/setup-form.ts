@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { isAgentName, type AgentPaths, type ProbeAgentsRpcResult, type ReviewAgentChoice, type TestAgentRpcResult } from '@second-look/engine';
 import { writeSetting } from '../agent-picker.js';
-import { AGENT_PATH_SETTINGS, readAgentPaths, readAgentSettings, reviewAgentChoice } from '../agent-settings.js';
+import { AGENT_PATH_SETTINGS, AGENT_SETTING_KEYS, readAgentPaths, readAgentSettings, reviewAgentChoice } from '../agent-settings.js';
 import {
   INSTALL_PAGES,
   agentDraft,
@@ -108,10 +108,10 @@ export class SetupForm {
       const problem = setupProblem(this.view.draft);
       if (problem !== undefined) return this.refuse(problem);
       const { agent, model, effort, account } = this.view.draft;
-      await writeSetting('agent', agent);
-      await writeSetting('model', model);
-      await writeSetting('effort', effort);
-      await writeSetting('account', account.trim());
+      await writeSetting(AGENT_SETTING_KEYS.agent, agent);
+      await writeSetting(AGENT_SETTING_KEYS.model, model);
+      await writeSetting(AGENT_SETTING_KEYS.effort, effort);
+      await writeSetting(AGENT_SETTING_KEYS.account, account.trim());
     }
     await this.deps.globalState.update(SETUP_SEEN_KEY, true);
     this.view = { ...this.view, open: false };
@@ -129,7 +129,7 @@ export class SetupForm {
     if (field === 'account') next = { ...draft, account: value };
     if (field === 'path') next = { ...draft, path: value };
     // A test describes the combination it ran, so changing it clears the result.
-    const isSameRun = next.agent === draft.agent && next.model === draft.model && next.effort === draft.effort;
+    const isSameRun = next.agent === draft.agent && next.model === draft.model && next.effort === draft.effort && next.account.trim() === draft.account.trim();
     const { open, probe, test } = this.view;
     this.view = { open, probe, draft: next, ...(isSameRun && test !== undefined ? { test } : {}) };
     if (!isSameRun) this.tests += 1;
@@ -176,7 +176,7 @@ export class SetupForm {
     const { agent, path } = this.view.draft;
     const problem = pathProblem(path.trim());
     if (problem !== undefined) return this.refuse(problem);
-    await vscode.workspace.getConfiguration('second-look').update(AGENT_PATH_SETTINGS[agent], path.trim(), vscode.ConfigurationTarget.Global);
+    await writeSetting(AGENT_PATH_SETTINGS[agent], path.trim());
     await this.probe();
   }
 }

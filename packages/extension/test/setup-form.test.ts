@@ -280,6 +280,20 @@ describe('the setup form controller', () => {
     expect(stub.configurationUpdates).toEqual([]);
   });
 
+  it('clears the result when only the account changes, since the engine stamps it on the result', async () => {
+    const { setup, engine } = form();
+    setup.shown();
+    await send(setup, { field: 'agent', value: 'claude-code' });
+    await send(setup, { action: 'test', fields: { account: 'work' } });
+    expect(engine.tests).toEqual([{ agent: 'claude-code', model: 'claude-sonnet-5-5', effort: 'high', account: 'work' }]);
+    expect(setup.current.test).toEqual({ state: 'tested', result: { ok: true, stamp: STAMP } });
+    // Whitespace around the same label is the same run, as the test trims it.
+    await send(setup, { field: 'account', value: ' work ' });
+    expect(setup.current.test).toEqual({ state: 'tested', result: { ok: true, stamp: STAMP } });
+    await send(setup, { field: 'account', value: 'personal' });
+    expect(setup.current.test).toBeUndefined();
+  });
+
   it("drops a test's late answer once the form was closed and opened again on another draft", async () => {
     let answer: (result: TestAgentRpcResult) => void = () => undefined;
     const engine = { ...fakeEngine(), testAgent: () => new Promise<TestAgentRpcResult>((resolve) => (answer = resolve)) };
@@ -313,6 +327,20 @@ describe('the setup form controller', () => {
     const body = setupFormBody(setup.current);
     expect(body).toContain('Claude Code<small>2.1.296 · ready · the stored Claude subscription sign-in</small>');
     expect(body).not.toContain('data-field="path"');
+  });
+
+  it('warns when a workspace setting overrides the path the form writes, which still wins the probe', async () => {
+    stub.workspaceConfiguration['second-look.claudeCodePath'] = '/broken/claude';
+    const { setup } = form();
+    setup.shown();
+    await send(setup, { field: 'agent', value: 'claude-code' });
+    await send(setup, { action: 'usePath', fields: { path: '/opt/claude/bin/claude' } });
+    expect(stub.configurationUpdates).toEqual([{ key: 'second-look.claudeCodePath', value: '/opt/claude/bin/claude', target: ConfigurationTarget.Global }]);
+    expect(stub.warningMessages).toEqual([
+      'A workspace setting for second-look.claudeCodePath overrides the user setting just changed, so the choice takes no effect here. ' +
+        'Remove it from the workspace settings to use the choice.',
+    ]);
+    expect(setupFormBody(setup.current)).toContain('Claude Code<small>not found</small>');
   });
 
   it('shows why the agents could not be probed', async () => {
