@@ -154,10 +154,21 @@
         "command": "second-look.openSetup",
         "title": "Open the setup in the side bar",
         "category": "Second Look"
+      },
+      {
+        "command": "second-look.refreshPullRequests",
+        "title": "Reload the pull request list",
+        "category": "Second Look",
+        "icon": "$(refresh)"
       }
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "second-look.refreshPullRequests",
+          "when": "view == second-look.reviewTree",
+          "group": "navigation"
+        },
         {
           "command": "second-look.reviewPullRequest",
           "when": "view == second-look.reviewTree",

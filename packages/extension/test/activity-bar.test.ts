@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { REVIEW_COMMAND, REVIEW_TREE_VIEW } from '../src/commands.js';
+import { REFRESH_PULL_REQUESTS_COMMAND, REVIEW_COMMAND, REVIEW_TREE_VIEW } from '../src/commands.js';
 import { viewContainerIconFiles } from '../src/packaging.js';
 
 interface Manifest {
@@ -44,5 +44,11 @@ describe('the side bar in the Activity Bar', () => {
       group: 'navigation',
     });
     expect(commands.find((command) => command.command === REVIEW_COMMAND)?.icon).toBe('$(git-pull-request)');
+  });
+
+  it("reloads step 2's list of pull requests from a refresh button in the title bar", () => {
+    const { commands, menus } = MANIFEST.contributes;
+    expect(menus['view/title']![0]).toEqual({ command: REFRESH_PULL_REQUESTS_COMMAND, when: `view == ${REVIEW_TREE_VIEW}`, group: 'navigation' });
+    expect(commands.find((command) => command.command === REFRESH_PULL_REQUESTS_COMMAND)?.icon).toBe('$(refresh)');
   });
 });

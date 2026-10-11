@@ -113,3 +113,6 @@ export const CHOOSE_AGENT_COMMAND = 'second-look.chooseAgent' as const;
 
 /** The command that opens step 1's setup form in the side bar, which the agent quick pick's last item runs. */
 export const OPEN_SETUP_COMMAND = 'second-look.openSetup' as const;
+
+/** Reloads step 2's list of the reviewer's open pull requests: the side bar's refresh title button. */
+export const REFRESH_PULL_REQUESTS_COMMAND = 'second-look.refreshPullRequests' as const;

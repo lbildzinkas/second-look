@@ -28,6 +28,8 @@
 //   FAKE_ENGINE_VIEWED_ERROR      answer markViewed with this plain error message
 //   FAKE_ENGINE_PROBE_RESULT      JSON probe of the installed agents to return for agents/probe
 //   FAKE_ENGINE_TEST_RESULT       JSON agent test result to return for agents/test
+//   FAKE_ENGINE_LIST_RESULT       JSON pull request list to return for pullRequests/list
+//                                 (default: listed, with no group)
 //
 // The reviewed marks live in the fake's memory: markReviewed ticks or
 // clears a part by its name, reviewedMarks reads them back, and markViewed
@@ -66,6 +68,7 @@ const answerDelayMs = Number(process.env.FAKE_ENGINE_ANSWER_DELAY_MS ?? '0');
 const viewedError = process.env.FAKE_ENGINE_VIEWED_ERROR;
 const probeResult = process.env.FAKE_ENGINE_PROBE_RESULT ? JSON.parse(process.env.FAKE_ENGINE_PROBE_RESULT) : { agents: [] };
 const testResult = process.env.FAKE_ENGINE_TEST_RESULT ? JSON.parse(process.env.FAKE_ENGINE_TEST_RESULT) : null;
+const listResult = process.env.FAKE_ENGINE_LIST_RESULT ? JSON.parse(process.env.FAKE_ENGINE_LIST_RESULT) : { outcome: 'listed', groups: [] };
 let marks = [];
 
 if (process.env.FAKE_ENGINE_IGNORE_SIGTERM) {
@@ -122,6 +125,10 @@ function handle(line) {
   if (request.method === 'agents/test') {
     if (testResult) send({ jsonrpc: '2.0', id: request.id, result: testResult });
     else fail(request.id, -32002, 'this engine runs no agent, so it has none to test');
+    return;
+  }
+  if (request.method === 'pullRequests/list') {
+    send({ jsonrpc: '2.0', id: request.id, result: listResult });
     return;
   }
   if (request.method === 'review') {

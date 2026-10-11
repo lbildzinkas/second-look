@@ -27,7 +27,7 @@ import {
   activate,
 } from '../../src/extension.js';
 import { CHANGE_SCHEME, changeUri, libraryUri } from '../../src/change-copies.js';
-import { CHOOSE_AGENT_COMMAND, OPEN_SETUP_COMMAND, askCommand } from '../../src/commands.js';
+import { CHOOSE_AGENT_COMMAND, OPEN_SETUP_COMMAND, REFRESH_PULL_REQUESTS_COMMAND, askCommand } from '../../src/commands.js';
 import { SETUP_SEEN_KEY } from '../../src/side-bar/setup-form.js';
 import { escapeMarkdown } from '../../src/findings.js';
 import { SEND_REVIEW_VIEW_TYPE } from '../../src/send-page.js';
@@ -75,6 +75,8 @@ interface FakeEngineOptions {
   draftResult?: unknown;
   /** The answer the engine answers an ask with. */
   askResult?: unknown;
+  /** The list of the reviewer's pull requests the engine answers with. */
+  listResult?: unknown;
 }
 
 function fakeEngine(options: FakeEngineOptions): ChildProcessWithoutNullStreams {
@@ -102,6 +104,7 @@ function fakeEngine(options: FakeEngineOptions): ChildProcessWithoutNullStreams 
       ...(options.fetchResult !== undefined ? { FAKE_ENGINE_FETCH_RESULT: JSON.stringify(options.fetchResult) } : {}),
       ...(options.draftResult !== undefined ? { FAKE_ENGINE_DRAFT_RESULT: JSON.stringify(options.draftResult) } : {}),
       ...(options.askResult !== undefined ? { FAKE_ENGINE_ASK_RESULT: JSON.stringify(options.askResult) } : {}),
+      ...(options.listResult !== undefined ? { FAKE_ENGINE_LIST_RESULT: JSON.stringify(options.listResult) } : {}),
       FAKE_ENGINE_LOG: join(workDir, options.logName),
     },
   });
@@ -139,6 +142,7 @@ async function reviewWithFakeEngine(options: FakeEngineOptions): Promise<SideBar
     MARK_REVIEWED_COMMAND,
     CHOOSE_AGENT_COMMAND,
     OPEN_SETUP_COMMAND,
+    REFRESH_PULL_REQUESTS_COMMAND,
   ]);
 
   stub.inputBoxResult = PR_URL;
@@ -286,6 +290,7 @@ describe('activating the companion', () => {
       MARK_REVIEWED_COMMAND,
       CHOOSE_AGENT_COMMAND,
       OPEN_SETUP_COMMAND,
+      REFRESH_PULL_REQUESTS_COMMAND,
     ]);
     expect(stub.treeViews).toEqual([]);
     expect(stub.webviewViewProviders.map((entry) => entry.id)).toEqual([REVIEW_TREE_VIEW]);
@@ -294,7 +299,7 @@ describe('activating the companion', () => {
     expect(stub.commentControllers.map((controller) => controller.id)).toEqual(['second-look', 'second-look.findings', 'second-look.part']);
   });
 
-  it("shows the eight steps before any review ran, step 2's card open on its Review a pull request button", async () => {
+  it("shows the eight steps before any review ran, step 2's card open on its list, and the review command still asks for a URL", async () => {
     activate(stubContext() as unknown as vscode.ExtensionContext, {
       spawnEngine: () => {
         throw new Error('no review ran');
@@ -308,11 +313,72 @@ describe('activating the companion', () => {
     expect(view.page.webview.html.match(/<li class="step /g)).toHaveLength(8);
     expect(view.page.webview.html).toContain('<li class="step current" id="step-2" aria-current="step">');
 
-    // The button runs the existing review command, which asks for the URL.
+    // Step 2 carries the list's URL box; the review command, as the title button runs it, asks for the URL.
+    expect(view.page.webview.html).toContain('id="pr-filter"');
     stub.inputBoxResult = undefined;
     await press(view, { type: 'command', command: 'review' });
     expect(stub.executedCommands).toEqual([{ id: REVIEW_COMMAND, args: [] }]);
     expect(stub.inputBoxes).toHaveLength(1);
+  });
+});
+
+describe("step 2's list of pull requests, end to end against a fake engine", () => {
+  function loggedLists(logName: string): unknown[] {
+    return readFileSync(join(workDir, logName), 'utf8')
+      .split('\n')
+      .filter((line) => line !== '')
+      .map((line) => JSON.parse(line) as { method: string; params?: unknown })
+      .filter((request) => request.method === 'pullRequests/list')
+      .map((request) => request.params);
+  }
+
+  it("lists with the editor's sign-in as step 2 shows, starts the review a card picks, and reloads from the title button", async () => {
+    const listed = {
+      outcome: 'listed',
+      groups: [
+        {
+          group: 'review requested',
+          pullRequests: [
+            {
+              url: PR_URL,
+              repository: 'example-org/example-repo',
+              number: 42,
+              title: 'Retry on timeout',
+              author: 'maria-k',
+              updatedAt: '2026-10-11T08:00:00Z',
+              summary: 'Retries the charge.',
+              review: { requested: true, approvals: 0, changesRequested: 0, draft: false },
+              size: { additions: 3, deletions: 1, files: 1 },
+              newCommitsSinceLastLook: false,
+              waitingSince: '2026-10-10T08:00:00Z',
+            },
+          ],
+        },
+      ],
+    };
+    activate(stubContext() as unknown as vscode.ExtensionContext, {
+      spawnEngine: () => fakeEngine({ result: mixedResult(), listResult: listed, logName: 'list.log' }),
+    });
+    stub.session = { accessToken: TOKEN };
+
+    // Opening the side bar lists the pull requests, with the sign-in the editor already holds and no prompt.
+    const view = sideBar();
+    await until('the list', () => view.provider.current.pullRequests?.list.state === 'listed');
+    expect(stub.sessionRequests).toEqual([{ id: 'github', scopes: ['repo'], createIfNone: false }]);
+    expect(loggedLists('list.log')).toEqual([{ token: TOKEN }]);
+    expect(view.badge).toEqual({ value: 1, tooltip: '1 pull request waiting on your review' });
+    expect(view.page.webview.posted.at(-1)).toEqual({ type: 'render', body: expect.stringContaining('aria-label="Review example-org/example-repo #42: Retry on timeout"') });
+
+    // A card's Review button starts that review, with no URL to ask for; the badge then counts its parts left.
+    await press(view, { type: 'pullRequests', action: 'review', value: PR_URL });
+    expect(stub.inputBoxes).toEqual([]);
+    expect(renderedTree(view)[0]).toEqual({ label: 'Must review', tooltip: 'The parts to read first.' });
+    await until('the parts-left badge', () => view.badge?.value === 7);
+
+    // The title button reads the list again.
+    await registeredCommands().get(REFRESH_PULL_REQUESTS_COMMAND)!();
+    expect(loggedLists('list.log')).toHaveLength(2);
+    expect(stub.errorMessages).toEqual([]);
   });
 });
 

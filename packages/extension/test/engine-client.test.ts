@@ -37,6 +37,7 @@ interface FakeEngineOptions {
   askError?: string;
   probeResult?: unknown;
   testResult?: unknown;
+  listResult?: unknown;
 }
 
 /** Starts the fake engine as a separate process, speaking real stdio. */
@@ -69,6 +70,7 @@ function fakeEngine(options: FakeEngineOptions = {}): ChildProcessWithoutNullStr
       ...(options.askError !== undefined ? { FAKE_ENGINE_ASK_ERROR: options.askError } : {}),
       ...(options.probeResult !== undefined ? { FAKE_ENGINE_PROBE_RESULT: JSON.stringify(options.probeResult) } : {}),
       ...(options.testResult !== undefined ? { FAKE_ENGINE_TEST_RESULT: JSON.stringify(options.testResult) } : {}),
+      ...(options.listResult !== undefined ? { FAKE_ENGINE_LIST_RESULT: JSON.stringify(options.listResult) } : {}),
     },
   });
 }
@@ -347,6 +349,48 @@ describe('EngineClient against a fake engine', () => {
     const odd = new EngineClient(() => fakeEngine({ probeResult: { agents: [{ ...agents[1], effortLevels: 'high' }] } }));
     await odd.initialize();
     await expect(odd.probeAgents()).rejects.toThrow("the engine's answer is not the probe of the installed agents");
+    odd.dispose();
+  });
+
+  it("lists the reviewer's pull requests with the request's token and repository, reads a reason as an answer, and refuses an answer that is no list", async () => {
+    const listed = {
+      outcome: 'listed',
+      groups: [
+        {
+          group: 'review requested',
+          pullRequests: [
+            {
+              url: PR_URL,
+              repository: 'example-org/example-repo',
+              number: 42,
+              title: 'Retry on timeout',
+              author: 'maria-k',
+              updatedAt: '2026-10-11T08:00:00Z',
+              summary: 'Retries the charge.',
+              review: { requested: true, approvals: 1, changesRequested: 0, draft: false },
+              size: { additions: 84, deletions: 12, files: 5 },
+              newCommitsSinceLastLook: true,
+              waitingSince: '2026-10-09T12:00:00Z',
+            },
+          ],
+        },
+      ],
+    };
+    const client = new EngineClient(() => fakeEngine({ listResult: listed, logName: 'list.log' }));
+    await client.initialize();
+    expect(await client.listPullRequests({ token: TOKEN, repository: 'example-org/example-repo' })).toEqual(listed);
+    const request = loggedRequests('list.log').find((each) => (each as { method: string }).method === 'pullRequests/list') as { params: unknown };
+    expect(request.params).toEqual({ token: TOKEN, repository: 'example-org/example-repo' });
+    client.dispose();
+
+    const offline = new EngineClient(() => fakeEngine({ listResult: { outcome: 'unreachable', reason: 'GitHub could not be reached.' } }));
+    await offline.initialize();
+    expect(await offline.listPullRequests({ token: TOKEN })).toEqual({ outcome: 'unreachable', reason: 'GitHub could not be reached.' });
+    offline.dispose();
+
+    const odd = new EngineClient(() => fakeEngine({ listResult: { outcome: 'listed', groups: [{ group: 'starred', pullRequests: [] }] } }));
+    await odd.initialize();
+    await expect(odd.listPullRequests({ token: TOKEN })).rejects.toThrow("the engine's answer is not the list of your pull requests");
     odd.dispose();
   });
 

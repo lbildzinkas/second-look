@@ -8,6 +8,7 @@ import {
   ENGINE_PROTOCOL_VERSION,
   FETCH_LIBRARY_METHOD,
   INITIALIZE_METHOD,
+  LIST_PULL_REQUESTS_METHOD,
   MARK_REVIEWED_METHOD,
   MARK_VIEWED_METHOD,
   PROBE_AGENTS_METHOD,
@@ -24,9 +25,11 @@ import {
   type DraftComment,
   type FindingRef,
   type InitializeResult,
+  type ListPullRequestsParams,
   type MarkedPart,
   type PendingReview,
   type ProbeAgentsRpcResult,
+  type PullRequestList,
   type ReviewAgentChoice,
   type ReviewedMarks,
   type ReviewResult,
@@ -41,11 +44,13 @@ import {
   DraftProtocolError,
   MarksProtocolError,
   ProtocolError,
+  PullRequestListProtocolError,
   SendProtocolError,
   isAgentTestResult,
   isAgentsProbe,
   isAskAnswer,
   isDraftComment,
+  isPullRequestList,
   isReviewResult,
   isReviewedMarks,
   isSentReview,
@@ -102,6 +107,9 @@ const HANDSHAKE_TIMEOUT_MS = 10_000;
 
 /** How long probing the installed agents may take: each agent's version, help and guard check. */
 const PROBE_AGENTS_TIMEOUT_MS = 90_000;
+
+/** How long the pull request list may take: its searches run side by side, each within the engine's own limit. */
+const LIST_PULL_REQUESTS_TIMEOUT_MS = 60_000;
 
 /** How long the agent test may take: the agent's probe, and its one run of up to five minutes. */
 const TEST_AGENT_TIMEOUT_MS = 390_000;
@@ -272,6 +280,24 @@ export class EngineClient {
     const result = await this.request(TEST_AGENT_METHOD, { agent }, TEST_AGENT_TIMEOUT_MS);
     if (!isAgentTestResult(result)) {
       throw new AgentTestProtocolError();
+    }
+    return result;
+  }
+
+  /**
+   * Lists the reviewer's open pull requests (issue 136) with the token
+   * VS Code's GitHub sign-in gave for this one request, and the open
+   * folder's repository when it is a GitHub one. Not signed in and GitHub
+   * out of reach are answers, each with its plain reason; rejects with the
+   * engine's plain message when the engine fails.
+   */
+  async listPullRequests(params: ListPullRequestsParams): Promise<PullRequestList> {
+    if (!this.handshaken) {
+      throw new Error('the engine has not completed its handshake yet');
+    }
+    const result = await this.request(LIST_PULL_REQUESTS_METHOD, params, LIST_PULL_REQUESTS_TIMEOUT_MS);
+    if (!isPullRequestList(result)) {
+      throw new PullRequestListProtocolError();
     }
     return result;
   }

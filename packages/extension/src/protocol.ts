@@ -8,6 +8,7 @@ import {
   FINDING_REF_KINDS,
   IMPORTANCE_ORDER,
   LIBRARY_ARCHIVES,
+  PULL_REQUEST_GROUPS,
   REVIEW_RESULT_VERSION,
   type AskAnswer,
   type ChangeKind,
@@ -25,6 +26,7 @@ import {
   type PartRank,
   type PartRole,
   type ProbeAgentsRpcResult,
+  type PullRequestList,
   type ReviewedMarks,
   type ReviewResult,
   type SentReview,
@@ -1046,6 +1048,54 @@ export function isAgentTestResult(value: unknown): value is TestAgentRpcResult {
   if (!isRecord(value) || !isAgentStamp(value['stamp'])) return false;
   if (value['ok'] === true) return true;
   return value['ok'] === false && isOneOf(value['reason'], AGENT_TEST_FAILURES) && isString(value['message']);
+}
+
+/** Error thrown when a list answer is not the reviewer's pull requests. */
+export class PullRequestListProtocolError extends Error {
+  constructor() {
+    super(`the engine's answer is not the list of your pull requests`);
+    this.name = 'PullRequestListProtocolError';
+  }
+}
+
+function isListedPullRequest(value: unknown): boolean {
+  if (!isRecord(value) || !isRecord(value['review']) || !isRecord(value['size'])) return false;
+  const { review, size } = value;
+  return (
+    isString(value['url']) &&
+    isString(value['repository']) &&
+    isNumber(value['number']) &&
+    isString(value['title']) &&
+    isString(value['author']) &&
+    isString(value['updatedAt']) &&
+    isString(value['summary']) &&
+    typeof review['requested'] === 'boolean' &&
+    isNumber(review['approvals']) &&
+    isNumber(review['changesRequested']) &&
+    typeof review['draft'] === 'boolean' &&
+    isNumber(size['additions']) &&
+    isNumber(size['deletions']) &&
+    isNumber(size['files']) &&
+    typeof value['newCommitsSinceLastLook'] === 'boolean' &&
+    isOptionalString(value['waitingSince'])
+  );
+}
+
+/**
+ * Checks that a value read over the protocol is the list of the
+ * reviewer's open pull requests: their groups, or why they could not be
+ * listed, with its plain reason.
+ */
+export function isPullRequestList(value: unknown): value is PullRequestList {
+  if (!isRecord(value)) return false;
+  if (value['outcome'] === 'signed out' || value['outcome'] === 'unreachable') return isString(value['reason']);
+  return (
+    value['outcome'] === 'listed' &&
+    Array.isArray(value['groups']) &&
+    value['groups'].every(
+      (group) => isRecord(group) && isOneOf(group['group'], PULL_REQUEST_GROUPS) && Array.isArray(group['pullRequests']) && group['pullRequests'].every(isListedPullRequest),
+    )
+  );
 }
 
 /** Checks that a value read over the protocol lists the files marked "Viewed" on GitHub. */

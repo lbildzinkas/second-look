@@ -1,5 +1,6 @@
 import { escapeHtml } from '../overview.js';
 import { anchorOf, type PartAnchor, type TreeComment, type TreePart, type TreeSection } from '../tree.js';
+import { pullRequestsBody } from './pull-requests.js';
 import { setupFormBody } from './setup.js';
 import { pullRequestLine, sideBarSteps, type SideBarState, type Step, type StepState } from './steps.js';
 
@@ -90,10 +91,15 @@ function stepBody(step: Step, state: SideBarState): string {
       return state.setup?.open === true
         ? setupFormBody(state.setup)
         : note(`Every agent pass runs on ${step.summary}. Change it with the change link, in the settings or from the status bar.`);
-    case 2:
-      return result === undefined
-        ? note(state.reviewing ? 'Reading the pull request…' : 'Pick the pull request to review.') + `<div class="actions">${button(2, 'review', 'Review a pull request', { primary: true })}</div>`
-        : `<p class="pr"><b>${escapeHtml(result.pullRequest.title)}</b><br>${escapeHtml(pullRequestLine(result))}</p><div class="actions">${button(2, 'review', 'Review another pull request')}</div>`;
+    case 2: {
+      // The list of the reviewer's pull requests, with its URL box, when the side bar carries one.
+      const picker = state.pullRequests === undefined ? undefined : pullRequestsBody(state.pullRequests);
+      if (result !== undefined) {
+        return `<p class="pr"><b>${escapeHtml(result.pullRequest.title)}</b><br>${escapeHtml(pullRequestLine(result))}</p><div class="actions">${button(2, 'review', 'Review another pull request')}</div>${picker ?? ''}`;
+      }
+      if (picker !== undefined) return (state.reviewing ? note('Reading the pull request…') : '') + picker;
+      return note(state.reviewing ? 'Reading the pull request…' : 'Pick the pull request to review.') + `<div class="actions">${button(2, 'review', 'Review a pull request', { primary: true })}</div>`;
+    }
     case 3:
       return note('The story tells what the change does, in the order to read the parts.') + `<div class="actions">${button(3, 'overview', 'Open the overview', { primary: true, disabled: result === undefined })}</div>`;
     case 4:
@@ -205,6 +211,22 @@ export function sideBarHtml(nonce: string, body: string): string {
   .choice small { font-size: 11px; color: var(--vscode-descriptionForeground); }
   .setup-text { box-sizing: border-box; width: 100%; padding: 3px 6px; color: var(--vscode-input-foreground); background-color: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; font: inherit; }
   .problem { color: var(--vscode-errorForeground); }
+  .picker { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+  .pr-filter { box-sizing: border-box; width: 100%; padding: 3px 6px; color: var(--vscode-input-foreground); background-color: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; font: inherit; }
+  .chip { padding: 0 8px; font-size: 11px; color: var(--vscode-descriptionForeground); background: none; border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); border-radius: 10px; line-height: 18px; }
+  .chip[aria-pressed="true"] { color: var(--vscode-list-activeSelectionForeground, var(--vscode-foreground)); background-color: var(--vscode-list-activeSelectionBackground); border-color: var(--vscode-focusBorder); }
+  .group .count { padding: 0 5px; border-radius: 8px; color: var(--vscode-badge-foreground); background-color: var(--vscode-badge-background); letter-spacing: 0; }
+  .pr-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+  .pr-card, .pr-state { padding: 6px 8px; border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); border-radius: 4px; }
+  .pr-state h3 { margin: 0; font-size: inherit; }
+  .pr-title { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+  .pr-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 2px 0 0; font-size: 12px; color: var(--vscode-descriptionForeground); }
+  .pr-summary { margin: 3px 0 0; font-size: 12px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+  .pill { padding: 0 5px; border: 1px solid currentColor; border-radius: 4px; font-size: 11px; line-height: 16px; }
+  .pr-size { font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; }
+  .pr-size .add { color: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-foreground)); }
+  .pr-size .del { color: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-foreground)); }
+  .pr-meta button { margin-left: auto; }
   .test { overflow-wrap: anywhere; }
 </style>
 </head>
@@ -241,8 +263,12 @@ export function sideBarHtml(nonce: string, body: string): string {
       var open = pressed.getAttribute('aria-expanded') !== 'true';
       folds[pressed.getAttribute('data-step')] = open;
       setOpen(pressed, open);
+      // Step 2's list loads the first time its card shows.
+      if (open && pressed.getAttribute('data-step') === '2') vscode.postMessage({ type: 'pullRequests', action: 'show', value: '' });
     } else if (pressed.classList.contains('open')) {
       vscode.postMessage({ type: 'openPart', anchor: anchorOf(pressed) });
+    } else if (pressed.hasAttribute('data-pr-action')) {
+      vscode.postMessage({ type: 'pullRequests', action: pressed.getAttribute('data-pr-action'), value: pressed.getAttribute('data-value') });
     } else if (pressed.hasAttribute('data-command')) {
       vscode.postMessage({ type: 'command', command: pressed.getAttribute('data-command') });
     } else if (pressed.hasAttribute('data-field')) {
@@ -262,18 +288,32 @@ export function sideBarHtml(nonce: string, body: string): string {
     if (box.type !== 'checkbox') return;
     vscode.postMessage({ type: 'mark', anchor: anchorOf(box), reviewed: box.checked });
   });
+  // The list's box filters as the reviewer types; a paste or Enter can start a review of the URL in it.
+  root.addEventListener('input', function (event) {
+    var box = event.target;
+    if (box.id !== 'pr-filter') return;
+    vscode.postMessage({ type: 'pullRequests', action: 'filter', value: box.value, pasted: event.inputType === 'insertFromPaste' });
+  });
+  root.addEventListener('keydown', function (event) {
+    var box = event.target;
+    if (box.id !== 'pr-filter' || event.key !== 'Enter') return;
+    event.preventDefault();
+    vscode.postMessage({ type: 'pullRequests', action: 'go', value: box.value });
+  });
   window.addEventListener('message', function (event) {
     var message = event.data;
     if (message === null || typeof message !== 'object' || message.type !== 'render' || typeof message.body !== 'string') return;
     var active = document.activeElement !== null && root.contains(document.activeElement) ? document.activeElement : null;
     var focused = active === null ? '' : active.id;
     // A text box being typed in keeps its text: it reaches the extension only once it changes.
-    var typed = active !== null && active.classList.contains('setup-text') ? active.value : null;
+    var typed = active !== null && (active.classList.contains('setup-text') || active.id === 'pr-filter') ? active.value : null;
+    var caret = typed === null ? null : [active.selectionStart, active.selectionEnd];
     root.innerHTML = message.body;
     keepFolds();
     var again = focused === '' ? null : document.getElementById(focused);
     if (again !== null && typed !== null) again.value = typed;
     if (again !== null) again.focus();
+    if (again !== null && caret !== null && typeof again.setSelectionRange === 'function') again.setSelectionRange(caret[0], caret[1]);
   });
   keepFolds();
   vscode.postMessage({ type: 'ready' });
