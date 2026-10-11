@@ -47,7 +47,7 @@ import { SideBarProvider } from './side-bar/provider.js';
 import { PullRequestPicker } from './side-bar/pull-request-picker.js';
 import { SetupForm } from './side-bar/setup-form.js';
 import type { SideBarState } from './side-bar/steps.js';
-import { endNotice, finishedProgress, readingProgress, runningProgress, type ReviewProgress } from './side-bar/progress.js';
+import { endNotice, finishedProgress, readingProgress, runningProgress, stoppedProgress, type ReviewProgress } from './side-bar/progress.js';
 import { draftTarget, ReviewComments } from './comments.js';
 import { escapeMarkdown, FindingThreads } from './findings.js';
 import { isSubmitKind, SendReviewPage } from './send-page.js';
@@ -332,8 +332,14 @@ class ReviewSession {
     } catch (error) {
       if (!current()) return;
       this.stage = undefined;
-      // A review stopped before its first result landed is no failure: the strip says so.
-      this.progress = this.stopped === review ? { state: 'stopped early' } : undefined;
+      // A stopped review is no failure: the strip says it stopped before its
+      // first result landed, or with the results that already landed.
+      this.progress =
+        this.stopped !== review
+          ? undefined
+          : shown
+            ? stoppedProgress(this.result!)
+            : { state: 'stopped early' };
       if (this.stopped !== review) {
         vscode.window.showErrorMessage(
           error instanceof Error ? error.message : String(error),
@@ -353,20 +359,26 @@ class ReviewSession {
    * Stops the review running, from the side bar's Stop review title button:
    * the engine stops the stage running, its agent run with it, and answers
    * with what already landed, every stage not run marked stopped, which
-   * the progress strip lists.
+   * the progress strip lists. A stop pressed while the review is still
+   * starting — its engine spawning, its request not yet sent — says so,
+   * for nothing has reached the engine to stop yet.
    */
   async stopReview(): Promise<void> {
-    const engine = this.engine;
-    if (!this.running || engine === undefined) {
+    if (!this.running) {
       vscode.window.showInformationMessage('No review is running.');
       return;
     }
-    this.stopped = this.reviews;
     try {
-      await engine.cancelReview();
+      if ((await this.engine?.cancelReview()) !== true) {
+        vscode.window.showInformationMessage('The review has not reached the engine yet. Stop it again in a moment.');
+        return;
+      }
     } catch (error) {
+      this.stopped = this.reviews;
       vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
+      return;
     }
+    this.stopped = this.reviews;
   }
 
   /** The end of a review: a notification only when a stage fell back or failed, offering the overview. */

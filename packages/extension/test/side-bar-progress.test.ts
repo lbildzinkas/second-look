@@ -11,6 +11,7 @@ import {
   reviewStatusTooltip,
   reviewTime,
   runningProgress,
+  stoppedProgress,
   type ReviewProgress,
 } from '../src/side-bar/progress.js';
 import { sideBarSteps, type SideBarState } from '../src/side-bar/steps.js';
@@ -129,6 +130,16 @@ describe('the progress strip and the count tiles', () => {
     expect(html).toContain('<b>Review stopped</b> after 2:49');
     expect(html).toContain('Stopped: the verdicts, the criteria mapping and the documentation links');
     expect(progressBody(state(mixedResult(), { state: 'stopped early' }))).toContain('<b>Review stopped</b> before its first result landed, so nothing was kept');
+  });
+
+  it('marks the stages a stop ended, from the last result that landed', () => {
+    const landed = staged(VERDICTS_RUNNING);
+    expect(stoppedProgress(landed)).toEqual({
+      state: 'finished',
+      stages: reviewStages('verdicts', { verdicts: { state: 'stopped' }, criteria: { state: 'stopped' }, docLinks: { state: 'stopped' } }),
+    });
+    expect(progressBody(state(landed, stoppedProgress(landed)))).toContain('<b>Review stopped</b> after 2:48');
+    expect(stoppedProgress(mixedResult())).toBeUndefined();
   });
 
   it('draws the tiles and the strip above the steps, and nothing before any review', () => {

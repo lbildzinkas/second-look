@@ -17,6 +17,8 @@
 //   FAKE_ENGINE_ASK_RESULT        JSON answer to return for ask
 //   FAKE_ENGINE_ASK_ERROR         answer ask with this plain error message
 //   FAKE_ENGINE_PROTOCOL_VERSION  protocol version to speak (default 1)
+//   FAKE_ENGINE_INIT_DELAY_MS     wait this long before answering initialize, as an
+//                                  engine slow to start does
 //   FAKE_ENGINE_EXIT_ON           exit right after this method, answering nothing
 //   FAKE_ENGINE_STALL_ON          receive this method, answer nothing, stay alive
 //   FAKE_ENGINE_IGNORE_SIGTERM    stay alive when sent SIGTERM, like a frozen engine
@@ -44,6 +46,7 @@ import { createHash } from 'node:crypto';
 import { appendFileSync } from 'node:fs';
 
 const protocolVersion = Number(process.env.FAKE_ENGINE_PROTOCOL_VERSION ?? '1');
+const initDelayMs = Number(process.env.FAKE_ENGINE_INIT_DELAY_MS ?? '0');
 const reviewResult = process.env.FAKE_ENGINE_RESULT
   ? JSON.parse(process.env.FAKE_ENGINE_RESULT)
   : null;
@@ -123,7 +126,9 @@ function handle(line) {
       );
       return;
     }
-    send({ jsonrpc: '2.0', id: request.id, result: { protocolVersion } });
+    const answer = () => send({ jsonrpc: '2.0', id: request.id, result: { protocolVersion } });
+    if (initDelayMs > 0) setTimeout(answer, initDelayMs);
+    else answer();
     return;
   }
   if (request.method === 'agents/probe') {

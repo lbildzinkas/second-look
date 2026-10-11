@@ -64,6 +64,8 @@ interface FakeEngineOptions {
   error?: string;
   sendError?: string;
   logName: string;
+  /** How long the engine waits before answering the version handshake, as one slow to start. */
+  initDelayMs?: number;
   /** A stage notification to send before the answer, which then waits this long. */
   stage?: { running: string; timeoutMs: number; result: unknown; stage?: unknown };
   /** Send the stage notification, then answer only a cancel. */
@@ -97,6 +99,9 @@ function fakeEngine(options: FakeEngineOptions): ChildProcessWithoutNullStreams 
         ? { FAKE_ENGINE_RESULTS_BY_URL: JSON.stringify(options.resultsByUrl) }
         : {}),
       ...(options.error !== undefined ? { FAKE_ENGINE_ERROR: options.error } : {}),
+      ...(options.initDelayMs !== undefined
+        ? { FAKE_ENGINE_INIT_DELAY_MS: String(options.initDelayMs) }
+        : {}),
       ...(options.stage !== undefined ? { FAKE_ENGINE_STAGE: JSON.stringify(options.stage) } : {}),
       ...(options.stageOnly ? { FAKE_ENGINE_STAGE_ONLY: '1' } : {}),
       ...(options.stallOn !== undefined ? { FAKE_ENGINE_STALL_ON: options.stallOn } : {}),
@@ -770,6 +775,35 @@ describe('progress in the side bar and the status bar', () => {
     const requests = readFileSync(join(workDir, 'stop.log'), 'utf8').trim().split('\n').map((line) => JSON.parse(line) as { id: number; method: string; params: unknown });
     const reviewId = requests.find((request) => request.method === 'review')!.id;
     expect(requests.filter((request) => request.method === 'review/cancel').map((request) => request.params)).toEqual([{ id: reviewId }]);
+  });
+
+  it('reads a stop after results landed as stopped with what landed, when the stopped review never answers', async () => {
+    const { reviewed, view } = startReview({ stage: VERDICTS, stageOnly: true, logName: 'stop-unanswered.log' });
+    await until('the verdicts running', () => view.provider.current.progress?.state === 'running');
+
+    await registeredCommands().get(STOP_REVIEW_COMMAND)!();
+    await reviewed;
+
+    expect(drawn(view)).toContain('<b>Review stopped</b> after 2:48');
+    expect(drawn(view)).toContain('Stopped: the verdicts, the criteria mapping and the documentation links');
+    expect(renderedTree(view).length).toBeGreaterThan(0);
+    expect(stub.errorMessages).toEqual([]);
+    expect(stub.contextKeys[REVIEWING_CONTEXT]).toBe(false);
+  });
+
+  it('says a stop pressed while the review is still starting reached no engine, and a later failure is no stop', async () => {
+    const { reviewed, view } = startReview({ error: 'the engine failed the review', initDelayMs: 500, logName: 'stop-starting.log' });
+    const log = join(workDir, 'stop-starting.log');
+    await until('the handshake sent', () => existsSync(log) && readFileSync(log, 'utf8').includes('"method":"initialize"'));
+    expect(stub.contextKeys[REVIEWING_CONTEXT]).toBe(true);
+
+    await registeredCommands().get(STOP_REVIEW_COMMAND)!();
+    expect(stub.informationMessages).toEqual(['The review has not reached the engine yet. Stop it again in a moment.']);
+
+    await reviewed;
+    expect(stub.errorMessages).toEqual(['the engine failed the review']);
+    expect(drawn(view)).not.toContain('Review stopped');
+    expect(stub.contextKeys[REVIEWING_CONTEXT]).toBe(false);
   });
 
   it('says a review stopped before its first result kept nothing, as no failure', async () => {

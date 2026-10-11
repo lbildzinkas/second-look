@@ -57,6 +57,17 @@ export function finishedProgress(result: ReviewResult): ReviewProgress | undefin
   return result.stages === undefined ? undefined : { state: 'finished', stages: result.stages };
 }
 
+/** The review the reviewer stopped, read from the last result that landed: every stage that had not ended — the one running when the stop came, and those never started — marked stopped. */
+export function stoppedProgress(result: ReviewResult): ReviewProgress | undefined {
+  if (result.stages === undefined) return undefined;
+  return {
+    state: 'finished',
+    stages: result.stages.map((stage) =>
+      stage.state === 'running' || stage.state === 'to come' ? { ...stage, state: 'stopped' as const } : stage,
+    ),
+  };
+}
+
 /** A time span as the strip shows it: minutes and seconds, with hours once it reaches one. */
 export function formatDuration(ms: number): string {
   const seconds = Math.max(0, Math.floor(ms / 1000));
