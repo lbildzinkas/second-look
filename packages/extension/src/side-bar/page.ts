@@ -118,12 +118,13 @@ function commentButton(action: CommentAction, comment: ListedComment, label: str
 function commentRow(comment: ListedComment): string {
   const draft = comment.kind === 'draft';
   const from = draft ? `<span class="pill tone-info"><span class="icon" aria-hidden="true">✎</span> draft</span><span class="where">${escapeHtml(`from the ${comment.from ?? 'finding'}`)}</span>` : '';
+  const changed = comment.changed === true ? `<span class="pill tone-warn" title="New commits changed the line this points at since it was written; it stays for you to check."><span class="icon" aria-hidden="true">⚠</span> line changed</span>` : '';
   const actions = draft
     ? commentButton('add', comment, 'Add to review') + commentButton('discard', comment, 'Discard draft')
     : commentButton('discard', comment, 'Discard');
   return (
     `<li class="finding">` +
-    `<div class="head">${commentButton('open', comment, escapeHtml(comment.location), ` title="Open its thread"`)}${from}</div>` +
+    `<div class="head">${commentButton('open', comment, escapeHtml(comment.location), ` title="Open its thread"`)}${changed}${from}</div>` +
     `<q class="quote">${sanitiseUntrusted(preview(comment.body)).html}</q>` +
     `<div class="actions">${actions}</div>` +
     `</li>`

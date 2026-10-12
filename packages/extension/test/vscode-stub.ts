@@ -4,6 +4,10 @@
  * `stub`, and read back what the extension showed.
  */
 
+import { randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 export interface StubDisposable {
   dispose(): void;
 }
@@ -914,8 +918,8 @@ export interface StubMemento {
   keys(): readonly string[];
 }
 
-/** An extension context with the subscriptions activate records, and its global state. */
-export function stubContext(): { subscriptions: StubDisposable[]; globalState: StubMemento } {
+/** An extension context with the subscriptions activate records, its global state, and its global storage folder. */
+export function stubContext(): { subscriptions: StubDisposable[]; globalState: StubMemento; globalStorageUri: Uri } {
   return {
     subscriptions: [],
     globalState: {
@@ -926,5 +930,8 @@ export function stubContext(): { subscriptions: StubDisposable[]; globalState: S
       },
       keys: () => Object.keys(stub.globalState),
     },
+    // Each context gets its own storage folder, so tests that save
+    // comments through activate never see another's.
+    globalStorageUri: Uri.file(join(tmpdir(), 'second-look-global-storage', randomUUID())),
   };
 }
