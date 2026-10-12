@@ -35,6 +35,7 @@ const MANIFEST = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json'
  */
 const SIDE_BAR_PLACES: Record<string, string> = {
   'second-look.reviewPullRequest': 'step 2: the list, its URL box and its Review buttons; the title bar',
+  'second-look.reviewAgain': 'the progress strip: Review again, under the review shown',
   'second-look.openPart': 'step 4: each part row',
   'second-look.openAllParts': 'step 4: All in order; step 7: Open the threads in the diff; the title bar',
   'second-look.filterChangedSinceLastLook': 'step 4: Changed since last look, on a second visit; the title bar',

@@ -200,6 +200,12 @@ export interface ReviewParams {
    * the result carries the use so far.
    */
   budget?: BudgetLimits;
+  /**
+   * True to run a fresh review: Review again. Absent or false, a review
+   * of a pull request whose latest result is saved shows that result at
+   * once and runs no agent pass.
+   */
+  fresh?: boolean;
 }
 
 /** The review request's result: the engine's typed, versioned review result. */

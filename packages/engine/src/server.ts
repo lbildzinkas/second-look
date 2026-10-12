@@ -8,8 +8,9 @@ import { pullRequestCacheDir } from './cache.js';
 import { draftComment, draftFinding, isFindingRef } from './draft-comment.js';
 import { GitHubClient, parsePullRequestUrl } from './github.js';
 import { pressLibraryFetch } from './library-verdicts.js';
-import { FINDING_REF_KINDS, type ReviewResult } from './protocol.js';
+import { FINDING_REF_KINDS, type ReviewResult, type ReviewStageAgent } from './protocol.js';
 import { reviewPullRequest } from './review.js';
+import { restoreSavedReview, saveReview, type SavedStamp } from './saved-review.js';
 import { sendReview } from './send.js';
 import { isMarkedPart, readReviewedMarks, saveReviewedMark, wholeFilesReviewed } from './reviewed-marks.js';
 import { isAskedClaim, withVerifiedClaim } from './verify.js';
@@ -184,6 +185,14 @@ export interface RpcServerDeps {
  * results that had landed, every stage not run marked stopped in the
  * result's stages. Every stage notification and the response record each
  * stage's id, position, start time, duration, agent and outcome.
+ *
+ * Each pull request's latest result is saved in its cache folder too, with
+ * when and by which agent, model and effort it was produced, and saved
+ * again as later fetches and asks change it. A review of a pull request
+ * whose result is saved answers with that result at once, labelled, and
+ * runs no agent pass — marked as from an earlier commit when the pull
+ * request has new commits since — unless its request asks for a fresh
+ * review.
  */
 export async function runRpcServer(
   source: RpcLineSource,
@@ -198,6 +207,7 @@ export async function runRpcServer(
   const meters = new Map<string, BudgetMeter>();
   /** What stops each running review, by its request's id. */
   const stops = new Map<number, AbortController>();
+  const saver = reviewSaver(deps.cacheDir);
   for (;;) {
     const line = await source.readLine();
     if (line === null) {
@@ -233,7 +243,7 @@ export async function runRpcServer(
       continue;
     }
     if (value.method === REVIEW_METHOD) {
-      running.push(review(value.params, value.id, sink, initialized, deps, reviews, meters, stops));
+      running.push(review(value.params, value.id, sink, initialized, deps, reviews, meters, stops, saver));
       continue;
     }
     if (value.method === CANCEL_REVIEW_METHOD) {
@@ -241,7 +251,7 @@ export async function runRpcServer(
       continue;
     }
     if (value.method === FETCH_LIBRARY_METHOD) {
-      running.push(fetchLibrary(value.params, value.id, sink, initialized, deps, reviews, meters));
+      running.push(fetchLibrary(value.params, value.id, sink, initialized, deps, reviews, meters, saver));
       continue;
     }
     if (value.method === DRAFT_COMMENT_METHOD) {
@@ -249,7 +259,7 @@ export async function runRpcServer(
       continue;
     }
     if (value.method === ASK_METHOD) {
-      running.push(ask(value.params, value.id, sink, initialized, deps, reviews, meters));
+      running.push(ask(value.params, value.id, sink, initialized, deps, reviews, meters, saver));
       continue;
     }
     if (value.method === SEND_REVIEW_METHOD) {
@@ -460,6 +470,31 @@ function reviewFetch(deps: RpcServerDeps, meter: BudgetMeter | undefined): typeo
   return meter ? limitedFetch(deps.fetch ?? fetch, meter) : deps.fetch;
 }
 
+/** Saves each pull request's latest result in its cache folder, one save after another so the latest lands last. */
+interface ReviewSaver {
+  /** Saves the result, with who produced it when given, else with the stamp its pull request's result was saved with before. */
+  save(url: string, result: ReviewResult, stamp?: SavedStamp): Promise<void>;
+}
+
+/**
+ * The saver of the latest results. A save that fails leaves the result
+ * shown as it is: the next visit then simply reviews again.
+ */
+function reviewSaver(cacheDir: string): ReviewSaver {
+  const stamps = new Map<string, SavedStamp>();
+  let queue: Promise<void> = Promise.resolve();
+  return {
+    save(url, result, stamp) {
+      if (stamp !== undefined) stamps.set(url, stamp);
+      const kept = stamps.get(url);
+      const ref = parsePullRequestUrl(url);
+      if (kept === undefined || ref === null) return queue;
+      queue = queue.then(() => saveReview(cacheDir, ref, result, kept)).catch(() => undefined);
+      return queue;
+    },
+  };
+}
+
 async function review(
   params: unknown,
   id: number,
@@ -469,6 +504,7 @@ async function review(
   reviews: Map<string, ReviewResult>,
   meters: Map<string, BudgetMeter>,
   stops: Map<number, AbortController>,
+  saver: ReviewSaver,
 ): Promise<void> {
   if (!initialized) {
     respond(
@@ -481,16 +517,20 @@ async function review(
     );
     return;
   }
-  const { url, token, agent: choice, criteriaHeading, budget } = (params ?? {}) as Partial<ReviewParams>;
+  const { url, token, agent: choice, criteriaHeading, budget, fresh } = (params ?? {}) as Partial<ReviewParams>;
   if (typeof url !== 'string' || url.length === 0 || typeof token !== 'string' || token.length === 0) {
     respond(
       sink,
       failure(
         id,
         JSON_RPC_INVALID_PARAMS,
-        `${REVIEW_METHOD} needs params: { "url": string, "token": string, "agent"?: { "agent": "${AGENT_NAMES.join('" | "')}", "model"?: string, "account"?: string }, "criteriaHeading"?: string, "budget"?: { "agentRuns": number, "filesFetched": number, "downloadMiB": number } }`,
+        `${REVIEW_METHOD} needs params: { "url": string, "token": string, "agent"?: { "agent": "${AGENT_NAMES.join('" | "')}", "model"?: string, "account"?: string }, "criteriaHeading"?: string, "budget"?: { "agentRuns": number, "filesFetched": number, "downloadMiB": number }, "fresh"?: boolean }`,
       ),
     );
+    return;
+  }
+  if (fresh !== undefined && typeof fresh !== 'boolean') {
+    respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${REVIEW_METHOD}: fresh must be a boolean`));
     return;
   }
   if (criteriaHeading !== undefined && (typeof criteriaHeading !== 'string' || criteriaHeading.trim() === '')) {
@@ -512,7 +552,23 @@ async function review(
   const meter = budgetMeter(budget ?? NO_BUDGET_LIMITS);
   const stop = new AbortController();
   stops.set(id, stop);
+  const ref = parsePullRequestUrl(url);
   try {
+    const restored =
+      fresh === true || ref === null
+        ? undefined
+        : await restoreSavedReview({ cacheDir: deps.cacheDir, ref, client: new GitHubClient({ token, ...(deps.fetch ? { fetch: deps.fetch } : {}) }) });
+    if (restored !== undefined) {
+      // The saved result's later fetches, asks and drafts add to the use it had.
+      if (restored.result.budget !== undefined) Object.assign(meter.used, restored.result.budget.used);
+      const shown = withBudget(restored.result, meter);
+      reviews.set(shown.pullRequest.url, shown);
+      meters.set(shown.pullRequest.url, meter);
+      await saver.save(shown.pullRequest.url, shown, restored.stamp);
+      respond(sink, { jsonrpc: '2.0', id, result: shown });
+      return;
+    }
+    const agentStage = deps.agent ? { adapter: choiceAdapter(deps.agent, choice), settings: agentRunSettings(deps.agent, choice) } : undefined;
     const result = await reviewPullRequest(url, {
       token,
       cacheDir: deps.cacheDir,
@@ -521,11 +577,10 @@ async function review(
       signal: stop.signal,
       ...(criteriaHeading !== undefined ? { criteriaHeading } : {}),
       ...(deps.fetch ? { fetch: deps.fetch } : {}),
-      ...(deps.agent
+      ...(deps.agent && agentStage
         ? {
             agentStage: {
-              adapter: choiceAdapter(deps.agent, choice),
-              settings: agentRunSettings(deps.agent, choice),
+              ...agentStage,
               ...(deps.agent.testedRankings ? { testedRankings: deps.agent.testedRankings } : {}),
               onStage: (stage) => notify(sink, REVIEW_STAGE_METHOD, { id, ...stage }),
             },
@@ -534,6 +589,13 @@ async function review(
     });
     reviews.set(result.pullRequest.url, result);
     meters.set(result.pullRequest.url, meter);
+    // The label names the agent, model and effort the review asked for, as its stages record them.
+    const agent: ReviewStageAgent | undefined = agentStage && {
+      agent: agentStage.adapter.agent,
+      model: agentStage.settings.model ?? null,
+      effort: agentStage.settings.effort ?? null,
+    };
+    await saver.save(result.pullRequest.url, result, { reviewedAt: new Date().toISOString(), ...(agent ? { agent } : {}) });
     respond(sink, { jsonrpc: '2.0', id, result });
   } catch (error) {
     const message = stop.signal.aborted
@@ -594,6 +656,7 @@ async function fetchLibrary(
   deps: RpcServerDeps,
   reviews: Map<string, ReviewResult>,
   meters: Map<string, BudgetMeter>,
+  saver: ReviewSaver,
 ): Promise<void> {
   if (!initialized) {
     respond(sink, failure(id, NOT_INITIALIZED_CODE, `the protocol starts with a version handshake: ${INITIALIZE_METHOD} before ${FETCH_LIBRARY_METHOD}`));
@@ -646,6 +709,7 @@ async function fetchLibrary(
     const latestMeter = meters.get(url);
     const updated = latestMeter ? withBudget(judged, latestMeter) : judged;
     reviews.set(url, updated);
+    await saver.save(url, updated);
     respond(sink, { jsonrpc: '2.0', id, result: updated });
   } catch (error) {
     respond(sink, failure(id, ENGINE_FAILED_CODE, error instanceof Error ? error.message : String(error)));
@@ -732,6 +796,7 @@ async function ask(
   deps: RpcServerDeps,
   reviews: Map<string, ReviewResult>,
   meters: Map<string, BudgetMeter>,
+  saver: ReviewSaver,
 ): Promise<void> {
   if (!initialized) {
     respond(sink, failure(id, NOT_INITIALIZED_CODE, `the protocol starts with a version handshake: ${INITIALIZE_METHOD} before ${ASK_METHOD}`));
@@ -776,6 +841,7 @@ async function ask(
       const updated = latest === undefined ? undefined : withVerifiedClaim(latest, answer.claim);
       if (updated === undefined) throw new Error('the review changed while the claim was judged; ask again');
       reviews.set(url, updated);
+      await saver.save(url, updated);
     }
     respond(sink, { jsonrpc: '2.0', id, result: answer });
   } catch (error) {

@@ -26,6 +26,7 @@ import {
   OPEN_SETTINGS_COMMAND,
   OPEN_SETUP_COMMAND,
   REFRESH_PULL_REQUESTS_COMMAND,
+  REVIEW_AGAIN_COMMAND,
   REVIEW_COMMAND,
   REVIEW_TREE_VIEW,
   REVIEWING_CONTEXT,
@@ -267,7 +268,12 @@ class ReviewSession {
     return this.result;
   }
 
-  async reviewPullRequest(urlArg?: unknown): Promise<void> {
+  /**
+   * Reviews the pull request: its saved result shows at once when the
+   * engine has one, unless `fresh` asks for a fresh review, as Review
+   * again does.
+   */
+  async reviewPullRequest(urlArg?: unknown, fresh = false): Promise<void> {
     const url =
       typeof urlArg === 'string' && urlArg.trim() !== ''
         ? urlArg
@@ -318,6 +324,7 @@ class ReviewSession {
           this.engineReview(
             url.trim(),
             accessToken,
+            fresh,
             (stage) => {
               if (!current()) return;
               this.stage = stage.running;
@@ -332,7 +339,8 @@ class ReviewSession {
       this.stage = undefined;
       this.progress = finishedProgress(result);
       await this.show(result, shown);
-      this.noticeEnd(result);
+      // A saved review ran nothing now, so it ends with no notice.
+      if (result.saved === undefined) this.noticeEnd(result);
       await marksRead;
       if (!current()) return;
       this.running = false;
@@ -362,6 +370,15 @@ class ReviewSession {
       }
       if (current()) void vscode.commands.executeCommand('setContext', REVIEWING_CONTEXT, false);
     }
+  }
+
+  /** Reviews the pull request shown again, afresh: Review again in the side bar and the Command Palette. */
+  async reviewAgain(): Promise<void> {
+    if (this.url === undefined) {
+      vscode.window.showWarningMessage('Review a pull request first, then review it again.');
+      return;
+    }
+    await this.reviewPullRequest(this.url, true);
   }
 
   /**
@@ -1133,6 +1150,7 @@ class ReviewSession {
   private async engineReview(
     url: string,
     token: string,
+    fresh: boolean,
     onStage: (stage: ReviewStageUpdate) => void,
     onSent: (engine: EngineClient) => void,
   ): Promise<ReviewResult> {
@@ -1147,7 +1165,7 @@ class ReviewSession {
       .trim();
     // The budget's limits travel the same way, and the engine meters the
     // review against them.
-    const reviewed = engine.review(url, token, reviewAgentChoice(readAgentSettings()), onStage, heading, readBudgetLimits());
+    const reviewed = engine.review(url, token, reviewAgentChoice(readAgentSettings()), onStage, heading, readBudgetLimits(), fresh);
     onSent(engine);
     return reviewed;
   }
@@ -1269,6 +1287,7 @@ export function activate(
     vscode.commands.registerCommand(REVIEW_COMMAND, (url?: string) =>
       session.reviewPullRequest(url),
     ),
+    vscode.commands.registerCommand(REVIEW_AGAIN_COMMAND, () => session.reviewAgain()),
     vscode.commands.registerCommand(OPEN_PART_COMMAND, (part?: Part) =>
       part === undefined ? undefined : session.openPart(part),
     ),

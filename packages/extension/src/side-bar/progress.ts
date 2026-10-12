@@ -1,4 +1,4 @@
-import { isAgentName, partsLeft, REVIEW_STAGE_IDS, type ReviewResult, type ReviewStageId, type ReviewStageRecord } from '@second-look/engine';
+import { isAgentName, partsLeft, REVIEW_STAGE_IDS, type ReviewResult, type ReviewStageAgent, type ReviewStageId, type ReviewStageRecord, type SavedReview } from '@second-look/engine';
 import { agentStatusBarText, type AgentSettings } from '../agent-settings.js';
 import type { ReviewStageUpdate } from '../engine-client.js';
 import { escapeHtml } from '../overview.js';
@@ -88,8 +88,12 @@ export function reviewTime(stages: readonly ReviewStageRecord[]): number {
 
 /** The agent, model and effort a stage runs on, the account label kept from the settings; the settings' own for a stage with no agent, such as the plain pass. */
 function stageSettings(stage: ReviewStageRecord, settings: AgentSettings): AgentSettings {
-  const { agent } = stage;
-  if (agent === undefined || !isAgentName(agent.agent)) return settings;
+  return agentSettings(stage.agent, settings) ?? settings;
+}
+
+/** An agent, model and effort as settings, the account label kept from the settings; undefined for no agent the companion drives. */
+function agentSettings(agent: ReviewStageAgent | undefined, settings: AgentSettings): AgentSettings | undefined {
+  if (agent === undefined || !isAgentName(agent.agent)) return undefined;
   return { agent: agent.agent, model: agent.model ?? '', effort: agent.effort ?? '', account: settings.account };
 }
 
@@ -178,12 +182,42 @@ function runningStrip(stage: ReviewStageRecord, settings: AgentSettings, now: nu
   );
 }
 
-/** The strip once the review ended: complete or stopped, in how long, then each stage that fell back, failed or was stopped, with why. */
-function finishedStrip(stages: readonly ReviewStageRecord[]): string {
+/** A saved review's time as the strip shows it: its date and minute, in UTC. */
+function savedAt(reviewedAt: string): string {
+  return `${reviewedAt.slice(0, 16).replace('T', ' ')} UTC`;
+}
+
+/**
+ * The strip of a saved review, shown with no agent run: of which commit,
+ * when and by which agent, model and effort it was produced, and, when
+ * the pull request has new commits since, that it is from an earlier
+ * commit, never the current one.
+ */
+function savedStrip(saved: SavedReview, result: ReviewResult, settings: AgentSettings): string {
+  const by = agentSettings(saved.agent, settings);
+  const made = `${result.pullRequest.headSha.slice(0, 7)}, from ${savedAt(saved.reviewedAt)}${by === undefined ? '' : ` by ${setupLine(by)}`}`;
+  if (saved.newHead === undefined) {
+    return `<p class="strip saved"><span class="icon" aria-hidden="true">⧉</span> <b>Saved review</b> of ${escapeHtml(made)}; no agent ran again</p>`;
+  }
+  return (
+    `<p class="strip saved earlier"><span class="icon" aria-hidden="true">⚠</span> <b>Saved review of an earlier commit</b>, ${escapeHtml(made)}. ` +
+    `${escapeHtml(`The pull request has new commits, up to ${saved.newHead.slice(0, 7)}: review again to review them.`)}</p>`
+  );
+}
+
+/** The Review again button under the review shown, the main action when the review is from an earlier commit. */
+function reviewAgainButton(result: ReviewResult): string {
+  const kind = result.saved?.newHead === undefined ? 'secondary' : 'primary';
+  return `<div class="actions"><button type="button" id="progress-reviewAgain" class="${kind}" data-command="reviewAgain">Review again</button></div>`;
+}
+
+/** The strip once the review ended: complete or stopped, in how long — left out under a saved review's own strip — then each stage that fell back, failed or was stopped, with why. */
+function finishedStrip(stages: readonly ReviewStageRecord[], headed = true): string {
   const stopped = stoppedStages(stages);
   const time = formatDuration(reviewTime(stages));
-  const head =
-    stopped.length > 0
+  const head = !headed
+    ? ''
+    : stopped.length > 0
       ? `<p class="strip stopped"><span class="icon" aria-hidden="true">■</span> <b>Review stopped</b> after ${time}</p>`
       : `<p class="strip complete"><span class="icon" aria-hidden="true">✓</span> <b>Review complete</b> in ${time}</p>`;
   const notes = endNotes(stages).map(
@@ -198,20 +232,25 @@ function finishedStrip(stages: readonly ReviewStageRecord[]): string {
  * Above the steps: the count tiles of the review shown, then the progress
  * strip — the stage running with the agent, model and effort, its time so
  * far and its place, or once the review ended, complete or stopped in how
- * long, with each stage that fell back, failed or was stopped and why.
- * Every piece of text escaped; empty before any review.
+ * long, with each stage that fell back, failed or was stopped and why;
+ * for a saved review, of which commit, when and by whom it was produced,
+ * and whether it is from an earlier commit — then, under any review shown
+ * while none runs, Review again. Every piece of text escaped; empty before
+ * any review.
  */
 export function progressBody(state: SideBarState, now: number = Date.now()): string {
   const { progress, result } = state;
   const counts = result === undefined ? '' : tiles(state, result);
+  const saved = result?.saved === undefined || state.reviewing ? '' : savedStrip(result.saved, result, state.settings);
   const strip =
     progress === undefined
       ? ''
       : progress.state === 'running'
         ? runningStrip(progress.stage, state.settings, now)
         : progress.state === 'finished'
-          ? finishedStrip(progress.stages)
+          ? finishedStrip(progress.stages, saved === '')
           : '<p class="strip stopped"><span class="icon" aria-hidden="true">■</span> <b>Review stopped</b> before its first result landed, so nothing was kept</p>';
-  if (counts === '' && strip === '') return '';
-  return `<section class="progress" aria-label="Review progress">${counts}${strip}</section>`;
+  const again = result === undefined || state.reviewing ? '' : reviewAgainButton(result);
+  if (counts === '' && saved === '' && strip === '') return '';
+  return `<section class="progress" aria-label="Review progress">${counts}${saved}${strip}${again}</section>`;
 }

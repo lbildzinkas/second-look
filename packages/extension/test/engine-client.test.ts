@@ -121,7 +121,7 @@ describe('EngineClient against a fake engine', () => {
     await client.initialize();
     const result = await client.review(PR_URL, TOKEN);
 
-    expect(result.version).toBe(21);
+    expect(result.version).toBe(22);
     expect(result.parts).toHaveLength(7);
 
     const requests = loggedRequests('round-trip.log') as {
@@ -166,6 +166,21 @@ describe('EngineClient against a fake engine', () => {
     ) as { params: Record<string, unknown> }[];
     expect(reviews[0]!.params['budget']).toEqual(limits);
     expect(reviews[1]!.params).not.toHaveProperty('budget');
+    client.dispose();
+  });
+
+  it('asks for a fresh review only for Review again, so a plain review may show the saved result', async () => {
+    const client = new EngineClient(() => fakeEngine({ result: mixedResult(), logName: 'fresh.log' }));
+
+    await client.initialize();
+    await client.review(PR_URL, TOKEN, undefined, undefined, undefined, undefined, true);
+    await client.review(PR_URL, TOKEN);
+
+    const reviews = loggedRequests('fresh.log').filter(
+      (request) => (request as { method: string }).method === 'review',
+    ) as { params: Record<string, unknown> }[];
+    expect(reviews[0]!.params['fresh']).toBe(true);
+    expect(reviews[1]!.params).not.toHaveProperty('fresh');
     client.dispose();
   });
 
@@ -645,7 +660,7 @@ describe('EngineClient against a fake engine', () => {
       await timedOut;
 
       await client.initialize();
-      expect(await client.review(PR_URL, TOKEN)).toMatchObject({ version: 21 });
+      expect(await client.review(PR_URL, TOKEN)).toMatchObject({ version: 22 });
       expect(spawns).toBe(2);
       client.dispose();
     } finally {
@@ -717,7 +732,7 @@ describe('EngineClient against a fake engine', () => {
     const stages: ReviewStageUpdate[] = [];
 
     await client.initialize();
-    expect(await client.review(PR_URL, TOKEN, undefined, (stage) => stages.push(stage))).toMatchObject({ version: 21 });
+    expect(await client.review(PR_URL, TOKEN, undefined, (stage) => stages.push(stage))).toMatchObject({ version: 22 });
     expect(stages).toEqual([]);
     client.dispose();
   });

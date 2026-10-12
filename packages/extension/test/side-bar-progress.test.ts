@@ -150,6 +150,47 @@ describe('the progress strip and the count tiles', () => {
   });
 });
 
+describe('a saved review', () => {
+  const AGENT = { agent: 'claude-code', model: 'claude-sonnet-5-5', effort: 'high' };
+  const NEW_HEAD = 'abcdef0123456789abcdef0123456789abcdef01';
+
+  /** The review the engine saved, shown again with no agent run: of the head commit, or of an earlier one. */
+  function saved(newHead?: string): ReviewResult {
+    const result = staged(reviewStages(undefined, { ranking: { state: 'fell back', detail: 'not tested' } }));
+    return { ...result, saved: { reviewedAt: '2026-10-11T14:03:27.000Z', agent: AGENT, ...(newHead ? { newHead } : {}) } };
+  }
+
+  it('says of which commit, when and by which agent, model and effort it was produced, in place of the review time, and offers Review again', () => {
+    const result = saved();
+    const html = progressBody(state(result, finishedProgress(result)));
+    const commit = result.pullRequest.headSha.slice(0, 7);
+
+    expect(html).toContain(`<b>Saved review</b> of ${commit}, from 2026-10-11 14:03 UTC by Claude Code · claude-sonnet-5-5 · effort high; no agent ran again`);
+    expect(html).not.toContain('Review complete');
+    expect(html).toContain('Ranking fell back: not tested');
+    expect(html).toContain('<button type="button" id="progress-reviewAgain" class="secondary" data-command="reviewAgain">Review again</button>');
+  });
+
+  it('marks a review from an earlier commit as such, never as current, with Review again first', () => {
+    const result = saved(NEW_HEAD);
+    const html = progressBody(state(result, finishedProgress(result)));
+
+    expect(html).toContain('<p class="strip saved earlier">');
+    expect(html).toContain(`<b>Saved review of an earlier commit</b>, ${result.pullRequest.headSha.slice(0, 7)}, from 2026-10-11 14:03 UTC`);
+    expect(html).toContain('The pull request has new commits, up to abcdef0: review again to review them.');
+    expect(html).not.toContain('no agent ran again');
+    expect(html).toContain('class="primary" data-command="reviewAgain"');
+  });
+
+  it('offers Review again under a review that ran, and neither the label nor the button while a review runs', () => {
+    const ran = staged(reviewStages());
+    expect(progressBody(state(ran, finishedProgress(ran)))).toContain('data-command="reviewAgain"');
+    const running = progressBody(state(saved(NEW_HEAD), { state: 'running', stage: VERDICTS_RUNNING[6]! }), NOW);
+    expect(running).not.toContain('Saved review');
+    expect(running).not.toContain('reviewAgain');
+  });
+});
+
 describe('the steps while a review runs in stages', () => {
   it('spins on the step being produced and shows a clock on the steps waiting for it', () => {
     const steps = sideBarSteps(state(staged(VERDICTS_RUNNING), { state: 'running', stage: VERDICTS_RUNNING[6]! }));

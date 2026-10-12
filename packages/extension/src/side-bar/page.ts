@@ -9,7 +9,7 @@ import type { StepTick } from './step-ticks.js';
 import { pullRequestLine, sideBarSteps, type SideBarState, type Step, type StepState } from './steps.js';
 
 /** The buttons the side bar's cards carry, each running an existing command. */
-export type SideBarButton = 'review' | 'overview' | 'nextPart' | 'allParts' | 'filterChanged' | 'partsMenu' | 'send' | 'openSent' | 'verifyClaim' | 'criteriaHeading';
+export type SideBarButton = 'review' | 'reviewAgain' | 'overview' | 'nextPart' | 'allParts' | 'filterChanged' | 'partsMenu' | 'send' | 'openSent' | 'verifyClaim' | 'criteriaHeading';
 
 /** A part row's two menus: Ask… with the asks, and ⋯ with Comment on this part… and Why this matters. */
 export const PART_MENUS = ['ask', 'more'] as const;
@@ -462,6 +462,8 @@ export function sideBarHtml(nonce: string, body: string): string {
   .strip { margin: 0; padding: 5px 8px; border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); border-radius: 4px; overflow-wrap: anywhere; }
   .strip.running .icon { color: var(--vscode-progressBar-background, var(--vscode-focusBorder)); }
   .strip.complete .icon { color: var(--vscode-testing-iconPassed, var(--vscode-foreground)); }
+  .strip.saved.earlier .icon { color: var(--vscode-editorWarning-foreground, var(--vscode-foreground)); }
+  .progress > .actions { margin-top: 5px; }
   .stage-notes { list-style: none; margin: 4px 0 0; padding: 0 8px; font-size: 12px; }
   .stage-notes li { margin: 2px 0; overflow-wrap: anywhere; }
   .stage-notes .fell-back .icon { color: var(--vscode-editorWarning-foreground, var(--vscode-foreground)); }

@@ -10,6 +10,7 @@ import {
   OPEN_OVERVIEW_COMMAND,
   OPEN_PART_COMMAND,
   OPEN_SETTINGS_COMMAND,
+  REVIEW_AGAIN_COMMAND,
   REVIEW_COMMAND,
   REVIEW_TREE_VIEW,
   SUBMIT_REVIEW_COMMAND,
@@ -519,13 +520,14 @@ describe('the side bar view', () => {
     const result = mixedResult();
     const { view } = resolved(reviewState({ marks: marked(result.parts[0]!) }));
     const first = anchorOf(result.parts[0]!);
-    for (const command of ['review', 'overview', 'nextPart', 'allParts', 'send']) view.webview.receive({ type: 'command', command });
+    for (const command of ['review', 'reviewAgain', 'overview', 'nextPart', 'allParts', 'send']) view.webview.receive({ type: 'command', command });
     view.webview.receive({ type: 'mark', anchor: first, reviewed: false });
     view.webview.receive({ type: 'openPart', anchor: first });
     view.webview.receive({ type: 'openPart', anchor: { path: 'nowhere.ts' } });
 
     expect(stub.executedCommands).toEqual([
       { id: REVIEW_COMMAND, args: [] },
+      { id: REVIEW_AGAIN_COMMAND, args: [] },
       { id: OPEN_OVERVIEW_COMMAND, args: [] },
       { id: OPEN_PART_COMMAND, args: [result.parts[1]] },
       { id: OPEN_ALL_PARTS_COMMAND, args: [] },

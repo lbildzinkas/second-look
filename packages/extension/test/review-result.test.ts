@@ -807,6 +807,22 @@ describe('isReviewResult for the stages', () => {
   });
 });
 
+describe('isReviewResult for a saved review', () => {
+  const SAVED = { reviewedAt: '2026-10-11T14:03:27.000Z', agent: { agent: 'pi', model: null, effort: 'high' } };
+
+  it('accepts its label, of the head commit or of an earlier one, with or without the agent that produced it', () => {
+    expect(isReviewResult({ ...sampleResult(), saved: SAVED })).toBe(true);
+    expect(isReviewResult({ ...sampleResult(), saved: { ...SAVED, newHead: 'abcdef0123456789abcdef0123456789abcdef01' } })).toBe(true);
+    expect(isReviewResult({ ...sampleResult(), saved: { reviewedAt: SAVED.reviewedAt } })).toBe(true);
+  });
+
+  it('rejects a label with no time it was produced, an agent with no name, or an empty head', () => {
+    for (const saved of [{}, { reviewedAt: 'yesterday' }, { ...SAVED, agent: { model: null, effort: null } }, { ...SAVED, newHead: '' }, 'saved']) {
+      expect(isReviewResult({ ...sampleResult(), saved })).toBe(false);
+    }
+  });
+});
+
 describe('parseReviewResult', () => {
   it('reads the JSON the engine printed', () => {
     const result = parseReviewResult(JSON.stringify(sampleResult()));
@@ -822,6 +838,6 @@ describe('parseReviewResult', () => {
 
 describe('the versioned protocol is shared with the engine', () => {
   it('uses the same version constant', () => {
-    expect(REVIEW_RESULT_VERSION).toBe(21);
+    expect(REVIEW_RESULT_VERSION).toBe(22);
   });
 });

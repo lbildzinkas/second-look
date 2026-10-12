@@ -53,6 +53,11 @@
         "icon": "$(git-pull-request)"
       },
       {
+        "command": "second-look.reviewAgain",
+        "title": "Review again",
+        "category": "Second Look"
+      },
+      {
         "command": "second-look.openPart",
         "title": "Open part in the diff editor",
         "category": "Second Look"
