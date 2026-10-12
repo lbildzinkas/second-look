@@ -394,7 +394,9 @@ function isCitation(value: unknown): boolean {
     isNonEmptyString(value['path']) &&
     isLine(value['line']) &&
     isNonEmptyString(value['quote']) &&
-    (value['ciLog'] === undefined || value['ciLog'] === true)
+    (value['ciLog'] === undefined || value['ciLog'] === true) &&
+    // Only a CI log's line can be a passing check's.
+    (value['passingCheck'] === undefined || (value['passingCheck'] === true && value['ciLog'] === true))
   );
 }
 
@@ -426,6 +428,22 @@ function isLibraryFetchOffer(value: unknown): boolean {
   );
 }
 
+/** A Read the CI log a verdict offers: the checks that passed, by name, and why. */
+function isCiLogFetchOffer(value: unknown): boolean {
+  return isRecord(value) && Array.isArray(value['checks']) && value['checks'].length > 0 && value['checks'].every(isNonEmptyString) && isString(value['reason']);
+}
+
+/** The passing checks' logs a verdict was judged again with: each check with its page and how its log was trimmed, and who judged. */
+function isReadCiLogs(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    Array.isArray(value['checks']) &&
+    value['checks'].every((check) => isRecord(check) && isNonEmptyString(check['name']) && isString(check['url']) && isString(check['detail'])) &&
+    isString(value['promptVersion']) &&
+    isAgentStamp(value['stamp'])
+  );
+}
+
 /** The library source a verdict was judged against: the file fetched, where it landed, its unproven files, and who judged. */
 function isFetchedLibrary(value: unknown): boolean {
   return (
@@ -447,7 +465,8 @@ function isFetchedLibrary(value: unknown): boolean {
 /**
  * A claim's verdict: not checked, or checked with its evidence source,
  * reason and citations, the library fetch it offers and the library
- * source it was judged against, what the agent looked at, and — on an
+ * source it was judged against, the CI log read it offers and the passing
+ * checks' logs it was judged with, what the agent looked at, and — on an
  * unverifiable verdict alone — what could settle it. The model's memory
  * never yields verified, and cites no line.
  */
@@ -466,6 +485,8 @@ function isClaimVerdict(value: unknown): boolean {
     (value['libraryFetch'] !== undefined && !isLibraryFetchOffer(value['libraryFetch'])) ||
     !isOptionalString(value['noLibraryFetch']) ||
     (value['library'] !== undefined && !isFetchedLibrary(value['library'])) ||
+    (value['ciLogFetch'] !== undefined && !isCiLogFetchOffer(value['ciLogFetch'])) ||
+    (value['ciLogs'] !== undefined && !isReadCiLogs(value['ciLogs'])) ||
     !Array.isArray(value['looked']) ||
     !value['looked'].every(isLookedRange) ||
     !isOptionalString(value['lookedRecheck']) ||

@@ -5,11 +5,11 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { AgentRunRequest } from '../src/agent.js';
 import { removeCopy } from '../src/cache.js';
-import { carryClaims, carryParts, rankCarried, type EarlierReview } from '../src/carry-over.js';
+import { carryClaims, carryParts, rankCarried, verdictHolds, type EarlierReview } from '../src/carry-over.js';
 import { CLAIMS_INSTRUCTIONS } from '../src/claims.js';
 import { parseDiff } from '../src/diff.js';
 import { fileSlice } from '../src/parts.js';
-import type { Claim, Part, PartSignals, ReviewResult } from '../src/protocol.js';
+import type { Claim, ClaimVerdict, Part, PartSignals, ReviewResult } from '../src/protocol.js';
 import { fetchChange, reviewChange, type ReviewInput } from '../src/review.js';
 import { STORY_INSTRUCTIONS } from '../src/story.js';
 import { VERDICTS_INSTRUCTIONS } from '../src/verdicts.js';
@@ -205,10 +205,10 @@ describe('reviewChange carrying results over from the saved review of an earlier
     runs.filter((run) => run.instructions === VERDICTS_INSTRUCTIONS).flatMap((run) => [...run.prompt.matchAll(/^\[c\d+\] made in [^\n]*\n<untrusted-input [^\n]*>\n([^\n]*)$/gm)].map((match) => match[1]));
 
   /** Pull request 7 reviewed with the agent, then the same pull request at a new head commit whose diff and head copy of `path` `edit` changes. */
-  async function reviewTwice(edit: (text: string) => string, path = 'web/cart.ts', agent = claimingAgent()) {
+  async function reviewTwice(edit: (text: string) => string, path = 'web/cart.ts', agent = claimingAgent(), alter = (reviewed: ReviewResult) => reviewed) {
     const input = await fetchChange(PR_7_URL, { token: 'test-token', fetch: fixtureFetch(pull7()).fetch, cacheDir });
     const first = claimingAgent();
-    const earlier = await reviewChange(input, { adapter: first });
+    const earlier = alter(await reviewChange(input, { adapter: first }));
     cpSync(fileURLToPath(new URL('./fixtures/pull-7/head', import.meta.url)), headDir, { recursive: true });
     const edited = join(headDir, path);
     writeFileSync(edited, edit(readFileSync(edited, 'utf8')));
@@ -279,6 +279,38 @@ describe('reviewChange carrying results over from the saved review of an earlier
 
     expect(states(result)).toMatchObject({ story: 'done', claims: 'done' });
     expect(runs.some((run) => run.instructions === CLAIMS_INSTRUCTIONS)).toBe(true);
+  });
+
+  /** The earlier review with the flag's claim unverifiable, a CI log could settle it, and the verdict `change` makes of it. */
+  const ciLogClaim = (change: (verdict: ClaimVerdict) => ClaimVerdict) => (reviewed: ReviewResult): ReviewResult => {
+    const unverifiable: ClaimVerdict = {
+      kind: 'unverifiable',
+      source: 'the change itself',
+      reason: 'Only a check run shows it.',
+      evidence: [],
+      looked: [],
+      settles: { kind: 'ci-log', note: 'the lint check would show it' },
+      ciLogFetch: { checks: ['check / lint'], reason: 'check / lint passed at the head commit; reading its log could settle the claim.' },
+    };
+    const claims = reviewed.claims!.claims.map((claim) => (claim.quote === FLAG ? { ...claim, verdict: change(unverifiable) } : claim));
+    return { ...reviewed, claims: { ...reviewed.claims!, claims } };
+  };
+
+  it("makes a carried claim's Read the CI log again from the CI at the new head, withdrawn when no check passed there", async () => {
+    const { result } = await reviewTwice((text) => text.replace('* 1.2;', '* 1.25;'), 'web/cart.ts', claimingAgent(), ciLogClaim((verdict) => verdict));
+
+    expect(claimOf(result, FLAG)).toMatchObject({ carried: true, verdict: { kind: 'unverifiable', settles: { kind: 'ci-log' }, looked: [] } });
+    expect(claimOf(result, FLAG).verdict).not.toHaveProperty('ciLogFetch');
+  });
+
+  it("judges again a carried verdict judged with the earlier commit's passing checks' logs", async () => {
+    const stamp = { agent: 'fake', agentVersion: '1.2.3', model: null, effort: null, runAt: '2026-10-04T00:00:00.000Z' };
+    const read = ciLogClaim((verdict) => ({ ...verdict, ciLogs: { checks: [{ name: 'check / lint', url: 'https://github.com/x', detail: 'd' }], promptVersion: '7', stamp } }));
+    const { result, runs } = await reviewTwice((text) => text.replace('* 1.2;', '* 1.25;'), 'web/cart.ts', claimingAgent(), read);
+
+    expect(claimOf(result, FLAG)).not.toHaveProperty('carried');
+    expect(judgedQuotes(runs)).toContain(FLAG);
+    expect(await verdictHolds(read(result).claims!.claims.find((claim) => claim.quote === FLAG)!.verdict, async () => true)).toBe(false);
   });
 
   it('re-checks a carried verdict that cites a line the new commits changed, never showing it as current', async () => {

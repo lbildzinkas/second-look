@@ -78,6 +78,11 @@ export type OverviewMessage =
       finding: FindingRef;
     }
   | {
+      type: 'readCiLog';
+      /** The claim whose Read the CI log is pressed, by its index in the claims. */
+      claim: number;
+    }
+  | {
       type: 'openCited';
       /** The answer, by its index in the answers shown, newest first. */
       answer: number;
@@ -116,6 +121,7 @@ function overviewMessage(value: unknown): OverviewMessage | undefined {
   const { type, part, issue, criterion, evidence, index, finding, answer, doc, claim } = value as Record<string, unknown>;
   if (type === 'openDoc' && Number.isInteger(doc)) return { type, target: doc as number };
   if (type === 'openClaimWhere' && Number.isInteger(claim)) return { type, claim: claim as number };
+  if (type === 'readCiLog' && Number.isInteger(claim)) return { type, claim: claim as number };
   if (type === 'openClaimEvidence' && Number.isInteger(claim) && Number.isInteger(index)) return { type, claim: claim as number, index: index as number };
   if (type === 'openClaimLooked' && Number.isInteger(claim) && Number.isInteger(index)) return { type, claim: claim as number, index: index as number };
   if (type === 'openCited' && Number.isInteger(answer) && Number.isInteger(index)) return { type, answer: answer as number, index: index as number };
@@ -181,13 +187,22 @@ export class OverviewPanel implements vscode.Disposable {
   /** Drafts a comment from a finding the page lists. */
   private readonly draft: (finding: FindingRef) => void;
 
+  /** Presses Read the CI log on a claim the page lists, by its index in the claims. */
+  private readonly readCiLog: (claim: number) => void;
+
   /** The answers to the reviewer's asks about the review shown, newest first. */
   private answers: AskAnswer[] = [];
 
-  constructor(openPart: (part: Part) => void, openLine: (path: string, line: number, side: CommentSide) => void, draft: (finding: FindingRef) => void) {
+  constructor(
+    openPart: (part: Part) => void,
+    openLine: (path: string, line: number, side: CommentSide) => void,
+    draft: (finding: FindingRef) => void,
+    readCiLog: (claim: number) => void = () => undefined,
+  ) {
     this.openPart = openPart;
     this.openLine = openLine;
     this.draft = draft;
+    this.readCiLog = readCiLog;
   }
 
   /**
@@ -255,7 +270,7 @@ export class OverviewPanel implements vscode.Disposable {
    * cites, opened in the copy of its side; where a claim is made, opened:
    * its file's line in the head copy, its description line in the page's
    * own description, or its story sentence in the page's own story; a
-   * finding, drafted from.
+   * finding, drafted from; a claim's Read the CI log, pressed.
    */
   private handle(value: unknown): void {
     const message = overviewMessage(value);
@@ -275,6 +290,10 @@ export class OverviewPanel implements vscode.Disposable {
     }
     if (message.type === 'draft') {
       this.draft(message.finding);
+      return;
+    }
+    if (message.type === 'readCiLog') {
+      this.readCiLog(message.claim);
       return;
     }
     if (message.type === 'openClaimEvidence') {
@@ -1080,9 +1099,10 @@ export function claimWhere(claim: Claim): string {
   }
 }
 
-/** A citation as the reader reads it: a file's line, or a line of a check's CI log. */
-export function citedWhere(cited: { path: string; line: number; ciLog?: true }): string {
-  return cited.ciLog ? `CI log of ${cited.path}, line ${cited.line}` : `${cited.path}:${cited.line}`;
+/** A citation as the reader reads it: a file's line, or a line of a check's CI log, labelled when the check passed. */
+export function citedWhere(cited: { path: string; line: number; ciLog?: true; passingCheck?: true }): string {
+  if (!cited.ciLog) return `${cited.path}:${cited.line}`;
+  return `CI log of ${cited.path}${cited.passingCheck ? ' (a passing check)' : ''}, line ${cited.line}`;
 }
 
 /** A range of the head copy the agent read, as the reader reads it: `path:line`, or `path:line–endLine`. */
@@ -1111,9 +1131,11 @@ export function settlesLine(settles: Settles): string {
  * looked at — each range a chip that opens it in the head copy — and, for
  * an unverifiable one, what would settle it, the library it needs — with
  * the library fetch offered for it, or the library source it was judged
- * against — why the engine dropped it or any range it looked at, when it
- * did, and that the Verify this claim ask judged the claim alone, when it
- * did; nothing for a claim not checked.
+ * against — the Read the CI log it offers, a button that presses it, or
+ * the passing checks' logs it was judged with, why the engine dropped it
+ * or any range it looked at, when it did, and that the Verify this claim
+ * ask judged the claim alone, when it did; nothing for a claim not
+ * checked.
  */
 function verdictDetail(claim: Claim, index: number): string {
   const { verdict } = claim;
@@ -1156,11 +1178,15 @@ function verdictDetail(claim: Claim, index: number): string {
     lines.push(`needs the source of ${verdict.needsLibrary}, which the companion does not have`);
     if (verdict.noLibraryFetch !== undefined) lines.push(verdict.noLibraryFetch);
   }
+  if (verdict.ciLogs !== undefined) lines.push(`judged again with the logs of the checks that passed: ${verdict.ciLogs.checks.map((check) => `${check.name} (${check.detail})`).join('; ')}`);
+  else if (verdict.ciLogFetch !== undefined) lines.push(`CI log read offered: ${verdict.ciLogFetch.reason}`);
   if (verdict.recheck !== undefined) lines.push(`dropped to unverifiable: ${verdict.recheck}`);
   if (verdict.lookedRecheck !== undefined) lines.push(`dropped from what it looked at: ${verdict.lookedRecheck}`);
   const why = (each: string): string => `<div class="why">${escapeHtml(each)}</div>`;
-  const draft = isFinding(claim) ? `<div class="acts">${draftButton({ kind: 'claim', index })}</div>` : '';
-  return reason.map(why).join('') + evidence + lines.map(why).join('') + draft;
+  // A claim a CI log could settle is no finding, so it has no thread: Read the CI log is pressed here, and on step 5's row.
+  const ciLog = verdict.ciLogFetch === undefined || verdict.ciLogs !== undefined ? '' : `<button type="button" class="pt ci-log" data-claim="${index}">Read the CI log</button>`;
+  const acts = [isFinding(claim) ? draftButton({ kind: 'claim', index }) : '', ciLog].join('');
+  return reason.map(why).join('') + evidence + lines.map(why).join('') + (acts === '' ? '' : `<div class="acts">${acts}</div>`);
 }
 
 /** Where a claim is made, as the claims table shows it: a link that opens its place — its file's line in the head copy, its description line in this page's description, or its sentence in this page's story — and plain text for a pipeline finding, which sits in the pipeline report. */
@@ -1728,6 +1754,11 @@ ${contentsRail(state)}
   Array.prototype.forEach.call(document.querySelectorAll('button.asked'), function (button) {
     button.addEventListener('click', function () {
       vscode.postMessage({ type: 'openCited', answer: Number(button.getAttribute('data-answer')), index: Number(button.getAttribute('data-index')) });
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('button.ci-log'), function (button) {
+    button.addEventListener('click', function () {
+      vscode.postMessage({ type: 'readCiLog', claim: Number(button.getAttribute('data-claim')) });
     });
   });
   Array.prototype.forEach.call(document.querySelectorAll('button.draft'), function (button) {

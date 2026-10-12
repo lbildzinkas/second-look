@@ -40,7 +40,9 @@ function citationLabel(path: string, library: FetchedLibrary): string {
  * A finding's thread body, as Markdown in which only the companion's own
  * words are markup: the verdict with its evidence source, the claim's
  * quote, the reason, each citation the engine re-checked — a CI log's
- * line labelled as one — the library
+ * line labelled as one, and as a passing check's when it is — the
+ * passing checks' logs the verdict was judged with, when the reviewer
+ * pressed Read the CI log on step 5 or the overview — the library
  * the claim needs when it needs one — with the library fetch the
  * companion offers for it, a link the reviewer presses, or the library
  * source the verdict was judged against, each cited file a link that
@@ -95,6 +97,9 @@ export function findingBody(claim: Claim, index = 0): string {
   } else if (verdict.needsLibrary !== undefined) {
     lines.push('', `Needs the source of ${escapeMarkdown(verdict.needsLibrary)}, which the companion does not have.`);
     if (verdict.noLibraryFetch !== undefined) lines.push('', escapeMarkdown(verdict.noLibraryFetch));
+  }
+  if (verdict.ciLogs !== undefined) {
+    lines.push('', `Judged again with the logs of the checks that passed: ${verdict.ciLogs.checks.map((check) => `${escapeMarkdown(check.name)} (${escapeMarkdown(check.detail)})`).join('; ')}.`);
   }
   if (verdict.recheck !== undefined) lines.push('', `Dropped to unverifiable: ${escapeMarkdown(verdict.recheck)}.`);
   if (claim.asked === true) lines.push('', 'Judged singly by the **Verify this claim** ask.');

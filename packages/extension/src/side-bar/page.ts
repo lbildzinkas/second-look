@@ -20,7 +20,7 @@ export const COMMENT_ACTIONS = ['open', 'discard', 'add'] as const;
 export type CommentAction = (typeof COMMENT_ACTIONS)[number];
 
 /** The actions a finding's row offers, each running the existing command for it. */
-export const FINDING_ACTIONS = ['draft', 'open', 'verify', 'fetch'] as const;
+export const FINDING_ACTIONS = ['draft', 'open', 'verify', 'fetch', 'ciLog'] as const;
 export type FindingAction = (typeof FINDING_ACTIONS)[number];
 
 const STATE_ICONS: Record<StepState, string> = { done: '✓', current: '●', running: '↻', waiting: '◷', 'to come': '○' };
@@ -193,7 +193,8 @@ function claimWhereButton(claim: Claim, index: number): string {
  * A checked verdict's evidence on its step 5 row: its evidence source
  * with its reason, each cited head-copy line a chip that opens the line
  * as the overview's chips do, each cited CI log line a chip that opens
- * its check run on GitHub — the one outside link the row carries — each
+ * its check run on GitHub — the one outside link the row carries — and
+ * labelled when the check passed, each
  * cited line of fetched library source a plain chip, since it is not a
  * line of the head copy, and the recheck when the engine dropped a
  * citation.
@@ -210,7 +211,8 @@ function claimEvidence(verdict: CheckedVerdict, index: number): string {
   });
   const cited = chips.length === 0 ? '' : `<div class="meta">${chips.join('')}</div>`;
   const recheck = verdict.recheck === undefined ? '' : `<div class="why">${escapeHtml(`dropped to unverifiable: ${verdict.recheck}`)}</div>`;
-  return `<div class="why">${escapeHtml(`${verdict.source}: ${verdict.reason}`)}</div>` + cited + recheck + claimTrail(verdict, index);
+  const read = verdict.ciLogs === undefined ? '' : `<div class="why">${escapeHtml(`judged again with the logs of the checks that passed: ${verdict.ciLogs.checks.map((check) => check.name).join(', ')}`)}</div>`;
+  return `<div class="why">${escapeHtml(`${verdict.source}: ${verdict.reason}`)}</div>` + cited + recheck + read + claimTrail(verdict, index);
 }
 
 /** That a claim was carried over from the saved review of an earlier commit, when it was. */
@@ -251,14 +253,21 @@ function claimFindingRow(claim: Claim, index: number): string {
   );
 }
 
-/** Step 5's row for a claim listed quietly: its verdict, where it is made, whether it was carried over, its quote, its reason, evidence and trail, with no thread to act on. */
+/**
+ * Step 5's row for a claim listed quietly: its verdict, where it is made,
+ * whether it was carried over, its quote, its reason, evidence and trail,
+ * with no thread to act on; its one action is Read the CI log, when a CI
+ * log could settle it and passing checks' logs are there to read.
+ */
 function quietClaimRow(claim: Claim, index: number): string {
   const verdict = claim.verdict.kind === 'not checked' ? undefined : claim.verdict;
+  const ciLog = verdict?.ciLogFetch === undefined || verdict.ciLogs !== undefined ? '' : `<div class="actions">${findingButton(5, 'ciLog', { kind: 'claim', index }, 'Read the CI log')}</div>`;
   return (
     `<li class="finding quiet">` +
     `<div class="head">${statePill(claim.verdict.kind)}${claimWhereButton(claim, index)}${carriedMark(claim)}</div>` +
     `<q class="quote">${sanitiseUntrusted(claim.quote).html}</q>` +
     (verdict === undefined ? '' : claimEvidence(verdict, index)) +
+    ciLog +
     `</li>`
   );
 }

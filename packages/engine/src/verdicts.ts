@@ -32,6 +32,7 @@ import { UNTRUSTED_INPUT_RULE, untrustedBlock } from './untrusted.js';
 /**
  * The verdicts pass: the agent judges each listed claim against the
  * change, the read-only head copy and the failed checks' trimmed CI logs
+ * — or, once the reviewer pressed Read the CI log, the passing checks'
  * — verified, refuted or unverifiable, with its evidence source, its
  * reason, and the lines it cites as evidence, each a file, a line and a
  * quote, the lines it read for the claim, and for an unverifiable claim
@@ -51,7 +52,7 @@ import { UNTRUSTED_INPUT_RULE, untrustedBlock } from './untrusted.js';
 export const VERDICTS_PROMPT_ID = 'verdicts';
 
 /** The verdicts prompt's version. */
-export const VERDICTS_PROMPT_VERSION = '6';
+export const VERDICTS_PROMPT_VERSION = '7';
 
 /** The evidence sources the agent can cite: the change, or its own memory, and a CI log when one is shown. */
 function answerSources(withLogs: boolean): readonly EvidenceSource[] {
@@ -177,15 +178,21 @@ const FINAL_ANSWER_RULE =
   'When you have read enough, give your final message as the JSON value alone: start it with { and end it ' +
   'with }, with no summary of what you read before or after it.';
 
-/** The rule for citing a CI log, given only when the prompt shows one. */
-const CI_LOG_RULE = [
-  '- Set source to "a CI log" when the evidence is lines of a failed check\'s CI log shown below, which',
-  '  ran on the merge commit: cite each line as the log\'s id for the file, such as log1, the line\'s',
-  '  number in that log, and a quote of it. One verdict cites lines of one source only.',
-];
+/** The rule for citing a CI log, given only when the prompt shows one: a failed check's, or a passing check's once the reviewer pressed for it. */
+function ciLogRule(passing: boolean): string[] {
+  return [
+    `- Set source to "a CI log" when the evidence is lines of a ${passing ? 'passing' : 'failed'} check's CI log shown below, which`,
+    "  ran on the merge commit: cite each line as the log's id for the file, such as log1, the line's",
+    '  number in that log, and a quote of it. One verdict cites lines of one source only.',
+  ];
+}
 
-/** The verdicts prompt's system prompt: the agent's setting, the rules and the answer's schema; the CI log rule only when a log is shown. */
-export function verdictsInstructions(withLogs: boolean): string {
+/**
+ * The verdicts prompt's system prompt: the agent's setting, the rules and
+ * the answer's schema; the CI log rule only when a log is shown, naming
+ * the logs as passing checks' when they are.
+ */
+export function verdictsInstructions(withLogs: boolean, passing = false): string {
   return [
     'You are the agent of Second Look, a companion that helps a human review a pull request.',
     "Your current folder is a read-only copy of the pull request's head version. You can only use",
@@ -213,7 +220,7 @@ export function verdictsInstructions(withLogs: boolean): string {
     "- When you set library and know the library's public repository and the tag of the version the project",
     '  uses, from the head copy or from memory, set repository to its https URL and that tag; the companion',
     '  can fetch that tag when nothing pins the library. Otherwise set repository to null.',
-    ...(withLogs ? CI_LOG_RULE : []),
+    ...(withLogs ? ciLogRule(passing) : []),
     '- Set looked to every range of lines of the head copy you read for the claim, each as the file, the',
     '  first line and the last line read, as the file numbers them, whatever the verdict: a reviewer reads',
     '  it to tell a claim the code cannot settle from one nobody looked into. Each range is checked',
@@ -300,13 +307,19 @@ export function diffLines(part: Part): string[] {
   return shown;
 }
 
-/** The failed checks' trimmed logs, each with its id outside the untrusted block and its check's name, failing step and numbered lines inside it. */
+/**
+ * The checks' trimmed logs, each with its id outside the untrusted block
+ * and its check's name, failing step and numbered lines inside it: the
+ * failed checks', or the passing checks' the reviewer pressed to read.
+ */
 function logLines(logs: readonly CiLogItem[], id: string): string[] {
   if (logs.length === 0) return [];
   const head = (item: CiLogItem): string => `check ${JSON.stringify(item.check.name)}${item.log.step ? `, failing step ${JSON.stringify(item.log.step)}` : ''}`;
+  const intro = logs.some((item) => item.passing)
+    ? ['The logs of the checks that passed, run on the merge commit, each kept to its last lines. Each log', "opens with its check's name; every line follows its number in the log."]
+    : ['The logs of the checks that failed, run on the merge commit, each trimmed to its failing step. Each', "log opens with its check's name and failing step; every line follows its number in the log."];
   return [
-    'The logs of the checks that failed, run on the merge commit, each trimmed to its failing step. Each',
-    "log opens with its check's name and failing step; every line follows its number in the log.",
+    ...intro,
     '',
     ...logs.flatMap((item) => [
       `[${item.id}]`,
@@ -522,17 +535,21 @@ export function logReader(logs: readonly CiLogItem[]): ReadLines {
 /**
  * Re-checks every citation of one answered verdict, and every range it
  * says the agent read, and settles it: a verdict from a CI log against
- * the logs shown, its citations then named by their check run, and any
- * other against the head copy; what the agent read always against the
- * head copy.
+ * the logs shown, its citations then named by their check run and
+ * labelled when the check passed, and any other against the head copy;
+ * what the agent read always against the head copy.
  */
 export async function judgeVerdict(read: ReadLines, answered: AnsweredVerdict, logs: readonly CiLogItem[] = []): Promise<ClaimVerdict> {
   const cited = answered.source === "the model's memory" ? [] : answered.evidence;
   const looked = await recheckLooked(read, answered.looked);
   if (answered.source !== 'a CI log') return settleVerdict(answered, await Promise.all(cited.map((each) => recheckCitation(read, each))), undefined, looked);
-  const names = new Map(logs.map((item) => [item.id, item.check.name]));
+  const byId = new Map(logs.map((item) => [item.id, item]));
   const rechecked = await Promise.all(cited.map((each) => recheckCitation(logReader(logs), each, 'the CI logs')));
-  const named = rechecked.map((each): Citation | string => (typeof each === 'string' ? each : { ...each, path: names.get(each.path)!, ciLog: true }));
+  const named = rechecked.map((each): Citation | string => {
+    if (typeof each === 'string') return each;
+    const item = byId.get(each.path)!;
+    return { ...each, path: item.check.name, ciLog: true, ...(item.passing ? { passingCheck: true as const } : {}) };
+  });
   return settleVerdict(answered, named, 'a CI log', looked);
 }
 
@@ -603,6 +620,8 @@ export interface VerdictsOptions {
   root: string;
   /** The CI the review read, whose failed checks' trimmed logs the agent may cite. */
   ci?: CiResults;
+  /** The logs to show in place of the failed checks', such as the passing checks' the reviewer pressed to read. */
+  logs?: readonly CiLogItem[];
 }
 
 /**
@@ -619,13 +638,13 @@ export async function judgeClaims(
   options: VerdictsOptions,
 ): Promise<{ claims: Claim[]; judging: ClaimJudging }> {
   const items = verdictItems(claims);
-  const logs = ciLogItems(options.ci);
+  const logs = options.logs ?? ciLogItems(options.ci);
   const { results } = await runAgentTasks(
     options.adapter,
     [
       {
         root: options.root,
-        instructions: verdictsInstructions(logs.length > 0),
+        instructions: verdictsInstructions(logs.length > 0, logs.some((item) => item.passing)),
         prompt: verdictsPrompt(items, parts, undefined, logs),
         schema: verdictsSchema(logs.length > 0),
         check: (value) => verdictProblems(items, value as VerdictsAnswer),

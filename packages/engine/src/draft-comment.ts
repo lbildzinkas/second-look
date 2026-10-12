@@ -122,9 +122,10 @@ export function isFindingRef(value: unknown): value is FindingRef {
   return (FINDING_REF_KINDS as readonly unknown[]).includes(kind) && typeof index === 'number' && Number.isInteger(index) && index >= 0;
 }
 
-/** A citation's place as a draft cites it: `path:line`, or a CI log's line. */
+/** A citation's place as a draft cites it: `path:line`, or a CI log's line, labelled when the check passed. */
 function citedAt(cited: Citation): string {
-  return cited.ciLog ? `CI log of ${cited.path}, line ${cited.line}` : `${cited.path}:${cited.line}`;
+  if (!cited.ciLog) return `${cited.path}:${cited.line}`;
+  return `CI log of ${cited.path}${cited.passingCheck ? ' (a passing check)' : ''}, line ${cited.line}`;
 }
 
 /** A citation as the finding holds it: its place and its quote. */

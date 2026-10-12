@@ -421,6 +421,45 @@ export function pipelineResult(copies?: CopyPaths): ReviewResult {
   };
 }
 
+/**
+ * The pipeline result with its description claim unverifiable, a CI log
+ * could settle it, offering Read the CI log for the check that passed.
+ */
+export function ciLogOfferedResult(copies?: CopyPaths): ReviewResult {
+  const shown = pipelineResult(copies);
+  const claims = shown.claims!;
+  const verdict = {
+    kind: 'unverifiable' as const,
+    source: 'the change itself' as const,
+    reason: 'Only a check run shows it.',
+    evidence: [],
+    looked: [],
+    settles: { kind: 'ci-log' as const, note: 'the lint check would show it' },
+    ciLogFetch: { checks: ['check / lint'], reason: 'check / lint passed at the head commit; reading its log could settle the claim.' },
+  };
+  return { ...shown, claims: { ...claims, claims: claims.claims.map((claim, index) => (index === 1 ? { ...claim, verdict } : claim)) } };
+}
+
+/** The offered result after the reviewer pressed Read the CI log: the description claim refuted by a line of the passing check's log. */
+export function ciLogReadResult(copies?: CopyPaths): ReviewResult {
+  const shown = ciLogOfferedResult(copies);
+  const claims = shown.claims!;
+  const verdict = {
+    kind: 'refuted' as const,
+    source: 'a CI log' as const,
+    reason: 'The lint check reports a warning.',
+    evidence: [{ path: 'check / lint', line: 2, quote: '1 problem (0 errors, 1 warning)', ciLog: true as const, passingCheck: true as const }],
+    looked: [],
+    ciLogFetch: { checks: ['check / lint'], reason: 'check / lint passed at the head commit; reading its log could settle the claim.' },
+    ciLogs: {
+      checks: [{ name: 'check / lint', url: 'https://github.com/example-org/example-repo/actions/runs/700/job/9002', detail: 'the log marks no failing step, so its last 3 lines are kept' }],
+      promptVersion: '7',
+      stamp: claims.stamp,
+    },
+  };
+  return { ...shown, claims: { ...claims, claims: claims.claims.map((claim, index) => (index === 1 ? { ...claim, verdict } : claim)) } };
+}
+
 /** The library fetch the judged result's comment claim offers, for the source of `requests`. */
 export const REQUESTS_FETCH = {
   library: 'requests',

@@ -7,7 +7,7 @@ import { afterAll, describe, expect, it, vi } from 'vitest';
 import { ProtocolError, SendProtocolError } from '../src/protocol.js';
 import { EngineClient, spawnEngineProcess, type ReviewStageUpdate } from '../src/engine-client.js';
 import type { PendingReview } from '@second-look/engine';
-import { criteriaResult, fetchedResult, mixedResult, reviewStages } from './results.js';
+import { ciLogReadResult, criteriaResult, fetchedResult, mixedResult, reviewStages } from './results.js';
 
 const FAKE_ENGINE = fileURLToPath(new URL('./fixtures/fake-engine.mjs', import.meta.url));
 const PR_URL = 'https://github.com/example-org/example-repo/pull/42';
@@ -121,7 +121,7 @@ describe('EngineClient against a fake engine', () => {
     await client.initialize();
     const result = await client.review(PR_URL, TOKEN);
 
-    expect(result.version).toBe(24);
+    expect(result.version).toBe(25);
     expect(result.parts).toHaveLength(7);
 
     const requests = loggedRequests('round-trip.log') as {
@@ -194,6 +194,29 @@ describe('EngineClient against a fake engine', () => {
     const fetch = loggedRequests('fetch-library.log').find((request) => (request as { method: string }).method === 'fetchLibrary') as { params: unknown };
     // A fetch carries no token: it reads nothing from GitHub.
     expect(fetch.params).toEqual({ url: PR_URL, claim: 2, agent: { agent: 'pi', model: 'pi/model' } });
+    client.dispose();
+  });
+
+  it("presses Read the CI log by the claim, with the token and the agent choice, and returns the result with its new verdict", async () => {
+    const client = new EngineClient(() => fakeEngine({ fetchResult: ciLogReadResult(), logName: 'read-ci-log.log' }));
+
+    await client.initialize();
+    const result = await client.readCiLog(PR_URL, TOKEN, 1, { agent: 'pi', model: 'pi/model' });
+
+    expect(result.claims!.claims[1]!.verdict).toMatchObject({ kind: 'refuted', ciLogs: { checks: [{ name: 'check / lint' }] } });
+    const read = loggedRequests('read-ci-log.log').find((request) => (request as { method: string }).method === 'readCiLog') as { params: unknown };
+    // A read carries the token for its GitHub reads.
+    expect(read.params).toEqual({ url: PR_URL, token: TOKEN, claim: 1, agent: { agent: 'pi', model: 'pi/model' } });
+    client.dispose();
+  });
+
+  it("reads a CI log read's failure as the engine's plain message", async () => {
+    const message = "no passing check's log has lines to read (check / lint: its log could not be read: GitHub answered 410)";
+    const client = new EngineClient(() => fakeEngine({ fetchError: message }));
+
+    await client.initialize();
+
+    await expect(client.readCiLog(PR_URL, TOKEN, 1)).rejects.toThrow(message);
     client.dispose();
   });
 
@@ -660,7 +683,7 @@ describe('EngineClient against a fake engine', () => {
       await timedOut;
 
       await client.initialize();
-      expect(await client.review(PR_URL, TOKEN)).toMatchObject({ version: 24 });
+      expect(await client.review(PR_URL, TOKEN)).toMatchObject({ version: 25 });
       expect(spawns).toBe(2);
       client.dispose();
     } finally {
@@ -732,7 +755,7 @@ describe('EngineClient against a fake engine', () => {
     const stages: ReviewStageUpdate[] = [];
 
     await client.initialize();
-    expect(await client.review(PR_URL, TOKEN, undefined, (stage) => stages.push(stage))).toMatchObject({ version: 24 });
+    expect(await client.review(PR_URL, TOKEN, undefined, (stage) => stages.push(stage))).toMatchObject({ version: 25 });
     expect(stages).toEqual([]);
     client.dispose();
   });

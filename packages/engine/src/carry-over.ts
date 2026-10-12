@@ -193,10 +193,11 @@ export function sameLines(earlierRoot: string, nowRoot: string): SameLine {
  * its evidence cites is one the new commits left as it was, see
  * {@link sameLines}, or a line of the library source it was judged
  * against. A CI log's line is of the earlier commit's checks, so a
- * verdict citing one never stands.
+ * verdict citing one never stands, and nor does one judged again with the
+ * passing checks' logs the reviewer pressed to read.
  */
 export async function verdictHolds(verdict: ClaimVerdict, same: SameLine): Promise<boolean> {
-  if (verdict.kind === 'not checked') return false;
+  if (verdict.kind === 'not checked' || verdict.ciLogs !== undefined) return false;
   if (verdict.library !== undefined) return true;
   return (await Promise.all(verdict.evidence.map((citation) => !citation.ciLog && same(citation.path, citation.line)))).every(Boolean);
 }

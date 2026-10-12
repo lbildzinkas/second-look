@@ -11,7 +11,7 @@ import type { AgentStamp } from './agent.js';
 import type { AskKind } from './asks.js';
 
 /** Version of the review result schema. */
-export const REVIEW_RESULT_VERSION = 24 as const;
+export const REVIEW_RESULT_VERSION = 25 as const;
 
 /**
  * Version 2 added the head commit's SHA and each part's noise assessment;
@@ -62,7 +62,11 @@ export const REVIEW_RESULT_VERSION = 24 as const;
  * over from the saved review of an earlier commit: the commit and who
  * produced it, each part and claim carried over, and a stage carried over
  * whole; version 24 added what each checked verdict's agent looked at in
- * the head copy, and what could settle each unverifiable claim.
+ * the head copy, and what could settle each unverifiable claim; version
+ * 25 added the Read the CI log offer on an unverifiable claim a CI log
+ * could settle, the passing checks' logs a claim was judged again with
+ * once the reviewer pressed it, and the label on a citation of a passing
+ * check's log.
  */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
@@ -755,7 +759,7 @@ export interface CiResults {
   checks: CheckRun[];
 }
 
-/** One check run at the head commit, with its annotations and, when it failed, its trimmed log. */
+/** One check run at the head commit, with its annotations and, when it failed, its trimmed log; a passing check's log is read only on the reviewer's press. */
 export interface CheckRun {
   name: string;
   /** Its status as GitHub reports it, such as `completed` or `in_progress`. */
@@ -931,8 +935,10 @@ export const CHECKED_VERDICT_KINDS: readonly CheckedVerdictKind[] = ['refuted', 
 export interface Citation {
   /** The file, by its path in the head copy; for a CI log's line, the check run's name. */
   path: string;
-  /** True when the line is one of a failed check's trimmed CI log rather than a file's. */
+  /** True when the line is one of a check's trimmed CI log rather than a file's. */
   ciLog?: true;
+  /** True when that CI log is a passing check's, read on the reviewer's press, rather than a failed check's. */
+  passingCheck?: true;
   /** The 1-based line the quote starts on. */
   line: number;
   /** The quote, on one line: runs of white space as one space. */
@@ -989,6 +995,16 @@ export type ClaimVerdict =
       /** What could settle the claim; set on every unverifiable verdict, and only on one. */
       settles?: Settles;
       /**
+       * The Read the CI log the companion offers on an unverifiable claim
+       * a CI log could settle, when the pull request has checks that
+       * passed at its head; nothing is fetched until the reviewer presses
+       * it (ADR 0003). A verdict judged again with those logs keeps the
+       * offer that was pressed.
+       */
+      ciLogFetch?: CiLogFetchOffer;
+      /** The passing checks' logs the verdict was judged again with, once the reviewer pressed Read the CI log; its citations are lines of those logs. */
+      ciLogs?: ReadCiLogs;
+      /**
        * The library source the verdict was judged against, once the
        * reviewer pressed its library fetch; its citations are paths in
        * that source, not in the head copy.
@@ -1024,6 +1040,23 @@ export interface Settles {
   kind: SettlesKind;
   /** One plain line, such as which log or which measurement would settle it. */
   note: string;
+}
+
+/** The read of passing checks' CI logs the companion offers with a verdict, started only by the reviewer. */
+export interface CiLogFetchOffer {
+  /** The checks that passed at the head commit, whose logs a press reads, by name in GitHub's order. */
+  checks: string[];
+  /** The companion's one-line reason for reading them. */
+  reason: string;
+}
+
+/** The passing checks' logs one press of Read the CI log read, and who judged the claim again with them. */
+export interface ReadCiLogs {
+  /** Each check that passed, with its page on GitHub and how its log was trimmed, or why it has none. */
+  checks: { name: string; url: string; detail: string }[];
+  /** The version of the verdicts prompt that judged the claim again. */
+  promptVersion: string;
+  stamp: AgentStamp;
 }
 
 /**
