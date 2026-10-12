@@ -496,7 +496,7 @@ export function settleVerdict(
     ...(named?.url && named.tag ? { namedRepository: named } : {}),
     ...looked,
   };
-  const given = answered.settles === null ? undefined : { kind: answered.settles.kind, note: oneLine(answered.settles.note) };
+  const given = answered.verdict !== 'unverifiable' || answered.settles === null ? undefined : { kind: answered.settles.kind, note: oneLine(answered.settles.note) };
   const settles = given ?? unsettled ?? unnamedSettles(answered, library);
   const drop = (recheck: string, evidence: Citation[]): ClaimVerdict => ({ kind: 'unverifiable', ...base, evidence, settles, recheck });
   if (answered.source === "the model's memory") {

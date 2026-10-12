@@ -345,6 +345,20 @@ describe('settleVerdict', () => {
     });
   });
 
+  it("ignores the agent's settles on a verdict it did not return unverifiable, which the engine dropped", async () => {
+    const settles = { kind: 'author' as const, note: 'Only the author measured it.' };
+    const verdict = await judgeVerdict(copyReader(headCopy()), answered({ verdict: 'verified', evidence: [{ file: 'app/retry.py', line: 40, quote: 'for attempt in range(5):' }], settles }));
+    expect(verdict).toEqual({
+      kind: 'unverifiable',
+      source: 'the change itself',
+      reason: 'It tries five times.',
+      evidence: [],
+      looked: [],
+      settles: { kind: 'code', note: 'the agent judged it verified, so the code should settle it: check it' },
+      recheck: 'the citation app/retry.py:40 names a line app/retry.py does not have',
+    });
+  });
+
   it('drops a verified or refuted verdict that cites no line of the change', () => {
     expect(settleVerdict(answered({ verdict: 'verified' }), [])).toMatchObject({ kind: 'unverifiable', recheck: 'the verdict cites no line of the change' });
     const settles = { kind: 'author' as const, note: 'Only the author ran it.' };
