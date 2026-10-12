@@ -857,20 +857,20 @@ describe('the saved comments through activation', () => {
     const thread = stub.commentControllers.at(-1)!.createCommentThread(head, new Range(4, 0, 4, 0), []);
     await stub.commands.find((command) => command.id === ADD_COMMENT_COMMAND)!.handler({ thread, text: 'this retry loop needs a cap' });
 
-    // It is saved in the extension's own global storage, one file per pull request.
+    // It is saved in the extension's own global storage, one file per
+    // pull request — polled, for the write lands after the command returns.
     const savedDir = join(context.globalStorageUri.fsPath, 'pending-comments');
+    const savedFile = 'example-org__example-repo__pull-42.json';
     const deadline = Date.now() + 5_000;
-    let files: string[];
     for (;;) {
       try {
-        files = readdirSync(savedDir);
-        break;
+        if (readdirSync(savedDir).includes(savedFile)) break;
       } catch {
-        if (Date.now() > deadline) throw new Error('timed out waiting for the saved comments');
-        await new Promise((resolve) => setTimeout(resolve, 10));
+        // Not written yet.
       }
+      if (Date.now() > deadline) throw new Error('timed out waiting for the saved comments');
+      await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    expect(files).toEqual(['example-org__example-repo__pull-42.json']);
 
     // The editor closed and opened again: a fresh activation on the same
     // global storage, the same review.
