@@ -1,7 +1,15 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type * as vscode from 'vscode';
+import { mkdtempSync, readdirSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Comment, Part, ReviewResult } from '@second-look/engine';
 import { changeUri } from '../src/change-copies.js';
+import { CommentStore, type SavedComments } from '../src/comment-store.js';
+import { activate } from '../src/extension.js';
+import { ADD_COMMENT_COMMAND, REVIEW_COMMAND } from '../src/commands.js';
 import {
   commentTargetOf,
   commentableRanges,
@@ -10,7 +18,7 @@ import {
 } from '../src/comments.js';
 import { pendingReviewSection } from '../src/tree.js';
 import { judgedResult, mappedCriteriaResult, mixedResult, part, unexplainedResult } from './results.js';
-import { CommentMode, Range, Uri, stub, type StubCommentThread } from './vscode-stub.js';
+import { CommentMode, Range, Uri, stub, stubContext, type StubCommentThread } from './vscode-stub.js';
 
 /** The head and base document URIs of one file of the mixed result. */
 function docs(result: ReviewResult, path: string, previousPath?: string): { head: Uri; base: Uri } {
@@ -576,5 +584,302 @@ describe('ReviewComments as step 7 lists them', () => {
     });
     expect(stub.warningMessages).toEqual(['The review is being sent: try again once it finishes.']);
     expect(comments.pending()).toHaveLength(1);
+  });
+});
+
+describe('ReviewComments kept between visits', () => {
+  beforeEach(() => {
+    stub.reset();
+  });
+
+  /** A store in its own folder, as the extension's global storage holds one. */
+  function store(): CommentStore {
+    return new CommentStore(mkdtempSync(join(tmpdir(), 'second-look-comments-')));
+  }
+
+  /** Awaits the store's record for a pull request, polling for the asynchronous write to land — until it matches, when told what to wait for. */
+  async function whenSaved(wanted: CommentStore, url: string, matches: (saved: SavedComments) => boolean = () => true): Promise<SavedComments> {
+    const deadline = Date.now() + 5_000;
+    for (;;) {
+      const saved = await wanted.read(url);
+      if (saved !== undefined && matches(saved)) return saved;
+      if (Date.now() > deadline) throw new Error('timed out waiting for the saved comments');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+
+  /** Awaits the store holding nothing for a pull request, polling for the removal to land. */
+  async function whenCleared(wanted: CommentStore, url: string): Promise<void> {
+    const deadline = Date.now() + 5_000;
+    while ((await wanted.read(url)) !== undefined) {
+      if (Date.now() > deadline) throw new Error('timed out waiting for the saved comments to clear');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+
+  const URL = 'https://github.com/example-org/example-repo/pull/42';
+
+  /** What a full record holds once the two comments and the draft are saved. */
+  const allUnsent = (each: SavedComments): boolean => each.comments.length === 2 && each.drafts.length === 1;
+
+  /** The mixed result after new commits landed: a new head, with line 5 and line 9 rewritten and line 3 untouched. */
+  function newCommitsResult(): ReviewResult {
+    const result = mixedResult();
+    result.copies = {
+      base: { ...result.copies.base, commit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
+      head: { ...result.copies.head, commit: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' },
+    };
+    for (const line of result.parts[0]!.hunks[0]!.lines) {
+      if (line.newLineNumber === 5) line.text = '    for attempt in retry.attempts(cap=5):';
+      if (line.newLineNumber === 9) line.text = '            break';
+    }
+    return result;
+  }
+
+  /** Writes two comments — on the head’s line 5 and line 3 — and leaves one draft open, on line 9. */
+  function writeUnsent(comments: ReviewComments, result: ReviewResult): void {
+    comments.setReview(result);
+    const { head } = docs(result, 'src/retry.py');
+    comments.add(replyOf(threadOn(head, 4), 'this retry loop needs a cap'));
+    comments.add(replyOf(threadOn(head, 2), 'the url never moves'));
+    comments.draft({ kind: 'line', path: 'src/retry.py', line: 9 }, 'drafted', 'refuted claim');
+  }
+
+  it('saves the pending comments and open drafts as they change, with the lines they point at', async () => {
+    const saved = store();
+    const comments = new ReviewComments(saved);
+    writeUnsent(comments, mixedResult());
+
+    expect(await whenSaved(saved, URL, allUnsent)).toEqual({
+      version: 1,
+      head: 'f00dcafe1234567890abcdef1234567890abcdef12',
+      comments: [
+        { kind: 'line', path: 'src/retry.py', side: 'head', line: 5, body: 'this retry loop needs a cap', text: '    for attempt in retry.attempts():' },
+        { kind: 'line', path: 'src/retry.py', side: 'head', line: 3, body: 'the url never moves', text: '    url = settings.endpoint' },
+      ],
+      drafts: [{ kind: 'line', path: 'src/retry.py', line: 9, body: 'drafted', from: 'refuted claim', text: '            continue' }],
+    });
+  });
+
+  it('saves a draft’s text as the reviewer edited it, and a comment’s as the page rewrote it', async () => {
+    const saved = store();
+    const comments = new ReviewComments(saved);
+    writeUnsent(comments, mixedResult());
+    comments.editBody(comments.pending()[0]!, 'tightened on the page');
+    const draft = stub.commentControllers[0]!.threads.at(-1)!.comments[0] as unknown as vscode.Comment;
+    draft.body = 'edited in the thread';
+    // The draft's edit reaches the store through the render that lists it.
+    comments.listed();
+
+    const record = await whenSaved(saved, URL, (each) => each.drafts[0]?.body === 'edited in the thread');
+    expect(record.comments[0]!.body).toBe('tightened on the page');
+    expect(record.drafts[0]!.body).toBe('edited in the thread');
+  });
+
+  it('brings the comments and drafts back, with their threads, when the review opens again', async () => {
+    const saved = store();
+    writeUnsent(new ReviewComments(saved), mixedResult());
+    await whenSaved(saved, URL, allUnsent);
+
+    // The editor closed and opened again: a fresh companion on the same store.
+    stub.reset();
+    const again = new ReviewComments(saved);
+    again.setReview(mixedResult());
+    await again.restore();
+
+    expect(again.pending()).toEqual([
+      { kind: 'line', path: 'src/retry.py', side: 'head', line: 5, body: 'this retry loop needs a cap' },
+      { kind: 'line', path: 'src/retry.py', side: 'head', line: 3, body: 'the url never moves' },
+    ]);
+    expect(again.listed().map(({ kind, location, changed }) => ({ kind, location, changed }))).toEqual([
+      { kind: 'comment', location: 'src/retry.py:5', changed: undefined },
+      { kind: 'comment', location: 'src/retry.py:3', changed: undefined },
+      { kind: 'draft', location: 'src/retry.py:9', changed: undefined },
+    ]);
+    const [line, , draftThread] = stub.commentControllers[0]!.threads;
+    const result = mixedResult();
+    expect(line!.uri.toString()).toBe(docs(result, 'src/retry.py').head.toString());
+    expect(line!.range).toEqual(new Range(4, 0, 4, 0));
+    expect(line!.label).toBe('src/retry.py:5');
+    expect(line!.comments[0]).toMatchObject({ body: 'this retry loop needs a cap', label: 'pending' });
+    expect(draftThread!.label).toBe('Draft comment · src/retry.py:9');
+    expect(draftThread!.comments[0]).toMatchObject({ mode: CommentMode.Editing, label: 'draft from refuted claim' });
+    // Restoring twice adds nothing: each review restores once.
+    await again.restore();
+    expect(again.pending()).toHaveLength(2);
+  });
+
+  it('keeps every comment after new commits and flags the ones whose line changed, not the others', async () => {
+    const saved = store();
+    writeUnsent(new ReviewComments(saved), mixedResult());
+    await whenSaved(saved, URL, allUnsent);
+
+    stub.reset();
+    const again = new ReviewComments(saved);
+    const moved = newCommitsResult();
+    again.setReview(moved);
+    await again.restore();
+
+    // None is lost: both comments and the draft are back.
+    expect(again.pending()).toEqual([
+      { kind: 'line', path: 'src/retry.py', side: 'head', line: 5, body: 'this retry loop needs a cap' },
+      { kind: 'line', path: 'src/retry.py', side: 'head', line: 3, body: 'the url never moves' },
+    ]);
+    expect(again.listed().map(({ location, changed }) => ({ location, changed }))).toEqual([
+      { location: 'src/retry.py:5', changed: true },
+      { location: 'src/retry.py:3', changed: undefined },
+      { location: 'src/retry.py:9', changed: true },
+    ]);
+    const [changedThread, unchangedThread, draftThread] = stub.commentControllers[0]!.threads;
+    expect(changedThread!.uri.toString()).toBe(docs(moved, 'src/retry.py').head.toString());
+    expect(changedThread!.label).toBe('src/retry.py:5 · line changed');
+    expect(changedThread!.comments[0]).toMatchObject({ label: 'pending · line changed' });
+    expect(unchangedThread!.label).toBe('src/retry.py:3');
+    expect(draftThread!.label).toBe('Draft comment · src/retry.py:9 · line changed');
+
+    // The flag survives another visit at the same new head, and the untouched line stays quiet.
+    again.listed();
+    stub.reset();
+    const third = new ReviewComments(saved);
+    third.setReview(newCommitsResult());
+    await third.restore();
+    expect(third.listed().map(({ location, changed }) => ({ location, changed }))).toEqual([
+      { location: 'src/retry.py:5', changed: true },
+      { location: 'src/retry.py:3', changed: undefined },
+      { location: 'src/retry.py:9', changed: true },
+    ]);
+  });
+
+  it('carries a flagged draft’s line onto the comment it becomes', async () => {
+    const saved = store();
+    writeUnsent(new ReviewComments(saved), mixedResult());
+    await whenSaved(saved, URL, allUnsent);
+
+    stub.reset();
+    const again = new ReviewComments(saved);
+    again.setReview(newCommitsResult());
+    await again.restore();
+    const draft = stub.commentControllers[0]!.threads.at(-1)!.comments[0] as unknown as vscode.Comment;
+
+    again.addDraft(draft);
+
+    expect(again.pending().at(-1)).toMatchObject({ kind: 'line', path: 'src/retry.py', line: 9, body: 'drafted' });
+    expect(again.listed().at(-1)).toMatchObject({ kind: 'comment', location: 'src/retry.py:9', changed: true });
+  });
+
+  it('does not clear the store when the review it switches to shows nothing unsent yet', async () => {
+    const saved = store();
+    writeUnsent(new ReviewComments(saved), mixedResult());
+    await whenSaved(saved, URL, allUnsent);
+
+    stub.reset();
+    const again = new ReviewComments(saved);
+    // The session renders on every change, as the side bar drives it to.
+    again.onDidChange(() => again.listed());
+    again.setReview(mixedResult());
+    // Whatever the switch fired has landed before the restore reads.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await again.restore();
+
+    expect(again.pending()).toHaveLength(2);
+    expect(again.listed()).toHaveLength(3);
+  });
+
+  it('clears what was saved when the review is sent, and restores nothing after', async () => {
+    const saved = store();
+    const comments = new ReviewComments(saved);
+    writeUnsent(comments, mixedResult());
+    await whenSaved(saved, URL);
+
+    // The send succeeded: the gathering is emptied, as the session’s send does.
+    comments.clear();
+    await whenCleared(saved, URL);
+
+    stub.reset();
+    const again = new ReviewComments(saved);
+    again.setReview(mixedResult());
+    await again.restore();
+    expect(again.pending()).toEqual([]);
+    expect(again.listed()).toEqual([]);
+  });
+
+  it('keeps each pull request’s unsent comments apart', async () => {
+    const saved = store();
+    writeUnsent(new ReviewComments(saved), mixedResult());
+    await whenSaved(saved, URL, allUnsent);
+
+    const other = mixedResult();
+    other.pullRequest = { ...other.pullRequest, url: 'https://github.com/example-org/example-repo/pull/43', number: 43 };
+    stub.reset();
+    const comments = new ReviewComments(saved);
+    comments.setReview(other);
+    await comments.restore();
+    expect(comments.pending()).toEqual([]);
+
+    // The first pull request’s comments still come back for its own review.
+    stub.reset();
+    const again = new ReviewComments(saved);
+    again.setReview(mixedResult());
+    await again.restore();
+    expect(again.pending()).toHaveLength(2);
+  });
+});
+
+describe('the saved comments through activation', () => {
+  beforeEach(() => {
+    stub.reset();
+  });
+
+  const FAKE_ENGINE = fileURLToPath(new URL('./fixtures/fake-engine.mjs', import.meta.url));
+  const PR_URL = 'https://github.com/example-org/example-repo/pull/42';
+
+  /** Activates the companion against a fake engine serving the result, and reviews the pull request once. */
+  async function reviewOn(context: ReturnType<typeof stubContext>, result: ReviewResult): Promise<void> {
+    activate(context as never, {
+      spawnEngine: () =>
+        spawn(process.execPath, [FAKE_ENGINE], {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          env: { ...process.env, FAKE_ENGINE_RESULT: JSON.stringify(result) },
+        }),
+    });
+    stub.inputBoxResult = PR_URL;
+    stub.session = { accessToken: 'ghp_test-token-do-not-print' };
+    await stub.commands.find((command) => command.id === REVIEW_COMMAND)!.handler();
+  }
+
+  it('keeps a written comment in the extension’s own storage and brings it back in a later activation', async () => {
+    const context = stubContext();
+    const result = mixedResult();
+    await reviewOn(context, result);
+
+    // The reviewer writes one comment, as the editor's thread hands it over.
+    const head = changeUri('head', result.copies.head.commit, 'src/retry.py');
+    const thread = stub.commentControllers.at(-1)!.createCommentThread(head, new Range(4, 0, 4, 0), []);
+    await stub.commands.find((command) => command.id === ADD_COMMENT_COMMAND)!.handler({ thread, text: 'this retry loop needs a cap' });
+
+    // It is saved in the extension's own global storage, one file per pull request.
+    const savedDir = join(context.globalStorageUri.fsPath, 'pending-comments');
+    const deadline = Date.now() + 5_000;
+    let files: string[];
+    for (;;) {
+      try {
+        files = readdirSync(savedDir);
+        break;
+      } catch {
+        if (Date.now() > deadline) throw new Error('timed out waiting for the saved comments');
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    }
+    expect(files).toEqual(['example-org__example-repo__pull-42.json']);
+
+    // The editor closed and opened again: a fresh activation on the same
+    // global storage, the same review.
+    stub.reset();
+    await reviewOn(context, mixedResult());
+
+    const controller = stub.commentControllers[0]!;
+    expect(controller.threads).toHaveLength(1);
+    expect(controller.threads[0]).toMatchObject({ label: 'src/retry.py:5' });
+    expect(controller.threads[0]!.comments[0]).toMatchObject({ body: 'this retry loop needs a cap', label: 'pending' });
   });
 });

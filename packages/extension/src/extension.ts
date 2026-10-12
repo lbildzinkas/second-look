@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { join } from 'node:path';
 import {
   EngineClient,
   spawnEngineProcess,
@@ -54,6 +55,7 @@ import type { SentSummary, SideBarState } from './side-bar/steps.js';
 import type { CommentAction } from './side-bar/page.js';
 import { endNotice, finishedProgress, readingProgress, runningProgress, stoppedProgress, type ReviewProgress } from './side-bar/progress.js';
 import { draftTarget, ReviewComments } from './comments.js';
+import { CommentStore, SAVED_COMMENTS_DIR } from './comment-store.js';
 import { escapeMarkdown, FindingThreads } from './findings.js';
 import { isSubmitKind, SendReviewPage } from './send-page.js';
 import { DocLinkHovers } from './doc-hover.js';
@@ -402,8 +404,10 @@ class ReviewSession {
 
   /**
    * Shows a result in the side bar. The first result of a review starts
-   * its pending review and opens the overview; a later one updates the
-   * side bar and the overview in place, with every pending comment kept.
+   * its pending review — bringing back, with their threads, the comments
+   * and drafts the reviewer had not sent when the editor last closed —
+   * and opens the overview; a later one updates the side bar and the
+   * overview in place, with every pending comment kept.
    */
   private async show(result: ReviewResult, update: boolean, running?: string): Promise<void> {
     this.result = result;
@@ -419,6 +423,9 @@ class ReviewSession {
       this.page?.dispose();
       this.page = undefined;
       this.comments.setReview(result);
+      // What the reviewer wrote and had not sent comes back with its
+      // threads, per pull request, before the review shows (issue 168).
+      await this.comments.restore();
       this.mirrorWaiting.clear();
       this.overview.clearAnswers();
       this.opened = undefined;
@@ -1236,7 +1243,12 @@ export function activate(
   );
   const copies = new ChangeCopiesProvider();
   const marker = new PartMarker();
-  const comments = new ReviewComments();
+  // The unsent comments and open drafts are kept per pull request in one
+  // file in the extension's own global storage — never in the workspace —
+  // and sent nowhere until the reviewer sends the review (issue 168).
+  const comments = new ReviewComments(
+    new CommentStore(join(context.globalStorageUri.fsPath, SAVED_COMMENTS_DIR)),
+  );
   const agentStatusBar = new AgentStatusBar(deps.env);
   agentStatusBar.refresh();
   const session = new ReviewSession(sideBar, copies, marker, comments, deps, agentStatusBar);

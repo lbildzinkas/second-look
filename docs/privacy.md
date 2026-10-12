@@ -12,6 +12,8 @@ The companion works on text written by other people — a pull request's code, i
 
 **Your reviewed marks.** Kept locally, per pull request, keyed by each part's content, in the pull request's own cache folder. They are sent nowhere unless you turn the mirror setting on (below). The side bar steps' **I've checked these** ticks are kept locally too, per pull request, in the editor's own global state — the whole editor's storage, not the pull request's cache — and are sent nowhere.
 
+**Your unsent comments.** The comments you have written for the pending review, and the drafts you have open for editing, are kept locally per pull request as they change — their text, the file and line each points at, the text of that line as the diff showed it and the head commit they were written against, so a review reopened after new commits can flag the ones whose line changed — and come back, with their threads, when you open the same review again. They sit in one JSON file per pull request, named for the pull request, in the companion's own global storage folder (`…/globalStorage/lbildzinkas.second-look-extension/pending-comments/` on each platform, wherever the editor keeps extensions' global storage), never in your workspace, and are sent nowhere until you submit the review (ADR 0002). Sending the review deletes the pull request's file; the drafts' latest text is saved as the editor shows it to the companion, so an edit made moments before closing may not have been saved yet.
+
 **The engine's own settings and stamps.** What the settings choose, and what each run reports — agent, version, model, effort, run date, tokens and cost when the agent reports them — stay in the results shown to you and in nothing else.
 
 ## What is sent to GitHub
