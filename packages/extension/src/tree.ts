@@ -5,6 +5,7 @@ import {
   claimCounts,
   filesOfPart,
   findingCounts,
+  isFinding,
   isLabelledNoise,
   noiseSinks,
   partsLeft,
@@ -39,7 +40,7 @@ export interface TreePart {
   kind: 'part' | 'noise';
   /** How many claims are attached to the part; absent when it has none. */
   claims?: number;
-  /** How many of its claims are findings, refuted or unverifiable; absent when none is. */
+  /** How many of its claims are findings — refuted, or unverifiable the code or a library's source could settle; absent when none is. */
   findings?: number;
   /** Why neither the description nor a linked issue explains the part; absent when the comparison does not flag it. */
   unexplained?: string;
@@ -128,6 +129,7 @@ export function buildTree(result: ReviewResult, marks: ReviewedMarks = NO_MARKS,
 
   const counts = claimCounts(result.claims, result.parts.length);
   const findings = findingCounts(result.claims, result.parts.length);
+  const quiet = quietCounts(result.claims, result.parts.length);
   const asked = askedCounts(result.claims, result.parts.length);
   const judged = result.claims?.judging?.outcome === 'judged';
   const unexplained = unexplainedReasons(result.unexplained, result.parts.length);
@@ -136,7 +138,7 @@ export function buildTree(result: ReviewResult, marks: ReviewedMarks = NO_MARKS,
   const withBadges = (node: TreePart, index: number): TreePart => {
     const reviewed = reviewedState(result.parts[index]!, marks);
     const carried = result.carriedOver === undefined ? node : withCarried(node, result.parts[index]!, result.carriedOver);
-    const badged = withUnexplained(withClaims(carried, counts[index]!, findings[index]!, judged, asked[index]!, result.claims?.judging), unexplained[index]);
+    const badged = withUnexplained(withClaims(carried, counts[index]!, findings[index]!, judged, asked[index]!, quiet[index]!, result.claims?.judging), unexplained[index]);
     return withReviewed(changed[index] ? withLastLook(badged, since!, reviewed) : badged, reviewed);
   };
   result.parts.forEach((part, index) => {
@@ -266,16 +268,19 @@ export function findingBadge(count: number): string {
  * findings: first beside the label, and in the tooltip with the claims'
  * state. A part with no claim is left as it is.
  */
-function withClaims(node: TreePart, count: number, findings: number, judged: boolean, asked: number, judging: ClaimJudging | undefined): TreePart {
+function withClaims(node: TreePart, count: number, findings: number, judged: boolean, asked: number, quiet: number, judging: ClaimJudging | undefined): TreePart {
   if (count === 0) return node;
   const badge = findings > 0 ? `${findingBadge(findings)} · ` : '';
   const text = `${badge}${claimCountText(count)}`;
+  const threads = `${findings} refuted, or unverifiable the code or a library's source could settle, each a thread on the diff`;
   const state = judged
     ? findings > 0
-      ? `${findings} refuted or unverifiable, each a thread on the diff; the overview lists them`
-      : 'all verified; the overview lists them'
+      ? `${threads}; the overview lists them`
+      : quiet > 0
+        ? `none is a finding, ${quiet} the code cannot settle; the overview lists them`
+        : 'all verified; the overview lists them'
     : asked > 0
-      ? `${asked} checked by the Verify this claim ask${findings > 0 ? `, ${findings} refuted or unverifiable, each a thread on the diff` : ''}, the ${judging === undefined ? 'verdicts pass did not run' : 'judging pass fell back'}; the overview lists them`
+      ? `${asked} checked by the Verify this claim ask${findings > 0 ? `, ${threads}` : ''}, the ${judging === undefined ? 'verdicts pass did not run' : 'judging pass fell back'}; the overview lists them`
       : 'not checked yet; the overview lists them';
   const line = `${claimCountText(count)}, ${state}`;
   return {
@@ -292,6 +297,15 @@ function askedCounts(claims: Claims | undefined, partCount: number): number[] {
   const counts = new Array<number>(partCount).fill(0);
   for (const claim of claims?.claims ?? []) {
     if (claim.asked === true && claim.part >= 0 && claim.part < partCount) counts[claim.part]!++;
+  }
+  return counts;
+}
+
+/** How many claims each part holds that only the author's run or something outside the repository can settle, and so are no finding, by the part's index. */
+function quietCounts(claims: Claims | undefined, partCount: number): number[] {
+  const counts = new Array<number>(partCount).fill(0);
+  for (const claim of claims?.claims ?? []) {
+    if (claim.verdict.kind === 'unverifiable' && !isFinding(claim) && claim.part >= 0 && claim.part < partCount) counts[claim.part]!++;
   }
   return counts;
 }

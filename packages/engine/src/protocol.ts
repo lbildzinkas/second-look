@@ -167,7 +167,8 @@ export interface SentReview {
 
 /**
  * A finding the reviewer asks a draft comment from, by its index in the
- * review result's list that holds it: a refuted or unverifiable claim in
+ * review result's list that holds it: a refuted claim or an unverifiable
+ * one the code or a library's source could settle in
  * the claims, a part neither the description nor a linked issue explains
  * in the unexplained changes' parts, a change they describe that the diff
  * does not contain in their described changes, or a not met or partly met

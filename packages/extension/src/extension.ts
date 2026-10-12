@@ -242,7 +242,7 @@ class ReviewSession {
     (path, line, side) => void this.openLine(path, line, side),
     (finding) => void this.draftComment(finding),
   );
-  /** The review's findings, its refuted and unverifiable claims, as threads on the diff. */
+  /** The review's findings — its refuted claims, and its unverifiable ones the code or a library's source could settle — as threads on the diff. */
   private readonly findings = new FindingThreads();
   /** The banner above the diff of the part opened last, with its importance, signals, asks and reviewed checkbox. */
   private readonly banner = new PartBanner();
