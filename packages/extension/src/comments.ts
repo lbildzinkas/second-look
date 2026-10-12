@@ -149,8 +149,7 @@ const CHANGED_LINE = 'line changed';
  */
 export function diffLineText(result: ReviewResult, path: string, side: CommentSide, line: number): string | undefined {
   for (const file of result.parts.flatMap(filesOfPart)) {
-    const sidePath = side === 'head' ? file.path : file.previousPath ?? file.path;
-    if (sidePath !== path) continue;
+    if (file.path !== path) continue;
     for (const hunk of file.hunks) {
       for (const diff of hunk.lines) {
         const at = side === 'head' ? diff.newLineNumber : diff.oldLineNumber;
@@ -418,8 +417,8 @@ export class ReviewComments implements vscode.Disposable {
   /** The side of a file the current result's diff shows, by the path a comment travels under; undefined when the change no longer holds the file. */
   private sidePathIn(result: ReviewResult, path: string, side: CommentSide): string | undefined {
     for (const file of result.parts.flatMap(filesOfPart)) {
-      const sidePath = side === 'head' ? file.path : file.previousPath ?? file.path;
-      if (sidePath === path) return sidePath;
+      if (file.path !== path) continue;
+      return side === 'head' ? file.path : file.previousPath ?? file.path;
     }
     return undefined;
   }
@@ -647,8 +646,8 @@ export class ReviewComments implements vscode.Disposable {
         this.anchors.set(gathered, entry.saved.text);
       }
       if (entry.changed === true) this.changedLines.add(gathered);
-      this.save();
     }
+    this.save();
   }
 
   /** Discards a draft, thread and all; it never joined the pending review. */
@@ -732,8 +731,9 @@ export class ReviewComments implements vscode.Disposable {
     const result = this.result;
     if (result !== undefined && this.store !== undefined) {
       const saved = this.emptySave();
-      this.lastSaved = JSON.stringify(saved);
-      void this.store.save(result.pullRequest.url, saved).catch(() => undefined);
+      const json = JSON.stringify(saved);
+      this.lastSaved = json;
+      this.write(this.store, result.pullRequest.url, saved, json);
     }
     this.changed.fire();
   }
@@ -779,7 +779,21 @@ export class ReviewComments implements vscode.Disposable {
     const json = JSON.stringify(saved);
     if (json === this.lastSaved) return;
     this.lastSaved = json;
-    void this.store.save(result.pullRequest.url, saved).catch(() => undefined);
+    this.write(this.store, result.pullRequest.url, saved, json);
+  }
+
+  /**
+   * Writes one record of what is unsent to the pull request's store. A
+   * write that fails warns, as a read that fails does, and what it held
+   * is left to save again rather than taken as saved.
+   */
+  private write(store: CommentStore, url: string, saved: SavedComments, json: string): void {
+    void store.save(url, saved).catch((error) => {
+      if (this.lastSaved === json) this.lastSaved = '';
+      vscode.window.showWarningMessage(
+        `The unsent comments could not be saved: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
   }
 
   dispose(): void {

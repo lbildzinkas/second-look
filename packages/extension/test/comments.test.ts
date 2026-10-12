@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type * as vscode from 'vscode';
-import { mkdtempSync, readdirSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -765,6 +765,123 @@ describe('ReviewComments kept between visits', () => {
 
     expect(again.pending().at(-1)).toMatchObject({ kind: 'line', path: 'src/retry.py', line: 9, body: 'drafted' });
     expect(again.listed().at(-1)).toMatchObject({ kind: 'comment', location: 'src/retry.py:9', changed: true });
+  });
+
+  /** The mixed result with a renamed file among its parts, whose base-side line 2 reads as given. */
+  function renamedResult(oldLine: string): ReviewResult {
+    const result = mixedResult();
+    result.parts.push(
+      part('src/new-name.ts', {
+        changeKind: 'rename',
+        previousPath: 'src/old-name.ts',
+        hunks: [
+          {
+            oldStart: 2,
+            oldLines: 1,
+            newStart: 2,
+            newLines: 1,
+            lines: [
+              { kind: 'deletion', oldLineNumber: 2, text: oldLine },
+              { kind: 'addition', newLineNumber: 2, text: 'new line' },
+            ],
+            entities: [],
+          },
+        ],
+      }),
+    );
+    return result;
+  }
+
+  it('anchors a base-side comment on a renamed file and restores it on the old path, flagged when the line changed', async () => {
+    const result = renamedResult('old line');
+    const saved = store();
+    const comments = new ReviewComments(saved);
+    comments.setReview(result);
+    comments.add(replyOf(threadOn(docs(result, 'src/new-name.ts', 'src/old-name.ts').base, 1), 'keep raising here'));
+
+    // The comment travels to GitHub under the path after the rename,
+    // anchored by the old side's line it points at.
+    expect(await whenSaved(saved, URL)).toEqual({
+      version: 1,
+      head: 'f00dcafe1234567890abcdef1234567890abcdef12',
+      comments: [{ kind: 'line', path: 'src/new-name.ts', side: 'base', line: 2, body: 'keep raising here', text: 'old line' }],
+      drafts: [],
+    });
+
+    // New commits rewrote that old-side line: the comment comes back
+    // flagged, on the base document the diff shows — under the old path.
+    stub.reset();
+    const moved = renamedResult('old line, rewritten');
+    const again = new ReviewComments(saved);
+    again.setReview(moved);
+    await again.restore();
+
+    expect(again.listed()).toEqual([
+      { id: expect.any(Number), kind: 'comment', location: 'src/new-name.ts:2', body: 'keep raising here', changed: true },
+    ]);
+    const [thread] = stub.commentControllers[0]!.threads;
+    expect(thread!.uri.toString()).toBe(docs(moved, 'src/new-name.ts', 'src/old-name.ts').base.toString());
+    expect(thread!.label).toBe('src/new-name.ts:2 · line changed');
+  });
+
+  it('warns when the store cannot be written, and saves the same state again once it can', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'second-look-comments-'));
+    rmSync(dir, { recursive: true });
+    // A file where the store's folder should be: every write fails.
+    writeFileSync(dir, 'not a folder', 'utf8');
+    const saved = new CommentStore(dir);
+    const comments = new ReviewComments(saved);
+    const result = mixedResult();
+    comments.setReview(result);
+    comments.add(replyOf(threadOn(docs(result, 'src/retry.py').head, 4), 'a cap, please'));
+
+    const warned = Date.now() + 5_000;
+    while (!stub.warningMessages.some((message) => message.startsWith('The unsent comments could not be saved:'))) {
+      if (Date.now() > warned) throw new Error('timed out waiting for the save warning');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    // The store's folder is freed: the same unsent state saves again,
+    // through the render that lists it.
+    rmSync(dir);
+    mkdirSync(dir, { recursive: true });
+    comments.listed();
+
+    expect(await whenSaved(saved, URL)).toMatchObject({
+      comments: [{ kind: 'line', path: 'src/retry.py', side: 'head', line: 5, body: 'a cap, please' }],
+    });
+  });
+
+  it('drops a draft from the store when its thread sits where no comment can go', async () => {
+    const saved = store();
+    const comments = new ReviewComments(saved);
+    // A grouped part: only its first file's lines hold a comment target.
+    const result = mixedResult();
+    result.parts[0] = {
+      ...result.parts[0]!,
+      otherFiles: [
+        part('src/caller.py', {
+          hunks: [
+            {
+              oldStart: 1,
+              oldLines: 1,
+              newStart: 1,
+              newLines: 1,
+              lines: [{ kind: 'addition', newLineNumber: 1, text: 'send()' }],
+              entities: [],
+            },
+          ],
+        }),
+      ],
+    };
+    comments.setReview(result);
+    comments.draft({ kind: 'line', path: 'src/caller.py', line: 1 }, 'drafted', 'refuted claim');
+    await whenSaved(saved, URL, (each) => each.drafts.length === 1);
+
+    comments.addDraft(stub.commentControllers[0]!.threads.at(-1)!.comments[0] as unknown as vscode.Comment);
+
+    expect(comments.pending()).toEqual([]);
+    await whenCleared(saved, URL);
   });
 
   it('does not clear the store when the review it switches to shows nothing unsent yet', async () => {

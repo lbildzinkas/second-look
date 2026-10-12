@@ -186,9 +186,11 @@ export class CommentStore {
       () => this.write(path, saved),
     );
     this.writes.set(path, next);
-    void next.finally(() => {
-      if (this.writes.get(path) === next) this.writes.delete(path);
-    });
+    void next
+      .catch(() => undefined)
+      .finally(() => {
+        if (this.writes.get(path) === next) this.writes.delete(path);
+      });
     return next;
   }
 
