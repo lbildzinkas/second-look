@@ -50,7 +50,7 @@ function partOf(file: Part, hunks: Hunk[]): Part {
 
 /** Every file a part holds hunks of, its own first file first, in diff order. */
 export function filesOfPart(part: Part): FileSlice[] {
-  const { name: _name, signals: _signals, rank: _rank, origin: _origin, otherFiles, ...first } = part;
+  const { name: _name, signals: _signals, rank: _rank, origin: _origin, carried: _carried, otherFiles, ...first } = part;
   return [first, ...(otherFiles ?? [])];
 }
 

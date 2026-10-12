@@ -326,7 +326,8 @@ export class EngineClient {
    * result so far to `onStage` and gives the request the stage's own
    * deadline; the returned result is the final one. A review of a pull
    * request the engine saved a result for answers with that result at
-   * once, unless `fresh` asks for Review again.
+   * once, or, once the pull request has new commits, re-runs only what
+   * they changed, unless `fresh` asks for Review again.
    */
   async review(
     url: string,

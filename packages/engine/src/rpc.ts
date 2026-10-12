@@ -203,7 +203,9 @@ export interface ReviewParams {
   /**
    * True to run a fresh review: Review again. Absent or false, a review
    * of a pull request whose latest result is saved shows that result at
-   * once and runs no agent pass.
+   * once and runs no agent pass, or, once the pull request has new
+   * commits since, carries it over for what they did not change and runs
+   * the agent again only for the rest.
    */
   fresh?: boolean;
 }

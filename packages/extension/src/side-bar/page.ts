@@ -213,7 +213,7 @@ function claimEvidence(verdict: CheckedVerdict, index: number): string {
   return `<div class="why">${escapeHtml(`${verdict.source}: ${verdict.reason}`)}</div>` + cited + recheck;
 }
 
-/** Step 5's row for one claim finding: its verdict and where it is made as a link that opens it, its quote, its reason and evidence, and its actions. */
+/** Step 5's row for one claim finding: its verdict and where it is made as a link that opens it, whether it was carried over from the saved review of an earlier commit, its quote, its reason and evidence, and its actions. */
 function claimFindingRow(claim: Claim, index: number): string {
   const verdict = claim.verdict.kind === 'not checked' ? undefined : claim.verdict;
   const offer = verdict === undefined || verdict.library !== undefined ? undefined : verdict.libraryFetch;
@@ -221,7 +221,7 @@ function claimFindingRow(claim: Claim, index: number): string {
   const finding = { kind: 'claim' as const, index };
   return (
     `<li class="finding">` +
-    `<div class="head">${statePill(claim.verdict.kind)}${claimWhereButton(claim, index)}</div>` +
+    `<div class="head">${statePill(claim.verdict.kind)}${claimWhereButton(claim, index)}${claim.carried ? '<span class="carried">carried over</span>' : ''}</div>` +
     `<q class="quote">${sanitiseUntrusted(claim.quote).html}</q>` +
     (verdict === undefined ? '' : claimEvidence(verdict, index)) +
     `<div class="actions">${findingButton(5, 'draft', finding, 'Draft comment')}${findingButton(5, 'open', finding, 'Open')}${findingButton(5, 'verify', finding, 'Verify again')}${fetch}</div>` +
@@ -256,12 +256,16 @@ function claimsBody(state: SideBarState): string {
   }
   const rows: string[] = [];
   let verified = 0;
+  let carried = 0;
   for (const [index, claim] of claims.entries()) {
     if (isFinding(claim)) rows.push(claimFindingRow(claim, index));
-    else if (claim.verdict.kind === 'verified') verified += 1;
+    else if (claim.verdict.kind === 'verified') {
+      verified += 1;
+      if (claim.carried) carried += 1;
+    }
   }
   const list = rows.length === 0 ? note('No refuted or unverifiable claim.') : `<ul class="findings" aria-label="Claim findings">${rows.join('')}</ul>`;
-  const folded = verified === 0 ? '' : `<p class="folded"><span class="tone-ok" aria-hidden="true">✓</span> ${verified} verified</p>`;
+  const folded = verified === 0 ? '' : `<p class="folded"><span class="tone-ok" aria-hidden="true">✓</span> ${verified} verified${carried === 0 ? '' : `, ${carried} carried over`}</p>`;
   return (
     list +
     folded +
@@ -562,6 +566,7 @@ export function sideBarHtml(nonce: string, body: string): string {
   .finding .where { color: var(--vscode-descriptionForeground); font-size: 12px; overflow-wrap: anywhere; }
   .finding button.where { padding: 0; color: var(--vscode-descriptionForeground); background: none; border: none; text-align: left; font-size: 12px; overflow-wrap: anywhere; }
   .finding button.where:hover { color: var(--vscode-textLink-foreground); text-decoration: underline; }
+  .finding .carried { color: var(--vscode-descriptionForeground); font-size: 12px; font-style: italic; }
   .finding .why { color: var(--vscode-descriptionForeground); font-size: 12px; overflow-wrap: anywhere; margin-top: 2px; }
   .finding .quote { display: block; margin: 3px 0; overflow-wrap: anywhere; }
   .hidden { border: 1px dashed var(--vscode-editorWarning-foreground, var(--vscode-foreground)); border-radius: 3px; padding: 0 4px; }

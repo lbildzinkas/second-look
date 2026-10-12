@@ -189,10 +189,12 @@ export interface RpcServerDeps {
  * Each pull request's latest result is saved in its cache folder too, with
  * when and by which agent, model and effort it was produced, and saved
  * again as later fetches and asks change it. A review of a pull request
- * whose result is saved answers with that result at once, labelled, and
- * runs no agent pass — marked as from an earlier commit when the pull
- * request has new commits since — unless its request asks for a fresh
- * review.
+ * whose result is saved at its head commit answers with that result at
+ * once, labelled, and runs no agent pass, unless its request asks for a
+ * fresh review. Once the pull request has new commits since, the review
+ * carries the saved result over for what they did not change and runs
+ * the agent again only for the rest; with no agent, the saved result is
+ * shown marked as from an earlier commit.
  */
 export async function runRpcServer(
   source: RpcLineSource,
@@ -558,7 +560,9 @@ async function review(
       fresh === true || ref === null
         ? undefined
         : await restoreSavedReview({ cacheDir: deps.cacheDir, ref, client: new GitHubClient({ token, ...(deps.fetch ? { fetch: deps.fetch } : {}) }) });
-    if (restored !== undefined) {
+    // New commits since the saved result are reviewed with it carried over, when an agent can run.
+    const earlier = restored?.result.saved?.newHead !== undefined && deps.agent ? restored : undefined;
+    if (restored !== undefined && earlier === undefined) {
       // The saved result's later fetches, asks and drafts add to the use it had.
       if (restored.result.budget !== undefined) Object.assign(meter.used, restored.result.budget.used);
       const shown = withBudget(restored.result, meter);
@@ -577,6 +581,7 @@ async function review(
       signal: stop.signal,
       ...(criteriaHeading !== undefined ? { criteriaHeading } : {}),
       ...(deps.fetch ? { fetch: deps.fetch } : {}),
+      ...(earlier ? { earlier } : {}),
       ...(deps.agent && agentStage
         ? {
             agentStage: {
