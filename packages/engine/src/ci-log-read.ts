@@ -1,6 +1,7 @@
 import type { AgentAdapter, AgentSettings } from './agent.js';
 import { passingLogItems, readPassingLogs } from './ci.js';
 import type { GitHubClient, PullRequestRef } from './github.js';
+import { offerLibraryFetches } from './library-fetch.js';
 import type { Claim, ReviewResult } from './protocol.js';
 import { judgeClaims } from './verdicts.js';
 
@@ -17,9 +18,10 @@ export interface PressCiLogReadOptions {
  * {@link readPassingLogs}) and asks the agent to judge the claim again
  * with them as its CI logs, re-checking every citation there; a cited
  * line is labelled as a passing check's. The new verdict keeps the offer
- * that was pressed and carries the logs it was judged with. Throws when
- * the claim offers no read, when no passing check's log has lines, or
- * when the agent gives no usable answer.
+ * that was pressed, carries the logs it was judged with, and offers its
+ * library fetch again when it needs a library the head copy pins, or the
+ * agent named. Throws when the claim offers no read, when no passing
+ * check's log has lines, or when the agent gives no usable answer.
  */
 export async function pressCiLogRead(result: ReviewResult, index: number, options: PressCiLogReadOptions): Promise<Claim> {
   const claim = result.claims?.claims[index];
@@ -39,7 +41,8 @@ export async function pressCiLogRead(result: ReviewResult, index: number, option
     logs,
   });
   const { judging } = judged;
-  const settled = judged.claims[0]!.verdict;
+  const [offered] = await offerLibraryFetches(judged.claims, result.copies.head.path);
+  const settled = offered!.verdict;
   if (judging.outcome === 'fell back' || settled.kind === 'not checked') throw new Error(`the CI logs were read, but ${judging.detail}`);
   const ciLogs = { checks: checks.map((check) => ({ name: check.name, url: check.url, detail: check.log!.detail })), promptVersion: judging.promptVersion, stamp: judging.stamp };
   return { ...claim, verdict: { ...settled, ciLogFetch: offer, ciLogs } };

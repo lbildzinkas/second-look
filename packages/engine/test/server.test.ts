@@ -1564,6 +1564,36 @@ describe('runRpcServer reading a passing check\u2019s CI log', () => {
     expect(saved!.result.claims!.claims).toEqual(result.claims!.claims);
   });
 
+  it("offers the library fetch again, or says why not, when the claim judged with the log needs a library", async () => {
+    const agent = answeringAgent((run) => {
+      if (run.instructions === CLAIMS_INSTRUCTIONS) return { claims: [{ source: 'description', quote: CHECK_CLAIM, file: null, line: null, part: 'p1' }] };
+      if (run.instructions === verdictsInstructions(true)) {
+        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: 'Only a check run shows it.', evidence: [], looked: [], settles: { kind: 'ci-log', note: 'the lint check would show it' }, library: null }] };
+      }
+      if (run.instructions === verdictsInstructions(true, true)) {
+        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: 'The log does not say; it turns on how httpx behaves.', evidence: [], looked: [], settles: { kind: 'library', note: 'the source of httpx could settle it' }, library: 'httpx' }] };
+      }
+      return {};
+    });
+    const { answer } = await serveCi(
+      [
+        request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+        request('review', { url: PR_URL, token: TOKEN }, 2),
+        request('readCiLog', { url: PR_URL, token: TOKEN, claim: 0 }, 3),
+      ],
+      agent,
+    );
+
+    expect(answer(3).error).toBeUndefined();
+    expect((answer(3).result as ReviewResult).claims!.claims[0]!.verdict).toMatchObject({
+      kind: 'unverifiable',
+      needsLibrary: 'httpx',
+      noLibraryFetch: expect.stringMatching(/^No library fetch: nothing in the head copy pins httpx so a fetch can check it/),
+      ciLogFetch: { checks: ['check / lint'] },
+      ciLogs: { promptVersion: VERDICTS_PROMPT_VERSION },
+    });
+  });
+
   it('refuses a claim that offers no CI log read, and a request without a token', async () => {
     const { answer } = await serveCi([
       request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
