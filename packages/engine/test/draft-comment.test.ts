@@ -132,6 +132,27 @@ describe('draftFinding', () => {
     });
   });
 
+  it("labels a cited line of a passing check's CI log as one, as the draft must cite it", () => {
+    const result = reviewed();
+    const fromLog: Claim = {
+      ...result.claims!.claims[0]!,
+      verdict: {
+        kind: 'refuted',
+        source: 'a CI log',
+        reason: 'The lint check reports a warning.',
+        evidence: [{ path: 'check / lint', line: 2, quote: '1 problem (0 errors, 1 warning)', ciLog: true, passingCheck: true }],
+        looked: [],
+      },
+    };
+    const finding = draftFinding({ ...result, claims: { ...result.claims!, claims: [fromLog] } }, { kind: 'claim', index: 0 })!;
+    expect(finding).toMatchObject({
+      evidence: [{ at: 'CI log of check / lint (a passing check), line 2', quote: '1 problem (0 errors, 1 warning)' }],
+      locations: ['CI log of check / lint (a passing check), line 2'],
+    });
+    const checks = draftChecks(finding, 'The passing check reports `1 problem (0 errors, 1 warning)` at CI log of check / lint (a passing check), line 2. Could you fix it?');
+    expect(checks.cited).toEqual(['CI log of check / lint (a passing check), line 2']);
+  });
+
   it('reads an unverifiable claim that cites nothing, so the draft cites where the claim is made, and names the library it needs', () => {
     expect(draftFinding(reviewed(), { kind: 'claim', index: 1 })).toMatchObject({
       kind: 'unverifiable claim',
