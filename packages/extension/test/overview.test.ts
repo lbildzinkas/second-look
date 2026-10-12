@@ -13,6 +13,8 @@ import {
 } from '../src/overview.js';
 import { ElementDouble, PageDouble } from './overview-page.js';
 import {
+  ciLogOfferedResult,
+  ciLogReadResult,
   claimsResult,
   criteriaResult,
   carriedResult,
@@ -238,6 +240,17 @@ describe('the pipeline and CI on the overview', () => {
     expect(html).toContain('<span class="where">pipeline report, Review step · src/retry.py:6 · <button type="button" class="pt" data-part="0">');
     expect(html).toContain('<span class="l"><span class="ref">CI log of check / test, line 2</span> <span class="cited">FAILED test_retry.py::test_gives_up - assert 5 == 3</span></span>');
     expect(html).not.toContain('<b>five</b>');
+  });
+
+  it("says a claim offers Read the CI log, and labels a passing check's cited line once the claim was judged again with its log", () => {
+    const offered = overviewHtml({ result: ciLogOfferedResult() }, 'N');
+    expect(offered).toContain(
+      "<div class=\"why\">CI log read offered: check / lint passed at the head commit; reading its log could settle the claim. Press Read the CI log on the finding&#39;s thread.</div>",
+    );
+    const read = overviewHtml({ result: ciLogReadResult() }, 'N');
+    expect(read).toContain('<span class="l"><span class="ref">CI log of check / lint (a passing check), line 2</span> <span class="cited">1 problem (0 errors, 1 warning)</span></span>');
+    expect(read).toContain('<div class="why">judged again with the logs of the checks that passed: check / lint (the log marks no failing step, so its last 3 lines are kept)</div>');
+    expect(read).not.toContain('CI log read offered');
   });
 
   it("lists the checks as run on the merge commit, with annotations and a failed job's trimmed log as escaped text", () => {

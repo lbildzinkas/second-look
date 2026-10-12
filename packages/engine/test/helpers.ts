@@ -269,7 +269,7 @@ function recordedBody(init: RequestInit | undefined): unknown {
  * stored at the head commit, the merge base from the compare endpoint,
  * the linked issues from the one GraphQL query the review makes, archives
  * of both versions, the check runs at the head commit with their
- * annotations and the failed job's log when the fixture records CI, the
+ * annotations and the jobs' logs when the fixture records CI, the
  * signed-in reviewer with no review submitted yet, a 404 for the change
  * at any earlier commit, and one submitted review for a send. Any
  * other URL throws, so a test can never touch the live network by
@@ -350,8 +350,9 @@ export function fixtureFetch(pull: PullFixture = pull42()): FixtureTransport {
     }
     // GitHub answers the job's log with a redirect to its storage; fetch
     // follows it, so the recorded answer is the log itself.
-    if (pull.ci && url === `${API}/actions/jobs/9001/logs`) {
-      return new Response(fixtureText('ci/job-9001.log'), { status: 200, headers: { 'content-type': 'text/plain' } });
+    const jobLog = /\/actions\/jobs\/(9001|9002)\/logs$/.exec(url);
+    if (pull.ci && url.startsWith(`${API}/actions/jobs/`) && jobLog) {
+      return new Response(fixtureText(`ci/job-${jobLog[1]}.log`), { status: 200, headers: { 'content-type': 'text/plain' } });
     }
     if (url === `${API}/compare/${meta.base.sha}...${pull.headSha}?per_page=1`) {
       return Response.json({ merge_base_commit: { sha: pull.mergeBase } });

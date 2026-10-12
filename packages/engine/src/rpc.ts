@@ -238,6 +238,31 @@ export interface FetchLibraryParams {
 export type FetchLibraryRpcResult = ReviewResult;
 
 /**
+ * The request that presses one claim's Read the CI log, sent only when
+ * the reviewer presses it (ADR 0003): the engine lists the check runs at
+ * the head commit its latest review of the pull request read, downloads
+ * the logs of the GitHub Actions jobs that passed, trimmed as a failed
+ * job's are, and has the agent judge the claim again with them. The claim
+ * is one of that review's, by its index.
+ */
+export const READ_CI_LOG_METHOD = 'readCiLog' as const;
+
+/** One CI log read request: the reviewed pull request, the GitHub token, the claim and the agent that judges it again. */
+export interface ReadCiLogParams {
+  /** The pull request's HTML URL, as the review result names it. */
+  url: string;
+  /** The GitHub token for this request's reads only; never stored. */
+  token: string;
+  /** The claim, by its index in the result's claims. */
+  claim: number;
+  /** The agent, model, effort and account that judge the claim again; see {@link ReviewAgentChoice}. */
+  agent?: ReviewAgentChoice;
+}
+
+/** The CI log read request's result: the review result with the claim judged again with the passing checks' logs. */
+export type ReadCiLogRpcResult = ReviewResult;
+
+/**
  * The request that drafts a comment from one finding, sent only when the
  * reviewer asks for it: the agent writes a short draft from the finding
  * and its evidence, and the engine checks it before answering. The

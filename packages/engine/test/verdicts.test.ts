@@ -29,7 +29,7 @@ import {
   verdictsSchema,
   type AnsweredVerdict,
 } from '../src/verdicts.js';
-import { ciLogItems } from '../src/ci.js';
+import { ciLogItems, passingLogItems } from '../src/ci.js';
 import { validateJson } from '../src/json-schema.js';
 import { pipelineClaims, readPipelineReport } from '../src/pipeline.js';
 import { answeringAgent, changedPart } from './helpers.js';
@@ -467,6 +467,26 @@ describe('the verdicts prompt with CI logs', () => {
       kind: 'unverifiable',
       recheck: 'the citation app/retry.py:3 names a file the CI logs does not have',
     });
+  });
+
+  /** The passing check's log a press of Read the CI log read. */
+  function passingLogs() {
+    const lint = { name: 'check / lint', status: 'completed', conclusion: 'success', url: 'https://github.com/x', annotations: [] };
+    return passingLogItems([{ ...lint, log: { lines: ['npm run lint', 'Lint passed with 0 errors.'], detail: 'the log marks no failing step, so its last 2 lines are kept' } }]);
+  }
+
+  it("names the logs as passing checks' when a press read them, and asks to cite them as such", () => {
+    const prompt = verdictsPrompt(verdictItems(claims()), [retryPart()], 'B', passingLogs());
+    expect(prompt).toContain('The logs of the checks that passed, run on the merge commit, each kept to its last lines.');
+    expect(prompt).not.toContain('checks that failed');
+    expect(prompt).toContain('<untrusted-input id="B" source="log log1">\ncheck "check / lint"\n1: npm run lint\n2: Lint passed with 0 errors.\n');
+    expect(verdictsInstructions(true, true)).toContain('Set source to "a CI log" when the evidence is lines of a passing check\'s CI log');
+    expect(verdictsInstructions(true, true)).not.toContain('failed check');
+  });
+
+  it("labels a citation of a passing check's log as one", async () => {
+    const verdict = await judgeVerdict(copyReader(headCopy()), answered({ verdict: 'verified', source: 'a CI log', evidence: [{ file: 'log1', line: 2, quote: 'Lint passed with 0 errors.' }] }), passingLogs());
+    expect(verdict).toMatchObject({ kind: 'verified', evidence: [{ path: 'check / lint', line: 2, quote: 'Lint passed with 0 errors.', ciLog: true, passingCheck: true }] });
   });
 });
 

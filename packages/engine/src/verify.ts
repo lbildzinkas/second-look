@@ -1,4 +1,5 @@
 import type { AgentAdapter, AgentSettings, AgentStamp } from './agent.js';
+import { offerCiLogReads } from './ci.js';
 import { normalizeQuote } from './claims.js';
 import { offerLibraryFetches } from './library-fetch.js';
 import { filesOfPart } from './parts.js';
@@ -87,13 +88,14 @@ async function claimToVerify(result: ReviewResult, part: number, asked: AskedCla
   return { index: same < 0 ? claims.length : same, claim };
 }
 
-/** The verdict's sections: the claim and where it is made, the verdict with its source and reason, and the library fetch it offers or why none. */
+/** The verdict's sections: the claim and where it is made, the verdict with its source and reason, the CI log read it offers, and the library fetch it offers or why none. */
 function verdictSections(claim: Claim): AskSection[] {
   const { verdict } = claim;
   const sections = [{ heading: 'Claim', text: `"${claim.quote}", made in ${claimPlace(claim)}.` }];
   if (verdict.kind === 'not checked') return sections;
   const recheck = verdict.recheck === undefined ? '' : ` The engine kept it from a firmer verdict: ${verdict.recheck}.`;
   sections.push({ heading: 'Verdict', text: `${verdict.kind}, from ${verdict.source}: ${verdict.reason}${recheck}` });
+  if (verdict.ciLogFetch !== undefined) sections.push({ heading: 'CI log', text: `${verdict.ciLogFetch.reason} Press Read the CI log on the claim's finding to read it.` });
   if (verdict.libraryFetch !== undefined) {
     sections.push({ heading: 'Library fetch', text: `${verdict.libraryFetch.reason} Press the fetch on the claim's finding to start it.` });
   } else if (verdict.noLibraryFetch !== undefined) {
@@ -111,7 +113,8 @@ function citedLines(claim: Claim): PartCitation[] {
 /**
  * Runs the judging pass on one claim alone, against the change, the head
  * copy and the failed checks' CI logs, then offers its library fetch when
- * it needs one the head copy pins or the agent named: the claim judged,
+ * it needs one the head copy pins or the agent named, and Read the CI log
+ * when a CI log could settle it and checks passed: the claim judged,
  * marked `asked` so its verdict stands even when the claims pass's
  * judging fell back, or why it was not, stamped.
  */
@@ -123,7 +126,7 @@ export async function judgeOneClaim(
   const judged = await judgeClaims(parts, [{ ...claim, verdict: { kind: 'not checked' } }], options);
   const { stamp, detail } = judged.judging;
   if (judged.judging.outcome === 'fell back') return { detail, stamp };
-  const [offered] = await offerLibraryFetches(judged.claims, options.root);
+  const [offered] = offerCiLogReads(await offerLibraryFetches(judged.claims, options.root), options.ci);
   return { claim: { ...offered!, asked: true }, stamp };
 }
 

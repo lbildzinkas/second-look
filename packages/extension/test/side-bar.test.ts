@@ -23,7 +23,7 @@ import { SideBarProvider, sideBarMessage, type SideBarDeps } from '../src/side-b
 import { StepTickStore } from '../src/side-bar/step-ticks.js';
 import { nextPartToReview, setupLine, sideBarSteps, type SideBarState } from '../src/side-bar/steps.js';
 import { anchorOf, buildTree, pendingReviewSection, treeMessage } from '../src/tree.js';
-import { REQUESTS_FETCH, carriedResult, claimsResult, criteriaResult, fetchedResult, judgedResult, mappedCriteriaResult, mixedResult, nonDefaultBranchResult, offeredResult, pipelineResult, reviewStages, unexplainedResult } from './results.js';
+import { REQUESTS_FETCH, carriedResult, ciLogOfferedResult, ciLogReadResult, claimsResult, criteriaResult, fetchedResult, judgedResult, mappedCriteriaResult, mixedResult, nonDefaultBranchResult, offeredResult, pipelineResult, reviewStages, unexplainedResult } from './results.js';
 import { ConfigurationTarget, stub, stubContext, window, type StubWebviewView } from './vscode-stub.js';
 
 const NOW = new Date('2026-10-06T12:00:00Z');
@@ -371,6 +371,25 @@ describe("the side bar's page", () => {
     expect(sideBarBody(reviewState({ result: decompiled, storyRead: true, marks: marked(...mixedResult().parts) }))).toContain(
       'id="step-5-fetch-claim-2" class="secondary" data-finding="fetch" data-kind="claim" data-index="2">Decompile</button>',
     );
+  });
+
+  it('offers Read the CI log on a claim a passing check could settle, until it is pressed, and labels a passing check\u2019s cited line', () => {
+    const marks = marked(...mixedResult().parts);
+    const offered = sideBarBody(reviewState({ result: ciLogOfferedResult(), storyRead: true, marks }));
+    expect(offered).toContain('id="step-5-ciLog-claim-1" class="secondary" data-finding="ciLog" data-kind="claim" data-index="1">Read the CI log</button>');
+    const read = sideBarBody(reviewState({ result: ciLogReadResult(), storyRead: true, marks }));
+    expect(read).not.toContain('Read the CI log');
+    expect(read).toContain('aria-label="Open its check run on GitHub of CI log of check / lint (a passing check), line 2">CI log of check / lint (a passing check), line 2</button>');
+  });
+
+  it('presses Read the CI log through its command, naming the claim', async () => {
+    stub.reset();
+    const provider = new SideBarProvider(reviewState({ result: ciLogOfferedResult(), storyRead: true, marks: marked(...mixedResult().parts) }));
+    window.registerWebviewViewProvider(REVIEW_TREE_VIEW, provider);
+    const view = stub.webviewViewProviders[0]!.resolve();
+    view.webview.receive({ type: 'finding', action: 'ciLog', kind: 'claim', index: 1 });
+    await Promise.all(stub.commandRuns);
+    expect(stub.executedCommands).toEqual([{ id: 'second-look.readCiLog', args: [1] }]);
   });
 
   it('lists the criteria not fully met on step 6 with their issue links, the met ones folded, then the unexplained changes', () => {

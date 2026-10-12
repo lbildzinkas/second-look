@@ -10,8 +10,8 @@
 //   FAKE_ENGINE_SEND_RESULT       JSON sent review to return for sendReview
 //   FAKE_ENGINE_SEND_ERROR        answer sendReview with this plain error message
 //   FAKE_ENGINE_SEND_DELAY_MS      wait this long before answering sendReview
-//   FAKE_ENGINE_FETCH_RESULT      JSON review result to return for fetchLibrary
-//   FAKE_ENGINE_FETCH_ERROR       answer fetchLibrary with this plain error message
+//   FAKE_ENGINE_FETCH_RESULT      JSON review result to return for fetchLibrary and readCiLog
+//   FAKE_ENGINE_FETCH_ERROR       answer fetchLibrary and readCiLog with this plain error message
 //   FAKE_ENGINE_DRAFT_RESULT      JSON draft comment to return for draftComment
 //   FAKE_ENGINE_DRAFT_ERROR       answer draftComment with this plain error message
 //   FAKE_ENGINE_ASK_RESULT        JSON answer to return for ask
@@ -185,7 +185,7 @@ function handle(line) {
     else answer();
     return;
   }
-  if (request.method === 'fetchLibrary') {
+  if (request.method === 'fetchLibrary' || request.method === 'readCiLog') {
     if (fetchError) fail(request.id, -32002, fetchError);
     else send({ jsonrpc: '2.0', id: request.id, result: fetchResult });
     return;

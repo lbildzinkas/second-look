@@ -12,6 +12,7 @@ import {
   OPEN_OVERVIEW_COMMAND,
   OPEN_PART_COMMAND,
   OPEN_SETTINGS_COMMAND,
+  READ_CI_LOG_COMMAND,
   REVIEW_AGAIN_COMMAND,
   REVIEW_COMMAND,
   SUBMIT_REVIEW_COMMAND,
@@ -319,8 +320,8 @@ export class SideBarProvider implements vscode.WebviewViewProvider {
   /**
    * Runs the existing command for one action on a finding the cards
    * list: drafting a comment from it, verifying its claim again through
-   * the verify ask, pressing its library fetch — which downloads only
-   * when pressed — or opening its line read-only, its cited library file,
+   * the verify ask, pressing its library fetch or its Read the CI log —
+   * each of which downloads only when pressed — or opening its line read-only, its cited library file,
    * or the part its thread sits on.
    */
   private finding(finding: FindingRef, action: FindingAction): void {
@@ -333,6 +334,10 @@ export class SideBarProvider implements vscode.WebviewViewProvider {
     const claim = finding.kind === 'claim' ? result.claims?.claims[finding.index] : undefined;
     if (claim !== undefined && action === 'fetch') {
       this.run(FETCH_LIBRARY_COMMAND, finding.index);
+      return;
+    }
+    if (claim !== undefined && action === 'ciLog') {
+      this.run(READ_CI_LOG_COMMAND, finding.index);
       return;
     }
     if (claim !== undefined && action === 'verify') {

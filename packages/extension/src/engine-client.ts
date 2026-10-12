@@ -13,6 +13,7 @@ import {
   MARK_REVIEWED_METHOD,
   MARK_VIEWED_METHOD,
   PROBE_AGENTS_METHOD,
+  READ_CI_LOG_METHOD,
   REVIEWED_MARKS_METHOD,
   REVIEW_METHOD,
   REVIEW_STAGE_METHOD,
@@ -122,6 +123,9 @@ const REVIEW_TIMEOUT_MS = 120_000;
 
 /** How long one library fetch may take, its download and the agent judging the claim again. */
 const FETCH_LIBRARY_TIMEOUT_MS = 900_000;
+
+/** How long one CI log read may take: the logs' download, and the agent's run judging the claim again with its one retry. */
+const READ_CI_LOG_TIMEOUT_MS = 720_000;
 
 /** How long one draft may take: the agent's probe, and its run with its one retry. */
 const DRAFT_COMMENT_TIMEOUT_MS = 720_000;
@@ -404,6 +408,26 @@ export class EngineClient {
       { url, claim, ...(agent !== undefined ? { agent } : {}) },
       FETCH_LIBRARY_TIMEOUT_MS,
     );
+    if (!isReviewResult(result)) {
+      throw new ProtocolError();
+    }
+    return result;
+  }
+
+  /**
+   * Presses one claim's Read the CI log, sent only when the reviewer
+   * presses it, with the token for its GitHub reads only: the engine reads
+   * the logs of the checks that passed at the head commit its latest
+   * review of the pull request read, and has the agent the settings
+   * picked judge the claim again with them. Resolves with the review
+   * result holding the new verdict; rejects with the engine's plain
+   * message, such as no passing check's log having lines.
+   */
+  async readCiLog(url: string, token: string, claim: number, agent?: ReviewAgentChoice): Promise<ReviewResult> {
+    if (!this.handshaken) {
+      throw new Error('the engine has not completed its handshake yet');
+    }
+    const result = await this.request(READ_CI_LOG_METHOD, { url, token, claim, ...(agent !== undefined ? { agent } : {}) }, READ_CI_LOG_TIMEOUT_MS);
     if (!isReviewResult(result)) {
       throw new ProtocolError();
     }

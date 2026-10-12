@@ -5,6 +5,8 @@ import {
   REQUESTS_FETCH,
   reviewStages,
   carriedResult,
+  ciLogOfferedResult,
+  ciLogReadResult,
   claimsResult,
   criteriaResult,
   doneStages,
@@ -570,6 +572,26 @@ describe('isReviewResult for the verdicts', () => {
     }
   });
 
+  it("accepts a Read the CI log offered, and a verdict judged again with a passing check's log, and rejects a malformed one", () => {
+    expect(isReviewResult(ciLogOfferedResult())).toBe(true);
+    expect(isReviewResult(ciLogReadResult())).toBe(true);
+    const offer = { checks: ['check / lint'], reason: 'r' };
+    const stamp = { agent: 'pi', agentVersion: '0.86.1', model: null, effort: null, runAt: '2026-10-04T00:00:00.000Z' };
+    const fromLog = { ...refuted, source: 'a CI log', evidence: [{ path: 'check / lint', line: 2, quote: 'Lint passed.', ciLog: true, passingCheck: true }] };
+    expect(isReviewResult(withVerdict({ ...fromLog, ciLogFetch: offer, ciLogs: { checks: [{ name: 'check / lint', url: 'https://x', detail: 'd' }], promptVersion: '7', stamp } }))).toBe(true);
+    const cases: unknown[] = [
+      withVerdict({ ...refuted, ciLogFetch: { ...offer, checks: [] } }),
+      withVerdict({ ...refuted, ciLogFetch: { ...offer, checks: [''] } }),
+      withVerdict({ ...refuted, ciLogFetch: { checks: offer.checks } }),
+      withVerdict({ ...fromLog, ciLogs: { checks: [{ name: 'check / lint', url: 'https://x' }], promptVersion: '7', stamp } }),
+      withVerdict({ ...fromLog, ciLogs: { checks: [], promptVersion: '7' } }),
+      withVerdict({ ...fromLog, evidence: [{ path: 'check / lint', line: 2, quote: 'Lint passed.', ciLog: true, passingCheck: 'yes' }] }),
+      // Only a CI log's line can be a passing check's.
+      withVerdict({ ...refuted, evidence: [{ path: 'src/retry.py', line: 6, quote: 'for attempt in range(5):', passingCheck: true }] }),
+    ];
+    for (const value of cases) expect(isReviewResult(value)).toBe(false);
+  });
+
   it('accepts a named repository offered or named, and the plain reason a verdict offers no fetch', () => {
     const named = { url: 'https://github.com/psf/requests', tag: 'v2.32.3' };
     expect(isReviewResult(withVerdict({ ...refuted, source: 'a named repository', libraryFetch: { ...REQUESTS_FETCH, namedRepository: named } }))).toBe(true);
@@ -906,6 +928,6 @@ describe('parseReviewResult', () => {
 
 describe('the versioned protocol is shared with the engine', () => {
   it('uses the same version constant', () => {
-    expect(REVIEW_RESULT_VERSION).toBe(24);
+    expect(REVIEW_RESULT_VERSION).toBe(25);
   });
 });

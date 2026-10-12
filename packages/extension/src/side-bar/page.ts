@@ -20,7 +20,7 @@ export const COMMENT_ACTIONS = ['open', 'discard', 'add'] as const;
 export type CommentAction = (typeof COMMENT_ACTIONS)[number];
 
 /** The actions a finding's row offers, each running the existing command for it. */
-export const FINDING_ACTIONS = ['draft', 'open', 'verify', 'fetch'] as const;
+export const FINDING_ACTIONS = ['draft', 'open', 'verify', 'fetch', 'ciLog'] as const;
 export type FindingAction = (typeof FINDING_ACTIONS)[number];
 
 const STATE_ICONS: Record<StepState, string> = { done: '✓', current: '●', running: '↻', waiting: '◷', 'to come': '○' };
@@ -193,7 +193,8 @@ function claimWhereButton(claim: Claim, index: number): string {
  * A checked verdict's evidence on its step 5 row: its evidence source
  * with its reason, each cited head-copy line a chip that opens the line
  * as the overview's chips do, each cited CI log line a chip that opens
- * its check run on GitHub — the one outside link the row carries — each
+ * its check run on GitHub — the one outside link the row carries — and
+ * labelled when the check passed, each
  * cited line of fetched library source a plain chip, since it is not a
  * line of the head copy, and the recheck when the engine dropped a
  * citation.
@@ -218,13 +219,14 @@ function claimFindingRow(claim: Claim, index: number): string {
   const verdict = claim.verdict.kind === 'not checked' ? undefined : claim.verdict;
   const offer = verdict === undefined || verdict.library !== undefined ? undefined : verdict.libraryFetch;
   const fetch = offer === undefined ? '' : findingButton(5, 'fetch', { kind: 'claim', index }, offer.decompile === undefined ? 'Fetch library' : 'Decompile');
+  const ciLog = verdict?.ciLogFetch === undefined || verdict.ciLogs !== undefined ? '' : findingButton(5, 'ciLog', { kind: 'claim', index }, 'Read the CI log');
   const finding = { kind: 'claim' as const, index };
   return (
     `<li class="finding">` +
     `<div class="head">${statePill(claim.verdict.kind)}${claimWhereButton(claim, index)}${claim.carried ? '<span class="carried">carried over</span>' : ''}</div>` +
     `<q class="quote">${sanitiseUntrusted(claim.quote).html}</q>` +
     (verdict === undefined ? '' : claimEvidence(verdict, index)) +
-    `<div class="actions">${findingButton(5, 'draft', finding, 'Draft comment')}${findingButton(5, 'open', finding, 'Open')}${findingButton(5, 'verify', finding, 'Verify again')}${fetch}</div>` +
+    `<div class="actions">${findingButton(5, 'draft', finding, 'Draft comment')}${findingButton(5, 'open', finding, 'Open')}${findingButton(5, 'verify', finding, 'Verify again')}${fetch}${ciLog}</div>` +
     `</li>`
   );
 }

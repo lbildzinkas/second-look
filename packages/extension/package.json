@@ -111,6 +111,11 @@
         "category": "Second Look"
       },
       {
+        "command": "second-look.readCiLog",
+        "title": "Read the CI log",
+        "category": "Second Look"
+      },
+      {
         "command": "second-look.openLibraryEvidence",
         "title": "Open the cited library file",
         "category": "Second Look"
@@ -250,6 +255,10 @@
         },
         {
           "command": "second-look.fetchLibrary",
+          "when": "false"
+        },
+        {
+          "command": "second-look.readCiLog",
           "when": "false"
         },
         {

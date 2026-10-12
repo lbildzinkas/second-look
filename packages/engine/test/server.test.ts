@@ -19,7 +19,7 @@ import { EXPLAIN_INSTRUCTIONS } from '../src/explain.js';
 import { UNEXPLAINED_INSTRUCTIONS } from '../src/unexplained.js';
 import { GROUPING_INSTRUCTIONS } from '../src/grouping.js';
 import { LIBRARY_VERDICTS_INSTRUCTIONS } from '../src/library-verdicts.js';
-import { VERDICTS_INSTRUCTIONS, VERDICTS_PROMPT_VERSION } from '../src/verdicts.js';
+import { VERDICTS_INSTRUCTIONS, VERDICTS_PROMPT_VERSION, verdictsInstructions } from '../src/verdicts.js';
 import { DEFAULT_EFFORT } from '../src/ranking.js';
 import { runRpcServer, type RpcAgentDeps } from '../src/server.js';
 import { markedPart } from '../src/reviewed-marks.js';
@@ -160,7 +160,7 @@ describe('runRpcServer', () => {
 
     expect(responses[0]!.result).toEqual({ protocolVersion: ENGINE_PROTOCOL_VERSION });
     const first = responses[1]!.result as { version: number; parts: unknown[] };
-    expect(first.version).toBe(24);
+    expect(first.version).toBe(25);
     expect(first.parts).toHaveLength(11);
     const second = responses[2]!.result as { parts: unknown[] };
     expect(second.parts).toHaveLength(11);
@@ -269,7 +269,7 @@ describe('runRpcServer', () => {
     expect(responses[0]!.id).toBeNull();
     expect(responses[0]!.error!.message).toContain('not JSON');
     expect(responses[1]!.error!.message).toContain('unknown method: start');
-    expect(responses[1]!.error!.message).toContain('initialize, agents/probe, agents/test, review, review/cancel, fetchLibrary, draftComment, ask, sendReview, reviewedMarks, markReviewed, markViewed and pullRequests/list');
+    expect(responses[1]!.error!.message).toContain('initialize, agents/probe, agents/test, review, review/cancel, fetchLibrary, readCiLog, draftComment, ask, sendReview, reviewedMarks, markReviewed, markViewed and pullRequests/list');
     expect(responses[2]!.result).toEqual({ protocolVersion: ENGINE_PROTOCOL_VERSION });
   });
 
@@ -483,7 +483,7 @@ describe('runRpcServer with an agent', () => {
         id: 2,
         running: 'grouping related hunks with fake',
         timeoutMs: 660_000,
-        result: { version: 24, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
+        result: { version: 25, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
       },
     });
     // The fake agent has no tested ranking, so the story stage follows the grouping.
@@ -827,7 +827,7 @@ describe('runRpcServer keeping the latest review', () => {
     expect(first.agent.requests.length).toBeGreaterThan(0);
     expect(reviewed.saved).toBeUndefined();
     const saved = await readSavedReview(cacheDir, ref);
-    expect(saved).toMatchObject({ version: 24, commit: HEAD, agent: { agent: 'fake', model: null, effort: 'high' } });
+    expect(saved).toMatchObject({ version: 25, commit: HEAD, agent: { agent: 'fake', model: null, effort: 'high' } });
     expect(Date.parse(saved!.reviewedAt)).not.toBeNaN();
     expect(JSON.stringify(saved)).not.toContain(TOKEN);
     const looks = await readLooks(cacheDir, ref);
@@ -928,7 +928,7 @@ describe('runRpcServer keeping the latest review', () => {
     const again = await serveEngine(reviewLines());
     expect(again.agent.requests.length).toBeGreaterThan(0);
     expect((again.answer(2).result as ReviewResult).saved).toBeUndefined();
-    expect(await readSavedReview(cacheDir, ref)).toMatchObject({ version: 24 });
+    expect(await readSavedReview(cacheDir, ref)).toMatchObject({ version: 25 });
   });
 
   it('refuses a fresh flag that is not a boolean', async () => {
@@ -1071,7 +1071,7 @@ describe('runRpcServer fetching a library', () => {
     });
     expect(pypiBeforeFetch).toBe(0);
     expect(answer(3).result).toMatchObject({
-      version: 24,
+      version: 25,
       claims: {
         claims: [
           {
@@ -1196,7 +1196,7 @@ describe('runRpcServer fetching a library', () => {
 
     expect(answer(3).error).toBeUndefined();
     expect(answer(3).result).toMatchObject({
-      version: 24,
+      version: 25,
       claims: {
         claims: [
           {
@@ -1474,6 +1474,126 @@ describe('runRpcServer fetching a library', () => {
     expect(answers[2]).toMatchObject({ id: 3, error: { code: JSON_RPC_INVALID_PARAMS } });
     expect(answers[3]).toMatchObject({ id: 4, error: { code: JSON_RPC_INVALID_PARAMS } });
     expect(state.pypi.requests).toEqual([]);
+  });
+});
+
+describe('runRpcServer reading a passing check\u2019s CI log', () => {
+  const CHECK_CLAIM = 'The full description must never be truncated by the companion, whatever its length.';
+  const API = 'https://api.github.com/repos/example-org/example-repo';
+
+  /** Answers the claims pass with the description's claim, unverifiable until a passing check's log is shown, then verified by its line. */
+  function ciAgent(): ScriptedAgent {
+    return answeringAgent((run) => {
+      if (run.instructions === CLAIMS_INSTRUCTIONS) return { claims: [{ source: 'description', quote: CHECK_CLAIM, file: null, line: null, part: 'p1' }] };
+      if (run.instructions === verdictsInstructions(true)) {
+        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: 'Only a check run shows it.', evidence: [], looked: [], settles: { kind: 'ci-log', note: 'the lint check would show it' }, library: null }] };
+      }
+      if (run.instructions === verdictsInstructions(true, true)) {
+        return { verdicts: [{ id: 'c1', verdict: 'verified', source: 'a CI log', reason: 'The lint check passed.', evidence: [{ file: 'log1', line: 11, quote: 'Lint passed with 0 errors.' }], looked: [], settles: null, library: null }] };
+      }
+      return {};
+    });
+  }
+
+  /** Serves the lines, each request after the review held back until the one before it is answered; returns the answers and the GitHub reads made before the press. */
+  async function serveCi(lines: string[], agent = ciAgent()) {
+    const transport = fixtureFetch({ ...pull42(), ci: true });
+    const written: string[] = [];
+    const waiting = new Map<number, () => void>();
+    const answered = (id: number) => new Promise<void>((resolve) => waiting.set(id, resolve));
+    let index = 0;
+    let before: string[] = [];
+    let previous: Promise<void> | undefined;
+    await runRpcServer(
+      {
+        readLine: async () => {
+          if (previous !== undefined) await previous;
+          const line = lines[index++];
+          if (line === undefined) return null;
+          const { id } = JSON.parse(line) as { id: number };
+          if (line.includes('"readCiLog"') && before.length === 0) before = transport.requests.map((each) => each.url);
+          previous = id === 1 ? undefined : answered(id);
+          return line;
+        },
+      },
+      {
+        writeLine: (line) => {
+          written.push(line);
+          const { id } = JSON.parse(line) as Response;
+          if (typeof id === 'number') waiting.get(id)?.();
+        },
+      },
+      { cacheDir, fetch: transport.fetch, agent: { adapterFor: () => agent, defaultAgent: 'pi' } },
+    );
+    const responses = written.map((line) => JSON.parse(line) as Response);
+    return { answer: (id: number) => responses.find((response) => response.id === id)!, before, agent };
+  }
+
+  it('offers Read the CI log with the review, reads no passing log until it is pressed, then judges the claim again citing it', async () => {
+    const { answer, before } = await serveCi([
+      request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+      request('review', { url: PR_URL, token: TOKEN }, 2),
+      request('readCiLog', { url: PR_URL, token: TOKEN, claim: 0 }, 3),
+    ]);
+
+    expect(answer(2).error).toBeUndefined();
+    expect((answer(2).result as ReviewResult).claims!.claims[0]!.verdict).toMatchObject({
+      kind: 'unverifiable',
+      settles: { kind: 'ci-log' },
+      ciLogFetch: { checks: ['check / lint'], reason: 'check / lint passed at the head commit; reading its log could settle the claim.' },
+    });
+    // Before the press only the failed job's log was read.
+    expect(before.filter((url) => url.includes('/logs'))).toEqual([`${API}/actions/jobs/9001/logs`]);
+
+    expect(answer(3).error).toBeUndefined();
+    const result = answer(3).result as ReviewResult;
+    expect(result.claims!.claims[0]!.verdict).toMatchObject({
+      kind: 'verified',
+      source: 'a CI log',
+      evidence: [{ path: 'check / lint', line: 11, quote: 'Lint passed with 0 errors.', ciLog: true, passingCheck: true }],
+      ciLogFetch: { checks: ['check / lint'] },
+      ciLogs: {
+        checks: [{ name: 'check / lint', url: 'https://github.com/example-org/example-repo/actions/runs/700/job/9002', detail: 'the log marks no failing step, so its last 13 lines are kept' }],
+        promptVersion: VERDICTS_PROMPT_VERSION,
+        stamp: { agent: 'fake' },
+      },
+    });
+    expect(JSON.stringify(answer(3))).not.toContain(TOKEN);
+    // The saved review follows the new verdict.
+    const saved = await readSavedReview(cacheDir, parsePullRequestUrl(PR_URL)!);
+    expect(saved!.result.claims!.claims).toEqual(result.claims!.claims);
+  });
+
+  it('refuses a claim that offers no CI log read, and a request without a token', async () => {
+    const { answer } = await serveCi([
+      request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+      request('readCiLog', { url: PR_URL, token: TOKEN, claim: 0 }, 2),
+      request('readCiLog', { url: PR_URL, claim: 0 }, 3),
+      request('readCiLog', { url: PR_URL, token: TOKEN, claim: 0, agent: { agent: 'nobody' } }, 4),
+    ]);
+    expect(answer(2)).toMatchObject({ error: { code: ENGINE_FAILED_CODE, message: `this engine has no reviewed claim 0 of ${PR_URL}; review the pull request again` } });
+    expect(answer(3)).toMatchObject({ error: { code: JSON_RPC_INVALID_PARAMS, message: expect.stringContaining('readCiLog needs params: { "url": string, "token": string, "claim": number') } });
+    expect(answer(4)).toMatchObject({ error: { code: JSON_RPC_INVALID_PARAMS, message: expect.stringContaining('readCiLog: ') } });
+  });
+
+  it('fails plainly when the claim offers no read', async () => {
+    const agent = answeringAgent((run) => {
+      if (run.instructions === CLAIMS_INSTRUCTIONS) return { claims: [{ source: 'description', quote: CHECK_CLAIM, file: null, line: null, part: 'p1' }] };
+      if (run.instructions === verdictsInstructions(true)) {
+        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: 'Only the author knows.', evidence: [], looked: [], settles: { kind: 'author', note: 'ask the author' }, library: null }] };
+      }
+      return {};
+    });
+    const { answer } = await serveCi(
+      [
+        request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+        request('review', { url: PR_URL, token: TOKEN }, 2),
+        request('readCiLog', { url: PR_URL, token: TOKEN, claim: 0 }, 3),
+      ],
+      agent,
+    );
+    expect((answer(2).result as ReviewResult).claims!.claims[0]!.verdict).not.toHaveProperty('ciLogFetch');
+    expect(answer(3)).toMatchObject({ error: { code: ENGINE_FAILED_CODE, message: 'this claim offers no CI log to read' } });
   });
 });
 

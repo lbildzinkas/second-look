@@ -48,6 +48,7 @@ export * from './repository-fetch.js';
 export * from './library-verdicts.js';
 export * from './pipeline.js';
 export * from './ci.js';
+export * from './ci-log-read.js';
 export * from './criteria.js';
 export * from './criteria-mapping.js';
 export * from './draft-comment.js';

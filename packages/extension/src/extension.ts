@@ -26,6 +26,7 @@ import {
   OPEN_REVIEW_CONTAINER_COMMAND,
   OPEN_SETTINGS_COMMAND,
   OPEN_SETUP_COMMAND,
+  READ_CI_LOG_COMMAND,
   REFRESH_PULL_REQUESTS_COMMAND,
   REVIEW_AGAIN_COMMAND,
   REVIEW_COMMAND,
@@ -80,6 +81,7 @@ import {
   withVerifiedClaim,
   type AskedClaim,
   type AskKind,
+  type CiLogFetchOffer,
   type CommentSide,
   type LibraryFetchOffer,
   type Part,
@@ -103,6 +105,7 @@ export {
   OPEN_OVERVIEW_COMMAND,
   OPEN_PART_COMMAND,
   OPEN_REVIEW_CONTAINER_COMMAND,
+  READ_CI_LOG_COMMAND,
   REVIEW_COMMAND,
   REVIEW_TREE_VIEW,
   SUBMIT_REVIEW_COMMAND,
@@ -131,6 +134,12 @@ function isPart(value: unknown): value is Part {
 function libraryFetchOf(result: ReviewResult | undefined, index: number): LibraryFetchOffer | undefined {
   const verdict = result?.claims?.claims[index]?.verdict;
   return verdict === undefined || verdict.kind === 'not checked' || verdict.library !== undefined ? undefined : verdict.libraryFetch;
+}
+
+/** The Read the CI log a claim of the result offers and the reviewer has not pressed yet, by the claim's index. */
+function ciLogFetchOf(result: ReviewResult | undefined, index: number): CiLogFetchOffer | undefined {
+  const verdict = result?.claims?.claims[index]?.verdict;
+  return verdict === undefined || verdict.kind === 'not checked' || verdict.ciLogs !== undefined ? undefined : verdict.ciLogFetch;
 }
 
 /** Whether a value is a comment the editor handed a command, such as a draft as the reviewer edited it. */
@@ -762,6 +771,46 @@ class ReviewSession {
   }
 
   /**
+   * Presses one claim's Read the CI log, the claim named by its index in
+   * the result's claims: asks for the GitHub sign-in, and the engine reads
+   * the logs of the checks that passed at the reviewed head commit, trimmed
+   * as a failed job's are, and has the agent the settings pick judge the
+   * claim again with them; the result it answers with replaces the one
+   * shown, keeping the reviewer's place. Nothing is fetched without this
+   * press (ADR 0003).
+   */
+  async readCiLog(arg?: unknown): Promise<void> {
+    const offer = typeof arg === 'number' ? ciLogFetchOf(this.result, arg) : undefined;
+    if (offer === undefined || this.url === undefined) {
+      vscode.window.showWarningMessage('This finding offers no CI log to read; review the pull request again.');
+      return;
+    }
+    let session: vscode.AuthenticationSession | undefined;
+    try {
+      session = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
+    } catch {
+      session = undefined;
+    }
+    if (!session) {
+      vscode.window.showWarningMessage('Sign in to GitHub to read the CI log.');
+      return;
+    }
+    const review = this.reviews;
+    const token = session.accessToken;
+    try {
+      const result = await vscode.window.withProgress(
+        { location: { viewId: REVIEW_TREE_VIEW }, title: `Reading the logs of ${offer.checks.join(', ')} and checking the claim again…` },
+        async () => (await this.readyEngine()).readCiLog(this.url!, token, arg as number, reviewAgentChoice(readAgentSettings())),
+      );
+      // A review started meanwhile replaces this one, read and all.
+      if (review !== this.reviews) return;
+      await this.show(result, true);
+    } catch (error) {
+      vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  /**
    * Drafts a comment from one finding, the reviewer having asked for it:
    * the engine has the agent the settings pick write a short draft from
    * the finding and its evidence, checked before it arrives. A draft from
@@ -1344,6 +1393,7 @@ export function activate(
     vscode.commands.registerCommand(OPEN_OVERVIEW_COMMAND, () => session.openOverview()),
     vscode.commands.registerCommand(WHY_THIS_MATTERS_COMMAND, (arg?: unknown) => session.whyThisMatters(arg)),
     vscode.commands.registerCommand(FETCH_LIBRARY_COMMAND, (arg?: unknown) => session.fetchLibrary(arg)),
+    vscode.commands.registerCommand(READ_CI_LOG_COMMAND, (arg?: unknown) => session.readCiLog(arg)),
     vscode.commands.registerCommand(OPEN_LIBRARY_EVIDENCE_COMMAND, (claim?: unknown, citation?: unknown) =>
       session.openLibraryEvidence(claim, citation),
     ),

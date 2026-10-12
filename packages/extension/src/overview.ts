@@ -1062,15 +1062,17 @@ export function claimWhere(claim: Claim): string {
   }
 }
 
-/** A citation as the reader reads it: a file's line, or a line of a check's CI log. */
-export function citedWhere(cited: { path: string; line: number; ciLog?: true }): string {
-  return cited.ciLog ? `CI log of ${cited.path}, line ${cited.line}` : `${cited.path}:${cited.line}`;
+/** A citation as the reader reads it: a file's line, or a line of a check's CI log, labelled when the check passed. */
+export function citedWhere(cited: { path: string; line: number; ciLog?: true; passingCheck?: true }): string {
+  if (!cited.ciLog) return `${cited.path}:${cited.line}`;
+  return `CI log of ${cited.path}${cited.passingCheck ? ' (a passing check)' : ''}, line ${cited.line}`;
 }
 
 /**
  * A checked verdict's evidence source, reason, citations, the library it
  * needs — with the library fetch offered for it, or the library source it
- * was judged against — why the engine dropped it, when it did, and that
+ * was judged against — the CI log read it offers, or the passing checks'
+ * logs it was judged with, why the engine dropped it, when it did, and that
  * the Verify this claim ask judged the claim alone, when it did;
  * nothing for a claim not checked.
  */
@@ -1108,6 +1110,8 @@ function verdictDetail(claim: Claim, index: number): string {
     lines.push(`needs the source of ${verdict.needsLibrary}, which the companion does not have`);
     if (verdict.noLibraryFetch !== undefined) lines.push(verdict.noLibraryFetch);
   }
+  if (verdict.ciLogs !== undefined) lines.push(`judged again with the logs of the checks that passed: ${verdict.ciLogs.checks.map((check) => `${check.name} (${check.detail})`).join('; ')}`);
+  else if (verdict.ciLogFetch !== undefined) lines.push(`CI log read offered: ${verdict.ciLogFetch.reason} Press Read the CI log on the finding's thread.`);
   if (verdict.recheck !== undefined) lines.push(`dropped to unverifiable: ${verdict.recheck}`);
   const why = (each: string): string => `<div class="why">${escapeHtml(each)}</div>`;
   const draft = isFinding(claim) ? `<div class="acts">${draftButton({ kind: 'claim', index })}</div>` : '';

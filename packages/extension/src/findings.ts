@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { findingAnchor, isFinding, isUnprovenSource, type Claim, type FetchedLibrary, type LibraryArchive, type ReviewResult } from '@second-look/engine';
 import { changeUri, partFiles } from './change-copies.js';
-import { DRAFT_COMMENT_COMMAND, FETCH_LIBRARY_COMMAND, FINDINGS_CONTROLLER_ID, FINDING_THREAD_CONTEXT, OPEN_LIBRARY_EVIDENCE_COMMAND } from './commands.js';
+import { DRAFT_COMMENT_COMMAND, FETCH_LIBRARY_COMMAND, FINDINGS_CONTROLLER_ID, FINDING_THREAD_CONTEXT, OPEN_LIBRARY_EVIDENCE_COMMAND, READ_CI_LOG_COMMAND } from './commands.js';
 import { citedWhere, claimWhere } from './overview.js';
 
 /** Markdown's punctuation, escaped, so text someone else wrote renders exactly as written. */
@@ -40,7 +40,9 @@ function citationLabel(path: string, library: FetchedLibrary): string {
  * A finding's thread body, as Markdown in which only the companion's own
  * words are markup: the verdict with its evidence source, the claim's
  * quote, the reason, each citation the engine re-checked — a CI log's
- * line labelled as one — the library
+ * line labelled as one, and as a passing check's when it is — the
+ * Read the CI log the companion offers, a link the reviewer presses, or
+ * the passing checks' logs the verdict was judged with — the library
  * the claim needs when it needs one — with the library fetch the
  * companion offers for it, a link the reviewer presses, or the library
  * source the verdict was judged against, each cited file a link that
@@ -96,6 +98,11 @@ export function findingBody(claim: Claim, index = 0): string {
     lines.push('', `Needs the source of ${escapeMarkdown(verdict.needsLibrary)}, which the companion does not have.`);
     if (verdict.noLibraryFetch !== undefined) lines.push('', escapeMarkdown(verdict.noLibraryFetch));
   }
+  if (verdict.ciLogs !== undefined) {
+    lines.push('', `Judged again with the logs of the checks that passed: ${verdict.ciLogs.checks.map((check) => `${escapeMarkdown(check.name)} (${escapeMarkdown(check.detail)})`).join('; ')}.`);
+  } else if (verdict.ciLogFetch !== undefined) {
+    lines.push('', escapeMarkdown(verdict.ciLogFetch.reason), '', `${commandLink('Read the CI log', READ_CI_LOG_COMMAND, [index])} — reads the passing checks' logs only when pressed.`);
+  }
   if (verdict.recheck !== undefined) lines.push('', `Dropped to unverifiable: ${escapeMarkdown(verdict.recheck)}.`);
   if (claim.asked === true) lines.push('', 'Judged singly by the **Verify this claim** ask.');
   lines.push('', `Claim made in ${escapeMarkdown(claimWhere(claim))}.`);
@@ -128,8 +135,8 @@ export class FindingThreads implements vscode.Disposable {
       const thread = this.threadFor(result, claim);
       if (thread === undefined) continue;
       const body = new vscode.MarkdownString(findingBody(claim, index));
-      // Only the companion's own links run, and only these three commands.
-      body.isTrusted = { enabledCommands: [FETCH_LIBRARY_COMMAND, OPEN_LIBRARY_EVIDENCE_COMMAND, DRAFT_COMMENT_COMMAND] };
+      // Only the companion's own links run, and only these four commands.
+      body.isTrusted = { enabledCommands: [FETCH_LIBRARY_COMMAND, READ_CI_LOG_COMMAND, OPEN_LIBRARY_EVIDENCE_COMMAND, DRAFT_COMMENT_COMMAND] };
       thread.comments = [
         {
           body,

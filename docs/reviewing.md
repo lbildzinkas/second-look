@@ -69,11 +69,15 @@ A **claim** is a statement about how the code or a library behaves, quoted as wr
 
 Every verdict names its **evidence source**, from the [glossary](../CONTEXT.md)'s list — and the model's memory alone never yields **verified**. The engine re-reads every line a verdict cites before showing it: a citation that does not match drops the verdict to unverifiable and says why.
 
-A refuted or unverifiable claim is a **finding**, shown as the companion's own comment thread on the exact line that makes it, badged on the part in the side bar, and listed on step 5's card with its verdict, its reason and evidence source, each line it cites — the head copy's line read-only, or a CI log's check run on GitHub — where it is made as a link, and its actions — every one the thread and the overview offer, including the library fetch below. **Verify again** re-runs the verify ask on that claim alone; **Verify a claim…** runs it over them all.
+A refuted or unverifiable claim is a **finding**, shown as the companion's own comment thread on the exact line that makes it, badged on the part in the side bar, and listed on step 5's card with its verdict, its reason and evidence source, each line it cites — the head copy's line read-only, or a CI log's check run on GitHub — where it is made as a link, and its actions — every one the thread and the overview offer, including the library fetch and the CI log read below. **Verify again** re-runs the verify ask on that claim alone; **Verify a claim…** runs it over them all.
 
 ### The library fetch
 
 When a claim turns on how a third-party library behaves and the head copy pins that library, the thread offers a **library fetch** with its reason: press the **Fetch** link and the engine downloads that exact version from the ecosystem's own host, checks it against the hash the project pins before unpacking anything, unpacks it read-only, and judges the claim again with that source. A .NET package with no exact source offers a **Decompile** link instead when that version's licence allows it, or says why not. Nothing is downloaded until you press: the fetch is always your choice. A fetched library's cited lines open read-only from the same cache the agent read.
+
+### Reading a passing check's CI log
+
+A review reads only the failed checks' logs. When a claim is unverifiable and a CI log could settle it — such as a description's "the checks pass" — and the pull request has checks that passed at its head, its thread and step 5's row offer **Read the CI log**. Pressing it asks for the GitHub sign-in, reads the logs of the GitHub Actions jobs that passed at the reviewed head commit, trimmed and capped as a failed job's are, and judges the claim again with them. The new verdict cites the log's lines as it would a failed log's, each labelled as from a passing check, and says which checks' logs it read. Nothing is fetched until you press: a passing check's log is read only on your press, as library source is ([ADR 0003](adr/0003-library-source-only-on-reviewer-request.md)).
 
 ## The acceptance criteria
 

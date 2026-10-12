@@ -26,7 +26,7 @@ import {
   type CarriedParts,
   type EarlierReview,
 } from './carry-over.js';
-import { readCi } from './ci.js';
+import { offerCiLogReads, readCi } from './ci.js';
 import { findClaims } from './claims.js';
 import { DEFAULT_CRITERIA_HEADING, readCriteria } from './criteria.js';
 import { mapCriteria } from './criteria-mapping.js';
@@ -488,7 +488,8 @@ function stagesSince(input: ReviewInput, parsed: ParsedDiff, earlier: ReviewResu
       agentStage.claims !== false && ((shown, told) => claimsSince(shown, told, input, earlier, sameDescription, same)),
       keep(sameText && earlier.claims?.outcome === 'listed', async (shown) => {
         if ((earlier.story?.outcome === 'written') !== (shown.story?.outcome === 'written')) return undefined;
-        const claims = mergeClaims(pipelineClaims(shown.pipeline, shown.parts), await standingClaims(carryClaims(earlier, shown.parts, () => true), same));
+        const carried = offerCiLogReads(await standingClaims(carryClaims(earlier, shown.parts, () => true), same), shown.ci);
+        const claims = mergeClaims(pipelineClaims(shown.pipeline, shown.parts), carried);
         return { ...shown, claims: { ...earlier.claims!, claims } };
       }),
     ],
@@ -570,7 +571,7 @@ async function claimsSince(
   if (listed.claims === undefined) return listed;
   const kept = (claim: Claim) => claim.source !== 'agent' && (claim.source !== 'description' || sameDescription);
   const fresh = listed.claims.claims.filter((claim) => !kept(claim) || claim.source === 'pipeline' || !listed.parts[claim.part]?.carried);
-  const carried = await standingClaims(carryClaims(earlier, listed.parts, kept), same);
+  const carried = offerCiLogReads(await standingClaims(carryClaims(earlier, listed.parts, kept), same), listed.ci);
   return { ...listed, claims: { ...listed.claims, claims: mergeClaims(fresh, carried) } };
 }
 
@@ -869,8 +870,10 @@ async function claimsStage(
  * the change, the read-only head copy and the failed checks' trimmed CI
  * logs, and the engine re-checks every citation it gives; a verdict that
  * needs a library the head copy pins, or for which the agent named a
- * repository and tag, then offers its library fetch, which downloads
- * nothing until the reviewer presses it. No claims need no judging;
+ * repository and tag, then offers its library fetch, and an unverifiable
+ * verdict a CI log could settle offers Read the CI log when checks passed
+ * at the head commit; neither downloads anything until the reviewer
+ * presses it. No claims need no judging;
  * when the agent's listing fell back, the pipeline's claims are still
  * judged.
  */
@@ -893,7 +896,7 @@ async function verdictsStage(
     root: input.copies.head.path,
     ...(shown.ci ? { ci: shown.ci } : {}),
   });
-  const offered = await offerLibraryFetches(judged.claims, input.copies.head.path);
+  const offered = offerCiLogReads(await offerLibraryFetches(judged.claims, input.copies.head.path), shown.ci);
   return { ...shown, claims: { ...claims, ...judged, claims: offered } };
 }
 

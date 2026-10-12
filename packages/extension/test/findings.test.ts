@@ -3,7 +3,7 @@ import type { ReviewResult } from '@second-look/engine';
 import { changeUri } from '../src/change-copies.js';
 import { FINDINGS_CONTROLLER_ID, FINDING_THREAD_CONTEXT } from '../src/commands.js';
 import { FindingThreads, escapeMarkdown, findingBody } from '../src/findings.js';
-import { claimsResult, fetchedResult, judgedResult, offeredResult, pipelineResult } from './results.js';
+import { ciLogOfferedResult, ciLogReadResult, claimsResult, fetchedResult, judgedResult, offeredResult, pipelineResult } from './results.js';
 import { StubMarkdownString, stub, type StubCommentController } from './vscode-stub.js';
 
 /** The findings' own controller, beside any other the companion made. */
@@ -142,6 +142,19 @@ describe('findingBody', () => {
     expect(body).not.toContain('command:second-look.fetchLibrary');
   });
 
+  it('offers Read the CI log with its reason, as a link the reviewer presses', () => {
+    const body = findingBody(ciLogOfferedResult().claims!.claims[1]!, 1);
+    expect(body).toContain('check / lint passed at the head commit; reading its log could settle the claim\\.');
+    expect(body).toContain(`[Read the CI log](command:second-look.readCiLog?${encodeURIComponent('[1]')}) — reads the passing checks' logs only when pressed.`);
+  });
+
+  it("labels a passing check's cited log line as one, and names the logs the claim was judged again with", () => {
+    const body = findingBody(ciLogReadResult().claims!.claims[1]!, 1);
+    expect(body).toContain('- CI log of check / lint \\(a passing check\\), line 2 — 1 problem \\(0 errors, 1 warning\\)');
+    expect(body).toContain('Judged again with the logs of the checks that passed: check / lint (the log marks no failing step, so its last 3 lines are kept).');
+    expect(body).not.toContain('command:second-look.readCiLog');
+  });
+
   it('says when the Verify this claim ask judged the claim alone', () => {
     const fetched = fetchedResult().claims!.claims[2]!;
 
@@ -256,13 +269,13 @@ describe('findingBody', () => {
     expect(body).toContain(escapeMarkdown(noLibraryFetch));
   });
 
-  it('trusts only the fetch, the open-evidence and the draft commands in a finding', () => {
+  it('trusts only the fetch, the CI log read, the open-evidence and the draft commands in a finding', () => {
     stub.reset();
     new FindingThreads().show(offeredResult());
 
     const body = controller().threads[1]!.comments[0]!.body as StubMarkdownString & { isTrusted?: unknown };
     expect(body.value).toContain('command:second-look.fetchLibrary');
-    expect(body.isTrusted).toEqual({ enabledCommands: ['second-look.fetchLibrary', 'second-look.openLibraryEvidence', 'second-look.draftComment'] });
+    expect(body.isTrusted).toEqual({ enabledCommands: ['second-look.fetchLibrary', 'second-look.readCiLog', 'second-look.openLibraryEvidence', 'second-look.draftComment'] });
   });
 
   it('offers a draft comment from each finding, naming the claim by its index in the claims', () => {
