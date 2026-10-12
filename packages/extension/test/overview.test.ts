@@ -23,6 +23,7 @@ import {
   mixedResult,
   nonDefaultBranchResult,
   pipelineResult,
+  settledResult,
   storyResult,
   unexplainedResult,
   verdictsRunningStages,
@@ -300,6 +301,30 @@ describe('the verdicts on the overview', () => {
     expect(html).toContain('<li><b>Verdicts</b> judged by pi · zai/glm-4.6 · default effort · verdicts prompt v1: every citation was re-read in the head copy</li>');
   });
 
+  it('shows in each claim\u2019s detail what its agent looked at, and for an unverifiable one what would settle it', () => {
+    const shown = settledResult();
+    const docstring = shown.claims!.claims[1]!;
+    docstring.verdict = { ...(docstring.verdict as Exclude<typeof docstring.verdict, { kind: 'not checked' }>), lookedRecheck: 'the range <b>gone.py</b>:1 names a file the head copy does not have' };
+    const html = overviewHtml({ result: shown }, 'N');
+
+    // Each range is a chip that opens it in the head copy, a single line read as one.
+    expect(html).toContain(
+      '<span class="label">Looked at</span><span class="v"><button type="button" class="pt ref claim-looked" data-claim="1" data-index="0">src/retry.py:5–6</button> <button type="button" class="pt ref claim-looked" data-claim="1" data-index="1">src/settings.ts:2</button></span>',
+    );
+    expect(html).toContain('<div class="why">dropped from what it looked at: the range &lt;b&gt;gone.py&lt;/b&gt;:1 names a file the head copy does not have</div>');
+    // A verdict that read nothing says so; the verified one shows its reading too.
+    expect(html).toContain('<span class="label">Looked at</span><span class="v">no line of the head copy</span>');
+    expect(html).toContain('<button type="button" class="pt ref claim-looked" data-claim="0" data-index="0">src/retry.py:1–8</button>');
+    expect(html.match(/<span class="label">Looked at<\/span>/g)).toHaveLength(6);
+    // Every unverifiable claim says what would settle it, and no other does.
+    expect(html.match(/<span class="label">Would settle it<\/span>/g)).toHaveLength(4);
+    expect(html).toContain('<span class="label">Would settle it</span><span class="v">the author: the measured numbers come from the author&#39;s own run</span>');
+    expect(html).toContain('<span class="label">Would settle it</span><span class="v">something outside the repository: the delivery service limits</span>');
+    // A claim the code cannot settle is no finding: it offers no draft comment.
+    expect(html).toContain('data-draft="claim" data-index="3"');
+    expect(html).not.toMatch(/data-draft="claim" data-index="[45]"/);
+  });
+
   it('labels a verdict judged in a named repository weaker than pinned source, and says plainly why no fetch is offered', () => {
     const shown = fetchedResult();
     const claims = shown.claims!;
@@ -386,7 +411,7 @@ describe('the verdicts on the overview', () => {
     const html = overviewHtml({ result: judged }, 'N');
 
     expect(html).toContain(
-      ', save the one checked verdict that came from the Verify this claim ask; the refuted and unverifiable ones are findings, each a thread on the diff.',
+      ', save the one checked verdict that came from the Verify this claim ask; the refuted ones, and the unverifiable ones the code or a library&#39;s source could settle, are findings, each a thread on the diff.',
     );
     expect(html).toContain('<div class="why">judged singly by the Verify this claim ask</div>');
     expect(overviewHtml({ result: shown }, 'N')).not.toContain('save the one checked verdict');
@@ -1244,6 +1269,29 @@ describe('OverviewPanel', () => {
     expect(lines).toEqual([
       ['src/retry.py', 5, 'head'],
       ['src/retry.py', 6, 'head'],
+    ]);
+  });
+
+  it('opens each range a claim’s agent looked at in the head copy, and none it did not look at', () => {
+    const lines: [string, number, CommentSide][] = [];
+    const overview = new OverviewPanel(() => undefined, (path, line, side) => lines.push([path, line, side]), () => undefined);
+    overview.update(settledResult());
+    overview.open();
+    const panel = stub.webviewPanels[0]!;
+    // The page's own script posts the claim and range a chip names, which the panel then opens.
+    const page = PageDouble.load(panel.webview.html);
+    page.matching('button.claim-looked').forEach((chip) => chip.click());
+    expect(page.posted).toContainEqual({ type: 'openClaimLooked', claim: 1, index: 1 });
+
+    panel.webview.receive({ type: 'openClaimLooked', claim: 1, index: 0 });
+    panel.webview.receive({ type: 'openClaimLooked', claim: 1, index: 1 });
+    panel.webview.receive({ type: 'openClaimLooked', claim: 1, index: 5 });
+    panel.webview.receive({ type: 'openClaimLooked', claim: 99, index: 0 });
+    panel.webview.receive({ type: 'openClaimLooked', claim: '1', index: 0 });
+
+    expect(lines).toEqual([
+      ['src/retry.py', 5, 'head'],
+      ['src/settings.ts', 2, 'head'],
     ]);
   });
 

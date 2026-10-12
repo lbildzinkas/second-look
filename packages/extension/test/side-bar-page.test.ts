@@ -22,7 +22,7 @@ import { SetupForm } from '../src/side-bar/setup-form.js';
 import { StepTickStore } from '../src/side-bar/step-ticks.js';
 import type { SideBarState } from '../src/side-bar/steps.js';
 import { anchorOf, buildTree, pendingReviewSection } from '../src/tree.js';
-import { fetchedResult, judgedResult, mappedCriteriaResult, mixedResult, offeredResult, pipelineResult, reviewStages, unexplainedResult, STAGE_MS, STAGES_START } from './results.js';
+import { fetchedResult, judgedResult, mappedCriteriaResult, mixedResult, offeredResult, pipelineResult, reviewStages, settledResult, unexplainedResult, STAGE_MS, STAGES_START } from './results.js';
 import { ConfigurationTarget, stub, stubContext, window } from './vscode-stub.js';
 
 /**
@@ -740,6 +740,28 @@ describe("the side bar's page script", () => {
     ]);
     expect(overviews).toEqual([{ descriptionLine: 1 }, { storySentence: 1 }]);
     expect(stub.openedExternals).toEqual(['https://github.com/example-org/example-repo/actions/runs/700/job/9001']);
+  });
+
+  it('opens each range a claim\u2019s agent looked at from its step 5 row, in the head copy', () => {
+    const opened: [string, number][] = [];
+    const deps: SideBarDeps = {
+      openLine: (path, line) => opened.push([path, line]),
+      openOverviewAt: () => undefined,
+      ticks: new StepTickStore(stubContext().globalState),
+      comment: () => undefined,
+    };
+    const { page } = loadSideBar(reviewState({ result: settledResult(), storyRead: true, marks: marked(...mixedResult().parts) }), undefined, undefined, deps);
+
+    page.click('step-5-looked-claim-1-0');
+    page.click('step-5-looked-claim-1-1');
+    // A quiet claim's reading opens too: it has no thread, but its lines are the head copy's.
+    page.click('step-5-looked-claim-4-0');
+
+    expect(opened).toEqual([
+      ['src/retry.py', 5],
+      ['src/settings.ts', 2],
+      ['src/retry.py', 1],
+    ]);
   });
 
   it("ticks a step's I've-checked-these box, which redraws the card as done and keeps its tick across a redraw", async () => {

@@ -1,5 +1,5 @@
-import { escapeHtml, claimWhere, citedWhere, issueName, sanitiseUntrusted, stageEndLine, STATES } from '../overview.js';
-import { isFinding, isUnmetCriterion, isUnprovenSource, type AcceptanceCriterion, type Claim, type ClaimVerdict, type FindingRef, type LinkedIssue, type ReviewResult, type ReviewStageId, type SubmitKind } from '@second-look/engine';
+import { escapeHtml, claimWhere, citedWhere, issueName, lookedWhere, sanitiseUntrusted, settlesLine, stageEndLine, STATES } from '../overview.js';
+import { FINDING_SETTLES, isFinding, isUnmetCriterion, isUnprovenSource, type AcceptanceCriterion, type Claim, type ClaimVerdict, type FindingRef, type LinkedIssue, type ReviewResult, type ReviewStageId, type SettlesKind, type SubmitKind } from '@second-look/engine';
 import type { ListedComment } from '../comments.js';
 import { anchorOf, preview, type PartAnchor, type TreePart, type TreeSection } from '../tree.js';
 import { progressBody } from './progress.js';
@@ -210,23 +210,80 @@ function claimEvidence(verdict: CheckedVerdict, index: number): string {
   });
   const cited = chips.length === 0 ? '' : `<div class="meta">${chips.join('')}</div>`;
   const recheck = verdict.recheck === undefined ? '' : `<div class="why">${escapeHtml(`dropped to unverifiable: ${verdict.recheck}`)}</div>`;
-  return `<div class="why">${escapeHtml(`${verdict.source}: ${verdict.reason}`)}</div>` + cited + recheck;
+  return `<div class="why">${escapeHtml(`${verdict.source}: ${verdict.reason}`)}</div>` + cited + recheck + claimTrail(verdict, index);
 }
 
-/** Step 5's row for one claim finding: its verdict and where it is made as a link that opens it, whether it was carried over from the saved review of an earlier commit, its quote, its reason and evidence, and its actions. */
+/** That a claim was carried over from the saved review of an earlier commit, when it was. */
+function carriedMark(claim: Claim): string {
+  return claim.carried ? '<span class="carried">carried over</span>' : '';
+}
+
+/**
+ * What a checked verdict's agent looked at, each range of the head copy
+ * a chip that opens it there, why the engine dropped any, and, for an
+ * unverifiable claim, what would settle it.
+ */
+function claimTrail(verdict: CheckedVerdict, index: number): string {
+  const chips = verdict.looked.map((range, at) => {
+    const where = escapeHtml(lookedWhere(range));
+    return `<button type="button" class="chip" id="step-5-looked-claim-${index}-${at}" data-claim-looked="${index}" data-index="${at}" title="Open the lines in the head copy" aria-label="Open the lines in the head copy of ${where}">${where}</button>`;
+  });
+  const looked = chips.length === 0 ? `<span class="none">no line of the head copy</span>` : chips.join('');
+  const dropped = verdict.lookedRecheck === undefined ? '' : `<div class="why">${escapeHtml(`dropped from what it looked at: ${verdict.lookedRecheck}`)}</div>`;
+  const settles = verdict.settles === undefined ? '' : `<div class="why"><span class="label">Would settle it</span> ${escapeHtml(settlesLine(verdict.settles))}</div>`;
+  return `<div class="meta"><span class="label">Looked at</span>${looked}</div>` + dropped + settles;
+}
+
+/** Step 5's row for one claim finding: its verdict and where it is made as a link that opens it, whether it was carried over from the saved review of an earlier commit, its quote, its reason, evidence and trail, and its actions, Fetch library first for a claim a library's source would settle. */
 function claimFindingRow(claim: Claim, index: number): string {
   const verdict = claim.verdict.kind === 'not checked' ? undefined : claim.verdict;
   const offer = verdict === undefined || verdict.library !== undefined ? undefined : verdict.libraryFetch;
   const fetch = offer === undefined ? '' : findingButton(5, 'fetch', { kind: 'claim', index }, offer.decompile === undefined ? 'Fetch library' : 'Decompile');
   const finding = { kind: 'claim' as const, index };
+  const thread = `${findingButton(5, 'draft', finding, 'Draft comment')}${findingButton(5, 'open', finding, 'Open')}${findingButton(5, 'verify', finding, 'Verify again')}`;
   return (
     `<li class="finding">` +
-    `<div class="head">${statePill(claim.verdict.kind)}${claimWhereButton(claim, index)}${claim.carried ? '<span class="carried">carried over</span>' : ''}</div>` +
+    `<div class="head">${statePill(claim.verdict.kind)}${claimWhereButton(claim, index)}${carriedMark(claim)}</div>` +
     `<q class="quote">${sanitiseUntrusted(claim.quote).html}</q>` +
     (verdict === undefined ? '' : claimEvidence(verdict, index)) +
-    `<div class="actions">${findingButton(5, 'draft', finding, 'Draft comment')}${findingButton(5, 'open', finding, 'Open')}${findingButton(5, 'verify', finding, 'Verify again')}${fetch}</div>` +
+    `<div class="actions">${verdict?.settles?.kind === 'library' ? fetch + thread : thread + fetch}</div>` +
     `</li>`
   );
+}
+
+/** Step 5's row for a claim listed quietly: its verdict, where it is made, whether it was carried over, its quote, its reason, evidence and trail, with no thread to act on. */
+function quietClaimRow(claim: Claim, index: number): string {
+  const verdict = claim.verdict.kind === 'not checked' ? undefined : claim.verdict;
+  return (
+    `<li class="finding quiet">` +
+    `<div class="head">${statePill(claim.verdict.kind)}${claimWhereButton(claim, index)}${carriedMark(claim)}</div>` +
+    `<q class="quote">${sanitiseUntrusted(claim.quote).html}</q>` +
+    (verdict === undefined ? '' : claimEvidence(verdict, index)) +
+    `</li>`
+  );
+}
+
+/**
+ * Step 5's groups of unverifiable claims, by what can settle them: the
+ * code's and a library's are findings, the author's run and outside the
+ * repository listed quietly, counted as none.
+ */
+const CLAIM_GROUPS: readonly { title: string; settles: readonly SettlesKind[] }[] = [
+  { title: 'Should be checkable', settles: ['code'] },
+  { title: 'Needs a library', settles: ['library'] },
+  { title: "The author's run", settles: ['ci-log', 'sandboxed-run', 'author'] },
+  { title: 'Outside the repository', settles: ['outside-repository'] },
+];
+
+/** The group an unverifiable claim falls in: the one its settles names, the code's when it names none. */
+function claimGroup(claim: Claim): (typeof CLAIM_GROUPS)[number] {
+  const kind = claim.verdict.kind === 'unverifiable' ? (claim.verdict.settles?.kind ?? 'code') : 'code';
+  return CLAIM_GROUPS.find((group) => group.settles.includes(kind))!;
+}
+
+/** Whether a group is listed quietly: nothing in it is a finding. */
+function isQuietGroup(group: (typeof CLAIM_GROUPS)[number]): boolean {
+  return !group.settles.some((kind) => FINDING_SETTLES.includes(kind));
 }
 
 /** What step 5 says of claims none of which is checked: how the listing ended with none, why the judging left none, or that the verdicts are still to come. */
@@ -237,7 +294,12 @@ function unjudgedNote(state: SideBarState, claims: NonNullable<ReviewResult['cla
   return `None is checked: ${stageLine(state, 'verdicts') ?? 'the verdicts pass did not run'}.`;
 }
 
-/** Step 5's body: the claim findings with their actions, the verified claims folded below them, the verify ask, and the tick. */
+/**
+ * Step 5's body: the refuted claims, then the unverifiable ones grouped by
+ * what can settle them — the code's and a library's as findings with their
+ * actions, the author's run and outside the repository listed quietly —
+ * the verified claims folded below them, the verify ask, and the tick.
+ */
 function claimsBody(state: SideBarState): string {
   const { result, ticks } = state;
   if (result === undefined) return note('The claims and their verdicts show here once a review opens.');
@@ -254,17 +316,30 @@ function claimsBody(state: SideBarState): string {
       tickRow(5, 'claims', ticks?.claims === true, "I've checked the claims")
     );
   }
-  const rows: string[] = [];
+  const refuted: string[] = [];
+  const grouped = new Map(CLAIM_GROUPS.map((group) => [group, [] as string[]]));
   let verified = 0;
   let carried = 0;
   for (const [index, claim] of claims.entries()) {
-    if (isFinding(claim)) rows.push(claimFindingRow(claim, index));
-    else if (claim.verdict.kind === 'verified') {
+    if (claim.verdict.kind === 'refuted') refuted.push(claimFindingRow(claim, index));
+    else if (claim.verdict.kind === 'unverifiable') {
+      grouped.get(claimGroup(claim))!.push(isFinding(claim) ? claimFindingRow(claim, index) : quietClaimRow(claim, index));
+    } else if (claim.verdict.kind === 'verified') {
       verified += 1;
       if (claim.carried) carried += 1;
     }
   }
-  const list = rows.length === 0 ? note('No refuted or unverifiable claim.') : `<ul class="findings" aria-label="Claim findings">${rows.join('')}</ul>`;
+  const groups = CLAIM_GROUPS.filter((group) => grouped.get(group)!.length > 0).map((group) => {
+    const quiet = isQuietGroup(group);
+    return (
+      `<h3 class="group">${escapeHtml(group.title)}${quiet ? ' <span class="aside">· not findings</span>' : ''}</h3>` +
+      `<ul class="findings${quiet ? ' quiet' : ''}" aria-label="${escapeHtml(group.title)}">${grouped.get(group)!.join('')}</ul>`
+    );
+  });
+  const list =
+    refuted.length === 0 && groups.length === 0
+      ? note('No refuted or unverifiable claim.')
+      : (refuted.length === 0 ? '' : `<ul class="findings" aria-label="Refuted claims">${refuted.join('')}</ul>`) + groups.join('');
   const folded = verified === 0 ? '' : `<p class="folded"><span class="tone-ok" aria-hidden="true">✓</span> ${verified} verified${carried === 0 ? '' : `, ${carried} carried over`}</p>`;
   return (
     list +
@@ -568,6 +643,10 @@ export function sideBarHtml(nonce: string, body: string): string {
   .finding button.where:hover { color: var(--vscode-textLink-foreground); text-decoration: underline; }
   .finding .carried { color: var(--vscode-descriptionForeground); font-size: 12px; font-style: italic; }
   .finding .why { color: var(--vscode-descriptionForeground); font-size: 12px; overflow-wrap: anywhere; margin-top: 2px; }
+  .finding .label { font-size: 11px; font-weight: 600; }
+  .finding .none { font-style: italic; }
+  .findings.quiet .finding { border-style: dashed; }
+  .group .aside { font-weight: normal; text-transform: none; letter-spacing: normal; }
   .finding .quote { display: block; margin: 3px 0; overflow-wrap: anywhere; }
   .hidden { border: 1px dashed var(--vscode-editorWarning-foreground, var(--vscode-foreground)); border-radius: 3px; padding: 0 4px; }
   .flag { color: var(--vscode-editorWarning-foreground, var(--vscode-foreground)); font-size: 11px; font-weight: 600; margin-right: 6px; }
@@ -630,6 +709,8 @@ export function sideBarHtml(nonce: string, body: string): string {
       vscode.postMessage({ type: 'openPart', anchor: anchorOf(pressed) });
     } else if (pressed.hasAttribute('data-claim-where')) {
       vscode.postMessage({ type: 'claimWhere', claim: Number(pressed.getAttribute('data-claim-where')) });
+    } else if (pressed.hasAttribute('data-claim-looked')) {
+      vscode.postMessage({ type: 'claimLooked', claim: Number(pressed.getAttribute('data-claim-looked')), index: Number(pressed.getAttribute('data-index')) });
     } else if (pressed.hasAttribute('data-claim-evidence')) {
       vscode.postMessage({ type: 'claimEvidence', claim: Number(pressed.getAttribute('data-claim-evidence')), index: Number(pressed.getAttribute('data-index')) });
     } else if (pressed.hasAttribute('data-finding')) {

@@ -21,7 +21,7 @@ import {
   earlierCommitLine,
   UNEXPLAINED_BADGE,
 } from '../src/tree.js';
-import { carriedResult, claimsResult, judgedResult, mixedResult, part, result, unexplainedResult } from './results.js';
+import { carriedResult, claimsResult, judgedResult, mixedResult, part, result, settledResult, unexplainedResult } from './results.js';
 import type { TreeFilter, TreePart } from '../src/tree.js';
 
 /** A hunk adding one line at the given place, on both sides. */
@@ -239,6 +239,15 @@ describe('claim counts in the tree', () => {
     });
     expect(mustReview!.parts[0]!.tooltip).toContain('3 claims, 2 refuted or unverifiable, each a thread on the diff; the overview lists them');
     expect(worthReviewing!.parts[0]).toMatchObject({ claims: 1, findings: 1, description: '⚠ 1 finding · 1 claim · Changed code that the retry policy reads.' });
+  });
+
+  it('counts no claim the code cannot settle among a part\u2019s findings', () => {
+    const counts = (shown: ReturnType<typeof judgedResult>) => buildTree(shown).flatMap((section) => section.parts.map((each) => [(each as TreePart).claims, (each as TreePart).findings]));
+    // The two quiet claims add to their part's claims, never to its findings.
+    const judged = counts(judgedResult());
+    const settled = counts(settledResult());
+    expect(settled.map(([, findings]) => findings)).toEqual(judged.map(([, findings]) => findings));
+    expect(settled.reduce((sum, [claims]) => sum + (claims ?? 0), 0)).toBe(judged.reduce((sum, [claims]) => sum + (claims ?? 0), 0) + 2);
   });
 
   it('badges no part whose judged claims are all verified', () => {

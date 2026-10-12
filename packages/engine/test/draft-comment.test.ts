@@ -149,6 +149,16 @@ describe('draftFinding', () => {
     expect(draftFinding(reviewed(), { kind: 'described change', index: 2 })).toBeUndefined();
   });
 
+  it('reads no finding from an unverifiable claim only the author or something outside the repository can settle', () => {
+    const result = reviewed();
+    const claim = result.claims!.claims[1]!;
+    const verdict = claim.verdict as Exclude<typeof claim.verdict, { kind: 'not checked' }>;
+    claim.verdict = { ...verdict, settles: { kind: 'author', note: "the numbers come from the author's own run" } };
+    expect(draftFinding(result, { kind: 'claim', index: 1 })).toBeUndefined();
+    claim.verdict = { ...verdict, settles: { kind: 'outside-repository', note: 'the service limits' } };
+    expect(draftFinding(result, { kind: 'claim', index: 1 })).toBeUndefined();
+  });
+
   it('reads an unexplained part by its name, citing its files', () => {
     expect(draftFinding(reviewed(), { kind: 'unexplained part', index: 0 })).toEqual({
       kind: 'unexplained change',

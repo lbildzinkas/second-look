@@ -22,11 +22,14 @@ import {
   type FindingRef,
   type HiddenKind,
   type LinkedIssue,
+  type LookedRange,
   type Part,
   type ReviewResult,
   type ReviewStageAgent,
   type ReviewStageId,
   type ReviewStageRecord,
+  type Settles,
+  type SettlesKind,
   type Story,
 } from '@second-look/engine';
 import { carriedOverLine, earlierCommitLine, sinceLastLookLine } from './tree.js';
@@ -97,6 +100,13 @@ export type OverviewMessage =
       type: 'openClaimWhere';
       /** The claim whose where it is, by its index in the claims. */
       claim: number;
+    }
+  | {
+      type: 'openClaimLooked';
+      /** The claim, by its index in the claims. */
+      claim: number;
+      /** The range the agent read, by its index in that claim's verdict's looked. */
+      index: number;
     };
 
 
@@ -107,6 +117,7 @@ function overviewMessage(value: unknown): OverviewMessage | undefined {
   if (type === 'openDoc' && Number.isInteger(doc)) return { type, target: doc as number };
   if (type === 'openClaimWhere' && Number.isInteger(claim)) return { type, claim: claim as number };
   if (type === 'openClaimEvidence' && Number.isInteger(claim) && Number.isInteger(index)) return { type, claim: claim as number, index: index as number };
+  if (type === 'openClaimLooked' && Number.isInteger(claim) && Number.isInteger(index)) return { type, claim: claim as number, index: index as number };
   if (type === 'openCited' && Number.isInteger(answer) && Number.isInteger(index)) return { type, answer: answer as number, index: index as number };
   if (type === 'openPart' && Number.isInteger(part)) return { type, target: part as number };
   if (type === 'openIssue' && Number.isInteger(issue)) return { type, target: issue as number };
@@ -271,6 +282,13 @@ export class OverviewPanel implements vscode.Disposable {
       // A CI log's line, or a line of fetched library source, is not a line of the head copy.
       const cited = verdict === undefined || verdict.kind === 'not checked' || verdict.library !== undefined ? undefined : verdict.evidence[message.index];
       if (cited !== undefined && cited.ciLog !== true) this.openLine(cited.path, cited.line, 'head');
+      return;
+    }
+    if (message.type === 'openClaimLooked') {
+      const verdict = this.state?.result.claims?.claims[message.claim]?.verdict;
+      // What the agent read is always a range of the head copy, even for a verdict judged again in a library's source.
+      const range = verdict === undefined || verdict.kind === 'not checked' ? undefined : verdict.looked[message.index];
+      if (range !== undefined) this.openLine(range.path, range.line, 'head');
       return;
     }
     if (message.type === 'openEvidence') {
@@ -1067,12 +1085,35 @@ export function citedWhere(cited: { path: string; line: number; ciLog?: true }):
   return cited.ciLog ? `CI log of ${cited.path}, line ${cited.line}` : `${cited.path}:${cited.line}`;
 }
 
+/** A range of the head copy the agent read, as the reader reads it: `path:line`, or `path:line–endLine`. */
+export function lookedWhere(range: LookedRange): string {
+  return range.endLine > range.line ? `${range.path}:${range.line}–${range.endLine}` : `${range.path}:${range.line}`;
+}
+
+/** How a reader names what could settle an unverifiable claim. */
+const SETTLES_WORDS: Record<SettlesKind, string> = {
+  code: 'the code',
+  library: "the library's source",
+  'ci-log': 'a CI log',
+  'sandboxed-run': 'a sandboxed run',
+  'outside-repository': 'something outside the repository',
+  author: 'the author',
+};
+
+/** What could settle an unverifiable claim, in words: its route, then its note. */
+export function settlesLine(settles: Settles): string {
+  const note = settles.note.trim();
+  return note === '' ? SETTLES_WORDS[settles.kind] : `${SETTLES_WORDS[settles.kind]}: ${note}`;
+}
+
 /**
- * A checked verdict's evidence source, reason, citations, the library it
- * needs — with the library fetch offered for it, or the library source it
- * was judged against — why the engine dropped it, when it did, and that
- * the Verify this claim ask judged the claim alone, when it did;
- * nothing for a claim not checked.
+ * A checked verdict's evidence source, reason, citations, what the agent
+ * looked at — each range a chip that opens it in the head copy — and, for
+ * an unverifiable one, what would settle it, the library it needs — with
+ * the library fetch offered for it, or the library source it was judged
+ * against — why the engine dropped it or any range it looked at, when it
+ * did, and that the Verify this claim ask judged the claim alone, when it
+ * did; nothing for a claim not checked.
  */
 function verdictDetail(claim: Claim, index: number): string {
   const { verdict } = claim;
@@ -1090,7 +1131,14 @@ function verdictDetail(claim: Claim, index: number): string {
         : `<button type="button" class="pt ref claim-cite" data-claim="${index}" data-index="${at}">${where}</button>`;
     return `<span class="l">${chip} <span class="cited">${escapeHtml(each.quote)}</span></span>`;
   });
-  const evidence = cited.length === 0 ? '' : evidenceGroups([['Evidence', foldedLines(cited)]]);
+  const looked = verdict.looked.map(
+    (range, at) => `<button type="button" class="pt ref claim-looked" data-claim="${index}" data-index="${at}">${escapeHtml(lookedWhere(range))}</button>`,
+  );
+  const groups: [string, string][] = [];
+  if (cited.length > 0) groups.push(['Evidence', foldedLines(cited)]);
+  groups.push(['Looked at', looked.length === 0 ? escapeHtml('no line of the head copy') : looked.join(' ')]);
+  if (verdict.settles !== undefined) groups.push(['Would settle it', escapeHtml(settlesLine(verdict.settles))]);
+  const evidence = evidenceGroups(groups);
   const lines: string[] = [];
   if (library !== undefined) {
     lines.push(
@@ -1109,6 +1157,7 @@ function verdictDetail(claim: Claim, index: number): string {
     if (verdict.noLibraryFetch !== undefined) lines.push(verdict.noLibraryFetch);
   }
   if (verdict.recheck !== undefined) lines.push(`dropped to unverifiable: ${verdict.recheck}`);
+  if (verdict.lookedRecheck !== undefined) lines.push(`dropped from what it looked at: ${verdict.lookedRecheck}`);
   const why = (each: string): string => `<div class="why">${escapeHtml(each)}</div>`;
   const draft = isFinding(claim) ? `<div class="acts">${draftButton({ kind: 'claim', index })}</div>` : '';
   return reason.map(why).join('') + evidence + lines.map(why).join('') + draft;
@@ -1148,7 +1197,7 @@ function verdictsNote(claims: NonNullable<ReviewResult['claims']>, checking?: st
   return (
     `Each is judged against the change, its read-only copy and any failed check's CI log by ${stampText(judging.stamp, 'verdicts', judging.promptVersion)}` +
     (asked === 0 ? '' : `, save the ${counted} that came from the Verify this claim ask`) +
-    '; the refuted and unverifiable ones are findings, each a thread on the diff.'
+    "; the refuted ones, and the unverifiable ones the code or a library's source could settle, are findings, each a thread on the diff."
   );
 }
 
@@ -1697,6 +1746,11 @@ ${contentsRail(state)}
   Array.prototype.forEach.call(document.querySelectorAll('button.claim-cite'), function (button) {
     button.addEventListener('click', function () {
       vscode.postMessage({ type: 'openClaimEvidence', claim: Number(button.getAttribute('data-claim')), index: Number(button.getAttribute('data-index')) });
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('button.claim-looked'), function (button) {
+    button.addEventListener('click', function () {
+      vscode.postMessage({ type: 'openClaimLooked', claim: Number(button.getAttribute('data-claim')), index: Number(button.getAttribute('data-index')) });
     });
   });
   Array.prototype.forEach.call(document.querySelectorAll('button.where'), function (button) {
