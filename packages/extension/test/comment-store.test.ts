@@ -60,13 +60,21 @@ describe('CommentStore', () => {
     // and the store checks names the same way.
     const backslash = 'https://github.com/bad\\owner/example-repo/pull/42';
     const dots = 'https://github.com/example-org/../pull/42';
+    const dotted = 'https://github.com/../example-repo/pull/42';
 
     await store.save(backslash, unsent());
     await store.save(dots, unsent());
+    await store.save(dotted, unsent());
+
+    // A file already sitting where such an address would name one is not
+    // read either: the refusal is in the address, not in what is on disk.
+    const planted = join(dir, 'example-org__..__pull-42.json');
+    writeFileSync(planted, `${JSON.stringify(unsent())}\n`, 'utf8');
 
     expect(await store.read(backslash)).toBeUndefined();
     expect(await store.read(dots)).toBeUndefined();
-    expect(readdirSync(dir)).toEqual([]);
+    expect(await store.read(dotted)).toBeUndefined();
+    expect(readdirSync(dir)).toEqual(['example-org__..__pull-42.json']);
   });
 
   it('removes the pull request’s file when nothing is left unsent', async () => {
