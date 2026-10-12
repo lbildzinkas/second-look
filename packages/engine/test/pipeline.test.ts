@@ -122,6 +122,105 @@ describe('readFindings', () => {
       { step: 'Lint', severity: 'error', text: 'The lint step could not finish.' },
     ]);
   });
+
+  // The Review step of the no-mistakes report on pull request #163: four
+  // rounds, each fix leaving findings open, the last re-checked clean. The
+  // findings are trimmed to their heads; every round marker, count and
+  // repeat is as the report wrote them.
+  const q = (path: string, text: string): string => `- ⚠️ \`${path}\` - ${text}`;
+  const quotes = q('packages/extension/src/side-bar/page.ts:134', 'Step 5/6 rows render untrusted quotes with plain escapeHtml.');
+  const ticks = q('packages/extension/src/side-bar/page.ts:146', "Steps 5 and 6's ticks dead-end in valid ended states.");
+  const waiting = q('packages/extension/src/side-bar/page.ts:231', "The unexplained rows keep the waiting note in ended states.");
+  const states = q('packages/extension/src/side-bar/page.ts:18', 'FINDING_STATES duplicates the overview\'s STATES map.');
+  const pills = q('packages/extension/src/side-bar/page.ts:473', 'The .pill rule restyles the pull-request list too.');
+  const REVIEW_163 = [
+    '<details>',
+    '<summary>🔧 **Review** - 2 issues found → auto-fixed (4) ✅</summary>',
+    '',
+    quotes,
+    ticks,
+    '',
+    '🔧 Fix applied.',
+    '3 warnings still open:',
+    '',
+    quotes,
+    ticks,
+    waiting,
+    '',
+    '🔧 Fix applied.',
+    '4 warnings still open:',
+    '',
+    quotes,
+    ticks,
+    waiting,
+    states,
+    '',
+    '🔧 Fix applied.',
+    '6 issues (5 warnings, 1 info) still open:',
+    '',
+    quotes,
+    ticks,
+    waiting,
+    states,
+    pills,
+    '- ℹ️ `docs/reviewing.md:9` - the changed sentence misses two exceptions.',
+    '',
+    '🔧 Fix applied.',
+    '✅ Re-checked - no issues remain.',
+    '</details>',
+  ].join('\n');
+
+  it('leaves a step whose last round was fixed and re-checked clean with no open findings, as on #163', () => {
+    expect(readFindings(REVIEW_163)).toEqual([]);
+  });
+
+  it("lists a step's last round's open findings only, once each, dropping earlier rounds'", () => {
+    const rounds = [
+      '<details>',
+      '<summary>⚠️ **Review** - 2 warnings</summary>',
+      '',
+      '- ⚠️ `src/gone.ts:1` - an earlier round\'s finding.',
+      '',
+      '🔧 Fix applied.',
+      '2 warnings still open:',
+      '',
+      '- ⚠️ `src/also-gone.ts:2` - a finding the next fix resolved.',
+      '- ⚠️ `src/also-gone.ts:2` - a finding the next fix resolved.',
+      '',
+      '🔧 Fix applied.',
+      '1 warning still open:',
+      '',
+      '- ⚠️ `src/kept.ts:3` - the last round\'s finding.',
+      '- ⚠️ `src/kept.ts:3` - the last round\'s finding.',
+      '</details>',
+    ].join('\n');
+    expect(readFindings(rounds)).toEqual([
+      { step: 'Review', severity: 'warning', text: "the last round's finding.", path: 'src/kept.ts', line: 3 },
+    ]);
+  });
+
+  it('gives a step with no still-open line and a fix applied none, and one with neither every finding line', () => {
+    const fixed = [
+      '<details>',
+      '<summary>🔧 **Test** - 1 issue found → fix applied ✅</summary>',
+      '',
+      '- ❌ `src/legacy.ts:4` - the test of the legacy path fails.',
+      '',
+      '🔧 Fix applied.',
+      '</details>',
+    ].join('\n');
+    expect(readFindings(fixed)).toEqual([]);
+    const plain = [
+      '<details>',
+      '<summary>⚠️ **Lint** - 1 warning</summary>',
+      '',
+      '- ⚠️ `src/left.ts:7` - the lint step could not finish.',
+      '</details>',
+    ].join('\n');
+    expect(readFindings(plain)).toEqual([
+      { step: 'Lint', severity: 'warning', text: 'the lint step could not finish.', path: 'src/left.ts', line: 7 },
+    ]);
+  });
 });
 
 describe('pipelineClaims', () => {
