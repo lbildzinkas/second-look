@@ -211,6 +211,8 @@ export interface StubState {
   /** The URIs the extension opened in the browser, as strings. */
   openedExternals: string[];
   progressTitles: string[];
+  /** Every progress shown: its title, and where it shows. */
+  progress: { title: string; location: unknown }[];
   sessionRequests: { id: string; scopes: string[]; createIfNone: boolean }[];
   /** What getSession resolves with; undefined reads as no sign-in. */
   session: StubSession | undefined;
@@ -256,6 +258,7 @@ export const stub: StubState = {
   informationChoice: undefined,
   openedExternals: [],
   progressTitles: [],
+  progress: [],
   sessionRequests: [],
   session: undefined,
   cancelSignIn: false,
@@ -291,6 +294,7 @@ export const stub: StubState = {
     stub.informationChoice = undefined;
     stub.openedExternals = [];
     stub.progressTitles = [];
+    stub.progress = [];
     stub.sessionRequests = [];
     stub.session = undefined;
     stub.cancelSignIn = false;
@@ -588,10 +592,11 @@ export const window = {
     return Promise.resolve(stub.informationChoice);
   },
   async withProgress(
-    options: { title?: string },
+    options: { title?: string; location?: unknown },
     task: (progress: { report(): void }) => Promise<unknown>,
   ): Promise<unknown> {
     stub.progressTitles.push(options.title ?? '');
+    stub.progress.push({ title: options.title ?? '', location: options.location });
     return task({ report: () => undefined });
   },
   createTreeView(id: string): StubTreeView & StubDisposable {
@@ -724,6 +729,13 @@ export const ViewColumn = {
   One: 1,
   Two: 2,
   Three: 3,
+} as const;
+
+/** The places a progress can show, as the editor numbers them. */
+export const ProgressLocation = {
+  SourceControl: 1,
+  Window: 10,
+  Notification: 15,
 } as const;
 
 /** The states a comment thread can be shown in. */
