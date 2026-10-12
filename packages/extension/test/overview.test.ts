@@ -377,6 +377,7 @@ describe('the verdicts on the overview', () => {
         source: 'the change itself' as const,
         reason: 'A 404 is retried like any other status.',
         evidence: [{ path: 'src/retry.py', line: 5, quote: 'if response.status >= 400:' }],
+        looked: [],
       },
     };
     const judged: ReviewResult = { ...shown, claims: { ...shown.claims!, claims: [...shown.claims!.claims, asked] } };
@@ -402,6 +403,7 @@ describe('the verdicts on the overview', () => {
         source: 'the change itself' as const,
         reason: 'A 404 is retried like any other status.',
         evidence: [{ path: 'src/retry.py', line: 5, quote: 'if response.status >= 400:' }],
+        looked: [],
       },
     };
     const pipeline = { ...pipelineResult().claims!.claims[0]!, verdict: { kind: 'not checked' as const } };
@@ -423,7 +425,7 @@ describe('the verdicts on the overview', () => {
     const [first, ...rest] = shown.claims!.claims;
     const hostile: ReviewResult = {
       ...shown,
-      claims: { ...shown.claims!, claims: [{ ...first!, verdict: { kind: 'refuted', source: 'the change itself', reason: REMOTE, evidence: [{ path: 'a.py', line: 1, quote: REMOTE }] } }, ...rest] },
+      claims: { ...shown.claims!, claims: [{ ...first!, verdict: { kind: 'refuted', source: 'the change itself', reason: REMOTE, evidence: [{ path: 'a.py', line: 1, quote: REMOTE }], looked: [] } }, ...rest] },
     };
     const html = overviewHtml({ result: hostile }, 'N');
     expect(loadsOrLinks(html)).toBe(false);
@@ -664,7 +666,7 @@ describe('the stage list on the overview', () => {
     expect(claimsHtml).not.toContain('None is checked yet');
 
     const listed = claimsResult().claims!;
-    const asked = { ...listed.claims[0]!, asked: true as const, verdict: { kind: 'refuted' as const, source: 'the change itself' as const, reason: 'The loop runs five times.', evidence: [{ path: 'src/retry.py', line: 6, quote: 'for attempt in range(5):' }] } };
+    const asked = { ...listed.claims[0]!, asked: true as const, verdict: { kind: 'refuted' as const, source: 'the change itself' as const, reason: 'The loop runs five times.', evidence: [{ path: 'src/retry.py', line: 6, quote: 'for attempt in range(5):' }], looked: [] } };
     const askedHtml = overviewHtml({ result: { ...claimsResult(), claims: { ...listed, claims: [asked, ...listed.claims.slice(1)] }, stages: failed }, running: 'mapping the acceptance criteria with pi' }, 'N');
     expect(askedHtml).toContain('Verdicts failed: the agent run failed: exit 1; the one checked verdict came from the Verify this claim ask.');
     expect(askedHtml).not.toContain('The verdicts pass did not run');

@@ -431,7 +431,7 @@ describe('isReviewResult for the claims', () => {
       location: { kind: 'file', path: 'src/retry.py', line: 9, endLine: 9 },
       part: 0,
       asked: true,
-      verdict: { kind: 'refuted', source: 'the change itself', reason: 'A 404 is retried.', evidence: [{ path: 'src/retry.py', line: 5, quote: 'if response.status >= 400:' }] },
+      verdict: { kind: 'refuted', source: 'the change itself', reason: 'A 404 is retried.', evidence: [{ path: 'src/retry.py', line: 5, quote: 'if response.status >= 400:' }], looked: [] },
     };
     const pipeline: Record<string, unknown> = {
       quote: 'send gives up after five attempts.',
@@ -484,7 +484,7 @@ describe('isReviewResult for the verdicts', () => {
     value.claims.claims[index]!['verdict'] = verdict;
     return value;
   };
-  const refuted = { kind: 'refuted', source: 'the change itself', reason: 'r', evidence: [{ path: 'src/retry.py', line: 6, quote: 'for attempt in range(5):' }] };
+  const refuted = { kind: 'refuted', source: 'the change itself', reason: 'r', evidence: [{ path: 'src/retry.py', line: 6, quote: 'for attempt in range(5):' }], looked: [] };
 
   it('accepts judged claims, each verdict with its evidence source, and a judging that fell back with every claim not checked', () => {
     expect(isReviewResult(judgedResult())).toBe(true);
@@ -522,6 +522,41 @@ describe('isReviewResult for the verdicts', () => {
       { ...judged(), claims: { ...judged().claims, judging: { outcome: 'judged' } } },
     ];
     for (const value of cases) expect(isReviewResult(value)).toBe(false);
+  });
+
+  it('accepts what each verdict looked at, and what settles an unverifiable one, and rejects a verdict missing or misshaping either', () => {
+    const settles = { kind: 'author', note: 'Only the author ran it.' };
+    const unverifiable = { ...refuted, kind: 'unverifiable', evidence: [], settles };
+    expect(isReviewResult(withVerdict({ ...refuted, looked: [{ path: 'src/retry.py', line: 1, endLine: 8 }] }))).toBe(true);
+    expect(isReviewResult(withVerdict({ ...unverifiable, lookedRecheck: 'dropped what the agent read at src/gone.py:1 names a file the head copy does not have' }))).toBe(true);
+    for (const kind of ['code', 'library', 'ci-log', 'sandboxed-run', 'outside-repository', 'author']) {
+      expect(isReviewResult(withVerdict({ ...unverifiable, settles: { ...settles, kind } }))).toBe(true);
+    }
+    const cases: unknown[] = [
+      withVerdict({ ...refuted, looked: undefined }),
+      withVerdict({ ...refuted, looked: [{ path: 'src/retry.py', line: 4, endLine: 2 }] }),
+      withVerdict({ ...refuted, looked: [{ path: '', line: 1, endLine: 1 }] }),
+      withVerdict({ ...refuted, lookedRecheck: 3 }),
+      withVerdict({ ...refuted, settles }),
+      withVerdict({ ...unverifiable, settles: undefined }),
+      withVerdict({ ...unverifiable, settles: { ...settles, kind: 'a hunch' } }),
+      withVerdict({ ...unverifiable, settles: { kind: 'author' } }),
+    ];
+    for (const value of cases) expect(isReviewResult(value)).toBe(false);
+  });
+
+  it('ignores a judged result of the previous version, whose verdicts carry neither, rather than misreading it', () => {
+    const older = judged() as Loose & { version: number };
+    older.version = REVIEW_RESULT_VERSION - 1;
+    for (const claim of older.claims.claims) {
+      const verdict = claim['verdict'] as Record<string, unknown>;
+      delete verdict['looked'];
+      delete verdict['settles'];
+    }
+    expect(isReviewResult(older)).toBe(false);
+    expect(() => parseReviewResult(JSON.stringify(older))).toThrow(ProtocolError);
+    // The same verdicts read as the current version are refused too: no field is guessed.
+    expect(isReviewResult({ ...older, version: REVIEW_RESULT_VERSION })).toBe(false);
   });
 
   it('accepts a verdict offering a library fetch, and one judged against the fetched library', () => {
@@ -838,6 +873,6 @@ describe('parseReviewResult', () => {
 
 describe('the versioned protocol is shared with the engine', () => {
   it('uses the same version constant', () => {
-    expect(REVIEW_RESULT_VERSION).toBe(22);
+    expect(REVIEW_RESULT_VERSION).toBe(23);
   });
 });

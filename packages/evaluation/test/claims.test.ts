@@ -5,6 +5,7 @@ import type { Claim, ReviewResult } from '@second-look/engine';
 import { caseInput, loadCases } from '../src/case.js';
 import { labelledClaims, reportClaims, reportedClaims } from '../src/claims.js';
 import type { LibraryFetchOffer } from '../src/claims.js';
+import { verdictBeforeFetch } from '../src/score.js';
 
 const OFFER: LibraryFetchOffer & { pinnedBy: string } = {
   library: 'httpx',
@@ -49,7 +50,7 @@ describe('reportedClaims', () => {
 });
 
 describe('reportClaims', () => {
-  const refuted = { kind: 'unverifiable' as const, source: 'the change itself' as const, reason: 'r', evidence: [] };
+  const refuted = { kind: 'unverifiable' as const, source: 'the change itself' as const, reason: 'r', evidence: [], looked: [], settles: { kind: 'library' as const, note: 'n' } };
   const claim = (verdict: Claim['verdict']): Claim => ({ quote: 'a claim', source: 'docstring', location: { kind: 'file', path: 'a.py', line: 1, endLine: 1 }, part: 0, verdict });
 
   it('hands back the fetch a verdict offers, unpressed until the claim was judged against the library', () => {
@@ -63,6 +64,7 @@ describe('reportClaims', () => {
       source: 'library source at the pinned version',
       reason: 'r',
       evidence: [{ path: 'httpx/_client.py', line: 171, quote: 'follow_redirects: bool = False,' }],
+      looked: [],
       libraryFetch: OFFER,
       library,
     });
@@ -119,6 +121,8 @@ describe("the verdicts prompt's hand verdicts", () => {
       'canary-csharp',
       'canary-python',
       'encode-httpx-3690',
+      'lbildzinkas-interview-coach-97',
+      'lbildzinkas-interview-coach-98',
       'misstated-python',
       'pallets-click-3781',
       'sindresorhus-ky-880',
@@ -131,10 +135,11 @@ describe("the verdicts prompt's hand verdicts", () => {
       expect(labelled.length, each.id).toBeGreaterThan(0);
       for (const { wanted, claim } of labelled) {
         expect(claim.location, `${each.id}: ${wanted.text}`).toMatchObject({ line: wanted.origin.line });
-        kinds.add(wanted.libraryFetch ? 'library' : wanted.verdict!.kind);
+        const settles = verdictBeforeFetch(wanted)!.settles;
+        kinds.add(wanted.libraryFetch ? 'library' : settles ? `unverifiable:${settles}` : wanted.verdict!.kind);
       }
     }
-    expect([...kinds].sort()).toEqual(['library', 'refuted', 'verified']);
+    expect([...kinds].sort()).toEqual(['library', 'refuted', 'unverifiable:author', 'unverifiable:ci-log', 'unverifiable:library', 'verified']);
   });
 
   it('refuse a hand-labelled claim that is not where its case says', async () => {

@@ -42,7 +42,7 @@ describe('reviewPullRequest', () => {
     });
 
     expect(result.version).toBe(REVIEW_RESULT_VERSION);
-    expect(result.version).toBe(22);
+    expect(result.version).toBe(23);
     expect(result.pullRequest.number).toBe(42);
     expect(result.pullRequest.description).toHaveLength(8082);
     // The head commit's SHA, where the noise attributes are read.
@@ -529,7 +529,7 @@ describe('reviewPullRequest on a budget, with claims and criteria', () => {
     return answeringAgent((run) => {
       if (run.instructions === CLAIMS_INSTRUCTIONS) return { claims: [{ source: 'description', quote: CLAIM, file: null, line: null, part: 'p1' }] };
       if (run.instructions === VERDICTS_INSTRUCTIONS) {
-        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: "the model's memory", reason: 'Nothing in the change shows it.', evidence: [], library: null }] };
+        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: "the model's memory", reason: 'Nothing in the change shows it.', evidence: [], looked: [], settles: { kind: 'author', note: 'Only the author can say.' }, library: null }] };
       }
       if (run.instructions === CRITERIA_MAPPING_INSTRUCTIONS) {
         return { criteria: ['a1', 'a2', 'a3', 'a4'].map((id) => ({ id, verdict: "can't tell", reason: 'Nothing in the change shows it.', code: [], tests: [], manual: [] })) };
@@ -588,7 +588,7 @@ describe("the review's stages", () => {
     return answeringAgent((run) => {
       if (run.instructions === CLAIMS_INSTRUCTIONS) return { claims: [{ source: 'description', quote: CLAIM, file: null, line: null, part: 'p1' }] };
       if (run.instructions === VERDICTS_INSTRUCTIONS) {
-        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: "the model's memory", reason: 'Nothing in the change shows it.', evidence: [], library: null }] };
+        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: "the model's memory", reason: 'Nothing in the change shows it.', evidence: [], looked: [], settles: { kind: 'author', note: 'Only the author can say.' }, library: null }] };
       }
       if (run.instructions === CRITERIA_MAPPING_INSTRUCTIONS) {
         return { criteria: ['a1', 'a2', 'a3', 'a4'].map((id) => ({ id, verdict: "can't tell", reason: 'Nothing in the change shows it.', code: [], tests: [], manual: [] })) };

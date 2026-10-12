@@ -274,6 +274,7 @@ export function judgedResult(copies?: CopyPaths): ReviewResult {
             source: 'the change itself',
             reason: 'send retries a failed delivery.',
             evidence: [{ path: 'src/retry.py', line: 5, quote: 'return retry(send)' }],
+            looked: [{ path: 'src/retry.py', line: 1, endLine: 8 }],
           },
         },
         {
@@ -283,11 +284,12 @@ export function judgedResult(copies?: CopyPaths): ReviewResult {
             source: 'the change itself',
             reason: 'The loop runs five times.',
             evidence: [{ path: 'src/retry.py', line: 6, quote: 'for attempt in range(5):' }],
+            looked: [],
           },
         },
         {
           ...comment!,
-          verdict: { kind: 'unverifiable', source: 'the change itself', reason: 'The status check is in the library.', evidence: [], needsLibrary: 'requests' },
+          verdict: { kind: 'unverifiable', source: 'the change itself', reason: 'The status check is in the library.', evidence: [], needsLibrary: 'requests', looked: [], settles: { kind: 'library', note: 'the source of requests could settle it' } },
         },
         {
           ...story!,
@@ -296,6 +298,8 @@ export function judgedResult(copies?: CopyPaths): ReviewResult {
             source: "the model's memory",
             reason: 'Nothing in the change shows it.',
             evidence: [],
+            looked: [],
+            settles: { kind: 'code', note: 'the agent judged it verified, so the code should settle it: check it' },
             recheck: "the model's memory never yields verified",
           },
         },
@@ -358,6 +362,7 @@ export function pipelineResult(copies?: CopyPaths): ReviewResult {
             source: 'a CI log',
             reason: 'The failed test shows five attempts.',
             evidence: [{ path: 'check / test', line: 2, quote: 'FAILED test_retry.py::test_gives_up - assert 5 == 3', ciLog: true }],
+            looked: [],
           },
         },
         ...claims.claims,
@@ -408,6 +413,7 @@ export function fetchedResult(libraryPath = '/cache/github.com/example-org/examp
                 source: 'library source at the pinned version',
                 reason: 'raise_for_status raises only for 4xx and 5xx statuses.',
                 evidence: [{ path: 'requests/models.py', line: 1021, quote: 'if 400 <= self.status_code < 500:' }],
+                looked: [],
                 libraryFetch: REQUESTS_FETCH,
                 library: {
                   library: 'requests',

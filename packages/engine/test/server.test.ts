@@ -160,7 +160,7 @@ describe('runRpcServer', () => {
 
     expect(responses[0]!.result).toEqual({ protocolVersion: ENGINE_PROTOCOL_VERSION });
     const first = responses[1]!.result as { version: number; parts: unknown[] };
-    expect(first.version).toBe(22);
+    expect(first.version).toBe(23);
     expect(first.parts).toHaveLength(11);
     const second = responses[2]!.result as { parts: unknown[] };
     expect(second.parts).toHaveLength(11);
@@ -483,7 +483,7 @@ describe('runRpcServer with an agent', () => {
         id: 2,
         running: 'grouping related hunks with fake',
         timeoutMs: 660_000,
-        result: { version: 22, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
+        result: { version: 23, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
       },
     });
     // The fake agent has no tested ranking, so the story stage follows the grouping.
@@ -825,7 +825,7 @@ describe('runRpcServer keeping the latest review', () => {
     expect(first.agent.requests.length).toBeGreaterThan(0);
     expect(reviewed.saved).toBeUndefined();
     const saved = await readSavedReview(cacheDir, ref);
-    expect(saved).toMatchObject({ version: 22, commit: HEAD, agent: { agent: 'fake', model: null, effort: 'high' } });
+    expect(saved).toMatchObject({ version: 23, commit: HEAD, agent: { agent: 'fake', model: null, effort: 'high' } });
     expect(Date.parse(saved!.reviewedAt)).not.toBeNaN();
     expect(JSON.stringify(saved)).not.toContain(TOKEN);
     const looks = await readLooks(cacheDir, ref);
@@ -898,7 +898,7 @@ describe('runRpcServer keeping the latest review', () => {
     const again = await serveEngine(reviewLines());
     expect(again.agent.requests.length).toBeGreaterThan(0);
     expect((again.answer(2).result as ReviewResult).saved).toBeUndefined();
-    expect(await readSavedReview(cacheDir, ref)).toMatchObject({ version: 22 });
+    expect(await readSavedReview(cacheDir, ref)).toMatchObject({ version: 23 });
   });
 
   it('refuses a fresh flag that is not a boolean', async () => {
@@ -940,7 +940,7 @@ describe('runRpcServer fetching a library', () => {
     return answeringAgent((run) => {
       if (run.instructions === CLAIMS_INSTRUCTIONS) return { claims: [{ source: 'description', quote: CLAIM, file: null, line: null, part: 'p1' }] };
       if (run.instructions === VERDICTS_INSTRUCTIONS) {
-        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: `It turns on ${library}.`, evidence: [], library }] };
+        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: `It turns on ${library}.`, evidence: [], looked: [], settles: { kind: 'library', note: 'Its source would settle it.' }, library }] };
       }
       if (run.instructions === EXPLAIN_INSTRUCTIONS) {
         const [, file] = /^file "([^"]+)"/m.exec(run.prompt)!;
@@ -1041,7 +1041,7 @@ describe('runRpcServer fetching a library', () => {
     });
     expect(pypiBeforeFetch).toBe(0);
     expect(answer(3).result).toMatchObject({
-      version: 22,
+      version: 23,
       claims: {
         claims: [
           {
@@ -1166,7 +1166,7 @@ describe('runRpcServer fetching a library', () => {
 
     expect(answer(3).error).toBeUndefined();
     expect(answer(3).result).toMatchObject({
-      version: 22,
+      version: 23,
       claims: {
         claims: [
           {
@@ -1302,7 +1302,7 @@ describe('runRpcServer fetching a library', () => {
       if (run.instructions === VERDICTS_INSTRUCTIONS) {
         verdictRuns += 1;
         if (verdictRuns <= 2) return {};
-        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: 'It turns on httpx.', evidence: [], library: 'httpx' }] };
+        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: 'It turns on httpx.', evidence: [], looked: [], settles: { kind: 'library', note: 'Its source would settle it.' }, library: 'httpx' }] };
       }
       if (run.instructions === LIBRARY_VERDICTS_INSTRUCTIONS) {
         return {
@@ -1346,7 +1346,7 @@ describe('runRpcServer fetching a library', () => {
     state = transports();
     const agent = answeringAgent((run) => {
       if (run.instructions === VERDICTS_INSTRUCTIONS) {
-        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: 'It turns on httpx.', evidence: [], library: 'httpx' }] };
+        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: 'It turns on httpx.', evidence: [], looked: [], settles: { kind: 'library', note: 'Its source would settle it.' }, library: 'httpx' }] };
       }
       if (run.instructions === LIBRARY_VERDICTS_INSTRUCTIONS) {
         return {

@@ -47,7 +47,7 @@ A statement about how the code or a library behaves, made by the pipeline, the P
 _Avoid_: Assertion
 
 **Verdict**:
-The outcome of checking a claim: **verified**, **refuted**, **unverifiable**, or **not checked**, always with its evidence.
+The outcome of checking a claim: **verified**, **refuted**, **unverifiable**, or **not checked**, always with its evidence and the lines the agent read for it; an unverifiable one also says what could settle it: the code, a library's source, a CI log, a sandboxed run, something outside the repository, or the author.
 _Avoid_: Result, status, score
 
 **Evidence source**:

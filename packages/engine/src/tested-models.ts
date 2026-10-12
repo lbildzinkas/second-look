@@ -89,7 +89,7 @@ export const TESTED_MODELS: readonly TestedModel[] = [
     agentVersion: '2.1.296',
     model: 'claude-sonnet-5-5',
     effort: 'high',
-    runDate: '2026-10-10T14:26:15.320Z',
+    runDate: '2026-10-12T10:06:12.771Z',
     scores: {
       coverage: 1,
       'grouping-agreement': 0.7946,
@@ -102,6 +102,8 @@ export const TESTED_MODELS: readonly TestedModel[] = [
       'claims-precision': 0.95,
       'verdict-accuracy': 1,
       'false-verified': 0,
+      'settles-accuracy': 1,
+      'verdict-looked': 0.96,
       'verify-accuracy': 1,
       'verify-false-verified': 0,
       'verify-fetch-offered': 1,
