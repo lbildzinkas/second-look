@@ -12,6 +12,7 @@ import {
   OPEN_OVERVIEW_COMMAND,
   OPEN_PART_COMMAND,
   OPEN_SETTINGS_COMMAND,
+  REVIEW_AGAIN_COMMAND,
   REVIEW_COMMAND,
   SUBMIT_REVIEW_COMMAND,
   WHY_THIS_MATTERS_COMMAND,
@@ -30,6 +31,7 @@ import { nextPartToReview, sideBarSteps, type SideBarState } from './steps.js';
 /** The existing command each card button runs, beside the ones that need a part or an argument. */
 const BUTTON_COMMANDS: Record<Exclude<SideBarButton, 'nextPart' | 'criteriaHeading' | 'partsMenu' | 'openSent'>, string> = {
   review: REVIEW_COMMAND,
+  reviewAgain: REVIEW_AGAIN_COMMAND,
   overview: OPEN_OVERVIEW_COMMAND,
   allParts: OPEN_ALL_PARTS_COMMAND,
   filterChanged: FILTER_CHANGED_COMMAND,

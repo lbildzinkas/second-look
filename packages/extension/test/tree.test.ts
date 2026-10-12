@@ -15,6 +15,7 @@ import {
   reviewStatus,
   sinceLastLookLine,
   treeMessage,
+  earlierCommitLine,
   UNEXPLAINED_BADGE,
 } from '../src/tree.js';
 import { claimsResult, judgedResult, mixedResult, part, result, unexplainedResult } from './results.js';
@@ -493,6 +494,15 @@ describe('since your last look in the tree', () => {
     expect(sinceLastLookLine(result([cart, money]))).toBeUndefined();
     expect(sinceLastLookLine(since())).toBe('Since your last look at abcdef0 on 2026-10-01: 1 of 2 parts changed.');
     expect(sinceLastLookLine(since({ from: 'github review' }))).toBe('Since your last GitHub review at abcdef0 on 2026-10-01: 1 of 2 parts changed.');
+  });
+
+  it('says first that a saved review is of an earlier commit, never the current one', () => {
+    const earlier = { ...since(), saved: { reviewedAt: '2026-10-11T14:03:27.000Z', newHead: 'abcdef0123456789abcdef0123456789abcdef01' } };
+    expect(earlierCommitLine(since())).toBeUndefined();
+    expect(earlierCommitLine({ ...since(), saved: { reviewedAt: '2026-10-11T14:03:27.000Z' } })).toBeUndefined();
+    expect(treeMessage(earlier)).toBe(
+      `This saved review is of an earlier commit, ${earlier.pullRequest.headSha.slice(0, 7)}: the pull request has new commits, up to abcdef0. Review again to review them. Since your last look at abcdef0 on 2026-10-01: 1 of 2 parts changed.`,
+    );
   });
 
   it('puts the last look above the review status, saying when the filter is on', () => {

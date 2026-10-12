@@ -324,7 +324,9 @@ export class EngineClient {
    *
    * A review can arrive in stages: each stage notification hands its
    * result so far to `onStage` and gives the request the stage's own
-   * deadline; the returned result is the final one.
+   * deadline; the returned result is the final one. A review of a pull
+   * request the engine saved a result for answers with that result at
+   * once, unless `fresh` asks for Review again.
    */
   async review(
     url: string,
@@ -333,6 +335,7 @@ export class EngineClient {
     onStage?: (stage: ReviewStageUpdate) => void,
     criteriaHeading?: string,
     budget?: BudgetLimits,
+    fresh?: boolean,
   ): Promise<ReviewResult> {
     if (!this.handshaken) {
       throw new Error('the engine has not completed its handshake yet');
@@ -351,6 +354,7 @@ export class EngineClient {
           ...(agent !== undefined ? { agent } : {}),
           ...(heading !== undefined && heading !== '' ? { criteriaHeading: heading } : {}),
           ...(budget !== undefined ? { budget } : {}),
+          ...(fresh === true ? { fresh } : {}),
         },
         REVIEW_TIMEOUT_MS,
         onStage,

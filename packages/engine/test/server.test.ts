@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ENGINE_FAILED_CODE,
   ENGINE_PROTOCOL_VERSION,
@@ -25,7 +25,9 @@ import { runRpcServer, type RpcAgentDeps } from '../src/server.js';
 import { markedPart } from '../src/reviewed-marks.js';
 import { readLooks, recordLook } from '../src/last-look.js';
 import type { ReviewResult } from '../src/protocol.js';
-import { removeCopy } from '../src/cache.js';
+import { pullRequestCacheDir, removeCopy } from '../src/cache.js';
+import { parsePullRequestUrl } from '../src/github.js';
+import { readSavedReview, SAVED_REVIEW_FILE } from '../src/saved-review.js';
 import {
   PR_7_URL,
   PR_URL,
@@ -44,6 +46,7 @@ import {
   zipArchive,
 } from './helpers.js';
 import { readFileSync } from 'node:fs';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import type { PullRequestList } from '../src/protocol.js';
 import { failingFetch } from './helpers.js';
@@ -52,11 +55,13 @@ const TOKEN = 'ghp_test-token-do-not-print';
 
 let cacheDir: string;
 
-beforeAll(() => {
+// Each test starts with an empty cache, so no review finds the result an
+// earlier test saved.
+beforeEach(() => {
   cacheDir = temporaryCacheDir();
 });
 
-afterAll(async () => {
+afterEach(async () => {
   await removeCopy(cacheDir);
 });
 
@@ -138,7 +143,7 @@ describe('runRpcServer', () => {
           if (index === lines.length) {
             index++;
             await answered;
-            return request('review', { url: PR_URL, token: 'ghp_another-token' }, 3);
+            return request('review', { url: PR_URL, token: 'ghp_another-token', fresh: true }, 3);
           }
           return null;
         },
@@ -155,7 +160,7 @@ describe('runRpcServer', () => {
 
     expect(responses[0]!.result).toEqual({ protocolVersion: ENGINE_PROTOCOL_VERSION });
     const first = responses[1]!.result as { version: number; parts: unknown[] };
-    expect(first.version).toBe(21);
+    expect(first.version).toBe(22);
     expect(first.parts).toHaveLength(11);
     const second = responses[2]!.result as { parts: unknown[] };
     expect(second.parts).toHaveLength(11);
@@ -163,8 +168,8 @@ describe('runRpcServer', () => {
     // (metadata, diff), the attributes, the merge base, the linked issues,
     // the check runs, the reviewer and their reviews, for want of an
     // earlier look, and on the first run the two commit archives —
-    // always with the token its own request carried; the second review at
-    // the same commits reuses the archives.
+    // always with the token its own request carried; the second review, a
+    // fresh one at the same commits, reuses the archives.
     const authorizations = transport.requests.map((request) => request.authorization);
     expect(authorizations.slice(0, 10)).toEqual(Array<string>(10).fill(`token ${TOKEN}`));
     expect(authorizations.slice(10)).toEqual(Array<string>(8).fill('token ghp_another-token'));
@@ -478,7 +483,7 @@ describe('runRpcServer with an agent', () => {
         id: 2,
         running: 'grouping related hunks with fake',
         timeoutMs: 660_000,
-        result: { version: 21, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
+        result: { version: 22, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
       },
     });
     // The fake agent has no tested ranking, so the story stage follows the grouping.
@@ -636,7 +641,7 @@ describe('runRpcServer with an agent', () => {
       [
         request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
         request('review', { url: PR_7_URL, token: TOKEN, agent: { agent: 'pi', model: 'pi/model', account: 'Pi personal key' } }, 2),
-        request('review', { url: PR_7_URL, token: TOKEN, agent: { agent: 'claude-code', model: 'claude/model', account: 'Claude Max (work)' } }, 3),
+        request('review', { url: PR_7_URL, token: TOKEN, agent: { agent: 'claude-code', model: 'claude/model', account: 'Claude Max (work)' }, fresh: true }, 3),
       ],
       {
         adapterFor: (name) => (name === 'pi' ? pi : claude),
@@ -671,7 +676,7 @@ describe('runRpcServer with an agent', () => {
       [
         request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
         request('review', { url: PR_7_URL, token: TOKEN, agent: { agent: 'claude-code', model: 'claude/model', effort: 'high' } }, 2),
-        request('review', { url: PR_7_URL, token: TOKEN, agent: { agent: 'claude-code', model: 'claude/model', effort: '' } }, 3),
+        request('review', { url: PR_7_URL, token: TOKEN, agent: { agent: 'claude-code', model: 'claude/model', effort: '' }, fresh: true }, 3),
       ],
       {
         adapterFor: () => claude,
@@ -775,6 +780,130 @@ describe('runRpcServer with an agent', () => {
     expect(answers(5).error!.message).toContain('the model "-m" is not a plain name');
     expect(pi.requests).toHaveLength(0);
     expect(claude.requests).toHaveLength(0);
+  });
+});
+
+describe('runRpcServer keeping the latest review', () => {
+  const ref = parsePullRequestUrl(PR_7_URL)!;
+  const HEAD = pull7().headSha;
+  const EARLIER = '5555555555555555555555555555555555555555';
+
+  /**
+   * Serves the lines on a new engine, as a restarted editor starts one,
+   * with an agent that answers every pass and records every run; returns
+   * the answers and the GitHub requests made.
+   */
+  async function serveEngine(lines: string[], agent = answeringAgent(() => ({}))) {
+    const transport = fixtureFetch(pull7());
+    let index = 0;
+    const written: string[] = [];
+    await runRpcServer(
+      { readLine: async () => (index < lines.length ? (lines[index++] as string) : null) },
+      { writeLine: (line) => written.push(line) },
+      { cacheDir, fetch: transport.fetch, agent: { adapterFor: () => agent, defaultAgent: 'pi', settings: { timeoutMs: 10_000, concurrency: 1, effort: 'high' } } },
+    );
+    const responses = written.map((line) => JSON.parse(line) as Response);
+    return { answer: (id: number) => responses.find((response) => response.id === id)!, agent, github: transport.requests };
+  }
+
+  const reviewLines = (params: Record<string, unknown> = {}) => [
+    request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+    request('review', { url: PR_7_URL, token: TOKEN, ...params }, 2),
+  ];
+
+  /** Rewrites the saved record on disk, as an older engine or an earlier visit would have left it. */
+  async function rewriteRecord(change: (record: Record<string, unknown> & { result: ReviewResult }) => void): Promise<void> {
+    const path = join(pullRequestCacheDir(cacheDir, ref), SAVED_REVIEW_FILE);
+    const record = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown> & { result: ReviewResult };
+    change(record);
+    await writeFile(path, JSON.stringify(record), 'utf8');
+  }
+
+  it('saves each review, and a later engine shows it at once at the same head commit, labelled, with no agent run', async () => {
+    const first = await serveEngine(reviewLines());
+    const reviewed = first.answer(2).result as ReviewResult;
+    expect(first.agent.requests.length).toBeGreaterThan(0);
+    expect(reviewed.saved).toBeUndefined();
+    const saved = await readSavedReview(cacheDir, ref);
+    expect(saved).toMatchObject({ version: 22, commit: HEAD, agent: { agent: 'fake', model: null, effort: 'high' } });
+    expect(Date.parse(saved!.reviewedAt)).not.toBeNaN();
+    expect(JSON.stringify(saved)).not.toContain(TOKEN);
+    const looks = await readLooks(cacheDir, ref);
+
+    const again = await serveEngine(reviewLines());
+    const shown = again.answer(2).result as ReviewResult;
+    // Only the pull request's metadata is read, to learn its head now; no agent runs and no look is recorded.
+    expect(again.agent.requests).toHaveLength(0);
+    expect(again.github.map((each) => each.url)).toEqual([`https://api.github.com/repos/example-org/example-repo/pulls/7`]);
+    expect(await readLooks(cacheDir, ref)).toEqual(looks);
+    expect(shown.saved).toEqual({ reviewedAt: saved!.reviewedAt, agent: { agent: 'fake', model: null, effort: 'high' } });
+    // The result is the one saved, read from the copies the cache still holds.
+    const { saved: _label, ...kept } = shown;
+    const { base, head } = reviewed.copies;
+    expect(kept).toEqual({ ...reviewed, copies: { base: { ...base, reused: true }, head: { ...head, reused: true } } });
+  });
+
+  it('runs a fresh review when asked to review again, and saves it over the one before', async () => {
+    await serveEngine(reviewLines());
+    await rewriteRecord((record) => {
+      record['reviewedAt'] = '2026-01-01T00:00:00.000Z';
+    });
+
+    const again = await serveEngine(reviewLines({ fresh: true }));
+    const shown = again.answer(2).result as ReviewResult;
+    expect(again.agent.requests.length).toBeGreaterThan(0);
+    expect(shown.saved).toBeUndefined();
+    expect((await readSavedReview(cacheDir, ref))!.reviewedAt).not.toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('shows the saved review as from an earlier commit once the pull request has new commits, and runs nothing', async () => {
+    await serveEngine(reviewLines());
+    await rewriteRecord((record) => {
+      record['commit'] = EARLIER;
+      record.result.pullRequest.headSha = EARLIER;
+      record.result.copies.head.commit = EARLIER;
+    });
+    // The earlier commit's read-only copy is still in the cache.
+    await mkdir(join(pullRequestCacheDir(cacheDir, ref), EARLIER));
+
+    const again = await serveEngine(reviewLines());
+    const shown = again.answer(2).result as ReviewResult;
+    expect(again.agent.requests).toHaveLength(0);
+    expect(shown.pullRequest.headSha).toBe(EARLIER);
+    expect(shown.copies.head).toMatchObject({ commit: EARLIER, reused: true });
+    expect(shown.saved).toMatchObject({ newHead: HEAD });
+  });
+
+  it('reviews afresh when the saved review\u2019s commit is gone from the cache and from GitHub', async () => {
+    await serveEngine(reviewLines());
+    await rewriteRecord((record) => {
+      record['commit'] = EARLIER;
+      record.result.pullRequest.headSha = EARLIER;
+      record.result.copies.head.commit = EARLIER;
+    });
+
+    const again = await serveEngine(reviewLines());
+    expect(again.agent.requests.length).toBeGreaterThan(0);
+    expect(again.answer(2).result).toMatchObject({ pullRequest: { headSha: HEAD } });
+    expect((again.answer(2).result as ReviewResult).saved).toBeUndefined();
+  });
+
+  it('ignores a review saved at another result version, and reviews afresh', async () => {
+    await serveEngine(reviewLines());
+    await rewriteRecord((record) => {
+      record['version'] = 21;
+      (record.result as { version: number }).version = 21;
+    });
+
+    const again = await serveEngine(reviewLines());
+    expect(again.agent.requests.length).toBeGreaterThan(0);
+    expect((again.answer(2).result as ReviewResult).saved).toBeUndefined();
+    expect(await readSavedReview(cacheDir, ref)).toMatchObject({ version: 22 });
+  });
+
+  it('refuses a fresh flag that is not a boolean', async () => {
+    const { answer } = await serveEngine(reviewLines({ fresh: 'yes' }));
+    expect(answer(2).error).toEqual({ code: JSON_RPC_INVALID_PARAMS, message: 'review: fresh must be a boolean' });
   });
 });
 
@@ -912,7 +1041,7 @@ describe('runRpcServer fetching a library', () => {
     });
     expect(pypiBeforeFetch).toBe(0);
     expect(answer(3).result).toMatchObject({
-      version: 21,
+      version: 22,
       claims: {
         claims: [
           {
@@ -982,7 +1111,7 @@ describe('runRpcServer fetching a library', () => {
       const { answer } = await serveInTurn(
         [
           request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
-          request('review', { url: PR_7_URL, token: TOKEN, budget }, 2),
+          request('review', { url: PR_7_URL, token: TOKEN, budget, fresh: true }, 2),
           request('ask', { url: PR_7_URL, ask: 'explain', part: 0 }, 3),
           request('draftComment', { url: PR_7_URL, finding: { kind: 'claim', index: 0 } }, 4),
           request('fetchLibrary', { url: PR_7_URL, claim: 0 }, 5),
@@ -1037,7 +1166,7 @@ describe('runRpcServer fetching a library', () => {
 
     expect(answer(3).error).toBeUndefined();
     expect(answer(3).result).toMatchObject({
-      version: 21,
+      version: 22,
       claims: {
         claims: [
           {
@@ -1160,6 +1289,9 @@ describe('runRpcServer fetching a library', () => {
     const claims = (answer(4).result as ReviewResult).claims!.claims;
     expect(claims.map((claim) => claim.quote)).toEqual([CLAIM, 'def fresh():']);
     expect(claims[1]!.verdict).toMatchObject({ kind: 'refuted', source: 'library source at the pinned version', library: { library: 'httpx' } });
+    // The saved review follows the ask's claim and the fetch's verdict.
+    const saved = await readSavedReview(libraryCacheDir, parsePullRequestUrl(PR_7_URL)!);
+    expect(saved!.result.claims!.claims).toEqual(claims);
   });
 
   it('marks a claim the verify ask judged alone though the review\u2019s judging fell back, and its pressed fetch lands', async () => {

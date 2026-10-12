@@ -27,7 +27,7 @@ import {
   activate,
 } from '../../src/extension.js';
 import { CHANGE_SCHEME, changeUri, libraryUri } from '../../src/change-copies.js';
-import { CHOOSE_AGENT_COMMAND, OPEN_COMPANION_SETTINGS_COMMAND, OPEN_SETUP_COMMAND, REFRESH_PULL_REQUESTS_COMMAND, REVIEWING_CONTEXT, STOP_REVIEW_COMMAND, askCommand } from '../../src/commands.js';
+import { CHOOSE_AGENT_COMMAND, OPEN_COMPANION_SETTINGS_COMMAND, OPEN_SETUP_COMMAND, REFRESH_PULL_REQUESTS_COMMAND, REVIEW_AGAIN_COMMAND, REVIEWING_CONTEXT, STOP_REVIEW_COMMAND, askCommand } from '../../src/commands.js';
 import { SETUP_SEEN_KEY } from '../../src/side-bar/setup-form.js';
 import { escapeMarkdown } from '../../src/findings.js';
 import { SEND_REVIEW_VIEW_TYPE } from '../../src/send-page.js';
@@ -137,6 +137,7 @@ async function reviewWithFakeEngine(options: FakeEngineOptions): Promise<SideBar
   });
   expect([...registeredCommands().keys()]).toEqual([
     REVIEW_COMMAND,
+    REVIEW_AGAIN_COMMAND,
     OPEN_PART_COMMAND,
     OPEN_ALL_PARTS_COMMAND,
     FILTER_CHANGED_COMMAND,
@@ -287,6 +288,7 @@ describe('activating the companion', () => {
 
     expect(stub.commands.map((command) => command.id)).toEqual([
       REVIEW_COMMAND,
+      REVIEW_AGAIN_COMMAND,
       OPEN_PART_COMMAND,
       OPEN_ALL_PARTS_COMMAND,
       FILTER_CHANGED_COMMAND,
@@ -743,6 +745,40 @@ describe('progress in the side bar and the status bar', () => {
     expect(stub.contextKeys[REVIEWING_CONTEXT]).toBe(false);
     expect(stub.warningMessages).toEqual(['Second Look finished reviewing #42 in 4:12. Ranking fell back: no ranking evaluation for this combination yet.']);
     expect(stub.errorMessages).toEqual([]);
+  });
+
+  it('shows a saved review at once, labelled and with no notice, and Review again asks the engine for a fresh review', async () => {
+    const saved = {
+      ...claimsResult(),
+      stages: reviewStages(undefined, { ranking: { state: 'fell back', detail: 'no ranking evaluation for this combination yet' } }),
+      saved: { reviewedAt: '2026-10-11T14:03:27.000Z', agent: { agent: 'claude-code', model: 'claude-sonnet-5-5', effort: 'high' } },
+    };
+    const { reviewed, view } = startReview({ result: saved, logName: 'saved.log' });
+    await reviewed;
+
+    expect(drawn(view)).toContain('<b>Saved review</b> of ');
+    expect(drawn(view)).toContain('from 2026-10-11 14:03 UTC by Claude Code · claude-sonnet-5-5 · effort high; no agent ran again');
+    expect(drawn(view)).toContain('data-command="reviewAgain"');
+    expect(stub.warningMessages).toEqual([]);
+
+    await registeredCommands().get(REVIEW_AGAIN_COMMAND)!();
+    const reviews = readFileSync(join(workDir, 'saved.log'), 'utf8')
+      .split('\n')
+      .filter((line) => line !== '')
+      .map((line) => JSON.parse(line) as { method: string; params?: Record<string, unknown> })
+      .filter((request) => request.method === 'review');
+    expect(reviews.map((request) => request.params?.['fresh'])).toEqual([undefined, true]);
+    expect(reviews[1]!.params?.['url']).toBe(saved.pullRequest.url);
+  });
+
+  it('asks for a review first when Review again has none to repeat', async () => {
+    activate(stubContext() as unknown as vscode.ExtensionContext, {
+      spawnEngine: () => {
+        throw new Error('no review ran');
+      },
+    });
+    await registeredCommands().get(REVIEW_AGAIN_COMMAND)!();
+    expect(stub.warningMessages).toEqual(['Review a pull request first, then review it again.']);
   });
 
   it('ends a clean review on the strip and the status bar alone, with no notification', async () => {

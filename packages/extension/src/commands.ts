@@ -4,6 +4,13 @@ import type { AskKind } from '@second-look/engine';
 export const REVIEW_COMMAND = 'second-look.reviewPullRequest' as const;
 
 /**
+ * Reviews the pull request shown again, afresh: every agent pass runs
+ * and the result replaces the one the engine saved. A plain review of a
+ * pull request with a saved result shows that result and runs nothing.
+ */
+export const REVIEW_AGAIN_COMMAND = 'second-look.reviewAgain' as const;
+
+/**
  * The side bar: one webview view carrying the review path's eight steps
  * (ADR 0008). Its id is the one the native tree had, so the view's focus
  * command, title buttons and progress keep their place.

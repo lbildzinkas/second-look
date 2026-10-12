@@ -88,6 +88,10 @@ _Avoid_: Supported model, certified model
 A fixed, typed request the reviewer makes about one part for deeper analysis, such as "explain" or "verify this claim".
 _Avoid_: Chat, prompt, question
 
+**Saved review**:
+A pull request's latest review result, kept in its cache folder with when and by which agent, model and effort it was produced, and shown again at once with no agent run; once the pull request has new commits it is shown as from an earlier commit, and **Review again** runs a fresh review that replaces it.
+_Avoid_: Cached review, stale review
+
 **Reviewed mark**:
 A part the reviewer has checked off, stored locally per pull request and keyed by the part's content, cleared automatically when that content changes, and mirrored to GitHub's **Viewed** only for whole files when the opt-in setting is on.
 _Avoid_: Tick, checkmark, done flag

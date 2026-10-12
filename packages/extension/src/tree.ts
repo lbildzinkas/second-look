@@ -365,14 +365,26 @@ export function sinceLastLookLine(result: ReviewResult): string | undefined {
 }
 
 /**
- * The line above the tree: what changed since the reviewer's last look,
- * saying when the filter shows only those parts, then the review's
- * status; see {@link reviewStatus}.
+ * The line saying a saved review is from an earlier commit, so it is
+ * never read as current: the pull request has new commits since. Absent
+ * for a review that ran, and for a saved one of the head commit.
+ */
+export function earlierCommitLine(result: ReviewResult): string | undefined {
+  const newHead = result.saved?.newHead;
+  if (newHead === undefined) return undefined;
+  return `This saved review is of an earlier commit, ${shortCommit(result.pullRequest.headSha)}: the pull request has new commits, up to ${shortCommit(newHead)}. Review again to review them.`;
+}
+
+/**
+ * The line above the tree: that a saved review is from an earlier
+ * commit, what changed since the reviewer's last look, saying when the
+ * filter shows only those parts, then the review's status; see
+ * {@link reviewStatus}.
  */
 export function treeMessage(result: ReviewResult, running?: string, filter: TreeFilter = {}): string | undefined {
   const since = sinceLastLookLine(result);
   const shown = since !== undefined && filter.onlyChangedSinceLastLook ? `${since} Showing only those.` : since;
-  const lines = [shown, reviewStatus(result, running)].filter((line) => line !== undefined);
+  const lines = [earlierCommitLine(result), shown, reviewStatus(result, running)].filter((line) => line !== undefined);
   return lines.length === 0 ? undefined : lines.join(' ');
 }
 

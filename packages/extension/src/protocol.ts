@@ -848,10 +848,26 @@ export function isReviewStageRecord(value: unknown): value is ReviewStageRecord 
     (startedAt === undefined || (isString(startedAt) && Number.isFinite(Date.parse(startedAt)))) &&
     isOptionalNumber(durationMs) &&
     (durationMs === undefined || durationMs >= 0) &&
-    (agent === undefined ||
-      (isRecord(agent) && isString(agent['agent']) && (agent['model'] === null || isString(agent['model'])) && (agent['effort'] === null || isString(agent['effort'])))) &&
+    (agent === undefined || isStageAgent(agent)) &&
     (value['stamp'] === undefined || isAgentStamp(value['stamp'])) &&
     isOptionalString(value['detail'])
+  );
+}
+
+/** The agent working on a stage, or that produced a saved review: its name, and the model and effort asked for, null for its own default. */
+function isStageAgent(value: unknown): boolean {
+  return isRecord(value) && isString(value['agent']) && (value['model'] === null || isString(value['model'])) && (value['effort'] === null || isString(value['effort']));
+}
+
+/** A saved review's label: when it was produced, as a time that parses, by which agent, and the pull request's head now when it has new commits since. */
+function isSavedReview(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const { reviewedAt, agent, newHead } = value;
+  return (
+    isString(reviewedAt) &&
+    Number.isFinite(Date.parse(reviewedAt)) &&
+    (agent === undefined || isStageAgent(agent)) &&
+    (newHead === undefined || isNonEmptyString(newHead))
   );
 }
 
@@ -881,6 +897,7 @@ export function isReviewResult(value: unknown): value is ReviewResult {
   if (value['docLinks'] !== undefined && !isDocLinks(value['docLinks'])) return false;
   if (value['budget'] !== undefined && !isBudget(value['budget'])) return false;
   if (value['stages'] !== undefined && !(Array.isArray(value['stages']) && value['stages'].every(isReviewStageRecord))) return false;
+  if (value['saved'] !== undefined && !isSavedReview(value['saved'])) return false;
   const parts = value['parts'];
   if (!Array.isArray(parts) || !parts.every(isPart)) return false;
   const story = value['story'];

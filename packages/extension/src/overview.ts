@@ -29,7 +29,7 @@ import {
   type ReviewStageRecord,
   type Story,
 } from '@second-look/engine';
-import { sinceLastLookLine } from './tree.js';
+import { earlierCommitLine, sinceLastLookLine } from './tree.js';
 
 /** The view type of the overview's one webview panel. */
 export const OVERVIEW_VIEW_TYPE = 'second-look.overview' as const;
@@ -372,10 +372,11 @@ function metaLine(result: ReviewResult): string {
     .join(' · ');
 }
 
-/** The line under the meta saying which commit the reviewer's last look was at and what changed since; nothing on a first look. */
+/** The lines under the meta saying a saved review is from an earlier commit, and which commit the reviewer's last look was at and what changed since; nothing for a current review on a first look. */
 function sinceLine(result: ReviewResult): string {
-  const line = sinceLastLookLine(result);
-  return line === undefined ? '' : `<div class="meta since">${escapeHtml(line)}</div>`;
+  return [earlierCommitLine(result), sinceLastLookLine(result)]
+    .map((line) => (line === undefined ? '' : `<div class="meta since">${escapeHtml(line)}</div>`))
+    .join('');
 }
 
 /** One stage's time, whole seconds as `m:ss`: a duration once a stage is done, an elapsed time while it runs. */

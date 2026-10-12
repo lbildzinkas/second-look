@@ -11,7 +11,7 @@ import type { AgentStamp } from './agent.js';
 import type { AskKind } from './asks.js';
 
 /** Version of the review result schema. */
-export const REVIEW_RESULT_VERSION = 21 as const;
+export const REVIEW_RESULT_VERSION = 22 as const;
 
 /**
  * Version 2 added the head commit's SHA and each part's noise assessment;
@@ -55,7 +55,10 @@ export const REVIEW_RESULT_VERSION = 21 as const;
  * criterion is not checked, when a budget limit left it so; version 21
  * added the review's stages: each one's id, position, start time,
  * duration, who worked on it and how it ended, a stage the reviewer's
- * cancel kept from finishing marked stopped.
+ * cancel kept from finishing marked stopped; version 22 added the saved
+ * review a review shows instead of running again: when it was produced,
+ * by which agent, model and effort, and the pull request's head now when
+ * it has new commits since.
  */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
@@ -371,6 +374,22 @@ export interface ReviewResult {
   budget?: Budget;
   /** The review's stages in the order they run, each with how it stands; absent when no agent was asked, such as a plain review. */
   stages?: ReviewStageRecord[];
+  /** Set when the review showed the pull request's saved result instead of running again; absent on a review that ran. */
+  saved?: SavedReview;
+}
+
+/**
+ * A saved review: the latest result the engine saved in the pull
+ * request's cache folder, shown as it stood with no agent run. It is of
+ * the head commit its pull request summary names.
+ */
+export interface SavedReview {
+  /** When the review that produced it finished, as an ISO 8601 time. */
+  reviewedAt: string;
+  /** The agent, model and effort its agent passes ran on; absent for a review that ran no agent. */
+  agent?: ReviewStageAgent;
+  /** The pull request's head commit now, when it has new commits since the one reviewed: the result is from an earlier commit, never current. Absent when it is current. */
+  newHead?: string;
 }
 
 /**
