@@ -442,20 +442,21 @@ function carriedStage(result: ReviewResult, id: ReviewStageId): ReviewResult {
 
 /**
  * The agent stages of a review that carries results over from the saved
- * review of an earlier commit; a stage's result is carried over only
- * when its agent gave a usable answer, so one that fell back runs again. The agent groups only the hunks no carried
- * part holds and ranks only the parts not carried. The story, the
- * unexplained changes and the criteria mapping are review-wide: each is
- * carried over whole while the change's code, its title and description
- * and, for the last two, the linked issues are as the earlier review read
- * them — the mapping only while every line it cites is unchanged — and
- * runs again otherwise. The claims are carried over with the change and
- * description, and only while the story stands as the earlier claims were
- * listed against it — a story written again has its claims listed again
- * — else listed again, keeping the earlier claims of the carried parts;
- * either way a carried claim whose verdict no longer
- * stands is judged again, see {@link standingClaims}, and the agent
- * judges only the claims not carried.
+ * review of an earlier commit. The agent groups only the hunks no
+ * carried part holds and ranks only the parts not carried; with fewer
+ * than two of either to work on, the stage carries over whole however
+ * it went last time. The story, the unexplained changes and the
+ * criteria mapping are review-wide: each is carried over whole while
+ * the change's code, its title and description and, for the last two,
+ * the linked issues are as the earlier review read them and its agent
+ * gave a usable answer, so one that fell back runs again — the mapping
+ * only while every line it cites is unchanged. The claims are carried
+ * over with the change and description, and only while the story stands
+ * as the earlier claims were listed against it — a story written again
+ * has its claims listed again — else listed again, keeping the earlier
+ * claims of the carried parts; either way a carried claim whose verdict
+ * no longer stands is judged again, see {@link standingClaims}, and the
+ * agent judges only the claims not carried.
  */
 function stagesSince(input: ReviewInput, parsed: ParsedDiff, earlier: ReviewResult, carry: CarriedParts, agentStage: AgentStageOptions): AgentStages {
   const same = sameLines(earlier.copies.head.path, input.copies.head.path);

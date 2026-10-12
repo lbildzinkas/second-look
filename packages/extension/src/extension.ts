@@ -293,8 +293,9 @@ class ReviewSession {
 
   /**
    * Reviews the pull request: its saved result shows at once when the
-   * engine has one, unless `fresh` asks for a fresh review, as Review
-   * again does.
+   * engine has one, or, once the pull request has new commits, only what
+   * they changed runs again, unless `fresh` asks for a fresh review, as
+   * Review again does.
    */
   async reviewPullRequest(urlArg?: unknown, fresh = false): Promise<void> {
     const url =
