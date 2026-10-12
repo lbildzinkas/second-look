@@ -11,6 +11,7 @@ import {
   reviewedState,
   unexplainedReasons,
   type AgentStamp,
+  type CarriedOver,
   type ClaimJudging,
   type Claims,
   type Comment,
@@ -134,7 +135,8 @@ export function buildTree(result: ReviewResult, marks: ReviewedMarks = NO_MARKS,
   const changed = result.parts.map((part) => since !== undefined && changedSinceLastLook(part, since));
   const withBadges = (node: TreePart, index: number): TreePart => {
     const reviewed = reviewedState(result.parts[index]!, marks);
-    const badged = withUnexplained(withClaims(node, counts[index]!, findings[index]!, judged, asked[index]!, result.claims?.judging), unexplained[index]);
+    const carried = result.carriedOver === undefined ? node : withCarried(node, result.parts[index]!, result.carriedOver);
+    const badged = withUnexplained(withClaims(carried, counts[index]!, findings[index]!, judged, asked[index]!, result.claims?.judging), unexplained[index]);
     return withReviewed(changed[index] ? withLastLook(badged, since!, reviewed) : badged, reviewed);
   };
   result.parts.forEach((part, index) => {
@@ -313,6 +315,29 @@ function withReviewed(node: TreePart, reviewed: ReviewedState): TreePart {
   };
 }
 
+/** What a part carried over from the saved review of an earlier commit says. */
+export const CARRIED_OVER = 'carried over';
+
+/** What a part the review checked again, after the saved review of an earlier commit, says. */
+export const RECHECKED = 're-checked';
+
+/**
+ * A part's node in a review that carried results over from the saved
+ * review of an earlier commit: carried over, or re-checked when its code
+ * changed since, beside the label and in the tooltip with that commit.
+ */
+function withCarried(node: TreePart, part: Part, from: CarriedOver): TreePart {
+  const commit = shortCommit(from.commit);
+  const [note, line] = part.carried
+    ? [CARRIED_OVER, `Carried over from the review of ${commit}: its code did not change since.`]
+    : [RECHECKED, `Re-checked: its code changed since the review of ${commit}.`];
+  return {
+    ...node,
+    description: node.description === undefined ? note : `${note} · ${node.description}`,
+    tooltip: node.tooltip === undefined ? line : `${node.tooltip}\n${line}`,
+  };
+}
+
 /** What a part that changed since the reviewer's last look says. */
 export const CHANGED_SINCE_LAST_LOOK = 'changed since your last look';
 
@@ -376,15 +401,30 @@ export function earlierCommitLine(result: ReviewResult): string | undefined {
 }
 
 /**
+ * The line saying a review carried results over from the saved review of
+ * an earlier commit: that commit and its day, and how many parts and
+ * claims were carried over, the rest re-checked. Absent for a review
+ * that ran in full.
+ */
+export function carriedOverLine(result: ReviewResult): string | undefined {
+  const from = result.carriedOver;
+  if (from === undefined) return undefined;
+  const count = (items: readonly { carried?: true }[], noun: string): string =>
+    `${items.filter((item) => item.carried).length} of ${items.length} ${noun}${items.length === 1 ? '' : 's'}`;
+  const claims = result.claims === undefined ? '' : ` and ${count(result.claims.claims, 'claim')}`;
+  return `Re-checked only what changed since the review of ${shortCommit(from.commit)} on ${from.reviewedAt.slice(0, 10)}: ${count(result.parts, 'part')}${claims} carried over from it, the rest re-checked.`;
+}
+
+/**
  * The line above the tree: that a saved review is from an earlier
- * commit, what changed since the reviewer's last look, saying when the
- * filter shows only those parts, then the review's status; see
- * {@link reviewStatus}.
+ * commit, or what the review carried over from one, what changed since
+ * the reviewer's last look, saying when the filter shows only those
+ * parts, then the review's status; see {@link reviewStatus}.
  */
 export function treeMessage(result: ReviewResult, running?: string, filter: TreeFilter = {}): string | undefined {
   const since = sinceLastLookLine(result);
   const shown = since !== undefined && filter.onlyChangedSinceLastLook ? `${since} Showing only those.` : since;
-  const lines = [earlierCommitLine(result), shown, reviewStatus(result, running)].filter((line) => line !== undefined);
+  const lines = [earlierCommitLine(result), carriedOverLine(result), shown, reviewStatus(result, running)].filter((line) => line !== undefined);
   return lines.length === 0 ? undefined : lines.join(' ');
 }
 

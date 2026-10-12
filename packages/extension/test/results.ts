@@ -305,6 +305,22 @@ export function judgedResult(copies?: CopyPaths): ReviewResult {
 }
 
 /**
+ * The judged result as a review after new commits leaves it: the retry
+ * part carried over from the saved review of an earlier commit with its
+ * description and docstring claims, and the settings part re-checked.
+ */
+export function carriedResult(copies?: CopyPaths): ReviewResult {
+  const shown = judgedResult(copies);
+  const claims = shown.claims!;
+  return {
+    ...shown,
+    carriedOver: { commit: '5555555555555555555555555555555555555555', reviewedAt: '2026-10-11T14:03:27.000Z', agent: { agent: 'pi', model: null, effort: 'high' } },
+    parts: shown.parts.map((each, index) => (index === 0 ? { ...each, carried: true } : each)),
+    claims: { ...claims, claims: claims.claims.map((claim, index) => (index < 2 ? { ...claim, carried: true } : claim)) },
+  };
+}
+
+/**
  * The judged result with a fresh pipeline report whose open finding is the
  * first claim, verified by a failed check's CI log, and the CI it read:
  * a failed job with an annotation and its trimmed log, and a passing one.

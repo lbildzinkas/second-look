@@ -29,7 +29,7 @@ import {
   type ReviewStageRecord,
   type Story,
 } from '@second-look/engine';
-import { earlierCommitLine, sinceLastLookLine } from './tree.js';
+import { carriedOverLine, earlierCommitLine, sinceLastLookLine } from './tree.js';
 
 /** The view type of the overview's one webview panel. */
 export const OVERVIEW_VIEW_TYPE = 'second-look.overview' as const;
@@ -396,9 +396,9 @@ function metaLine(result: ReviewResult): string {
     .join(' · ');
 }
 
-/** The lines under the meta saying a saved review is from an earlier commit, and which commit the reviewer's last look was at and what changed since; nothing for a current review on a first look. */
+/** The lines under the meta saying a saved review is from an earlier commit, or what the review carried over from one, and which commit the reviewer's last look was at and what changed since; nothing for a review in full on a first look. */
 function sinceLine(result: ReviewResult): string {
-  return [earlierCommitLine(result), sinceLastLookLine(result)]
+  return [earlierCommitLine(result), carriedOverLine(result), sinceLastLookLine(result)]
     .map((line) => (line === undefined ? '' : `<div class="meta since">${escapeHtml(line)}</div>`))
     .join('');
 }
@@ -486,6 +486,8 @@ function stageRow(record: ReviewStageRecord, state: OverviewState): string {
       return `<div class="srow todo"${quiet}><span class="ic tone-mut" aria-hidden="true">○</span><span class="nm">${name}</span><span class="w">skipped</span></div>`;
     case 'stopped':
       return `<div class="srow todo"${quiet}><span class="ic tone-mut" aria-hidden="true">□</span><span class="nm">${name}</span><span class="w">stopped</span></div>`;
+    case 'carried over':
+      return `<div class="srow"${quiet}><span class="ic tone-mut" aria-hidden="true">⧉</span><span class="nm">${name}</span><span class="w">carried over</span></div>`;
     case 'fell back':
       return `<div class="srow"><span class="ic tone-warn" aria-hidden="true">⊘</span><span class="nm">${name}</span><span class="w">${time}</span></div>`;
     case 'failed':
@@ -1127,7 +1129,8 @@ function claimRow(claim: Claim, index: number, result: ReviewResult, open: boole
       ? ''
       : ` · <button type="button" class="pt" data-part="${claim.part}">${escapeHtml(part.name ?? part.path)}</button>`;
   const state = claim.verdict.kind === 'not checked' && checking ? 'checking' : claim.verdict.kind;
-  const cells = [pill(state), `<q class="quote">${sanitiseUntrusted(claim.quote).html}</q>`, `<span class="where">${claimWhereCell(claim, index)}${button}</span>`];
+  const carried = claim.carried && result.carriedOver ? ` · <span class="carried">carried over from ${escapeHtml(result.carriedOver.commit.slice(0, 7))}</span>` : '';
+  const cells = [pill(state), `<q class="quote">${sanitiseUntrusted(claim.quote).html}</q>`, `<span class="where">${claimWhereCell(claim, index)}${button}${carried}</span>`];
   return tableRow(`claim-${index}`, index + 1, state, cells, verdictDetail(claim, index), open);
 }
 

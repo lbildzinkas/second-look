@@ -3,12 +3,15 @@ import { NO_MARKS, applyMark, changePieces, markedPart, type AgentGrouping, type
 import {
   anchorOf,
   buildTree,
+  CARRIED_OVER,
+  carriedOverLine,
   CHANGED_SINCE_LAST_LOOK,
   CHANGED_SINCE_MARKED,
   claimCountText,
   findingBadge,
   findAnchor,
   NOISE,
+  RECHECKED,
   NOT_RANKED_YET,
   partsInReadingOrder,
   reviewBadge,
@@ -18,7 +21,7 @@ import {
   earlierCommitLine,
   UNEXPLAINED_BADGE,
 } from '../src/tree.js';
-import { claimsResult, judgedResult, mixedResult, part, result, unexplainedResult } from './results.js';
+import { carriedResult, claimsResult, judgedResult, mixedResult, part, result, unexplainedResult } from './results.js';
 import type { TreeFilter, TreePart } from '../src/tree.js';
 
 /** A hunk adding one line at the given place, on both sides. */
@@ -503,6 +506,25 @@ describe('since your last look in the tree', () => {
     expect(treeMessage(earlier)).toBe(
       `This saved review is of an earlier commit, ${earlier.pullRequest.headSha.slice(0, 7)}: the pull request has new commits, up to abcdef0. Review again to review them. Since your last look at abcdef0 on 2026-10-01: 1 of 2 parts changed.`,
     );
+  });
+
+  it('says what a review carried over from the saved review of an earlier commit, and marks each part carried over or re-checked', () => {
+    const shown = carriedResult();
+    const line = `Re-checked only what changed since the review of 5555555 on 2026-10-11: 1 of ${shown.parts.length} parts and 2 of 4 claims carried over from it, the rest re-checked.`;
+    expect(carriedOverLine(judgedResult())).toBeUndefined();
+    expect(carriedOverLine(shown)).toBe(line);
+    expect(treeMessage(shown)).toBe(line);
+
+    const shownNodes = buildTree(shown).flatMap((section) => section.parts) as TreePart[];
+    const node = (index: number) => shownNodes.find((each) => each.part === shown.parts[index])!;
+    expect(node(0).description).toContain(CARRIED_OVER);
+    expect(node(0).tooltip).toContain('Carried over from the review of 5555555: its code did not change since.');
+    expect(node(1).description).toContain(RECHECKED);
+    expect(node(1).tooltip).toContain('Re-checked: its code changed since the review of 5555555.');
+    // A review that ran in full says neither.
+    for (const each of buildTree(judgedResult()).flatMap((section) => section.parts) as TreePart[]) {
+      expect(each.description ?? '').not.toMatch(/carried over|re-checked/);
+    }
   });
 
   it('puts the last look above the review status, saying when the filter is on', () => {

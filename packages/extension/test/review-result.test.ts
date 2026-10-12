@@ -4,6 +4,7 @@ import { ProtocolError, isReviewResult, parseReviewResult } from '../src/index.j
 import {
   REQUESTS_FETCH,
   reviewStages,
+  carriedResult,
   claimsResult,
   criteriaResult,
   doneStages,
@@ -823,6 +824,38 @@ describe('isReviewResult for a saved review', () => {
   });
 });
 
+describe('isReviewResult for a review that carried results over', () => {
+  const CARRIED = { commit: '5555555555555555555555555555555555555555', reviewedAt: '2026-10-11T14:03:27.000Z' };
+
+  it('accepts its label, the parts and claims carried over, and a stage carried over', () => {
+    const shown = carriedResult();
+    expect(isReviewResult(shown)).toBe(true);
+    expect(isReviewResult({ ...sampleResult(), carriedOver: CARRIED })).toBe(true);
+    const plain = { id: 'plain', position: 1, total: 9, state: 'done' };
+    const grouping = { id: 'grouping', position: 2, total: 9, state: 'carried over', detail: 'its input did not change since the review of 5555555, whose result of it was kept' };
+    expect(isReviewResult({ ...sampleResult(), stages: [plain, grouping] })).toBe(true);
+  });
+
+  it('accepts a carried claim with its checked verdict before the claims are judged, and in a listing that fell back', () => {
+    const shown = carriedResult();
+    const { judging: _judging, ...claims } = shown.claims!;
+    const carriedOnly = claims.claims.filter((claim) => claim.carried);
+    expect(isReviewResult({ ...shown, claims: { ...claims, claims: carriedOnly } })).toBe(true);
+    expect(isReviewResult({ ...shown, claims: { ...claims, outcome: 'fell back', claims: carriedOnly } })).toBe(true);
+    // A checked verdict on a claim neither judged, asked nor carried is still refused.
+    expect(isReviewResult({ ...shown, claims })).toBe(false);
+  });
+
+  it('rejects a label with no commit or time, and a carried mark that is not true', () => {
+    for (const carriedOver of [{}, { ...CARRIED, commit: '' }, { ...CARRIED, reviewedAt: 'yesterday' }, { ...CARRIED, agent: { model: null, effort: null } }]) {
+      expect(isReviewResult({ ...sampleResult(), carriedOver })).toBe(false);
+    }
+    const shown = carriedResult();
+    expect(isReviewResult({ ...shown, parts: shown.parts.map((each) => ({ ...each, carried: false })) })).toBe(false);
+    expect(isReviewResult({ ...shown, claims: { ...shown.claims!, claims: shown.claims!.claims.map((claim) => ({ ...claim, carried: 'yes' })) } })).toBe(false);
+  });
+});
+
 describe('parseReviewResult', () => {
   it('reads the JSON the engine printed', () => {
     const result = parseReviewResult(JSON.stringify(sampleResult()));
@@ -838,6 +871,6 @@ describe('parseReviewResult', () => {
 
 describe('the versioned protocol is shared with the engine', () => {
   it('uses the same version constant', () => {
-    expect(REVIEW_RESULT_VERSION).toBe(22);
+    expect(REVIEW_RESULT_VERSION).toBe(23);
   });
 });
