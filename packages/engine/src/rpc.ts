@@ -12,6 +12,8 @@
  *
  * After the handshake, {@link REVIEW_METHOD} reviews a pull request,
  * {@link FETCH_LIBRARY_METHOD} presses one finding's library fetch,
+ * {@link READ_CI_LOG_METHOD} presses one claim's Read the CI log, both
+ * only when the reviewer presses it,
  * {@link DRAFT_COMMENT_METHOD} drafts a comment from one finding,
  * {@link ASK_METHOD} answers one ask about one part,
  * {@link SEND_REVIEW_METHOD} sends the pending review to GitHub as one
