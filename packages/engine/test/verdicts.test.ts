@@ -232,6 +232,19 @@ describe('recheckLooked', () => {
     });
   });
 
+  it('says in a recheck note when it dropped valid ranges past the cap, beside any other dropped range', async () => {
+    const ranges = (file: string, lines: number) =>
+      Array.from({ length: lines }, (_, start) => start + 1).flatMap((line) =>
+        Array.from({ length: lines - line + 1 }, (_, index) => ({ file, line, endLine: line + index })),
+      );
+    const valid = [...ranges('app/retry.py', 6), ...ranges('app/settings.py', 2)];
+    const checked = await recheckLooked(read, [...valid, { file: 'app/missing.py', line: 1, endLine: 1 }]);
+    expect(checked.looked).toEqual(valid.slice(0, 20).map(({ file, line, endLine }) => ({ path: file, line, endLine })));
+    expect(checked.lookedRecheck).toBe(
+      'dropped what the agent read at app/missing.py:1 names a file the head copy does not have; kept the first 20 ranges read; dropped 4 more',
+    );
+  });
+
   it('carries what the agent looked at onto the verdict, its dropped ranges named, whatever the verdict', async () => {
     const looked = [
       { file: 'app/retry.py', line: 1, endLine: 6 },

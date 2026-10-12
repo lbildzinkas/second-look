@@ -448,8 +448,10 @@ export async function recheckLooked(read: ReadLines, looked: readonly { file: st
       kept.push({ path: range.file, line: range.line, endLine: range.endLine });
     }
   }
-  const dropped = failed.length === 0 ? {} : { lookedRecheck: `dropped what the agent read at ${failed.join('; ')}` };
-  return { looked: kept.slice(0, MAX_LOOKED), ...dropped };
+  const notes: string[] = [];
+  if (failed.length > 0) notes.push(`dropped what the agent read at ${failed.join('; ')}`);
+  if (kept.length > MAX_LOOKED) notes.push(`kept the first ${MAX_LOOKED} ranges read; dropped ${kept.length - MAX_LOOKED} more`);
+  return { looked: kept.slice(0, MAX_LOOKED), ...(notes.length === 0 ? {} : { lookedRecheck: notes.join('; ') }) };
 }
 
 /**
