@@ -160,7 +160,7 @@ describe('runRpcServer', () => {
 
     expect(responses[0]!.result).toEqual({ protocolVersion: ENGINE_PROTOCOL_VERSION });
     const first = responses[1]!.result as { version: number; parts: unknown[] };
-    expect(first.version).toBe(23);
+    expect(first.version).toBe(24);
     expect(first.parts).toHaveLength(11);
     const second = responses[2]!.result as { parts: unknown[] };
     expect(second.parts).toHaveLength(11);
@@ -483,7 +483,7 @@ describe('runRpcServer with an agent', () => {
         id: 2,
         running: 'grouping related hunks with fake',
         timeoutMs: 660_000,
-        result: { version: 23, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
+        result: { version: 24, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
       },
     });
     // The fake agent has no tested ranking, so the story stage follows the grouping.
@@ -790,17 +790,19 @@ describe('runRpcServer keeping the latest review', () => {
 
   /**
    * Serves the lines on a new engine, as a restarted editor starts one,
-   * with an agent that answers every pass and records every run; returns
-   * the answers and the GitHub requests made.
+   * with an agent that answers every pass and records every run, or with
+   * none when `withAgent` is false; returns the answers and the GitHub
+   * requests made.
    */
-  async function serveEngine(lines: string[], agent = answeringAgent(() => ({}))) {
+  async function serveEngine(lines: string[], agent = answeringAgent(() => ({})), withAgent = true) {
     const transport = fixtureFetch(pull7());
     let index = 0;
     const written: string[] = [];
+    const agents = { adapterFor: () => agent, defaultAgent: 'pi' as const, settings: { timeoutMs: 10_000, concurrency: 1, effort: 'high' } };
     await runRpcServer(
       { readLine: async () => (index < lines.length ? (lines[index++] as string) : null) },
       { writeLine: (line) => written.push(line) },
-      { cacheDir, fetch: transport.fetch, agent: { adapterFor: () => agent, defaultAgent: 'pi', settings: { timeoutMs: 10_000, concurrency: 1, effort: 'high' } } },
+      { cacheDir, fetch: transport.fetch, ...(withAgent ? { agent: agents } : {}) },
     );
     const responses = written.map((line) => JSON.parse(line) as Response);
     return { answer: (id: number) => responses.find((response) => response.id === id)!, agent, github: transport.requests };
@@ -825,7 +827,7 @@ describe('runRpcServer keeping the latest review', () => {
     expect(first.agent.requests.length).toBeGreaterThan(0);
     expect(reviewed.saved).toBeUndefined();
     const saved = await readSavedReview(cacheDir, ref);
-    expect(saved).toMatchObject({ version: 23, commit: HEAD, agent: { agent: 'fake', model: null, effort: 'high' } });
+    expect(saved).toMatchObject({ version: 24, commit: HEAD, agent: { agent: 'fake', model: null, effort: 'high' } });
     expect(Date.parse(saved!.reviewedAt)).not.toBeNaN();
     expect(JSON.stringify(saved)).not.toContain(TOKEN);
     const looks = await readLooks(cacheDir, ref);
@@ -856,22 +858,50 @@ describe('runRpcServer keeping the latest review', () => {
     expect((await readSavedReview(cacheDir, ref))!.reviewedAt).not.toBe('2026-01-01T00:00:00.000Z');
   });
 
-  it('shows the saved review as from an earlier commit once the pull request has new commits, and runs nothing', async () => {
+  /** Saves a review, then leaves it as the saved review of an earlier commit, whose read-only copy the cache still holds. */
+  async function savedAtEarlierCommit(): Promise<void> {
     await serveEngine(reviewLines());
     await rewriteRecord((record) => {
       record['commit'] = EARLIER;
+      record['reviewedAt'] = '2026-01-01T00:00:00.000Z';
       record.result.pullRequest.headSha = EARLIER;
       record.result.copies.head.commit = EARLIER;
     });
-    // The earlier commit's read-only copy is still in the cache.
     await mkdir(join(pullRequestCacheDir(cacheDir, ref), EARLIER));
+  }
+
+  it('reviews only what new commits changed since the saved review, carrying the rest over, labelled, and saves it', async () => {
+    await savedAtEarlierCommit();
 
     const again = await serveEngine(reviewLines());
     const shown = again.answer(2).result as ReviewResult;
-    expect(again.agent.requests).toHaveLength(0);
+    expect(shown.saved).toBeUndefined();
+    expect(shown.pullRequest.headSha).toBe(HEAD);
+    expect(shown.carriedOver).toEqual({ commit: EARLIER, reviewedAt: '2026-01-01T00:00:00.000Z', agent: { agent: 'fake', model: null, effort: 'high' } });
+    // The change's code is as the earlier review read it, so every part carries over, with its grouping, its ranking and the documentation links.
+    expect(shown.parts.every((part) => part.carried)).toBe(true);
+    expect(shown.stages!.filter((stage) => stage.state === 'carried over').map((stage) => stage.id)).toEqual(['grouping', 'ranking', 'docLinks']);
+    expect(await readSavedReview(cacheDir, ref)).toMatchObject({ commit: HEAD, result: { carriedOver: { commit: EARLIER } } });
+  });
+
+  it('shows the saved review as from an earlier commit when no agent can review the new commits, and runs nothing', async () => {
+    await savedAtEarlierCommit();
+
+    const again = await serveEngine(reviewLines(), undefined, false);
+    const shown = again.answer(2).result as ReviewResult;
     expect(shown.pullRequest.headSha).toBe(EARLIER);
     expect(shown.copies.head).toMatchObject({ commit: EARLIER, reused: true });
     expect(shown.saved).toMatchObject({ newHead: HEAD });
+    expect(shown).not.toHaveProperty('carriedOver');
+  });
+
+  it('runs a fresh review when asked to review again after new commits, carrying nothing over', async () => {
+    await savedAtEarlierCommit();
+
+    const again = await serveEngine(reviewLines({ fresh: true }));
+    const shown = again.answer(2).result as ReviewResult;
+    expect(shown).not.toHaveProperty('carriedOver');
+    expect(shown.parts.some((part) => part.carried)).toBe(false);
   });
 
   it('reviews afresh when the saved review\u2019s commit is gone from the cache and from GitHub', async () => {
@@ -898,7 +928,7 @@ describe('runRpcServer keeping the latest review', () => {
     const again = await serveEngine(reviewLines());
     expect(again.agent.requests.length).toBeGreaterThan(0);
     expect((again.answer(2).result as ReviewResult).saved).toBeUndefined();
-    expect(await readSavedReview(cacheDir, ref)).toMatchObject({ version: 23 });
+    expect(await readSavedReview(cacheDir, ref)).toMatchObject({ version: 24 });
   });
 
   it('refuses a fresh flag that is not a boolean', async () => {
@@ -1041,7 +1071,7 @@ describe('runRpcServer fetching a library', () => {
     });
     expect(pypiBeforeFetch).toBe(0);
     expect(answer(3).result).toMatchObject({
-      version: 23,
+      version: 24,
       claims: {
         claims: [
           {
@@ -1166,7 +1196,7 @@ describe('runRpcServer fetching a library', () => {
 
     expect(answer(3).error).toBeUndefined();
     expect(answer(3).result).toMatchObject({
-      version: 23,
+      version: 24,
       claims: {
         claims: [
           {

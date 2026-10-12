@@ -89,8 +89,12 @@ A fixed, typed request the reviewer makes about one part for deeper analysis, su
 _Avoid_: Chat, prompt, question
 
 **Saved review**:
-A pull request's latest review result, kept in its cache folder with when and by which agent, model and effort it was produced, and shown again at once with no agent run; once the pull request has new commits it is shown as from an earlier commit, and **Review again** runs a fresh review that replaces it.
+A pull request's latest review result, kept in its cache folder with when and by which agent, model and effort it was produced, and shown again at once with no agent run; once the pull request has new commits, the next review carries its results over for what the new commits did not change, and **Review again** runs a fresh review that replaces it.
 _Avoid_: Cached review, stale review
+
+**Carried-over result**:
+A result of the saved review of an earlier commit that a review after new commits keeps because its input did not change: a part's grouping and ranking, a claim with its verdict while no line its evidence cites changed, or a whole pass; it is labelled carried over, and every other result is **re-checked**.
+_Avoid_: Cached result, reused result
 
 **Reviewed mark**:
 A part the reviewer has checked off, stored locally per pull request and keyed by the part's content, cleared automatically when that content changes, and mirrored to GitHub's **Viewed** only for whole files when the opt-in setting is on.

@@ -11,7 +11,7 @@ import type { AgentStamp } from './agent.js';
 import type { AskKind } from './asks.js';
 
 /** Version of the review result schema. */
-export const REVIEW_RESULT_VERSION = 23 as const;
+export const REVIEW_RESULT_VERSION = 24 as const;
 
 /**
  * Version 2 added the head commit's SHA and each part's noise assessment;
@@ -58,9 +58,11 @@ export const REVIEW_RESULT_VERSION = 23 as const;
  * cancel kept from finishing marked stopped; version 22 added the saved
  * review a review shows instead of running again: when it was produced,
  * by which agent, model and effort, and the pull request's head now when
- * it has new commits since; version 23 added what each checked verdict's
- * agent looked at in the head copy, and what could settle each
- * unverifiable claim.
+ * it has new commits since; version 23 added the results a review carries
+ * over from the saved review of an earlier commit: the commit and who
+ * produced it, each part and claim carried over, and a stage carried over
+ * whole; version 24 added what each checked verdict's agent looked at in
+ * the head copy, and what could settle each unverifiable claim.
  */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
@@ -378,6 +380,26 @@ export interface ReviewResult {
   stages?: ReviewStageRecord[];
   /** Set when the review showed the pull request's saved result instead of running again; absent on a review that ran. */
   saved?: SavedReview;
+  /**
+   * Set when the review re-ran only what new commits changed since the
+   * saved review of an earlier commit, carrying the rest over from it;
+   * absent on a review that ran in full.
+   */
+  carriedOver?: CarriedOver;
+}
+
+/**
+ * The saved review of an earlier commit a review carried results over
+ * from: the parts whose code did not change since, marked carried, and
+ * the stages whose input did not change, marked carried over.
+ */
+export interface CarriedOver {
+  /** The earlier head commit the saved review was of. */
+  commit: string;
+  /** When the review that produced it finished, as an ISO 8601 time. */
+  reviewedAt: string;
+  /** The agent, model and effort its agent passes ran on; absent for a review that ran no agent. */
+  agent?: ReviewStageAgent;
 }
 
 /**
@@ -1144,6 +1166,13 @@ export interface Claim {
    * back; the pass's own outcome stays as it was.
    */
   asked?: true;
+  /**
+   * True when the claim and its verdict were carried over from the saved
+   * review of an earlier commit: its part did not change since, and no
+   * line its evidence cites did; absent when listed or judged in this
+   * review.
+   */
+  carried?: true;
 }
 
 /**
@@ -1369,7 +1398,7 @@ export type NoiseAssessment =
 export type PartOrigin = 'plain' | 'agent' | 'not grouped by the agent';
 
 /** One file's share of a part: the file's own fields and the hunks of it the part holds. */
-export type FileSlice = Omit<Part, 'name' | 'signals' | 'rank' | 'origin' | 'otherFiles'>;
+export type FileSlice = Omit<Part, 'name' | 'signals' | 'rank' | 'origin' | 'otherFiles' | 'carried'>;
 
 /**
  * A named group of related edits. The plain pass gives a part the hunks of
@@ -1440,6 +1469,12 @@ export interface Part {
    * hunks across files; absent when the part stays within one file.
    */
   otherFiles?: FileSlice[];
+  /**
+   * True when the part's code did not change since the saved review of an
+   * earlier commit, so its grouping and ranking were carried over from it;
+   * absent when it was grouped and ranked in this review.
+   */
+  carried?: true;
 }
 
 /** Whether a part's code is new, changed or removed. */
@@ -1704,10 +1739,12 @@ export type ReviewStageId = (typeof REVIEW_STAGE_IDS)[number];
  * How a stage stands: **to come** before it starts; **running**; then
  * **done**, **fell back** when its agent gave no usable answer or was not
  * tested, so the result says why, **failed** when it broke, **skipped**
- * when it had nothing to do, such as fewer than two parts to rank, or
- * **stopped** when the reviewer cancelled the review before it finished.
+ * when it had nothing to do, such as fewer than two parts to rank,
+ * **stopped** when the reviewer cancelled the review before it finished,
+ * or **carried over** when its input did not change since the saved
+ * review of an earlier commit, so that review's result of it was kept.
  */
-export type ReviewStageState = 'to come' | 'running' | 'done' | 'fell back' | 'failed' | 'skipped' | 'stopped';
+export type ReviewStageState = 'to come' | 'running' | 'done' | 'fell back' | 'failed' | 'skipped' | 'stopped' | 'carried over';
 
 /** The agent working on a stage, with the model and effort asked for; null for the agent's own default. */
 export interface ReviewStageAgent {

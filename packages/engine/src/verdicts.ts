@@ -67,7 +67,7 @@ const MAX_CITED_QUOTE = 300;
 const MIN_CITED_QUOTE = 8;
 
 /** How many lines from the cited one a citation's quote may run over. */
-const CITED_SPAN = 10;
+export const CITED_SPAN = 10;
 
 /** The most ranges read one verdict keeps. */
 const MAX_LOOKED = 20;

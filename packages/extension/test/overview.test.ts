@@ -15,6 +15,7 @@ import { ElementDouble, PageDouble } from './overview-page.js';
 import {
   claimsResult,
   criteriaResult,
+  carriedResult,
   doneStages,
   fetchedResult,
   judgedResult,
@@ -525,6 +526,22 @@ describe('the claims on the overview', () => {
 
     expect(loadsOrLinks(html)).toBe(false);
     expect(html).toContain('<button type="button" class="pt where" data-claim-where="1">docstring · &lt;img src=x&gt;.py:3–4</button>');
+  });
+});
+
+describe('a review that carried results over on the overview', () => {
+  it('says what it carried over under the meta, marks each carried claim, and lists a stage carried over', () => {
+    const shown = carriedResult();
+    const detail = 'its input did not change since the review of 5555555, whose result of it was kept';
+    const stages = doneStages().map((record) => (record.id === 'grouping' ? { id: record.id, position: record.position, total: record.total, state: 'carried over' as const, detail } : record));
+    const html = overviewHtml({ result: { ...shown, stages } }, 'N');
+
+    expect(html).toContain(
+      `<div class="meta since">Re-checked only what changed since the review of 5555555 on 2026-10-11: 1 of ${shown.parts.length} parts and 2 of 4 claims carried over from it, the rest re-checked.</div>`,
+    );
+    expect(html.match(/<span class="carried">carried over from 5555555<\/span>/g)).toHaveLength(2);
+    expect(html).toContain(`<div class="srow" title="${detail}"><span class="ic tone-mut" aria-hidden="true">⧉</span><span class="nm">Grouping</span><span class="w">carried over</span></div>`);
+    expect(overviewHtml({ result: judgedResult() }, 'N')).not.toContain('carried over');
   });
 });
 

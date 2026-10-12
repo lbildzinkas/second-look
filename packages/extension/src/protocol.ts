@@ -281,6 +281,7 @@ function isPart(value: unknown): boolean {
   if (!isNonEmptyString(value['name'])) return false;
   if (!isPartSignals(value['signals'])) return false;
   if (value['origin'] !== undefined && !isOneOf(value['origin'], ORIGINS)) return false;
+  if (value['carried'] !== undefined && value['carried'] !== true) return false;
   const otherFiles = value['otherFiles'];
   if (otherFiles !== undefined && !(Array.isArray(otherFiles) && otherFiles.every(isFileSlice))) {
     return false;
@@ -503,15 +504,18 @@ function isClaim(value: unknown, partCount: number, sentenceCount: number): bool
     isNumber(value['part']) &&
     value['part'] < partCount &&
     isClaimVerdict(value['verdict']) &&
-    (value['asked'] === undefined || value['asked'] === true)
+    (value['asked'] === undefined || value['asked'] === true) &&
+    (value['carried'] === undefined || value['carried'] === true)
   );
 }
 
 /**
  * The claims of the result's parts: listed, or fallen back with only the
- * pipeline's and any the verify ask judged, always stamped; a claim
- * carries a checked verdict only once the claims were judged, or once
- * the Verify this claim ask judged it alone, which marks the claim.
+ * pipeline's, any the verify ask judged and any carried over from the
+ * saved review of an earlier commit, always stamped; a claim carries a
+ * checked verdict only once the claims were judged, once the Verify this
+ * claim ask judged it alone, or when it was carried over with it, each
+ * of which marks the claim.
  */
 function isClaims(value: unknown, partCount: number, sentenceCount: number): boolean {
   if (!isRecord(value)) return false;
@@ -528,11 +532,12 @@ function isClaims(value: unknown, partCount: number, sentenceCount: number): boo
   ) {
     return false;
   }
-  if (value['outcome'] === 'fell back' && !claims.every((claim) => isRecord(claim) && (claim['source'] === 'pipeline' || claim['asked'] === true))) return false;
+  const marked = (claim: Record<string, unknown>): boolean => claim['asked'] === true || claim['carried'] === true;
+  if (value['outcome'] === 'fell back' && !claims.every((claim) => isRecord(claim) && (claim['source'] === 'pipeline' || marked(claim)))) return false;
   return claims.every(
     (claim) =>
       isClaim(claim, partCount, sentenceCount) &&
-      (judged || (claim as { verdict: { kind: unknown }; asked?: unknown }).verdict.kind === 'not checked' || (claim as { asked?: unknown }).asked === true),
+      (judged || (claim as { verdict: { kind: unknown } }).verdict.kind === 'not checked' || marked(claim as Record<string, unknown>)),
   );
 }
 
@@ -840,7 +845,7 @@ function isBudget(value: unknown): boolean {
 }
 
 /** How a review stage can stand, as the result's stages and a stage notification record it. */
-const REVIEW_STAGE_STATES: readonly ReviewStageState[] = ['to come', 'running', 'done', 'fell back', 'failed', 'skipped', 'stopped'];
+const REVIEW_STAGE_STATES: readonly ReviewStageState[] = ['to come', 'running', 'done', 'fell back', 'failed', 'skipped', 'stopped', 'carried over'];
 
 /**
  * One stage of a review, as the result's stages and a stage notification
@@ -887,6 +892,13 @@ function isSavedReview(value: unknown): boolean {
   );
 }
 
+/** What a review carried results over from: the earlier commit, and when and by which agent its saved review was produced. */
+function isCarriedOver(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const { commit, reviewedAt, agent } = value;
+  return isNonEmptyString(commit) && isString(reviewedAt) && Number.isFinite(Date.parse(reviewedAt)) && (agent === undefined || isStageAgent(agent));
+}
+
 /**
  * Checks that a value read over the protocol is a review result of the
  * version this extension understands. The engine and the extension share
@@ -914,6 +926,7 @@ export function isReviewResult(value: unknown): value is ReviewResult {
   if (value['budget'] !== undefined && !isBudget(value['budget'])) return false;
   if (value['stages'] !== undefined && !(Array.isArray(value['stages']) && value['stages'].every(isReviewStageRecord))) return false;
   if (value['saved'] !== undefined && !isSavedReview(value['saved'])) return false;
+  if (value['carriedOver'] !== undefined && !isCarriedOver(value['carriedOver'])) return false;
   const parts = value['parts'];
   if (!Array.isArray(parts) || !parts.every(isPart)) return false;
   const story = value['story'];

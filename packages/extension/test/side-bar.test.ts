@@ -22,8 +22,8 @@ import { sideBarBody, sideBarHtml } from '../src/side-bar/page.js';
 import { SideBarProvider, sideBarMessage, type SideBarDeps } from '../src/side-bar/provider.js';
 import { StepTickStore } from '../src/side-bar/step-ticks.js';
 import { nextPartToReview, setupLine, sideBarSteps, type SideBarState } from '../src/side-bar/steps.js';
-import { anchorOf, buildTree, pendingReviewSection } from '../src/tree.js';
-import { REQUESTS_FETCH, claimsResult, criteriaResult, fetchedResult, judgedResult, mappedCriteriaResult, mixedResult, nonDefaultBranchResult, offeredResult, pipelineResult, reviewStages, unexplainedResult } from './results.js';
+import { anchorOf, buildTree, pendingReviewSection, treeMessage } from '../src/tree.js';
+import { REQUESTS_FETCH, carriedResult, claimsResult, criteriaResult, fetchedResult, judgedResult, mappedCriteriaResult, mixedResult, nonDefaultBranchResult, offeredResult, pipelineResult, reviewStages, unexplainedResult } from './results.js';
 import { ConfigurationTarget, stub, stubContext, window, type StubWebviewView } from './vscode-stub.js';
 
 const NOW = new Date('2026-10-06T12:00:00Z');
@@ -335,6 +335,18 @@ describe("the side bar's page", () => {
     // A line of fetched library source is not a line of the head copy: it shows as a chip that opens nothing.
     expect(fetched).toContain('<span class="chip">requests/models.py:1021</span>');
     expect(fetched).not.toContain('data-claim-evidence="2"');
+  });
+
+  it('says on step 4 and step 5 what a review carried over from the saved review of an earlier commit', () => {
+    const result = carriedResult();
+    const body = sideBarBody(reviewState({ result, storyRead: true, message: treeMessage(result), marks: marked(...mixedResult().parts) }));
+    expect(body).toContain('Re-checked only what changed since the review of 5555555 on 2026-10-11');
+    expect(body).toMatch(/<span class="desc">[^<]*carried over[^<]*<\/span>/);
+    expect(body).toMatch(/<span class="desc">[^<]*re-checked[^<]*<\/span>/);
+    // The refuted docstring claim was carried over; the comment's was judged in this review.
+    expect(body).toContain('data-claim-where="1">docstring · src/retry.py:3–4</button><span class="carried">carried over</span></div>');
+    expect(body).toContain('data-claim-where="2">comment · src/retry.py:9</button></div>');
+    expect(body).toContain('<p class="folded"><span class="tone-ok" aria-hidden="true">✓</span> 1 verified, 1 carried over</p>');
   });
 
   it('offers the library fetch on a claim that needs one, and only as a button that presses it', () => {
