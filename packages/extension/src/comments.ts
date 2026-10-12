@@ -388,16 +388,17 @@ export class ReviewComments implements vscode.Disposable {
    * its own, its text open for editing: on its line of the head side's
    * diff, or on its part as a whole. The draft joins the pending review
    * only when the reviewer adds it ({@link addDraft}), and leaves no trace
-   * when they discard it ({@link discardDraft}).
+   * when they discard it ({@link discardDraft}). Gives the draft's thread,
+   * for the caller to show; none when no draft opened.
    */
-  draft(target: DraftTarget, body: string, from: string): void {
+  draft(target: DraftTarget, body: string, from: string): vscode.CommentThread | undefined {
     const result = this.result;
     if (result === undefined) {
-      return;
+      return undefined;
     }
     if (this.sending) {
       this.refuseWhileSending();
-      return;
+      return undefined;
     }
     const thread =
       target.kind === 'line'
@@ -408,7 +409,8 @@ export class ReviewComments implements vscode.Disposable {
           )
         : this.partThread(result, target.part);
     if (thread === undefined) {
-      return;
+      vscode.window.showWarningMessage('The draft has no file of its part to open on; review the pull request again.');
+      return undefined;
     }
     const comment: vscode.Comment = {
       body,
@@ -424,6 +426,7 @@ export class ReviewComments implements vscode.Disposable {
     thread.label = `Draft comment · ${location}`;
     this.drafts.set(comment, { thread, location, from });
     this.changed.fire();
+    return thread;
   }
 
   /**
