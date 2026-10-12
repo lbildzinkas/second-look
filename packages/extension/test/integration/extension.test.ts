@@ -38,6 +38,7 @@ import type { SideBarProvider } from '../../src/side-bar/provider.js';
 import { anchorOf, type TreePart } from '../../src/tree.js';
 import {
   Position,
+  ProgressLocation,
   Range,
   stub,
   stubContext,
@@ -1455,6 +1456,9 @@ describe('the pending review and sending it', () => {
     expect(thread.range?.start.line).toBe(2);
     expect(thread.label).toBe('Draft comment · src/retry.py:3');
     expect(thread.comments[0]).toMatchObject({ body: escapeMarkdown(draft.body), contextValue: 'second-look-draft' });
+    // The drafting showed as a notification, and the draft's line opened, so the reviewer sees it wherever they pressed.
+    expect(stub.progress.at(-1)).toEqual({ title: 'Drafting a comment from the refuted claim…', location: ProgressLocation.Notification });
+    expect(stub.executedCommands.at(-1)).toEqual({ id: 'vscode.open', args: [head('src/retry.py'), { selection: new Range(2, 0, 2, 0), preview: true }] });
     expect(renderedTree(view)[0]).toEqual({ label: 'Must review', tooltip: 'The parts to read first.' });
 
     // The reviewer edits the draft and adds it: it joins the pending review.
@@ -2167,9 +2171,12 @@ describe('the side bar', () => {
     expect(body).toMatch(/<input type="checkbox" id="step-5-tick" data-tick="claims"/);
     stub.executedCommands = [];
 
-    // Draft comment runs the draft command, and the engine drafts from the finding.
+    // Draft comment runs the draft command, the engine drafts from the finding, and the draft opens at its line.
     await press(view, { type: 'finding', action: 'draft', kind: 'claim', index: 1 });
-    expect(stub.executedCommands).toEqual([{ id: DRAFT_COMMENT_COMMAND, args: [{ kind: 'claim', index: 1 }] }]);
+    expect(stub.executedCommands).toEqual([
+      { id: DRAFT_COMMENT_COMMAND, args: [{ kind: 'claim', index: 1 }] },
+      { id: 'vscode.open', args: [head('src/retry.py'), { selection: new Range(2, 0, 2, 0), preview: true }] },
+    ]);
     expect(engineRequests('step-5.log').at(-1)).toMatchObject({ method: 'draftComment', params: { url: PR_URL, finding: { kind: 'claim', index: 1 } } });
     expect(stub.commentControllers[0]!.threads.at(-1)).toMatchObject({ label: 'Draft comment · src/retry.py:3' });
     stub.executedCommands = [];

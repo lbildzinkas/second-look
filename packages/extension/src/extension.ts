@@ -135,6 +135,27 @@ function isEditorComment(value: unknown): value is vscode.Comment {
   return typeof value === 'object' && value !== null && 'body' in value && 'mode' in value;
 }
 
+/** Opens a comment thread's file at its line — or at the top, for a thread on a whole part — so the reviewer sees the thread. */
+async function openThread(thread: vscode.CommentThread): Promise<void> {
+  const at = thread.range?.start.line ?? 0;
+  await vscode.commands.executeCommand('vscode.open', thread.uri, {
+    selection: new vscode.Range(at, 0, at, 0),
+    preview: true,
+  });
+}
+
+/**
+ * Shows a new thread: scrolled to in an editor that already shows its
+ * file — the diff a finding's thread was pressed in — else in its file
+ * opened at its line.
+ */
+async function showThread(thread: vscode.CommentThread): Promise<void> {
+  const shown = vscode.window.visibleTextEditors.find((editor) => editor.document.uri.toString() === thread.uri.toString());
+  if (shown === undefined) return openThread(thread);
+  const at = thread.range?.start.line ?? 0;
+  shown.revealRange(new vscode.Range(at, 0, at, 0), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+}
+
 /**
  * The part a command's argument carries: an element holding one,
  * unwrapped, or the part itself, the way the side bar and the overview
@@ -726,6 +747,11 @@ class ReviewSession {
    * unmet acceptance criterion — opens for editing in an input box, and
    * joins the overall comment of the Send review page only when the
    * reviewer accepts it. Nothing is sent on its own (ADR 0002).
+   *
+   * The draft is pressed for from the side bar, the overview or a
+   * finding's thread, so the drafting shows as a notification, seen
+   * wherever the reviewer is, and a draft's thread is shown at its line: a
+   * thread on a file no editor shows is not seen at all.
    */
   async draftComment(arg?: unknown): Promise<void> {
     const ref = isFindingRef(arg) ? { kind: arg.kind, index: arg.index } : undefined;
@@ -737,7 +763,7 @@ class ReviewSession {
     const review = this.reviews;
     try {
       const draft = await vscode.window.withProgress(
-        { location: { viewId: REVIEW_TREE_VIEW }, title: `Drafting a comment from the ${finding.kind}…` },
+        { location: vscode.ProgressLocation.Notification, title: `Drafting a comment from the ${finding.kind}…` },
         async () => (await this.readyEngine()).draftComment(this.url!, ref, reviewAgentChoice(readAgentSettings())),
       );
       // A review started meanwhile replaces this one, drafts and all.
@@ -750,7 +776,8 @@ class ReviewSession {
       // The draft quotes the pull request's own words, so it shows and
       // sends escaped, the way every agent-derived text does.
       if (target !== undefined) {
-        this.comments.draft(target, escapeMarkdown(draft.body), finding.kind);
+        const thread = this.comments.draft(target, escapeMarkdown(draft.body), finding.kind);
+        if (thread !== undefined) await showThread(thread);
         return;
       }
       const edited = await vscode.window.showInputBox({
@@ -771,7 +798,7 @@ class ReviewSession {
       }
       this.sendPage().open();
     } catch (error) {
-      vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
+      vscode.window.showErrorMessage(`Could not draft a comment from the ${finding.kind}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -1007,12 +1034,7 @@ class ReviewSession {
       return;
     }
     const thread = this.comments.reveal(id);
-    if (thread === undefined) return;
-    const at = thread.range?.start.line ?? 0;
-    await vscode.commands.executeCommand('vscode.open', thread.uri, {
-      selection: new vscode.Range(at, 0, at, 0),
-      preview: true,
-    });
+    if (thread !== undefined) await openThread(thread);
   }
 
   /**
