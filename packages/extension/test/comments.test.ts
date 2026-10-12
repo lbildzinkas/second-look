@@ -920,6 +920,38 @@ describe('ReviewComments kept between visits', () => {
     expect(again.listed()).toEqual([]);
   });
 
+  it('keeps a draft still open when the review is sent, alone, until it is added or discarded', async () => {
+    const saved = store();
+    const comments = new ReviewComments(saved);
+    writeUnsent(comments, mixedResult());
+    await whenSaved(saved, URL, allUnsent);
+    // The extension renders on every change, as the side bar drives it to —
+    // and the render the send’s clear fires is what saves the open draft.
+    comments.onDidChange(() => comments.listed());
+
+    // The send succeeded: the gathering is emptied, as the session’s send does.
+    comments.clear();
+    const alone = await whenSaved(saved, URL, (each) => each.comments.length === 0);
+    expect(alone.drafts).toEqual([
+      { kind: 'line', path: 'src/retry.py', line: 9, body: 'drafted', from: 'refuted claim', text: '            continue' },
+    ]);
+
+    // A later visit finds the draft alone: the sent comments stay gone.
+    stub.reset();
+    const again = new ReviewComments(saved);
+    again.setReview(mixedResult());
+    await again.restore();
+    expect(again.pending()).toEqual([]);
+    expect(again.listed().map(({ kind, location }) => ({ kind, location }))).toEqual([
+      { kind: 'draft', location: 'src/retry.py:9' },
+    ]);
+
+    // Discarding it empties the store again, as adding it would.
+    const draft = stub.commentControllers[0]!.threads.at(-1)!.comments[0] as unknown as vscode.Comment;
+    again.discardDraft(draft);
+    await whenCleared(saved, URL);
+  });
+
   it('keeps each pull request’s unsent comments apart', async () => {
     const saved = store();
     writeUnsent(new ReviewComments(saved), mixedResult());

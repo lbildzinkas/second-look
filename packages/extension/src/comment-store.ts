@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { parsePullRequestUrl, type CommentSide } from '@second-look/engine';
+import { isGitHubName, parsePullRequestUrl, type CommentSide } from '@second-look/engine';
 
 /** The folder, inside the extension's global storage, the saved comments live in. */
 export const SAVED_COMMENTS_DIR = 'pending-comments' as const;
@@ -124,12 +124,16 @@ function isSavedComments(value: unknown): value is SavedComments {
  * The pull request's file in the store, named by where the pull request
  * lives — `owner__repo__pull-number` — or, for a URL that names no GitHub
  * pull request, by a hash of the URL: one file per pull request, in the
- * extension's own global storage, never in the workspace.
+ * extension's own global storage, never in the workspace. An address
+ * whose owner or repository is not a GitHub name — checked as the
+ * engine's cache folder checks them — gets no file at all, so no
+ * address can steer the path.
  */
-function fileOf(dir: string, url: string): string {
+function fileOf(dir: string, url: string): string | null {
   const ref = parsePullRequestUrl(url);
-  const name = ref === null ? createHash('sha256').update(url).digest('hex') : `${ref.owner}__${ref.repo}__pull-${ref.number}`;
-  return join(dir, `${name}.json`);
+  if (ref === null) return join(dir, `${createHash('sha256').update(url).digest('hex')}.json`);
+  if (!isGitHubName(ref.owner) || !isGitHubName(ref.repo)) return null;
+  return join(dir, `${ref.owner}__${ref.repo}__pull-${ref.number}.json`);
 }
 
 /**
@@ -153,12 +157,15 @@ export class CommentStore {
   /**
    * Reads a pull request's saved comments and drafts. Nothing saved — or
    * a file that is not the store's contents — reads as undefined rather
-   * than trusted.
+   * than trusted, and an address whose owner or repository is not a
+   * GitHub name is not read at all.
    */
   async read(url: string): Promise<SavedComments | undefined> {
+    const file = fileOf(this.dir, url);
+    if (file === null) return undefined;
     let text: string;
     try {
-      text = await readFile(fileOf(this.dir, url), 'utf8');
+      text = await readFile(file, 'utf8');
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
       throw error;
@@ -176,10 +183,13 @@ export class CommentStore {
    * Saves a pull request's pending comments and open drafts as they now
    * stand, whole: written beside the store, then renamed over. A record
    * with nothing unsent removes the file, so sending the review clears
-   * what was saved for it. Writes to one file apply one after another.
+   * what was saved for it, and an address whose owner or repository is
+   * not a GitHub name writes nothing. Writes to one file apply one after
+   * another.
    */
   save(url: string, saved: SavedComments): Promise<void> {
     const path = fileOf(this.dir, url);
+    if (path === null) return Promise.resolve();
     const previous = this.writes.get(path) ?? Promise.resolve();
     const next = previous.then(
       () => this.write(path, saved),
