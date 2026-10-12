@@ -58,6 +58,8 @@ const MIRROR_SETTING = 'mirrorViewedToGitHub';
 export interface SideBarDeps {
   /** Opens a line of the read-only head copy, the same opening the overview's chips do. */
   openLine(path: string, line: number): void;
+  /** Opens the overview at the description line or story sentence a claim's where names, marked. */
+  openOverviewAt(options: { descriptionLine?: number; storySentence?: number }): void;
   /** The store that keeps the steps' “I've checked these” ticks, per pull request. */
   ticks: StepTickStore;
   /** Opens a pending comment's or a draft's thread, or discards or adds it, as step 7's rows press. */
@@ -71,6 +73,8 @@ export type SideBarMessage =
   | { type: 'openPart'; anchor: PartAnchor }
   | { type: 'mark'; anchor: PartAnchor; reviewed: boolean }
   | { type: 'finding'; action: FindingAction; finding: FindingRef }
+  | { type: 'claimWhere'; claim: number }
+  | { type: 'claimEvidence'; claim: number; index: number }
   | { type: 'openIssue'; issue: number }
   | { type: 'tick'; step: StepTick; checked: boolean }
   | { type: 'partMenu'; menu: PartMenu; anchor: PartAnchor }
@@ -81,13 +85,15 @@ export type SideBarMessage =
 /** Reads a side-bar message out of what the webview delivered, if it is one. */
 export function sideBarMessage(value: unknown): SideBarMessage | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
-  const { type, command, anchor, reviewed, action, kind, index, issue, step, checked, menu, id } = value as Record<string, unknown>;
+  const { type, command, anchor, reviewed, action, kind, index, issue, step, checked, menu, id, claim } = value as Record<string, unknown>;
   if (type === 'ready') return { type };
   if (type === 'setup') return setupMessage(value);
   if (type === 'pullRequests') return pullRequestMessage(value);
   if (type === 'command' && typeof command === 'string' && ((OWN_BUTTONS as readonly string[]).includes(command) || Object.hasOwn(BUTTON_COMMANDS, command))) {
     return { type, command: command as SideBarButton };
   }
+  if (type === 'claimWhere' && Number.isInteger(claim)) return { type, claim: claim as number };
+  if (type === 'claimEvidence' && Number.isInteger(claim) && Number.isInteger(index)) return { type, claim: claim as number, index: index as number };
   const ref = { kind, index };
   if (type === 'finding' && (FINDING_ACTIONS as readonly string[]).includes(action as string) && isFindingRef(ref)) {
     return { type, action: action as FindingAction, finding: { kind: ref.kind, index: ref.index } };
@@ -118,7 +124,11 @@ export function sideBarMessage(value: unknown): SideBarMessage | undefined {
  * except step 1's setup form, whose changes and presses go to the form,
  * step 2's list, whose typing and presses go to the list, a finding's
  * Open, which opens its line in the read-only head copy the way the
- * overview's chips do, a linked issue, which opens on GitHub, and the
+ * overview's chips do, a claim's where, which opens the place it is
+ * made — its file's line in the head copy, its description line in the
+ * overview's description, or its sentence in the story — a claim's
+ * cited lines, which open the head copy's line or, for a CI log, its
+ * check run on GitHub, the one outside link, a linked issue, which opens on GitHub, and the
  * steps' “I've checked these” ticks, which the store keeps per pull
  * request, step 7's rows, which act on the pending comments and drafts,
  * step 4's ⋯, which toggles mirroring the reviewed marks to GitHub's
@@ -240,6 +250,30 @@ export class SideBarProvider implements vscode.WebviewViewProvider {
     }
     if (message.type === 'finding') {
       this.finding(message.finding, message.action);
+      return;
+    }
+    if (message.type === 'claimWhere') {
+      const claim = result?.claims?.claims[message.claim];
+      const { location } = claim ?? {};
+      if (location?.kind === 'file') this.deps?.openLine(location.path, location.line);
+      // A pull request description has no line anchors on GitHub, and the story lives only in the overview: both open there, marked.
+      else if (location?.kind === 'description') this.deps?.openOverviewAt({ descriptionLine: location.line });
+      else if (location?.kind === 'story') this.deps?.openOverviewAt({ storySentence: location.sentence });
+      return;
+    }
+    if (message.type === 'claimEvidence') {
+      const claim = result?.claims?.claims[message.claim];
+      const verdict = claim === undefined || claim.verdict.kind === 'not checked' ? undefined : claim.verdict;
+      const cited = verdict?.evidence[message.index];
+      if (cited === undefined) return;
+      if (cited.ciLog === true) {
+        // The one outside link a row carries: the check run's own page on GitHub, opened only for a github.com address.
+        const url = result?.ci?.checks.find((check) => check.name === cited.path)?.url;
+        if (url !== undefined && url.startsWith('https://github.com/')) void vscode.env.openExternal(vscode.Uri.parse(url));
+        return;
+      }
+      // A line of fetched library source is not a line of the head copy; the row shows it as text, so it never opens.
+      if (verdict !== undefined && verdict.library === undefined) this.deps?.openLine(cited.path, cited.line);
       return;
     }
     if (message.type === 'comment') {

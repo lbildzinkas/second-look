@@ -22,7 +22,7 @@ import { SetupForm } from '../src/side-bar/setup-form.js';
 import { StepTickStore } from '../src/side-bar/step-ticks.js';
 import type { SideBarState } from '../src/side-bar/steps.js';
 import { anchorOf, buildTree, pendingReviewSection } from '../src/tree.js';
-import { fetchedResult, judgedResult, mappedCriteriaResult, mixedResult, offeredResult, reviewStages, unexplainedResult, STAGE_MS, STAGES_START } from './results.js';
+import { fetchedResult, judgedResult, mappedCriteriaResult, mixedResult, offeredResult, pipelineResult, reviewStages, unexplainedResult, STAGE_MS, STAGES_START } from './results.js';
 import { ConfigurationTarget, stub, stubContext, window } from './vscode-stub.js';
 
 /**
@@ -654,7 +654,7 @@ describe("the side bar's page script", () => {
   it("works steps 5 and 6 from the keyboard: every finding action runs its command, the issue opens on GitHub, the setting in the Settings editor", async () => {
     const result = { ...offeredResult(), criteria: mappedCriteriaResult().criteria, unexplained: unexplainedResult().unexplained };
     const opened: [string, number][] = [];
-    const deps: SideBarDeps = { openLine: (path, line) => opened.push([path, line]), ticks: new StepTickStore(stubContext().globalState), comment: () => undefined };
+    const deps: SideBarDeps = { openLine: (path, line) => opened.push([path, line]), openOverviewAt: () => undefined, ticks: new StepTickStore(stubContext().globalState), comment: () => undefined };
     const { page } = loadSideBar(reviewState({ result, storyRead: true, marks: marked(...mixedResult().parts) }), undefined, undefined, deps);
     const part = result.parts[result.claims!.claims[1]!.part]!;
 
@@ -692,7 +692,7 @@ describe("the side bar's page script", () => {
       ...result.claims!,
       claims: result.claims!.claims.map((claim, index) => (index === 2 ? { ...claim, source: 'description', location: { kind: 'description', line: 2 } } : claim)),
     };
-    const deps: SideBarDeps = { openLine: () => undefined, ticks: new StepTickStore(stubContext().globalState), comment: () => undefined };
+    const deps: SideBarDeps = { openLine: () => undefined, openOverviewAt: () => undefined, ticks: new StepTickStore(stubContext().globalState), comment: () => undefined };
     const { page } = loadSideBar(reviewState({ result, storyRead: true, marks: marked(...mixedResult().parts) }), undefined, undefined, deps);
 
     page.click('step-5-open-claim-2');
@@ -700,11 +700,53 @@ describe("the side bar's page script", () => {
     expect(stub.executedCommands).toEqual([{ id: OPEN_LIBRARY_EVIDENCE_COMMAND, args: [2, 0] }]);
   });
 
+  it("opens where each claim is made from its step 5 row, and each line it cites: the head copy, or the check run on GitHub", () => {
+    const shown = pipelineResult();
+    const claims = shown.claims!;
+    const result = {
+      ...shown,
+      claims: {
+        ...claims,
+        claims: claims.claims.map((claim, index) =>
+          index === 0 && claim.verdict.kind !== 'not checked'
+            ? { ...claim, verdict: { ...claim.verdict, kind: 'refuted' as const } }
+            : index === 1
+              ? { ...claim, verdict: { kind: 'unverifiable' as const, source: "the model's memory" as const, reason: 'Nothing in the change shows it.', evidence: [] } }
+              : claim,
+        ),
+      },
+    };
+    const opened: [string, number][] = [];
+    const overviews: { descriptionLine?: number; storySentence?: number }[] = [];
+    const deps: SideBarDeps = {
+      openLine: (path, line) => opened.push([path, line]),
+      openOverviewAt: (options) => overviews.push(options),
+      ticks: new StepTickStore(stubContext().globalState),
+      comment: () => undefined,
+    };
+    const { page } = loadSideBar(reviewState({ result, storyRead: true, marks: marked(...mixedResult().parts) }), undefined, undefined, deps);
+
+    // A docstring's where opens its line in the head copy; the description's the overview at its marked line; the story's the story.
+    page.click('step-5-where-claim-2');
+    page.click('step-5-where-claim-1');
+    page.click('step-5-where-claim-4');
+    // A cited head-copy line opens in the head copy, the opening the overview's chips use; a cited CI log line its check run on GitHub.
+    page.click('step-5-cite-claim-2-0');
+    page.click('step-5-cite-claim-0-0');
+
+    expect(opened).toEqual([
+      ['src/retry.py', 3],
+      ['src/retry.py', 6],
+    ]);
+    expect(overviews).toEqual([{ descriptionLine: 1 }, { storySentence: 1 }]);
+    expect(stub.openedExternals).toEqual(['https://github.com/example-org/example-repo/actions/runs/700/job/9001']);
+  });
+
   it("ticks a step's I've-checked-these box, which redraws the card as done and keeps its tick across a redraw", async () => {
     const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
     const result = judgedResult();
     const ticks = new StepTickStore(stubContext().globalState);
-    const { provider, page, view } = loadSideBar(reviewState({ result, storyRead: true, marks: marked(...mixedResult().parts) }), undefined, undefined, { openLine: () => undefined, ticks, comment: () => undefined });
+    const { provider, page, view } = loadSideBar(reviewState({ result, storyRead: true, marks: marked(...mixedResult().parts) }), undefined, undefined, { openLine: () => undefined, openOverviewAt: () => undefined, ticks, comment: () => undefined });
     expect(page.element('step-5-tick').hasAttribute('checked')).toBe(false);
 
     page.tick('step-5-tick', true);
@@ -754,7 +796,7 @@ describe("the side bar's page script", () => {
   it("works steps 4, 7 and 8 from the keyboard: a part's Ask… and ⋯, step 4's ⋯ and filter, each comment's and draft's buttons, and the review sent", async () => {
     const result = { ...mixedResult(), sinceLastLook: { commit: mixedResult().copies.base.commit, changedParts: [0] } } as unknown as ReturnType<typeof mixedResult>;
     const pressed: [number, string][] = [];
-    const deps: SideBarDeps = { openLine: () => undefined, ticks: new StepTickStore(stubContext().globalState), comment: (id, action) => pressed.push([id, action]) };
+    const deps: SideBarDeps = { openLine: () => undefined, openOverviewAt: () => undefined, ticks: new StepTickStore(stubContext().globalState), comment: (id, action) => pressed.push([id, action]) };
     const comments = [
       { id: 1, kind: 'comment' as const, location: 'src/retry.py:5', body: 'Why five?' },
       { id: 2, kind: 'draft' as const, location: 'src/retry.py:3', body: 'The loop runs five.', from: 'refuted claim' },

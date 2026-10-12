@@ -45,6 +45,10 @@ export interface OverviewState {
   answers?: readonly AskAnswer[];
   /** True when the page is opened at the newest answer. */
   focusAnswer?: boolean;
+  /** The description line the page is opened at, marked in the description; a pull request description has no line anchors on GitHub. */
+  descriptionLine?: number;
+  /** The story sentence the page is opened at, marked in the story. */
+  storySentence?: number;
 }
 
 /** The evidence of a criterion's verdict that cites lines of the head copy. */
@@ -88,6 +92,11 @@ export type OverviewMessage =
       claim: number;
       /** The cited line, by its index in that claim's verdict evidence. */
       index: number;
+    }
+  | {
+      type: 'openClaimWhere';
+      /** The claim whose where it is, by its index in the claims. */
+      claim: number;
     };
 
 
@@ -96,6 +105,7 @@ function overviewMessage(value: unknown): OverviewMessage | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
   const { type, part, issue, criterion, evidence, index, finding, answer, doc, claim } = value as Record<string, unknown>;
   if (type === 'openDoc' && Number.isInteger(doc)) return { type, target: doc as number };
+  if (type === 'openClaimWhere' && Number.isInteger(claim)) return { type, claim: claim as number };
   if (type === 'openClaimEvidence' && Number.isInteger(claim) && Number.isInteger(index)) return { type, claim: claim as number, index: index as number };
   if (type === 'openCited' && Number.isInteger(answer) && Number.isInteger(index)) return { type, answer: answer as number, index: index as number };
   if (type === 'openPart' && Number.isInteger(part)) return { type, target: part as number };
@@ -193,10 +203,11 @@ export class OverviewPanel implements vscode.Disposable {
 
   /**
    * Opens the page, or brings it to the front, at the story's start, at
-   * the first sentence that mentions one part, or at the newest answer.
-   * True when there was a review to show.
+   * the first sentence that mentions one part, at the newest answer, at
+   * the description line a claim is made on, or at the story sentence a
+   * claim is made in. True when there was a review to show.
    */
-  open(options: { focus?: number; preserveFocus?: boolean; answer?: boolean } = {}): boolean {
+  open(options: { focus?: number; preserveFocus?: boolean; answer?: boolean; descriptionLine?: number; storySentence?: number } = {}): boolean {
     if (this.disposed || this.state === undefined) return false;
     const { result, running } = this.state;
     this.state = {
@@ -204,6 +215,8 @@ export class OverviewPanel implements vscode.Disposable {
       ...(running !== undefined ? { running } : {}),
       ...(options.focus !== undefined ? { focus: options.focus } : {}),
       ...(options.answer ? { focusAnswer: true } : {}),
+      ...(options.descriptionLine !== undefined ? { descriptionLine: options.descriptionLine } : {}),
+      ...(options.storySentence !== undefined ? { storySentence: options.storySentence } : {}),
     };
     if (this.panel === undefined) {
       const panel = vscode.window.createWebviewPanel(
@@ -228,7 +241,10 @@ export class OverviewPanel implements vscode.Disposable {
    * The part a story, claim or unexplained-change button names, opened in
    * the diff editor; a linked issue, opened on GitHub; a line a criterion's
    * or a claim's verdict cites, opened in the head copy; a line an answer
-   * cites, opened in the copy of its side; a finding, drafted from.
+   * cites, opened in the copy of its side; where a claim is made, opened:
+   * its file's line in the head copy, its description line in the page's
+   * own description, or its story sentence in the page's own story; a
+   * finding, drafted from.
    */
   private handle(value: unknown): void {
     const message = overviewMessage(value);
@@ -236,6 +252,14 @@ export class OverviewPanel implements vscode.Disposable {
     if (message.type === 'openCited') {
       const cited = this.answers[message.answer]?.cited[message.index];
       if (cited !== undefined) this.openLine(cited.path, cited.line, cited.side);
+      return;
+    }
+    if (message.type === 'openClaimWhere') {
+      const { location } = this.state?.result.claims?.claims[message.claim] ?? {};
+      if (location?.kind === 'file') this.openLine(location.path, location.line, 'head');
+      // A pull request description has no line anchors on GitHub, and the story lives only here: both open in this page, their line and sentence marked.
+      else if (location?.kind === 'description') this.open({ descriptionLine: location.line, preserveFocus: true });
+      else if (location?.kind === 'story') this.open({ storySentence: location.sentence, preserveFocus: true });
       return;
     }
     if (message.type === 'draft') {
@@ -739,8 +763,8 @@ function evidenceGroups(groups: readonly [string, string][]): string {
   return `<div class="evidence">${groups.map(([label, value]) => `<span class="label">${escapeHtml(label)}</span><span class="v">${value}</span>`).join('')}</div>`;
 }
 
-/** A story's sentences, each part a button that opens it; the sentence that first mentions the focused part is marked. */
-function storySentences(story: Story, focus: number | undefined): string {
+/** A story's sentences, each part a button that opens it; the sentence that first mentions the focused part, or the one the page is opened at, is marked. */
+function storySentences(story: Story, focus: number | undefined, marked: number | undefined): string {
   const focused = focus === undefined ? -1 : story.sentences.findIndex((sentence) => sentence.segments.some((segment) => segment.part === focus));
   return story.sentences
     .map((sentence, index) => {
@@ -752,7 +776,7 @@ function storySentences(story: Story, focus: number | undefined): string {
           return segment.code ? `<code>${escapeHtml(segment.text)}</code>` : escapeHtml(segment.text);
         })
         .join('');
-      return `<span class="sentence${index === focused ? ' focus' : ''}">${runs}</span>`;
+      return `<span class="sentence${index === focused || index === marked ? ' focus' : ''}">${runs}</span>`;
     })
     .join(' ');
 }
@@ -774,7 +798,7 @@ function storySection(state: OverviewState): string {
   if (story.outcome === 'fell back') {
     return `<h2>Story ${stamp}</h2><p class="note">No story: ${escapeHtml(story.detail)}.</p>`;
   }
-  return `<h2>Story ${stamp}</h2>${missing}<div class="story">${storySentences(story, focus)}</div>`;
+  return `<h2>Story ${stamp}</h2>${missing}<div class="story">${storySentences(story, focus, state.storySentence)}</div>`;
 }
 
 /** Agent text as the page shows it: escaped, each name it sets in backticks as code. */
@@ -1088,7 +1112,14 @@ function verdictDetail(claim: Claim, index: number): string {
   return reason.map(why).join('') + evidence + lines.map(why).join('') + draft;
 }
 
-/** One claim's row: its verdict, its quote, where it is made with the part it is attached to as a button that opens it, and, once judged, its reason and evidence to open. */
+/** Where a claim is made, as the claims table shows it: a link that opens its place — its file's line in the head copy, its description line in this page's description, or its sentence in this page's story — and plain text for a pipeline finding, which sits in the pipeline report. */
+function claimWhereCell(claim: Claim, index: number): string {
+  const text = escapeHtml(claimWhere(claim));
+  if (claim.location.kind === 'pipeline') return text;
+  return `<button type="button" class="pt where" data-claim-where="${index}">${text}</button>`;
+}
+
+/** One claim's row: its verdict, its quote, where it is made — a link that opens its place — with the part it is attached to as a button that opens it, and, once judged, its reason and evidence to open. */
 function claimRow(claim: Claim, index: number, result: ReviewResult, open: boolean, checking = false): string {
   const part = result.parts[claim.part];
   const button =
@@ -1096,7 +1127,7 @@ function claimRow(claim: Claim, index: number, result: ReviewResult, open: boole
       ? ''
       : ` · <button type="button" class="pt" data-part="${claim.part}">${escapeHtml(part.name ?? part.path)}</button>`;
   const state = claim.verdict.kind === 'not checked' && checking ? 'checking' : claim.verdict.kind;
-  const cells = [pill(state), `<q class="quote">${sanitiseUntrusted(claim.quote).html}</q>`, `<span class="where">${escapeHtml(claimWhere(claim))}${button}</span>`];
+  const cells = [pill(state), `<q class="quote">${sanitiseUntrusted(claim.quote).html}</q>`, `<span class="where">${claimWhereCell(claim, index)}${button}</span>`];
   return tableRow(`claim-${index}`, index + 1, state, cells, verdictDetail(claim, index), open);
 }
 
@@ -1256,12 +1287,37 @@ function pipelineSection(result: ReviewResult): string {
   return `<h2>Pipeline and CI</h2>${pipelineBlock(result)}${ciBlock(result)}`;
 }
 
-/** The description section: the description in full, its hidden content shown and flagged. */
-function descriptionSection(result: ReviewResult): string {
+/** The description's lines, each as the page shows it: its visible runs escaped, and any hidden run that falls on it flagged, split where it crosses lines. */
+function descriptionLines(description: string): string[] {
+  const lines: string[] = [''];
+  for (const piece of hiddenContent(description)) {
+    const parts = piece.text.split('\n');
+    const shown = piece.hidden === undefined ? undefined : piece.shown.split('\n');
+    for (const [at, part] of parts.entries()) {
+      lines[lines.length - 1] +=
+        piece.hidden === undefined
+          ? escapeHtml(part)
+          : `<span class="hidden" data-kind="${escapeHtml(piece.hidden)}">${at === 0 ? `<span class="flag">${escapeHtml(HIDDEN_LABELS[piece.hidden])}</span>` : ''}<span class="shown">${escapeHtml(shown![at]!)}</span></span>`;
+      if (at < parts.length - 1) lines.push('');
+    }
+  }
+  return lines;
+}
+
+/**
+ * The description section: the description in full, its hidden content
+ * shown and flagged, one span per line so the line a claim is made on
+ * can be marked, since a pull request description has no line anchors
+ * on GitHub.
+ */
+function descriptionSection(result: ReviewResult, mark: number | undefined): string {
   const description = result.pullRequest.description;
   if (description.trim() === '') return '<h2>Pull request description</h2><p class="note">The pull request has no description.</p>';
-  const { html, hidden } = sanitiseUntrusted(description);
-  return `<h2>Pull request description</h2>${hiddenSummary(hidden)}<div class="description">${html}</div>`;
+  const { hidden } = sanitiseUntrusted(description);
+  const lines = descriptionLines(description)
+    .map((html, at) => `<span class="dline${at + 1 === mark ? ' focus' : ''}" data-line="${at + 1}">${html}</span>`)
+    .join('\n');
+  return `<h2>Pull request description</h2>${hiddenSummary(hidden)}<div class="description">${lines}</div>`;
 }
 
 /** Who made each result: the plain pass or the agent, with its stamp, or why the plain result stayed. */
@@ -1494,7 +1550,7 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
     font-size: 13.5px;
     line-height: 1.55;
   }
-  .sentence.focus, .answer.focus { background-color: var(--vscode-editor-findMatchHighlightBackground); }
+  .sentence.focus, .answer.focus, .dline.focus { background-color: var(--vscode-editor-findMatchHighlightBackground); }
   .pt {
     font: inherit;
     color: var(--vscode-textLink-foreground);
@@ -1583,7 +1639,7 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
   <section id="claims">${claimsSection(state)}</section>
   <section id="docs">${docsSection(state)}</section>
   <section id="pipeline">${pipelineSection(result)}</section>
-  <section id="description">${descriptionSection(result)}</section>
+  <section id="description">${descriptionSection(result, state.descriptionLine)}</section>
   <section id="stamps">${stampsSection(state)}</section>
 </main>
 ${contentsRail(state)}
@@ -1640,6 +1696,11 @@ ${contentsRail(state)}
       vscode.postMessage({ type: 'openClaimEvidence', claim: Number(button.getAttribute('data-claim')), index: Number(button.getAttribute('data-index')) });
     });
   });
+  Array.prototype.forEach.call(document.querySelectorAll('button.where'), function (button) {
+    button.addEventListener('click', function () {
+      vscode.postMessage({ type: 'openClaimWhere', claim: Number(button.getAttribute('data-claim-where')) });
+    });
+  });
   Array.prototype.forEach.call(document.querySelectorAll('button.tg'), function (button) {
     button.addEventListener('click', function () {
       var row = document.getElementById(button.getAttribute('aria-controls'));
@@ -1679,7 +1740,7 @@ ${contentsRail(state)}
   });
   window.addEventListener('scroll', spy, { passive: true });
   spy();
-  var focused = document.querySelector('.answer.focus') || document.querySelector('.sentence.focus');
+  var focused = document.querySelector('.answer.focus') || document.querySelector('.sentence.focus') || document.querySelector('.dline.focus');
   if (focused !== null) {
     focused.scrollIntoView({ block: 'center' });
   }

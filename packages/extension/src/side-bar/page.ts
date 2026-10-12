@@ -1,5 +1,5 @@
-import { escapeHtml, claimWhere, issueName, sanitiseUntrusted, stageEndLine, STATES } from '../overview.js';
-import { isFinding, isUnmetCriterion, type AcceptanceCriterion, type Claim, type FindingRef, type LinkedIssue, type ReviewResult, type ReviewStageId, type SubmitKind } from '@second-look/engine';
+import { escapeHtml, claimWhere, citedWhere, issueName, sanitiseUntrusted, stageEndLine, STATES } from '../overview.js';
+import { isFinding, isUnmetCriterion, isUnprovenSource, type AcceptanceCriterion, type Claim, type ClaimVerdict, type FindingRef, type LinkedIssue, type ReviewResult, type ReviewStageId, type SubmitKind } from '@second-look/engine';
 import type { ListedComment } from '../comments.js';
 import { anchorOf, preview, type PartAnchor, type TreePart, type TreeSection } from '../tree.js';
 import { progressBody } from './progress.js';
@@ -179,7 +179,41 @@ function tickRow(step: number, tick: StepTick, checked: boolean, label: string):
   return `<div class="tick"><input type="checkbox" id="step-${step}-tick" data-tick="${tick}" aria-label="${escapeHtml(label)}"${checked ? ' checked' : ''}><label for="step-${step}-tick">${escapeHtml(label)}</label></div>`;
 }
 
-/** Step 5's row for one claim finding: its verdict and where it is made, its quote, and its actions. */
+/** A claim's verdict once checked: verified, refuted or unverifiable, with its evidence. */
+type CheckedVerdict = Exclude<ClaimVerdict, { kind: 'not checked' }>;
+
+/** Where a claim is made on its row: a link that opens its place — its file's line in the head copy, its description line in the overview's description, or its sentence in the story — and plain text for a pipeline finding, which sits in the pipeline report. */
+function claimWhereButton(claim: Claim, index: number): string {
+  const text = escapeHtml(claimWhere(claim));
+  if (claim.location.kind === 'pipeline') return `<span class="where">${text}</span>`;
+  return `<button type="button" class="where" id="step-5-where-claim-${index}" data-claim-where="${index}">${text}</button>`;
+}
+
+/**
+ * A checked verdict's evidence on its step 5 row: its evidence source
+ * with its reason, each cited head-copy line a chip that opens the line
+ * as the overview's chips do, each cited CI log line a chip that opens
+ * its check run on GitHub — the one outside link the row carries — each
+ * cited line of fetched library source a plain chip, since it is not a
+ * line of the head copy, and the recheck when the engine dropped a
+ * citation.
+ */
+function claimEvidence(verdict: CheckedVerdict, index: number): string {
+  const decompiled = verdict.library?.archive === 'decompiled NuGet package';
+  const chips = verdict.evidence.map((each, at) => {
+    if (each.ciLog !== true && verdict.library !== undefined) {
+      const suffix = decompiled ? ' (decompiled)' : isUnprovenSource(each.path, verdict.library.unproven) ? ' (unproven)' : '';
+      return `<span class="chip">${escapeHtml(`${citedWhere(each)}${suffix}`)}</span>`;
+    }
+    const open = each.ciLog === true ? ' its check run on GitHub' : ' the line in the head copy';
+    return `<button type="button" class="chip" id="step-5-cite-claim-${index}-${at}" data-claim-evidence="${index}" data-index="${at}" title="Open${open}" aria-label="Open${escapeHtml(open)} of ${escapeHtml(citedWhere(each))}">${escapeHtml(citedWhere(each))}</button>`;
+  });
+  const cited = chips.length === 0 ? '' : `<div class="meta">${chips.join('')}</div>`;
+  const recheck = verdict.recheck === undefined ? '' : `<div class="why">${escapeHtml(`dropped to unverifiable: ${verdict.recheck}`)}</div>`;
+  return `<div class="why">${escapeHtml(`${verdict.source}: ${verdict.reason}`)}</div>` + cited + recheck;
+}
+
+/** Step 5's row for one claim finding: its verdict and where it is made as a link that opens it, its quote, its reason and evidence, and its actions. */
 function claimFindingRow(claim: Claim, index: number): string {
   const verdict = claim.verdict.kind === 'not checked' ? undefined : claim.verdict;
   const offer = verdict === undefined || verdict.library !== undefined ? undefined : verdict.libraryFetch;
@@ -187,8 +221,9 @@ function claimFindingRow(claim: Claim, index: number): string {
   const finding = { kind: 'claim' as const, index };
   return (
     `<li class="finding">` +
-    `<div class="head">${statePill(claim.verdict.kind)}<span class="where">${escapeHtml(claimWhere(claim))}</span></div>` +
+    `<div class="head">${statePill(claim.verdict.kind)}${claimWhereButton(claim, index)}</div>` +
     `<q class="quote">${sanitiseUntrusted(claim.quote).html}</q>` +
+    (verdict === undefined ? '' : claimEvidence(verdict, index)) +
     `<div class="actions">${findingButton(5, 'draft', finding, 'Draft comment')}${findingButton(5, 'open', finding, 'Open')}${findingButton(5, 'verify', finding, 'Verify again')}${fetch}</div>` +
     `</li>`
   );
@@ -525,6 +560,9 @@ export function sideBarHtml(nonce: string, body: string): string {
   .finding { padding: 6px 8px; border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); border-radius: 4px; }
   .finding .head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .finding .where { color: var(--vscode-descriptionForeground); font-size: 12px; overflow-wrap: anywhere; }
+  .finding button.where { padding: 0; color: var(--vscode-descriptionForeground); background: none; border: none; text-align: left; font-size: 12px; overflow-wrap: anywhere; }
+  .finding button.where:hover { color: var(--vscode-textLink-foreground); text-decoration: underline; }
+  .finding .why { color: var(--vscode-descriptionForeground); font-size: 12px; overflow-wrap: anywhere; margin-top: 2px; }
   .finding .quote { display: block; margin: 3px 0; overflow-wrap: anywhere; }
   .hidden { border: 1px dashed var(--vscode-editorWarning-foreground, var(--vscode-foreground)); border-radius: 3px; padding: 0 4px; }
   .flag { color: var(--vscode-editorWarning-foreground, var(--vscode-foreground)); font-size: 11px; font-weight: 600; margin-right: 6px; }
@@ -585,6 +623,10 @@ export function sideBarHtml(nonce: string, body: string): string {
       vscode.postMessage({ type: 'partMenu', menu: pressed.getAttribute('data-part-menu'), anchor: anchorOf(pressed) });
     } else if (pressed.classList.contains('open')) {
       vscode.postMessage({ type: 'openPart', anchor: anchorOf(pressed) });
+    } else if (pressed.hasAttribute('data-claim-where')) {
+      vscode.postMessage({ type: 'claimWhere', claim: Number(pressed.getAttribute('data-claim-where')) });
+    } else if (pressed.hasAttribute('data-claim-evidence')) {
+      vscode.postMessage({ type: 'claimEvidence', claim: Number(pressed.getAttribute('data-claim-evidence')), index: Number(pressed.getAttribute('data-index')) });
     } else if (pressed.hasAttribute('data-finding')) {
       vscode.postMessage({ type: 'finding', action: pressed.getAttribute('data-finding'), kind: pressed.getAttribute('data-kind'), index: Number(pressed.getAttribute('data-index')) });
     } else if (pressed.hasAttribute('data-issue')) {
