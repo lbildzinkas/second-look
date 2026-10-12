@@ -2165,7 +2165,7 @@ describe('the side bar', () => {
     for (const part of shown.parts) await tick(view, part.name ?? part.path, true);
     await until('the claims card to open', () => currentStep(view) === '5');
     const body = String((view.page.webview.posted.at(-1) as { body: string }).body);
-    expect(body).toContain('<span class="pill tone-bad"><span class="icon" aria-hidden="true">✕</span> refuted</span><span class="where">docstring · src/retry.py:3–4</span>');
+    expect(body).toContain('<span class="pill tone-bad"><span class="icon" aria-hidden="true">✕</span> refuted</span><button type="button" class="where" id="step-5-where-claim-1" data-claim-where="1">docstring · src/retry.py:3–4</button>');
     expect(body).toContain('<q class="quote">Gives up after three attempts, whatever the status.</q>');
     expect(body).toContain('<p class="folded"><span class="tone-ok" aria-hidden="true">✓</span> 1 verified</p>');
     expect(body).toMatch(/<input type="checkbox" id="step-5-tick" data-tick="claims"/);
