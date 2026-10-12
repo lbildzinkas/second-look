@@ -432,7 +432,7 @@ describe('the verdicts on the overview', () => {
 });
 
 describe('the claims on the overview', () => {
-  it('lists each claim after the story: quoted, where it is made, its part a button, and not checked', () => {
+  it('lists each claim after the story: quoted, where it is made as a link that opens it, its part a button, and not checked', () => {
     const html = overviewHtml({ result: claimsResult() }, 'N');
 
     expect(html.indexOf('<section id="story">')).toBeLessThan(html.indexOf('<section id="claims">'));
@@ -443,12 +443,15 @@ describe('the claims on the overview', () => {
     // A claim not checked yet has no reason or evidence to open: its row is the whole of it.
     expect(html).toContain(
       '<tr><td class="no">2</td><td><span class="pl tone-mut"><span class="ic" aria-hidden="true">○</span>not checked</span></td>' +
-        '<td><q class="quote">Gives up after three attempts, whatever the status.</q></td><td><span class="where">docstring · src/retry.py:3–4 · ' +
+        '<td><q class="quote">Gives up after three attempts, whatever the status.</q></td><td><span class="where"><button type="button" class="pt where" data-claim-where="1">docstring · src/retry.py:3–4</button> · ' +
         '<button type="button" class="pt" data-part="0">src/retry.py</button></span></td></tr>',
     );
-    expect(html).toContain('<span class="where">pull request description, line 1 · <button');
-    expect(html).toContain('<span class="where">comment · src/retry.py:9 · <button');
-    expect(html).toContain('<span class="where">the companion&#39;s story, sentence 2 · <button type="button" class="pt" data-part="1">src/settings.ts</button>');
+    expect(html).toContain('<button type="button" class="pt where" data-claim-where="0">pull request description, line 1</button>');
+    expect(html).toContain('<button type="button" class="pt where" data-claim-where="2">comment · src/retry.py:9</button>');
+    expect(html).toContain('<button type="button" class="pt where" data-claim-where="3">the companion&#39;s story, sentence 2</button> · <button type="button" class="pt" data-part="1">src/settings.ts</button>');
+    // A pipeline finding's where sits in the pipeline report, which this page shows: no link.
+    const pipeline = overviewHtml({ result: pipelineResult() }, 'N');
+    expect(pipeline).toContain('<span class="where">pipeline report, Review step · src/retry.py:6 · <button');
     expect(html).not.toContain('class="tg"');
     expect(html).toContain('<li><b>Claims</b> listed by pi · zai/glm-4.6 · default effort · claims prompt v1: every quote was found in its source');
   });
@@ -499,6 +502,27 @@ describe('the claims on the overview', () => {
       'comment · src/retry.py:9',
       "the companion's story, sentence 2",
     ]);
+  });
+
+  it('marks the description line the page is opened at, one span per line, with its hidden content still flagged', () => {
+    const html = overviewHtml({ result: storyResult(), descriptionLine: 2 }, 'N');
+    expect(html).toContain('<span class="dline" data-line="1">Retries failed sends.<span class="hidden" data-kind="html comment">');
+    expect(html).toContain('<span class="dline focus" data-line="2">See ![chart](https://evil.example/chart.png).</span>');
+    // The page opens at the marked line, as it does at a marked sentence or answer.
+    expect(html).toContain("document.querySelector('.dline.focus')");
+  });
+
+  it('renders a where link\u2019s text as escaped text, never as markup', () => {
+    const shown = claimsResult();
+    const hostile: ReviewResult = {
+      ...shown,
+      claims: { ...shown.claims!, claims: shown.claims!.claims.map((claim, index) => (index === 1 ? { ...claim, location: { kind: 'file' as const, path: '<img src=x>.py', line: 3, endLine: 4 } } : claim)) },
+    };
+
+    const html = overviewHtml({ result: hostile }, 'N');
+
+    expect(loadsOrLinks(html)).toBe(false);
+    expect(html).toContain('<button type="button" class="pt where" data-claim-where="1">docstring · &lt;img src=x&gt;.py:3–4</button>');
   });
 });
 
@@ -1202,6 +1226,35 @@ describe('OverviewPanel', () => {
       ['src/retry.py', 5, 'head'],
       ['src/retry.py', 6, 'head'],
     ]);
+  });
+
+  it('opens where a claim is made: its file’s line in the head copy, its description line in the page’s description, its sentence in the story', () => {
+    const lines: [string, number, CommentSide][] = [];
+    const overview = new OverviewPanel(() => undefined, (path, line, side) => lines.push([path, line, side]), () => undefined);
+    overview.update(claimsResult());
+    overview.open();
+    const panel = stub.webviewPanels[0]!;
+    // The page's own script posts the claim a where names, which the panel then opens.
+    const page = PageDouble.load(panel.webview.html);
+    page.matching('button.where').forEach((button) => button.click());
+    expect(page.posted).toEqual([
+      { type: 'openClaimWhere', claim: 0 },
+      { type: 'openClaimWhere', claim: 1 },
+      { type: 'openClaimWhere', claim: 2 },
+      { type: 'openClaimWhere', claim: 3 },
+    ]);
+
+    // The docstring claim's where opens its line; the story claim's its sentence in the story; the description claim's the marked description line.
+    panel.webview.receive({ type: 'openClaimWhere', claim: 1 });
+    panel.webview.receive({ type: 'openClaimWhere', claim: 3 });
+    expect(panel.webview.html).toContain('<span class="sentence focus">Then read <button type="button" class="pt" data-part="1">');
+    panel.webview.receive({ type: 'openClaimWhere', claim: 0 });
+    expect(panel.webview.html).toContain('<span class="dline focus" data-line="1">Retries failed sends.');
+    expect(panel.webview.html).not.toContain('sentence focus');
+    panel.webview.receive({ type: 'openClaimWhere', claim: 99 });
+    panel.webview.receive({ type: 'openClaimWhere', claim: '1' });
+
+    expect(lines).toEqual([['src/retry.py', 3, 'head']]);
   });
 
   it('drafts from a finding a button names, and ignores a draft message naming no finding kind', () => {

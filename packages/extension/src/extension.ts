@@ -959,9 +959,9 @@ class ReviewSession {
     return picked === undefined ? undefined : { index: picked.index };
   }
 
-  /** Opens the review's overview at the story's start. */
-  openOverview(): void {
-    if (!this.overview.open()) {
+  /** Opens the review's overview at the story's start, or at the description line or story sentence a claim's where names, marked. */
+  openOverview(options: { descriptionLine?: number; storySentence?: number } = {}): void {
+    if (!this.overview.open(options)) {
       vscode.window.showWarningMessage('Review a pull request first, then open its overview.');
       return;
     }
@@ -1252,6 +1252,7 @@ export function activate(
     picker,
     {
       openLine: (path, line) => void session.openLine(path, line, 'head'),
+      openOverviewAt: (options) => session.openOverview(options),
       ticks: new StepTickStore(context.globalState),
       comment: (id, action) => void session.commentAction(id, action),
     },

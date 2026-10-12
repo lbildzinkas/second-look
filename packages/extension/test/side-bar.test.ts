@@ -22,7 +22,7 @@ import { SideBarProvider, sideBarMessage, type SideBarDeps } from '../src/side-b
 import { StepTickStore } from '../src/side-bar/step-ticks.js';
 import { nextPartToReview, setupLine, sideBarSteps, type SideBarState } from '../src/side-bar/steps.js';
 import { anchorOf, buildTree, pendingReviewSection } from '../src/tree.js';
-import { REQUESTS_FETCH, claimsResult, criteriaResult, judgedResult, mappedCriteriaResult, mixedResult, nonDefaultBranchResult, offeredResult, reviewStages, unexplainedResult } from './results.js';
+import { REQUESTS_FETCH, claimsResult, criteriaResult, fetchedResult, judgedResult, mappedCriteriaResult, mixedResult, nonDefaultBranchResult, offeredResult, pipelineResult, reviewStages, unexplainedResult } from './results.js';
 import { ConfigurationTarget, stub, stubContext, window, type StubWebviewView } from './vscode-stub.js';
 
 const NOW = new Date('2026-10-06T12:00:00Z');
@@ -295,13 +295,21 @@ describe("the side bar's page", () => {
     expect(sideBarBody(reviewState({ result: second, onlyChanged: true }))).toContain('data-command="filterChanged">Show all parts</button>');
   });
 
-  it('lists the claim findings on step 5, each with its verdict, where it is made, and the existing actions', () => {
+  it('lists the claim findings on step 5, each with its verdict, its where as a link that opens it, its reason and evidence, and the existing actions', () => {
     const result = judgedResult();
     const body = sideBarBody(reviewState({ result, storyRead: true, marks: marked(...mixedResult().parts) }));
     // The docstring claim is refuted, the comment and story ones unverifiable: findings first, the verified one folded.
-    expect(body).toContain('<span class="pill tone-bad"><span class="icon" aria-hidden="true">✕</span> refuted</span><span class="where">docstring · src/retry.py:3–4</span>');
-    expect(body).toContain('<span class="pill tone-warn"><span class="icon" aria-hidden="true">?</span> unverifiable</span><span class="where">comment · src/retry.py:9</span>');
+    expect(body).toContain('<span class="pill tone-bad"><span class="icon" aria-hidden="true">✕</span> refuted</span><button type="button" class="where" id="step-5-where-claim-1" data-claim-where="1">docstring · src/retry.py:3–4</button>');
+    expect(body).toContain('<span class="pill tone-warn"><span class="icon" aria-hidden="true">?</span> unverifiable</span><button type="button" class="where" id="step-5-where-claim-2" data-claim-where="2">comment · src/retry.py:9</button>');
+    expect(body).toContain('<button type="button" class="where" id="step-5-where-claim-3" data-claim-where="3">the companion&#39;s story, sentence 2</button>');
     expect(body).toContain('<q class="quote">Gives up after three attempts, whatever the status.</q>');
+    // The reason and its evidence source sit on the row, with the cited head-copy line a chip that opens it.
+    expect(body).toContain('<div class="why">the change itself: The loop runs five times.</div>');
+    expect(body).toContain('<div class="meta"><button type="button" class="chip" id="step-5-cite-claim-1-0" data-claim-evidence="1" data-index="0" title="Open the line in the head copy" aria-label="Open the line in the head copy of src/retry.py:6">src/retry.py:6</button></div>');
+    // An unverifiable claim that cites nothing still says why, without opening anything else.
+    expect(body).toContain('<q class="quote">Never retries a 4xx.</q><div class="why">the change itself: The status check is in the library.</div>');
+    // The recheck shows when the engine dropped a citation.
+    expect(body).toContain('<div class="why">dropped to unverifiable: the model&#39;s memory never yields verified</div>');
     expect(body).toContain('id="step-5-draft-claim-1" class="secondary" data-finding="draft" data-kind="claim" data-index="1">Draft comment</button>');
     expect(body).toContain('id="step-5-open-claim-1" class="secondary" data-finding="open" data-kind="claim" data-index="1">Open</button>');
     expect(body).toContain('id="step-5-verify-claim-1" class="secondary" data-finding="verify" data-kind="claim" data-index="1">Verify again</button>');
@@ -309,6 +317,23 @@ describe("the side bar's page", () => {
     expect(body).toContain('<p class="folded"><span class="tone-ok" aria-hidden="true">✓</span> 1 verified</p>');
     expect(body).toContain('id="step-5-verifyClaim" class="secondary" data-command="verifyClaim">Verify a claim…</button>');
     expect(body).toMatch(/<input type="checkbox" id="step-5-tick" data-tick="claims" aria-label="I&#39;ve checked the claims">/);
+  });
+
+  it('keeps a pipeline claim\u2019s where as text, and a fetched library\u2019s cited lines as chips that do not open', () => {
+    const shown = pipelineResult();
+    shown.claims = {
+      ...shown.claims!,
+      claims: shown.claims!.claims.map((claim, index) => (index === 0 && claim.verdict.kind !== 'not checked' ? { ...claim, verdict: { ...claim.verdict, kind: 'refuted' as const } } : claim)),
+    };
+    const body = sideBarBody(reviewState({ result: shown, storyRead: true, marks: marked(...mixedResult().parts) }));
+    // The pipeline finding's where sits in the pipeline report, which the overview shows: no link.
+    expect(body).toContain('<span class="where">pipeline report, Review step · src/retry.py:6</span>');
+    // Its cited CI log line is a chip that opens the check run on GitHub.
+    expect(body).toContain('<div class="meta"><button type="button" class="chip" id="step-5-cite-claim-0-0" data-claim-evidence="0" data-index="0" title="Open its check run on GitHub" aria-label="Open its check run on GitHub of CI log of check / test, line 2">CI log of check / test, line 2</button></div>');
+    const fetched = sideBarBody(reviewState({ result: fetchedResult(), storyRead: true, marks: marked(...mixedResult().parts) }));
+    // A line of fetched library source is not a line of the head copy: it shows as a chip that opens nothing.
+    expect(fetched).toContain('<span class="chip">requests/models.py:1021</span>');
+    expect(fetched).not.toContain('data-claim-evidence="2"');
   });
 
   it('offers the library fetch on a claim that needs one, and only as a button that presses it', () => {
@@ -359,12 +384,24 @@ describe("the side bar's page", () => {
 
   it('keeps every piece of the claims\u2019 and criteria\u2019s text as text on steps 5 and 6', () => {
     const hostile = judgedResult();
-    hostile.claims!.claims[1]!.quote = '<img src=x onerror=alert(1)>';
+    const docstring = hostile.claims!.claims[1]!;
+    docstring.quote = '<img src=x onerror=alert(1)>';
+    // The verdict's reason, its cited line's path and the recheck are the agent's words too: they stay text.
+    docstring.location = { ...docstring.location, kind: 'file', path: '<img src=y>.py', line: 3, endLine: 4 };
+    const docstringVerdict = docstring.verdict as Exclude<typeof docstring.verdict, { kind: 'not checked' }>;
+    docstring.verdict = { ...docstringVerdict, reason: 'The loop runs <img src=y> times.', evidence: [{ path: '<script>a.py</script>', line: 6, quote: 'for attempt in range(5):' }] };
+    const story = hostile.claims!.claims[3]!;
+    const storyVerdict = story.verdict as Exclude<typeof story.verdict, { kind: 'not checked' }>;
+    story.verdict = { ...storyVerdict, recheck: 'the model\u2019s memory never yields <script>verified</script>' };
     const criteria = mappedCriteriaResult();
     criteria.criteria!.criteria[1]!.quote = 'The retries are <script>logged</script>';
     const body = sideBarBody(reviewState({ result: { ...hostile, criteria: criteria.criteria, unexplained: unexplainedResult().unexplained }, storyRead: true, marks: marked(...mixedResult().parts) }));
     expect(body).toContain('&lt;img src=x onerror=alert(1)&gt;');
     expect(body).toContain('The retries are &lt;script&gt;logged&lt;/script&gt;');
+    expect(body).toContain('<div class="why">the change itself: The loop runs &lt;img src=y&gt; times.</div>');
+    expect(body).toContain('<div class="why">dropped to unverifiable: the model\u2019s memory never yields &lt;script&gt;verified&lt;/script&gt;</div>');
+    expect(body).toContain('&lt;img src=y&gt;.py:3–4');
+    expect(body).toContain('&lt;script&gt;a.py&lt;/script&gt;:6');
     expect(body).not.toMatch(/<img|<script/);
   });
 
@@ -459,6 +496,8 @@ describe('the side bar messages', () => {
     expect(sideBarMessage({ type: 'openPart', anchor })).toEqual({ type: 'openPart', anchor });
     expect(sideBarMessage({ type: 'finding', action: 'draft', kind: 'claim', index: 2 })).toEqual({ type: 'finding', action: 'draft', finding: { kind: 'claim', index: 2 } });
     expect(sideBarMessage({ type: 'finding', action: 'fetch', kind: 'criterion', index: 0 })).toEqual({ type: 'finding', action: 'fetch', finding: { kind: 'criterion', index: 0 } });
+    expect(sideBarMessage({ type: 'claimWhere', claim: 1 })).toEqual({ type: 'claimWhere', claim: 1 });
+    expect(sideBarMessage({ type: 'claimEvidence', claim: 1, index: 0 })).toEqual({ type: 'claimEvidence', claim: 1, index: 0 });
     expect(sideBarMessage({ type: 'openIssue', issue: 1 })).toEqual({ type: 'openIssue', issue: 1 });
     expect(sideBarMessage({ type: 'tick', step: 'criteria', checked: true })).toEqual({ type: 'tick', step: 'criteria', checked: true });
     for (const command of ['filterChanged', 'partsMenu', 'openSent']) expect(sideBarMessage({ type: 'command', command })).toEqual({ type: 'command', command });
@@ -477,6 +516,9 @@ describe('the side bar messages', () => {
     expect(sideBarMessage({ type: 'finding', action: 'discard', kind: 'claim', index: 2 })).toBeUndefined();
     expect(sideBarMessage({ type: 'finding', action: 'draft', kind: 'part', index: 2 })).toBeUndefined();
     expect(sideBarMessage({ type: 'finding', action: 'draft', kind: 'claim', index: 'two' })).toBeUndefined();
+    expect(sideBarMessage({ type: 'claimWhere', claim: '1' })).toBeUndefined();
+    expect(sideBarMessage({ type: 'claimEvidence', claim: 1, index: '0' })).toBeUndefined();
+    expect(sideBarMessage({ type: 'claimEvidence', claim: '1', index: 0 })).toBeUndefined();
     expect(sideBarMessage({ type: 'openIssue', issue: '0' })).toBeUndefined();
     expect(sideBarMessage({ type: 'tick', step: 'parts', checked: true })).toBeUndefined();
     expect(sideBarMessage({ type: 'tick', step: 'claims', checked: 'yes' })).toBeUndefined();
@@ -540,6 +582,7 @@ describe('the side bar view', () => {
     const opened: [string, number][] = [];
     const deps: SideBarDeps = {
       openLine: (path, line) => opened.push([path, line]),
+      openOverviewAt: () => undefined,
       ticks: new StepTickStore(stubContext().globalState),
       comment: () => undefined,
     };
@@ -578,9 +621,81 @@ describe('the side bar view', () => {
     expect(stub.openedExternals).toEqual(['https://github.com/example-org/example-repo/issues/30']);
   });
 
+  /** The pipeline result as step 5 lists it: the pipeline claim a refuted finding, and the description claim an unverifiable one. */
+  function findingsResult(): ReturnType<typeof pipelineResult> {
+    const claims = pipelineResult().claims!;
+    return {
+      ...pipelineResult(),
+      claims: {
+        ...claims,
+        claims: claims.claims.map((claim, index) =>
+          index === 0 && claim.verdict.kind !== 'not checked'
+            ? { ...claim, verdict: { ...claim.verdict, kind: 'refuted' as const } }
+            : index === 1
+              ? { ...claim, verdict: { kind: 'unverifiable' as const, source: "the model's memory" as const, reason: 'Nothing in the change shows it.', evidence: [] } }
+              : claim,
+        ),
+      },
+    };
+  }
+
+  it('opens where a claim is made and each line it cites, and never a check run outside GitHub', async () => {
+    const result = findingsResult();
+    const opened: [string, number][] = [];
+    const overviews: { descriptionLine?: number; storySentence?: number }[] = [];
+    const deps: SideBarDeps = {
+      openLine: (path, line) => opened.push([path, line]),
+      openOverviewAt: (options) => overviews.push(options),
+      ticks: new StepTickStore(stubContext().globalState),
+      comment: () => undefined,
+    };
+    const provider = new SideBarProvider(reviewState({ result, storyRead: true, marks: marked(...mixedResult().parts) }), undefined, undefined, deps);
+    window.registerWebviewViewProvider(REVIEW_TREE_VIEW, provider);
+    const view = stub.webviewViewProviders[0]!.resolve();
+    const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+    // The docstring claim opens its line in the head copy; the description claim the overview at its marked line; the story claim the story.
+    view.webview.receive({ type: 'claimWhere', claim: 2 });
+    view.webview.receive({ type: 'claimWhere', claim: 1 });
+    view.webview.receive({ type: 'claimWhere', claim: 4 });
+    view.webview.receive({ type: 'claimWhere', claim: 99 });
+    // A cited head-copy line opens in the head copy; a cited CI log line its check run on GitHub; one that is not there, nothing.
+    view.webview.receive({ type: 'claimEvidence', claim: 2, index: 0 });
+    view.webview.receive({ type: 'claimEvidence', claim: 0, index: 0 });
+    view.webview.receive({ type: 'claimEvidence', claim: 0, index: 5 });
+    view.webview.receive({ type: 'claimEvidence', claim: 99, index: 0 });
+    await settle;
+    await Promise.all(stub.commandRuns);
+
+    expect(opened).toEqual([
+      ['src/retry.py', 3],
+      ['src/retry.py', 6],
+    ]);
+    expect(overviews).toEqual([{ descriptionLine: 1 }, { storySentence: 1 }]);
+    expect(stub.openedExternals).toEqual(['https://github.com/example-org/example-repo/actions/runs/700/job/9001']);
+
+    // A check run whose address is not GitHub opens nothing: it is the one outside link, and GitHub is the only address it takes.
+    result.ci!.checks[0]!.url = 'https://evil.example/actions/runs/700/job/9001';
+    view.webview.receive({ type: 'claimEvidence', claim: 0, index: 0 });
+    await settle;
+    await Promise.all(stub.commandRuns);
+    expect(stub.openedExternals).toEqual(['https://github.com/example-org/example-repo/actions/runs/700/job/9001']);
+
+    // A line of fetched library source is not a line of the head copy: it opens nothing.
+    const fetched = new SideBarProvider(reviewState({ result: fetchedResult(), storyRead: true, marks: marked(...mixedResult().parts) }), undefined, undefined, deps);
+    window.registerWebviewViewProvider(REVIEW_TREE_VIEW, fetched);
+    stub.webviewViewProviders.at(-1)!.resolve().webview.receive({ type: 'claimEvidence', claim: 2, index: 0 });
+    await settle;
+    await Promise.all(stub.commandRuns);
+    expect(opened).toEqual([
+      ['src/retry.py', 3],
+      ['src/retry.py', 6],
+    ]);
+  });
+
   it('keeps the steps\u2019 ticks per pull request, and redraws the cards with the tick the reviewer pressed', async () => {
     const result = judgedResult();
-    const deps: SideBarDeps = { openLine: () => undefined, ticks: new StepTickStore(stubContext().globalState), comment: () => undefined };
+    const deps: SideBarDeps = { openLine: () => undefined, openOverviewAt: () => undefined, ticks: new StepTickStore(stubContext().globalState), comment: () => undefined };
     const provider = new SideBarProvider(reviewState({ result, storyRead: true, marks: marked(...mixedResult().parts) }), undefined, undefined, deps);
     window.registerWebviewViewProvider(REVIEW_TREE_VIEW, provider);
     const view = stub.webviewViewProviders[0]!.resolve();
@@ -668,7 +783,7 @@ describe('the side bar view', () => {
 
   it("hands step 7's presses to the session, runs the filter, and opens the review sent on GitHub", () => {
     const pressed: [number, string][] = [];
-    const deps: SideBarDeps = { openLine: () => undefined, ticks: new StepTickStore(stubContext().globalState), comment: (id, action) => pressed.push([id, action]) };
+    const deps: SideBarDeps = { openLine: () => undefined, openOverviewAt: () => undefined, ticks: new StepTickStore(stubContext().globalState), comment: (id, action) => pressed.push([id, action]) };
     const provider = new SideBarProvider(reviewState({ sent: SENT, comments: [DRAFT] }), undefined, undefined, deps);
     window.registerWebviewViewProvider(REVIEW_TREE_VIEW, provider);
     const view = stub.webviewViewProviders[0]!.resolve();
