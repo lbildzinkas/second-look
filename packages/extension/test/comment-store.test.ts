@@ -53,6 +53,22 @@ describe('CommentStore', () => {
     expect(readdirSync(dir)).toEqual([`${hashOf(url)}.json`]);
   });
 
+  it('writes and reads nothing for an address whose owner or repository is not a GitHub name', async () => {
+    const { store, dir } = storeInTempDir();
+    // A backslash in the owner would act as a folder separator on Windows,
+    // and `..` as a parent folder; the engine's cache folder refuses both,
+    // and the store checks names the same way.
+    const backslash = 'https://github.com/bad\\owner/example-repo/pull/42';
+    const dots = 'https://github.com/example-org/../pull/42';
+
+    await store.save(backslash, unsent());
+    await store.save(dots, unsent());
+
+    expect(await store.read(backslash)).toBeUndefined();
+    expect(await store.read(dots)).toBeUndefined();
+    expect(readdirSync(dir)).toEqual([]);
+  });
+
   it('removes the pull request’s file when nothing is left unsent', async () => {
     const { store, dir } = storeInTempDir();
     await store.save(URL, unsent());
