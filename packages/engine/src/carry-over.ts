@@ -86,10 +86,14 @@ export function byImportance(parts: readonly Part[]): Part[] {
   return [...parts].sort((a, b) => level(a) - level(b));
 }
 
-/** Ranks parts whose signals are set plainly, a carried part keeping the rank the earlier review gave it, in ranking's order. */
+/**
+ * Ranks parts whose signals are set plainly, a carried part keeping the
+ * rank the earlier review gave it — two of identical pieces each their
+ * own — in ranking's order.
+ */
 export function rankCarried(parts: readonly Part[]): Part[] {
-  const kept = new Map(parts.flatMap((part) => (part.carried && part.rank ? [[partKey(part), part.rank] as const] : [])));
-  return byImportance(rankParts(parts).map((part) => (part.carried && kept.has(partKey(part)) ? { ...part, rank: kept.get(partKey(part))! } : part)));
+  const keeps = (part: Part): boolean => part.carried === true && part.rank !== undefined;
+  return byImportance([...parts.filter(keeps), ...rankParts(parts.filter((part) => !keeps(part)))]);
 }
 
 /** Whether the change now holds every earlier part carried over, and nothing else: its code is as the earlier review read it. */
@@ -97,10 +101,25 @@ export function sameChange(parts: readonly Part[], earlier: readonly Part[]): bo
   return parts.length === earlier.length && parts.every((part) => part.carried);
 }
 
-/** Each carried part's index now, by its index in the earlier review's parts. */
+/** Each carried part's index now, by its index in the earlier review's parts, two of identical pieces pairing by their order. */
 export function nowIndexes(parts: readonly Part[], earlier: readonly Part[]): Map<number, number> {
-  const now = new Map(parts.flatMap((part, index) => (part.carried ? [[partKey(part), index] as const] : [])));
-  return new Map(earlier.flatMap((part, index) => (now.has(partKey(part)) ? [[index, now.get(partKey(part))!] as const] : [])));
+  // Each key's carried indexes now, in their order: the nth of a key pairs with the nth earlier part of that key.
+  const now = new Map<string, number[]>();
+  parts.forEach((part, index) => {
+    if (part.carried !== true) return;
+    const key = partKey(part);
+    now.set(key, [...(now.get(key) ?? []), index]);
+  });
+  const seen = new Map<string, number>();
+  return new Map(
+    earlier.flatMap((part, index): [number, number][] => {
+      const key = partKey(part);
+      const nth = seen.get(key) ?? 0;
+      seen.set(key, nth + 1);
+      const at = now.get(key)?.[nth];
+      return at === undefined ? [] : [[index, at]];
+    }),
+  );
 }
 
 /** The story with each part it links at its index now; for a change whose every part carried over. */

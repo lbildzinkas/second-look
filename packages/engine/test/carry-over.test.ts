@@ -5,12 +5,13 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { AgentRunRequest } from '../src/agent.js';
 import { removeCopy } from '../src/cache.js';
-import { carryClaims, carryParts, type EarlierReview } from '../src/carry-over.js';
+import { carryClaims, carryParts, rankCarried, type EarlierReview } from '../src/carry-over.js';
 import { CLAIMS_INSTRUCTIONS } from '../src/claims.js';
 import { parseDiff } from '../src/diff.js';
 import { fileSlice } from '../src/parts.js';
-import type { Claim, Part, ReviewResult } from '../src/protocol.js';
+import type { Claim, Part, PartSignals, ReviewResult } from '../src/protocol.js';
 import { fetchChange, reviewChange, type ReviewInput } from '../src/review.js';
+import { STORY_INSTRUCTIONS } from '../src/story.js';
 import { VERDICTS_INSTRUCTIONS } from '../src/verdicts.js';
 import { PR_7_URL, answeringAgent, fixtureFetch, pull7, temporaryCacheDir } from './helpers.js';
 
@@ -37,6 +38,27 @@ function twoHunks(first: string, added = 0): string {
   ].join('\n');
 }
 
+/** A diff of one file whose two hunks change the same lines, as the same block added in two entities. */
+function identicalHunks(): string {
+  return [
+    'diff --git a/app/f.py b/app/f.py',
+    'index 1111111..2222222 100644',
+    '--- a/app/f.py',
+    '+++ b/app/f.py',
+    '@@ -1,3 +1,3 @@',
+    ' a',
+    '-b',
+    '+X',
+    ' c',
+    '@@ -20,3 +20,3 @@',
+    ' t',
+    '-b',
+    '+X',
+    ' v',
+    '',
+  ].join('\n');
+}
+
 describe('carryParts', () => {
   // An earlier review that split the file's two hunks into two parts, as the grouping agent may.
   const [earlierFile] = parseDiff(twoHunks('B')).files;
@@ -45,6 +67,15 @@ describe('carryParts', () => {
     name: index === 0 ? 'the first edit' : 'the second edit',
     origin: 'agent',
     rank: { importance: 'must review', reason: 'agent says so', signals: [] },
+  }));
+
+  // Two earlier parts of identical pieces, as the grouping agent splits the same block added in two entities.
+  const [sameFile] = parseDiff(identicalHunks()).files;
+  const samePieces: Part[] = sameFile!.hunks.map((hunk, index) => ({
+    ...fileSlice(sameFile!, [hunk]),
+    name: index === 0 ? 'the first edit' : 'the second edit',
+    origin: 'agent',
+    rank: index === 0 ? { importance: 'must review', reason: 'agent says so', signals: [] } : { importance: 'context', reason: 'agent says otherwise', signals: [] },
   }));
 
   it('carries a part whose code did not change, on the hunks of the change now, and groups the rest plainly', () => {
@@ -69,6 +100,32 @@ describe('carryParts', () => {
       ['the second edit', true],
     ]);
     expect(leftover).toEqual([]);
+  });
+
+  it('keeps each of two carried parts of identical pieces the rank the earlier review gave it', () => {
+    const { parts } = carryParts(samePieces, parseDiff(identicalHunks()).files);
+    const signals: PartSignals = { novelty: 'changed', role: 'code', changedLines: 2, publicSurface: [], references: { basis: 'name-based', names: [], files: 0 } };
+    expect(rankCarried(parts.map((part) => ({ ...part, signals }))).map((part) => [part.name, part.rank!.importance])).toEqual([
+      ['the first edit', 'must review'],
+      ['the second edit', 'context'],
+    ]);
+  });
+
+  it('carries each of two earlier parts of identical pieces its own claims, each to its own part', () => {
+    const { parts } = carryParts(samePieces, parseDiff(identicalHunks()).files);
+    const claim = (part: number): Claim => ({
+      quote: `the ${part === 0 ? 'first' : 'second'} edit is sound`,
+      source: 'agent',
+      location: { kind: 'story', sentence: 0 },
+      part,
+      verdict: { kind: 'not checked' },
+    });
+    const result = { parts: samePieces, claims: { claims: [claim(0), claim(1)] } } as unknown as ReviewResult;
+
+    expect(carryClaims(result, parts, () => true)).toEqual([
+      { ...claim(0), part: 0, carried: true },
+      { ...claim(1), part: 1, carried: true },
+    ]);
   });
 
   it('moves a carried claim in a file with the hunk that holds it, and drops the claims of a part that changed', () => {
@@ -115,10 +172,12 @@ describe('reviewChange carrying results over from the saved review of an earlier
   /**
    * Lists the description's three claims, each about its part, and
    * verifies every claim it is asked to judge: the flag's from the
-   * dedent, every other from the cart.
+   * dedent, every other from the cart; `story` answers the story prompt,
+   * and without it the story falls back.
    */
-  function claimingAgent() {
+  function claimingAgent(story?: (prompt: string) => unknown) {
     return answeringAgent((run: AgentRunRequest) => {
+      if (run.instructions === STORY_INSTRUCTIONS) return story?.(run.prompt) ?? {};
       if (run.instructions === CLAIMS_INSTRUCTIONS) {
         const claim = (quote: string, path: string) => ({ source: 'description', quote, file: null, line: null, part: partId(run.prompt, path) });
         return { claims: [claim(FLAG, 'app/dedent.py'), claim(GREETER, 'src/Greeter.cs'), claim(CART, 'web/cart.ts')] };
@@ -144,7 +203,7 @@ describe('reviewChange carrying results over from the saved review of an earlier
     runs.filter((run) => run.instructions === VERDICTS_INSTRUCTIONS).flatMap((run) => [...run.prompt.matchAll(/^\[c\d+\] made in [^\n]*\n<untrusted-input [^\n]*>\n([^\n]*)$/gm)].map((match) => match[1]));
 
   /** Pull request 7 reviewed with the agent, then the same pull request at a new head commit whose diff and head copy of `path` `edit` changes. */
-  async function reviewTwice(edit: (text: string) => string, path = 'web/cart.ts') {
+  async function reviewTwice(edit: (text: string) => string, path = 'web/cart.ts', agent = claimingAgent()) {
     const input = await fetchChange(PR_7_URL, { token: 'test-token', fetch: fixtureFetch(pull7()).fetch, cacheDir });
     const first = claimingAgent();
     const earlier = await reviewChange(input, { adapter: first });
@@ -158,9 +217,8 @@ describe('reviewChange carrying results over from the saved review of an earlier
       copies: { base: input.copies.base, head: { commit: NEW_HEAD, path: headDir, reused: false } },
       earlier: { result: earlier, stamp: STAMP } satisfies EarlierReview,
     };
-    const second = claimingAgent();
-    const result = await reviewChange(later, { adapter: second });
-    return { earlier, result, runs: second.requests };
+    const result = await reviewChange(later, { adapter: agent });
+    return { earlier, result, runs: agent.requests };
   }
 
   const states = (result: ReviewResult) => Object.fromEntries(result.stages!.map((stage) => [stage.id, stage.state]));
@@ -204,6 +262,17 @@ describe('reviewChange carrying results over from the saved review of an earlier
     expect(result.claims!.claims.map((claim) => [claim.quote, claim.carried])).toEqual(earlier.claims!.claims.map((claim) => [claim.quote, true]));
     expect(result.claims!.judging).toEqual(earlier.claims!.judging);
     expect(runs.some((run) => run.instructions === CLAIMS_INSTRUCTIONS || run.instructions === VERDICTS_INSTRUCTIONS)).toBe(false);
+  });
+
+  it('lists the claims again when a story is written again, never carrying the earlier claims over whole', async () => {
+    // As a rebase onto a base that changed another file only; the first review's story fell back, so the second writes one afresh.
+    const story = (prompt: string) => ({
+      sentences: [`The change reads as follows: ${[...prompt.matchAll(/^\[(p\d+)\] /gm)].map((match, at) => `[part ${at + 1}](${match[1]})`).join(', ')}.`],
+    });
+    const { result, runs } = await reviewTwice((text) => `${text}// rebased\n`, 'web/checkout.ts', claimingAgent(story));
+
+    expect(states(result)).toMatchObject({ story: 'done', claims: 'done' });
+    expect(runs.some((run) => run.instructions === CLAIMS_INSTRUCTIONS)).toBe(true);
   });
 
   it('re-checks a carried verdict that cites a line the new commits changed, never showing it as current', async () => {

@@ -450,8 +450,10 @@ function carriedStage(result: ReviewResult, id: ReviewStageId): ReviewResult {
  * and, for the last two, the linked issues are as the earlier review read
  * them — the mapping only while every line it cites is unchanged — and
  * runs again otherwise. The claims are carried over with the change and
- * description, else listed again, keeping the earlier claims of the
- * carried parts; either way a carried claim whose verdict no longer
+ * description, and only while the story stands as the earlier claims were
+ * listed against it — a story written again has its claims listed again
+ * — else listed again, keeping the earlier claims of the carried parts;
+ * either way a carried claim whose verdict no longer
  * stands is judged again, see {@link standingClaims}, and the agent
  * judges only the claims not carried.
  */
@@ -484,6 +486,7 @@ function stagesSince(input: ReviewInput, parsed: ParsedDiff, earlier: ReviewResu
       'claims',
       agentStage.claims !== false && ((shown, told) => claimsSince(shown, told, input, earlier, sameDescription, same)),
       keep(sameText && earlier.claims?.outcome === 'listed', async (shown) => {
+        if ((earlier.story?.outcome === 'written') !== (shown.story?.outcome === 'written')) return undefined;
         const claims = mergeClaims(pipelineClaims(shown.pipeline, shown.parts), await standingClaims(carryClaims(earlier, shown.parts, () => true), same));
         return { ...shown, claims: { ...earlier.claims!, claims } };
       }),
