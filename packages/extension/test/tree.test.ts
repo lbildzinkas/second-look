@@ -21,7 +21,7 @@ import {
   earlierCommitLine,
   UNEXPLAINED_BADGE,
 } from '../src/tree.js';
-import { carriedResult, claimsResult, judgedResult, mixedResult, part, result, unexplainedResult } from './results.js';
+import { carriedResult, claimsResult, judgedResult, mixedResult, part, result, settledResult, unexplainedResult } from './results.js';
 import type { TreeFilter, TreePart } from '../src/tree.js';
 
 /** A hunk adding one line at the given place, on both sides. */
@@ -237,8 +237,17 @@ describe('claim counts in the tree', () => {
       findings: 2,
       description: '⚠ 2 findings · 3 claims · New code the send path now runs on every delivery.',
     });
-    expect(mustReview!.parts[0]!.tooltip).toContain('3 claims, 2 refuted or unverifiable, each a thread on the diff; the overview lists them');
+    expect(mustReview!.parts[0]!.tooltip).toContain("3 claims, 2 refuted, or unverifiable the code or a library's source could settle, each a thread on the diff; the overview lists them");
     expect(worthReviewing!.parts[0]).toMatchObject({ claims: 1, findings: 1, description: '⚠ 1 finding · 1 claim · Changed code that the retry policy reads.' });
+  });
+
+  it('counts no claim the code cannot settle among a part\u2019s findings', () => {
+    const counts = (shown: ReturnType<typeof judgedResult>) => buildTree(shown).flatMap((section) => section.parts.map((each) => [(each as TreePart).claims, (each as TreePart).findings]));
+    // The two quiet claims add to their part's claims, never to its findings.
+    const judged = counts(judgedResult());
+    const settled = counts(settledResult());
+    expect(settled.map(([, findings]) => findings)).toEqual(judged.map(([, findings]) => findings));
+    expect(settled.reduce((sum, [claims]) => sum + (claims ?? 0), 0)).toBe(judged.reduce((sum, [claims]) => sum + (claims ?? 0), 0) + 2);
   });
 
   it('badges no part whose judged claims are all verified', () => {
@@ -249,6 +258,24 @@ describe('claim counts in the tree', () => {
     expect(mustReview!.parts[0]).not.toHaveProperty('findings');
     expect(mustReview!.parts[0]!.description).toBe('1 claim · New code the send path now runs on every delivery.');
     expect(mustReview!.parts[0]!.tooltip).toContain('1 claim, all verified; the overview lists them');
+  });
+
+  it('says a part whose only judged claims the code cannot settle holds no finding, not that all are verified', () => {
+    const shown = settledResult();
+    const authors = {
+      ...shown,
+      claims: {
+        ...shown.claims!,
+        claims: shown.claims!.claims.map((claim, index) =>
+          index === 3
+            ? { ...claim, verdict: { kind: 'unverifiable' as const, source: 'the change itself' as const, reason: 'Nothing in the change can show it.', evidence: [], looked: [], settles: { kind: 'author' as const, note: "the measured numbers come from the author's own run" } } }
+            : claim,
+        ),
+      },
+    };
+    const [, worthReviewing] = buildTree(authors);
+    expect(worthReviewing!.parts[0]).not.toHaveProperty('findings');
+    expect(worthReviewing!.parts[0]!.tooltip).toContain('1 claim, none is a finding, 1 the code cannot settle; the overview lists them');
   });
 
   it('badges a claim the verify ask judged when the pass did not judge, and says where its verdict came from', () => {
@@ -268,7 +295,7 @@ describe('claim counts in the tree', () => {
       description: '⚠ 1 finding · 3 claims · New code the send path now runs on every delivery.',
     });
     expect(mustReview!.parts[0]!.tooltip).toContain(
-      '3 claims, 1 checked by the Verify this claim ask, 1 refuted or unverifiable, each a thread on the diff, the verdicts pass did not run; the overview lists them',
+      "3 claims, 1 checked by the Verify this claim ask, 1 refuted, or unverifiable the code or a library's source could settle, each a thread on the diff, the verdicts pass did not run; the overview lists them",
     );
 
     const fellBack = {
@@ -277,7 +304,7 @@ describe('claim counts in the tree', () => {
     };
     const [fell] = buildTree(fellBack);
     expect(fell!.parts[0]!.tooltip).toContain(
-      '3 claims, 1 checked by the Verify this claim ask, 1 refuted or unverifiable, each a thread on the diff, the judging pass fell back; the overview lists them',
+      "3 claims, 1 checked by the Verify this claim ask, 1 refuted, or unverifiable the code or a library's source could settle, each a thread on the diff, the judging pass fell back; the overview lists them",
     );
   });
 });

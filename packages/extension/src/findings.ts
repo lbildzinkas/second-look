@@ -104,7 +104,8 @@ export function findingBody(claim: Claim, index = 0): string {
 }
 
 /**
- * The findings of a review — its refuted and unverifiable claims — shown
+ * The findings of a review — its refuted claims, and its unverifiable
+ * ones the code or a library's source could settle — shown
  * as the companion's own comment threads on the diff, beside the GitHub
  * extension's: each on the head-side line the claim is made on, else the
  * first line its verdict cites, else on its part as a whole. The threads

@@ -3,7 +3,7 @@ import type { ReviewResult } from '@second-look/engine';
 import { changeUri } from '../src/change-copies.js';
 import { FINDINGS_CONTROLLER_ID, FINDING_THREAD_CONTEXT } from '../src/commands.js';
 import { FindingThreads, escapeMarkdown, findingBody } from '../src/findings.js';
-import { claimsResult, fetchedResult, judgedResult, offeredResult, pipelineResult } from './results.js';
+import { claimsResult, fetchedResult, judgedResult, offeredResult, pipelineResult, settledResult } from './results.js';
 import { StubMarkdownString, stub, type StubCommentController } from './vscode-stub.js';
 
 /** The findings' own controller, beside any other the companion made. */
@@ -38,6 +38,11 @@ describe('FindingThreads', () => {
       expect(thread.comments[0]!.author.name).toBe('Second Look');
     }
     expect((threads[0]!.comments[0]!.body as StubMarkdownString).value).toContain('**Refuted** · evidence source: the change itself');
+  });
+
+  it('shows no thread for an unverifiable claim only the author\u2019s run or something outside the repository can settle', () => {
+    new FindingThreads().show(settledResult());
+    expect(controller().threads.map((thread) => thread.label)).toEqual(['Refuted claim', 'Unverifiable claim', 'Unverifiable claim']);
   });
 
   it('puts a refuted description claim on the first line its verdict cites', () => {

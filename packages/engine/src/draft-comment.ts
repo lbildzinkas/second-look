@@ -141,7 +141,7 @@ function claimLocation(claim: Claim): string {
   return location.path !== undefined && location.line !== undefined ? `${location.path}:${location.line}` : 'the pipeline report';
 }
 
-/** A claim finding: refuted or unverifiable, with its evidence and the library it needs or was judged in. */
+/** A claim finding: refuted, or unverifiable the code or a library's source could settle, with its evidence and the library it needs or was judged in. */
 function claimFinding(claim: Claim): DraftFinding | undefined {
   const { verdict } = claim;
   if (!isFinding(claim) || verdict.kind === 'not checked') return undefined;
@@ -170,7 +170,8 @@ function claimFinding(claim: Claim): DraftFinding | undefined {
 
 /**
  * The finding a reference names in a review result, read for the draft
- * prompt: a refuted or unverifiable claim, a part neither the description
+ * prompt: a refuted claim or an unverifiable one the code or a library's
+ * source could settle, a part neither the description
  * nor a linked issue explains, a change they describe that the diff does
  * not contain, or a not met or partly met acceptance criterion. Undefined
  * when the reference names nothing there, or something that is no
