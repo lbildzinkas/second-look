@@ -64,7 +64,7 @@ A **claim** is a statement about how the code or a library behaves, quoted as wr
 
 - **verified** — the change itself, or a source the engine re-read, proves it;
 - **refuted** — the evidence contradicts it;
-- **unverifiable** — nothing readable settles it;
+- **unverifiable** — the review could not settle it, and the verdict says what could settle it;
 - **not checked** — not judged (yet).
 
 Every verdict names its **evidence source**, from the [glossary](../CONTEXT.md)'s list — and the model's memory alone never yields **verified**. The engine re-reads every line a verdict cites before showing it: a citation that does not match drops the verdict to unverifiable and says why.

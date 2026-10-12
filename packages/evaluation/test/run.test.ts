@@ -345,7 +345,8 @@ const CHANGED_LINE = { file: 'src/tomli/_re.py', line: 83, quote: 'micros = int(
 
 /** An agent that gives misstated-python's two description claims the given verdicts, citing the changed line. */
 function verdictsAgent(first: string, second: string): AgentAdapter {
-  const verdict = (id: string, kind: string) => ({ id, verdict: kind, source: 'the change itself', reason: 'r', evidence: [CHANGED_LINE], library: null });
+  const looked = (id: string) => (id === 'c1' ? [{ file: 'src/tomli/_re.py', line: 80, endLine: 85 }] : []);
+  const verdict = (id: string, kind: string) => ({ id, verdict: kind, source: 'the change itself', reason: 'r', evidence: [CHANGED_LINE], looked: looked(id), settles: null, library: null });
   return answeringAgent((request) =>
     request.instructions === VERDICTS_INSTRUCTIONS ? { verdicts: [verdict('c1', first), verdict('c2', second)] } : 'not an answer',
   );
@@ -358,7 +359,9 @@ describe('runEvaluation with the verdicts prompt', () => {
     expect(rowsOf(results.rows, 'fake', 'verdict-accuracy')).toEqual({ 'misstated-python': 1, [ALL_CASES]: 1 });
     expect(rowsOf(results.rows, 'fake', 'false-verified')).toEqual({ 'misstated-python': 0, [ALL_CASES]: 0 });
     const agentRows = results.rows.filter((row) => row.agent === 'fake');
-    expect(new Set(agentRows.map((row) => row.name))).toEqual(new Set(['verdict-accuracy', 'false-verified']));
+    // The case labels no claim with what settles it, so it gives no settles-accuracy; one of its two verdicts says what the agent read.
+    expect(rowsOf(results.rows, 'fake', 'verdict-looked')).toEqual({ 'misstated-python': 0.5, [ALL_CASES]: 0.5 });
+    expect(new Set(agentRows.map((row) => row.name))).toEqual(new Set(['verdict-accuracy', 'false-verified', 'verdict-looked']));
     expect(agentRows.find((row) => row.case === 'misstated-python')).toMatchObject({ model: 'fake/model', promptVersions: { verdicts: VERDICTS_PROMPT_VERSION } });
     const trace = readFileSync(join(folder, TRACE_FILE), 'utf8').trim().split('\n').map((line) => JSON.parse(line) as AgentCall);
     expect(trace).toHaveLength(1);
@@ -585,13 +588,13 @@ describe('runEvaluation with the verify ask', () => {
       if (request.instructions !== VERDICTS_INSTRUCTIONS) return 'not an answer';
       const ids = [...request.prompt.matchAll(/^\[(c\d+)\] made in/gm)].map((match) => match[1]!);
       if (!request.prompt.includes('text the reviewer selected')) {
-        return { verdicts: ids.map((id) => ({ id, verdict: 'unverifiable', source: "the model's memory", reason: 'r', evidence: [], library: null })) };
+        return { verdicts: ids.map((id) => ({ id, verdict: 'unverifiable', source: "the model's memory", reason: 'r', evidence: [], looked: [], settles: { kind: 'author', note: 'Only the author can say.' }, library: null })) };
       }
       // The part's diff shows the docstring too, so the claim is read from its own block.
       const claim = /source="claim c1">\n(.*)\n/.exec(request.prompt)![1]!;
-      if (!claim.startsWith(REDIRECT)) return { verdicts: [{ id: 'c1', verdict: 'verified', source: 'the change itself', reason: 'r', evidence: [returned], library: null }] };
-      if (redirect === 'verified') return { verdicts: [{ id: 'c1', verdict: 'verified', source: 'the change itself', reason: 'r', evidence: [returned], library: null }] };
-      return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: "the model's memory", reason: 'It turns on httpx.', evidence: [], library: 'httpx' }] };
+      if (!claim.startsWith(REDIRECT)) return { verdicts: [{ id: 'c1', verdict: 'verified', source: 'the change itself', reason: 'r', evidence: [returned], looked: [], settles: null, library: null }] };
+      if (redirect === 'verified') return { verdicts: [{ id: 'c1', verdict: 'verified', source: 'the change itself', reason: 'r', evidence: [returned], looked: [], settles: null, library: null }] };
+      return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: "the model's memory", reason: 'It turns on httpx.', evidence: [], looked: [], settles: { kind: 'library', note: 'Its source would settle it.' }, library: 'httpx' }] };
     });
   }
 
@@ -719,8 +722,8 @@ describe('runEvaluation with the library verdicts prompt', () => {
       if (request.instructions === VERDICTS_INSTRUCTIONS) {
         return {
           verdicts: [
-            { id: 'c1', verdict: 'verified', source: 'the change itself', reason: 'r', evidence: [{ file: 'app/doc_links.py', line: 14, quote: 'return response.text' }], library: null },
-            { id: 'c2', verdict: 'unverifiable', source: 'the change itself', reason: 'It turns on httpx.', evidence: [], library: 'httpx' },
+            { id: 'c1', verdict: 'verified', source: 'the change itself', reason: 'r', evidence: [{ file: 'app/doc_links.py', line: 14, quote: 'return response.text' }], looked: [], settles: null, library: null },
+            { id: 'c2', verdict: 'unverifiable', source: 'the change itself', reason: 'It turns on httpx.', evidence: [], looked: [], settles: { kind: 'library', note: 'Its source would settle it.' }, library: 'httpx' },
           ],
         };
       }

@@ -96,7 +96,7 @@ describe('the verify ask the side bar runs', () => {
         index: 1,
         claim: {
           ...shown.claims!.claims[1]!,
-          verdict: { kind: 'verified', source: 'the change itself', reason: 'send retries a failed delivery.', evidence: [{ path: 'src/retry.py', line: 5, quote: 'return retry(send)' }] },
+          verdict: { kind: 'verified', source: 'the change itself', reason: 'send retries a failed delivery.', evidence: [{ path: 'src/retry.py', line: 5, quote: 'return retry(send)' }], looked: [] },
         },
       },
     };

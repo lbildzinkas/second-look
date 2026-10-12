@@ -256,7 +256,7 @@ describe('claim counts in the tree', () => {
     const asked = {
       ...shown.claims!.claims[0]!,
       asked: true as const,
-      verdict: { kind: 'refuted' as const, source: 'the change itself' as const, reason: 'The loop runs five times.', evidence: [] },
+      verdict: { kind: 'refuted' as const, source: 'the change itself' as const, reason: 'The loop runs five times.', evidence: [], looked: [] },
     };
     const unjudged = { ...shown, claims: { ...shown.claims!, claims: [asked, ...shown.claims!.claims.slice(1)] } };
 

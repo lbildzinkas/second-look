@@ -11,6 +11,7 @@ import {
   PULL_REQUEST_GROUPS,
   REVIEW_RESULT_VERSION,
   REVIEW_STAGE_IDS,
+  SETTLES_KINDS,
   type AskAnswer,
   type ChangeKind,
   type DiffLineKind,
@@ -397,6 +398,16 @@ function isCitation(value: unknown): boolean {
   );
 }
 
+/** A range of lines of the head copy the agent read for a claim: its file, and its first and last line. */
+function isLookedRange(value: unknown): boolean {
+  return isRecord(value) && isNonEmptyString(value['path']) && isLine(value['line']) && isLine(value['endLine']) && value['endLine'] >= value['line'];
+}
+
+/** What could settle an unverifiable claim: one of the fixed kinds, with its note. */
+function isSettles(value: unknown): boolean {
+  return isRecord(value) && isOneOf(value['kind'], SETTLES_KINDS) && isString(value['note']);
+}
+
 /** A repository and tag the agent named for a library. */
 function isNamedRepository(value: unknown): boolean {
   return isRecord(value) && isNonEmptyString(value['url']) && isNonEmptyString(value['tag']);
@@ -436,8 +447,9 @@ function isFetchedLibrary(value: unknown): boolean {
 /**
  * A claim's verdict: not checked, or checked with its evidence source,
  * reason and citations, the library fetch it offers and the library
- * source it was judged against. The model's memory never yields
- * verified, and cites no line.
+ * source it was judged against, what the agent looked at, and — on an
+ * unverifiable verdict alone — what could settle it. The model's memory
+ * never yields verified, and cites no line.
  */
 function isClaimVerdict(value: unknown): boolean {
   if (!isRecord(value)) return false;
@@ -454,6 +466,10 @@ function isClaimVerdict(value: unknown): boolean {
     (value['libraryFetch'] !== undefined && !isLibraryFetchOffer(value['libraryFetch'])) ||
     !isOptionalString(value['noLibraryFetch']) ||
     (value['library'] !== undefined && !isFetchedLibrary(value['library'])) ||
+    !Array.isArray(value['looked']) ||
+    !value['looked'].every(isLookedRange) ||
+    !isOptionalString(value['lookedRecheck']) ||
+    (value['kind'] === 'unverifiable' ? !isSettles(value['settles']) : value['settles'] !== undefined) ||
     !isOptionalString(value['recheck'])
   ) {
     return false;

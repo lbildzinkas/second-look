@@ -1,0 +1,78 @@
+# The sources list: each piece of study material the coach teaches from.
+# `coach setup` downloads these files into the git-ignored data/study-material/
+# folder; nothing here is committed (see docs/adr/0002 and THIRD_PARTY_NOTICES.md).
+# The schema is the `Source` model in src/interview_coach/study_material.py.
+#
+# Fields:
+#   name          folder name under data/study-material/
+#   repository    where the material lives
+#   commit        the pinned commit SHA, so every download is the same text
+#   licence       SPDX identifier, https://spdx.org/licenses/
+#   local_only    true if the licence allows only personal, local use
+#   download_url  template; {commit} and {path} are filled in for each file
+#   files         paths inside the repository; text only, never images
+
+sources:
+  # System Design Primer, CC BY 4.0: https://creativecommons.org/licenses/by/4.0/
+  # Text only: images/ is skipped because many figures credit third-party sources.
+  - name: system-design-primer-text
+    repository: https://github.com/donnemartin/system-design-primer
+    commit: ae9bbd7b02d90b9866215de185217d33f39ab733
+    licence: CC-BY-4.0
+    local_only: false
+    download_url: https://raw.githubusercontent.com/donnemartin/system-design-primer/{commit}/{path}
+    files:
+      - README.md
+      - LICENSE.txt
+
+  # The worked system design exercises (the template folder holds only a diagram).
+  - name: system-design-primer-solutions
+    repository: https://github.com/donnemartin/system-design-primer
+    commit: ae9bbd7b02d90b9866215de185217d33f39ab733
+    licence: CC-BY-4.0
+    local_only: false
+    download_url: https://raw.githubusercontent.com/donnemartin/system-design-primer/{commit}/{path}
+    files:
+      - solutions/system_design/mint/README.md
+      - solutions/system_design/pastebin/README.md
+      - solutions/system_design/query_cache/README.md
+      - solutions/system_design/sales_rank/README.md
+      - solutions/system_design/scaling_aws/README.md
+      - solutions/system_design/social_graph/README.md
+      - solutions/system_design/twitter/README.md
+      - solutions/system_design/web_crawler/README.md
+      - LICENSE.txt
+
+  # Anki decks (https://apps.ankiweb.net/): 42 + 8 + 6 notes.
+  - name: system-design-primer-anki
+    repository: https://github.com/donnemartin/system-design-primer
+    commit: ae9bbd7b02d90b9866215de185217d33f39ab733
+    licence: CC-BY-4.0
+    local_only: false
+    download_url: https://raw.githubusercontent.com/donnemartin/system-design-primer/{commit}/{path}
+    files:
+      - resources/flash_cards/System Design.apkg
+      - resources/flash_cards/System Design Exercises.apkg
+      - resources/flash_cards/OO Design.apkg
+      - LICENSE.txt
+
+  # Tech Interview Handbook, MIT: https://opensource.org/license/mit
+  # Fetched from the repository, not the website, whose footer claims copyright.
+  # The six behavioural pages, system design, engineering levels and both rubrics.
+  - name: tech-interview-handbook
+    repository: https://github.com/yangshun/tech-interview-handbook
+    commit: e1d28e8886c0b6ff3e50da991ce0e895134ddc59
+    licence: MIT
+    local_only: false
+    download_url: https://raw.githubusercontent.com/yangshun/tech-interview-handbook/{commit}/{path}
+    files:
+      - apps/website/contents/behavioral-interview.md
+      - apps/website/contents/behavioral-interview-rubrics.md
+      - apps/website/contents/behavioral-interview-questions.md
+      - apps/website/contents/behavioral-interview-senior-candidates.md
+      - apps/website/contents/self-introduction.md
+      - apps/website/contents/final-questions.md
+      - apps/website/contents/system-design.md
+      - apps/website/contents/engineering-levels.md
+      - apps/website/contents/coding-interview-rubrics.md
+      - LICENSE

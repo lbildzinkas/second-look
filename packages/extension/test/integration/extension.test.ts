@@ -1161,7 +1161,7 @@ describe('the overview', () => {
     const part = result.parts[0]!;
     const claim = {
       ...result.claims!.claims[2]!,
-      verdict: { kind: 'refuted', source: 'the change itself', reason: 'A 404 is retried like any other status.', evidence: [{ path: 'src/retry.py', line: 5, quote: 'if response.status >= 400:' }] },
+      verdict: { kind: 'refuted', source: 'the change itself', reason: 'A 404 is retried like any other status.', evidence: [{ path: 'src/retry.py', line: 5, quote: 'if response.status >= 400:' }], looked: [{ path: 'src/retry.py', line: 1, endLine: 8 }] },
     };
     return {
       ask: 'verify',

@@ -47,7 +47,7 @@ describe('FindingThreads', () => {
       ...shown,
       claims: {
         ...shown.claims!,
-        claims: [{ ...description!, verdict: { kind: 'refuted', source: 'the change itself', reason: 'r', evidence: [{ path: 'src/settings.ts', line: 12, quote: 'RETRIES = 5' }] } }],
+        claims: [{ ...description!, verdict: { kind: 'refuted', source: 'the change itself', reason: 'r', evidence: [{ path: 'src/settings.ts', line: 12, quote: 'RETRIES = 5' }], looked: [] } }],
       },
     };
     new FindingThreads().show(refuted);
@@ -85,7 +85,7 @@ describe('the pipeline and CI on the findings', () => {
     const [pipeline] = shown.claims!.claims;
     const refuted: ReviewResult = {
       ...shown,
-      claims: { ...shown.claims!, claims: [{ ...pipeline!, verdict: { kind: 'refuted', source: 'a CI log', reason: 'r', evidence: [{ path: 'check / test', line: 2, quote: 'FAILED', ciLog: true }] } }] },
+      claims: { ...shown.claims!, claims: [{ ...pipeline!, verdict: { kind: 'refuted', source: 'a CI log', reason: 'r', evidence: [{ path: 'check / test', line: 2, quote: 'FAILED', ciLog: true }], looked: [] } }] },
     };
     new FindingThreads().show(refuted);
     expect(controller().threads.map((thread) => [thread.uri.toString(), thread.range?.start.line])).toEqual([[headUri(refuted, 'src/retry.py'), 5]]);

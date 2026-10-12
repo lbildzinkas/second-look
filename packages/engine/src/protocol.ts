@@ -11,7 +11,7 @@ import type { AgentStamp } from './agent.js';
 import type { AskKind } from './asks.js';
 
 /** Version of the review result schema. */
-export const REVIEW_RESULT_VERSION = 23 as const;
+export const REVIEW_RESULT_VERSION = 24 as const;
 
 /**
  * Version 2 added the head commit's SHA and each part's noise assessment;
@@ -61,7 +61,8 @@ export const REVIEW_RESULT_VERSION = 23 as const;
  * it has new commits since; version 23 added the results a review carries
  * over from the saved review of an earlier commit: the commit and who
  * produced it, each part and claim carried over, and a stage carried over
- * whole.
+ * whole; version 24 added what each checked verdict's agent looked at in
+ * the head copy, and what could settle each unverifiable claim.
  */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
@@ -977,6 +978,16 @@ export type ClaimVerdict =
       /** Why no library fetch is offered for the library the claim needs, said plainly. */
       noLibraryFetch?: string;
       /**
+       * The lines of the head copy the agent read for this claim, each
+       * re-checked by the engine; an entry naming a file or a line the
+       * copy does not have is dropped, and said so in `lookedRecheck`.
+       */
+      looked: LookedRange[];
+      /** Why the engine dropped entries of `looked`, when it did. */
+      lookedRecheck?: string;
+      /** What could settle the claim; set on every unverifiable verdict, and only on one. */
+      settles?: Settles;
+      /**
        * The library source the verdict was judged against, once the
        * reviewer pressed its library fetch; its citations are paths in
        * that source, not in the head copy.
@@ -985,6 +996,34 @@ export type ClaimVerdict =
       /** Why the engine dropped the agent's verdict to unverifiable, when it did. */
       recheck?: string;
     };
+
+/** A range of lines of one file of the head copy that the agent read for a claim. */
+export interface LookedRange {
+  /** The file, by its path in the head copy. */
+  path: string;
+  /** The 1-based first line read. */
+  line: number;
+  /** The 1-based last line read, at or after `line`. */
+  endLine: number;
+}
+
+/**
+ * What could settle an unverifiable claim: the code itself, which makes
+ * the verdict a finding to check; a library's source; a CI log; a
+ * sandboxed run; something outside the repository, such as a service or
+ * a dataset; or only the pull request's author.
+ */
+export type SettlesKind = 'code' | 'library' | 'ci-log' | 'sandboxed-run' | 'outside-repository' | 'author';
+
+/** What can settle an unverifiable claim, in the order a reviewer can act on it. */
+export const SETTLES_KINDS: readonly SettlesKind[] = ['code', 'library', 'ci-log', 'sandboxed-run', 'outside-repository', 'author'];
+
+/** What could settle an unverifiable claim, with a one-line note saying how. */
+export interface Settles {
+  kind: SettlesKind;
+  /** One plain line, such as which log or which measurement would settle it. */
+  note: string;
+}
 
 /**
  * A library fetch the companion offers with a verdict (the glossary's

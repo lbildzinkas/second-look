@@ -1,0 +1,125 @@
+{
+  "noise": {
+    "src/interview_coach/search_eval.py": null,
+    "src/interview_coach/metrics.py": null,
+    "tests/test_metrics.py": null,
+    "tests/test_search_eval.py": null,
+    "src/interview_coach/cli.py": null,
+    "README.md": null,
+    "pyproject.toml": null,
+    "uv.lock": null
+  },
+  "importantParts": [],
+  "claims": [
+    {
+      "text": "Drove `uv run coach eval qasper --retriever random` live against the real QASPER dev split (888 scored questions) in two separate processes with byte-identical seeded output",
+      "origin": {
+        "in": "description",
+        "line": 29
+      },
+      "verdict": {
+        "kind": "unverifiable",
+        "settles": "author"
+      }
+    },
+    {
+      "text": "hit the report-row tolerance (recall@5 0.1273 vs ~0.13, recall@10 0.2596 vs ~0.28, within 'about 0.02')",
+      "origin": {
+        "in": "description",
+        "line": 29
+      },
+      "verdict": {
+        "kind": "unverifiable",
+        "settles": "author"
+      }
+    },
+    {
+      "text": "A str seed is hashed with SHA-512, the same on every run",
+      "origin": {
+        "file": "src/interview_coach/search_eval.py",
+        "line": 53
+      },
+      "verdict": {
+        "kind": "verified",
+        "evidence": {
+          "file": "src/interview_coach/search_eval.py",
+          "line": 56,
+          "source": "the change itself"
+        }
+      }
+    },
+    {
+      "text": "tests/test_metrics.py checks these functions against ranx",
+      "origin": {
+        "file": "src/interview_coach/metrics.py",
+        "line": 6
+      },
+      "verdict": {
+        "kind": "refuted",
+        "evidence": {
+          "file": "tests/test_metrics.py",
+          "line": 80,
+          "source": "the change itself"
+        },
+        "otherEvidence": [
+          {
+            "file": "tests/test_metrics.py",
+            "line": 81
+          },
+          {
+            "file": "tests/test_metrics.py",
+            "line": 82
+          },
+          {
+            "file": "tests/test_metrics.py",
+            "line": 83
+          },
+          {
+            "file": "tests/test_metrics.py",
+            "line": 84
+          },
+          {
+            "file": "tests/test_metrics.py",
+            "line": 85
+          },
+          {
+            "file": "tests/test_metrics.py",
+            "line": 86
+          }
+        ]
+      }
+    },
+    {
+      "text": "ranx computes the same metrics independently",
+      "origin": {
+        "file": "tests/test_metrics.py",
+        "line": 70
+      },
+      "library": {
+        "name": "ranx",
+        "pinnedVersion": "0.3.21",
+        "pinnedBy": "uv.lock"
+      },
+      "verdict": {
+        "kind": "unverifiable",
+        "settles": "library"
+      }
+    },
+    {
+      "text": "ranx ranks by score, so the first id gets the highest score.",
+      "origin": {
+        "file": "tests/test_metrics.py",
+        "line": 77
+      },
+      "library": {
+        "name": "ranx",
+        "pinnedVersion": "0.3.21",
+        "pinnedBy": "uv.lock"
+      },
+      "verdict": {
+        "kind": "unverifiable",
+        "settles": "library"
+      }
+    }
+  ]
+}

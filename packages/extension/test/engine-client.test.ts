@@ -121,7 +121,7 @@ describe('EngineClient against a fake engine', () => {
     await client.initialize();
     const result = await client.review(PR_URL, TOKEN);
 
-    expect(result.version).toBe(23);
+    expect(result.version).toBe(24);
     expect(result.parts).toHaveLength(7);
 
     const requests = loggedRequests('round-trip.log') as {
@@ -269,7 +269,7 @@ describe('EngineClient against a fake engine', () => {
       source: 'reviewer',
       location: { kind: 'file', path: 'app/retry.py', line: 2, endLine: 2 },
       part: 0,
-      verdict: { kind: 'refuted', source: 'the change itself', reason: 'It retries five times.', evidence: [{ path: 'app/retry.py', line: 4, quote: 'retry(send, 5)' }] },
+      verdict: { kind: 'refuted', source: 'the change itself', reason: 'It retries five times.', evidence: [{ path: 'app/retry.py', line: 4, quote: 'retry(send, 5)' }], looked: [] },
     };
     const answer = {
       ask: 'verify',
@@ -660,7 +660,7 @@ describe('EngineClient against a fake engine', () => {
       await timedOut;
 
       await client.initialize();
-      expect(await client.review(PR_URL, TOKEN)).toMatchObject({ version: 23 });
+      expect(await client.review(PR_URL, TOKEN)).toMatchObject({ version: 24 });
       expect(spawns).toBe(2);
       client.dispose();
     } finally {
@@ -732,7 +732,7 @@ describe('EngineClient against a fake engine', () => {
     const stages: ReviewStageUpdate[] = [];
 
     await client.initialize();
-    expect(await client.review(PR_URL, TOKEN, undefined, (stage) => stages.push(stage))).toMatchObject({ version: 23 });
+    expect(await client.review(PR_URL, TOKEN, undefined, (stage) => stages.push(stage))).toMatchObject({ version: 24 });
     expect(stages).toEqual([]);
     client.dispose();
   });

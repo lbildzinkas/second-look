@@ -711,7 +711,7 @@ describe("the side bar's page script", () => {
           index === 0 && claim.verdict.kind !== 'not checked'
             ? { ...claim, verdict: { ...claim.verdict, kind: 'refuted' as const } }
             : index === 1
-              ? { ...claim, verdict: { kind: 'unverifiable' as const, source: "the model's memory" as const, reason: 'Nothing in the change shows it.', evidence: [] } }
+              ? { ...claim, verdict: { kind: 'unverifiable' as const, source: "the model's memory" as const, reason: 'Nothing in the change shows it.', evidence: [], looked: [], settles: { kind: 'code' as const, note: 'the agent judged it verified, so the code should settle it: check it' } } }
               : claim,
         ),
       },

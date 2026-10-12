@@ -41,7 +41,7 @@ function reviewed(): ReviewResult {
     claims: {
       ...shown.claims!,
       claims: [
-        { ...description!, verdict: { kind: 'refuted', source: 'the change itself', reason: 'The loop runs five times.', evidence: [{ path: 'src/retry.py', line: 6, quote: 'for attempt in range(5):' }] } },
+        { ...description!, verdict: { kind: 'refuted', source: 'the change itself', reason: 'The loop runs five times.', evidence: [{ path: 'src/retry.py', line: 6, quote: 'for attempt in range(5):' }], looked: [] } },
         ...rest,
       ],
     },

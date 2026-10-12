@@ -29,6 +29,7 @@ function claims(): Claim[] {
         source: 'the change itself',
         reason: 'MAX_ATTEMPTS is 5, so the loop gives up after five attempts.',
         evidence: [{ path: 'app/retry.py', line: 1, quote: 'MAX_ATTEMPTS = 5' }],
+        looked: [],
       },
     },
     {
@@ -36,14 +37,14 @@ function claims(): Claim[] {
       source: 'description',
       location: { kind: 'description', line: 2 },
       part: 0,
-      verdict: { kind: 'unverifiable', source: 'the change itself', reason: 'The status check is in the library.', evidence: [], needsLibrary: 'requests' },
+      verdict: { kind: 'unverifiable', source: 'the change itself', reason: 'The status check is in the library.', evidence: [], needsLibrary: 'requests', looked: [], settles: { kind: 'library', note: 'the source of requests could settle it' } },
     },
     {
       quote: 'Retries failed sends.',
       source: 'description',
       location: { kind: 'description', line: 1 },
       part: 0,
-      verdict: { kind: 'verified', source: 'the change itself', reason: 'send_with_retry retries.', evidence: [{ path: 'app/retry.py', line: 4, quote: 'return retry(send, MAX_ATTEMPTS)' }] },
+      verdict: { kind: 'verified', source: 'the change itself', reason: 'send_with_retry retries.', evidence: [{ path: 'app/retry.py', line: 4, quote: 'return retry(send, MAX_ATTEMPTS)' }], looked: [] },
     },
     { quote: 'It logs each try.', source: 'agent', location: { kind: 'story', sentence: 0 }, part: 0, verdict: { kind: 'not checked' } },
   ];

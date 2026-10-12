@@ -13,6 +13,7 @@ import type {
   LinkedIssue,
   NoiseAssessment,
   Part,
+  SettlesKind,
   StoryChecks,
   UnexplainedChanges,
 } from '@second-look/engine';
@@ -55,10 +56,12 @@ export const CLAIM_SCORES: readonly string[] = ['claims-recall', 'claims-precisi
 
 /**
  * The scores of the verdicts the agent gives the hand-labelled claims:
- * the share it gave the hand verdict, and the share of the claims that do
- * not deserve verified that it verified anyway.
+ * the share it gave the hand verdict, the share of the claims that do
+ * not deserve verified that it verified anyway, the share of those
+ * labelled with what could settle them that it left unverifiable saying
+ * so, and the share whose verdict says what it read in the head copy.
  */
-export const VERDICT_SCORES: readonly string[] = ['verdict-accuracy', 'false-verified'];
+export const VERDICT_SCORES: readonly string[] = ['verdict-accuracy', 'false-verified', 'settles-accuracy', 'verdict-looked'];
 
 /**
  * The scores of the unexplained changes the agent finds, against the hand
@@ -554,30 +557,40 @@ export interface JudgingTally {
   right: number;
   notVerified: number;
   falseVerified: number;
+  /** Claims labelled with what could settle them, and those left unverifiable saying that. */
+  settlesLabelled: number;
+  settlesRight: number;
+  /** Claims whose verdict keeps at least one range the agent read in the head copy. */
+  looked: number;
 }
 
 function noJudging(): JudgingTally {
-  return { labelled: 0, right: 0, notVerified: 0, falseVerified: 0 };
+  return { labelled: 0, right: 0, notVerified: 0, falseVerified: 0, settlesLabelled: 0, settlesRight: 0, looked: 0 };
 }
 
 /**
  * The verdict the verdicts pass deserves for a hand-labelled claim, from
  * the change alone: the case's verdict, except that a claim the case
  * checks behind a library fetch is unverifiable until the fetch, and its
- * verdict must name the library (ADR 0003). Undefined for a claim the
- * case gives no verdict.
+ * verdict must name the library (ADR 0003), and say the library could
+ * settle it; so must the verdict of an unverifiable claim about a
+ * library. Undefined for a claim the case gives no verdict.
  */
-export function verdictBeforeFetch(wanted: ExpectedClaim): { kind: Verdict; library?: string } | undefined {
+export function verdictBeforeFetch(wanted: ExpectedClaim): { kind: Verdict; library?: string; settles?: SettlesKind } | undefined {
   if (wanted.verdict === undefined) return undefined;
-  if (wanted.libraryFetch && wanted.library) return { kind: 'unverifiable', library: wanted.library.name };
-  return { kind: wanted.verdict.kind };
+  if (wanted.libraryFetch && wanted.library) return { kind: 'unverifiable', library: wanted.library.name, settles: 'library' };
+  const { settles } = wanted.verdict;
+  if (wanted.verdict.kind === 'unverifiable' && wanted.library) return { kind: 'unverifiable', library: wanted.library.name, settles: settles ?? 'library' };
+  return { kind: wanted.verdict.kind, ...(wanted.verdict.kind === 'unverifiable' && settles ? { settles } : {}) };
 }
 
 /**
  * Tallies the verdicts the agent gave the hand-labelled claims, each
  * against the verdict it deserves from the change alone: right when the
  * kind matches and, for a claim that needs library source, the verdict
- * names that library.
+ * names that library; for a claim labelled with what could settle it,
+ * whether the verdict is unverifiable saying that; and whether the
+ * verdict says what the agent read in the head copy.
  */
 export function tallyJudging(judged: readonly { wanted: ExpectedClaim; got: ClaimVerdict }[]): JudgingTally {
   const tally = noJudging();
@@ -588,6 +601,11 @@ export function tallyJudging(judged: readonly { wanted: ExpectedClaim; got: Clai
     const library = got.kind === 'not checked' ? undefined : got.needsLibrary;
     const namesLibrary = deserved.library === undefined || library?.toLowerCase() === deserved.library.toLowerCase();
     if (got.kind === deserved.kind && namesLibrary) tally.right++;
+    if (deserved.settles !== undefined) {
+      tally.settlesLabelled++;
+      if (got.kind === 'unverifiable' && got.settles?.kind === deserved.settles) tally.settlesRight++;
+    }
+    if (got.kind !== 'not checked' && got.looked.length > 0) tally.looked++;
     if (deserved.kind !== 'verified') {
       tally.notVerified++;
       if (got.kind === 'verified') tally.falseVerified++;
@@ -720,8 +738,11 @@ function matchesPin(wanted: ExpectedClaim, fetch: LibraryFetchOffer | undefined)
  */
 function evidenceMatches(wanted: ExpectedClaim, got: PressedClaim): boolean {
   const evidence = got.verdict?.evidence;
-  if (!evidence || !wanted.verdict) return false;
+  if (!wanted.verdict || !got.verdict) return false;
   const expected = wanted.verdict.evidence;
+  // A claim nothing the review reads settles is right to cite nothing.
+  if (!expected) return !evidence;
+  if (!evidence) return false;
   const places = [expected, ...(wanted.verdict.otherEvidence ?? [])];
   if (
     !places.some((place) => evidence.file === place.file && evidence.line === place.line) ||
@@ -1022,6 +1043,8 @@ export function scoresOf(tally: Tally): Score[] {
   const { judging } = tally;
   if (judging.labelled > 0) scores.push({ name: 'verdict-accuracy', value: judging.right / judging.labelled, better: 'higher' });
   if (judging.notVerified > 0) scores.push({ name: 'false-verified', value: judging.falseVerified / judging.notVerified, better: 'lower' });
+  if (judging.settlesLabelled > 0) scores.push({ name: 'settles-accuracy', value: judging.settlesRight / judging.settlesLabelled, better: 'higher' });
+  if (judging.labelled > 0) scores.push({ name: 'verdict-looked', value: judging.looked / judging.labelled, better: 'higher' });
   const { unexplained } = tally;
   const ratio = (name: string, part: number, whole: number): Score[] => (whole > 0 ? [{ name, value: part / whole, better: 'higher' }] : []);
   scores.push(

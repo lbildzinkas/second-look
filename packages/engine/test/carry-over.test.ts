@@ -135,7 +135,7 @@ describe('carryParts', () => {
       source: 'comment',
       location: { kind: 'file', path: 'app/f.py', line, endLine: line },
       part,
-      verdict: { kind: 'verified', source: 'the change itself', reason: 'It is.', evidence: [] },
+      verdict: { kind: 'verified', source: 'the change itself', reason: 'It is.', evidence: [], looked: [{ path: 'app/f.py', line: 1, endLine: 3 }] },
     });
     const result = { parts: earlier, claims: { claims: [claim(0, 2), claim(1, 21)] } } as unknown as ReviewResult;
 
@@ -190,6 +190,8 @@ describe('reviewChange carrying results over from the saved review of an earlier
           source: 'the change itself',
           reason: 'The line shows it.',
           evidence: [quote === FLAG ? { file: 'app/dedent.py', line: 4, quote: 'order.flag = True' } : { file: 'web/cart.ts', line: 1, quote: 'export class Cart {' }],
+          looked: [quote === FLAG ? { file: 'app/dedent.py', line: 4, endLine: 4 } : { file: 'web/cart.ts', line: 1, endLine: 1 }],
+          settles: null,
           library: null,
         }));
         return { verdicts };
@@ -244,7 +246,11 @@ describe('reviewChange carrying results over from the saved review of an earlier
     );
 
     // The flag's verdict cites a file no new commit touched, so it is carried over as it stood.
-    expect(claimOf(result, FLAG)).toMatchObject({ carried: true, verdict: { kind: 'verified', evidence: [{ path: 'app/dedent.py', line: 4 }] } });
+    // What the agent looked at travels with the carried verdict unchanged.
+    expect(claimOf(result, FLAG)).toMatchObject({
+      carried: true,
+      verdict: { kind: 'verified', evidence: [{ path: 'app/dedent.py', line: 4 }], looked: [{ path: 'app/dedent.py', line: 4, endLine: 4 }] },
+    });
     // The cart's part changed, so its claim is listed and judged afresh;
     // Greeter's part did not, but its verdict cites the cart, so it is judged again.
     expect(claimOf(result, CART)).not.toHaveProperty('carried');

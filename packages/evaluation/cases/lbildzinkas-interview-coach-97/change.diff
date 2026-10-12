@@ -1,0 +1,557 @@
+diff --git a/.gitignore b/.gitignore
+index 1d599cf..14f04b1 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -21,6 +21,8 @@ dist/
+ # Personal data
+ data/personal/*
+ !data/personal/.gitkeep
++# Personal study sources not licensed for sharing (same schema as sources.yaml)
++sources.local.yaml
+ # Downloaded study material
+ data/study-material/*
+ !data/study-material/.gitkeep
+diff --git a/README.md b/README.md
+index 37df9ab..caf6368 100644
+--- a/README.md
++++ b/README.md
+@@ -69,6 +69,16 @@ into the git-ignored `data/study-material/` folder, each file pinned to a commit
+ It is safe to run twice: sources already downloaded are skipped. Credits are in
+ [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+ 
++The list covers system design, behavioural interviews and AI engineering
++(about 2 MB of English text, no images or translations), and holds only
++material whose licence allows sharing it.
++
++Personal sources whose licence does not allow sharing them, such as a
++repository with no licence, go in `sources.local.yaml` beside `sources.yaml`.
++It has the same schema, is git-ignored, and `coach setup` reads it when it is
++there. Mark such sources `local_only: true`: they are downloaded for personal
++study on your machine only, so never commit or share anything taken from them.
++
+ ```bash
+ uv run coach setup
+ ```
+diff --git a/THIRD_PARTY_NOTICES.md b/THIRD_PARTY_NOTICES.md
+index e75c6c1..f493910 100644
+--- a/THIRD_PARTY_NOTICES.md
++++ b/THIRD_PARTY_NOTICES.md
+@@ -42,3 +42,153 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ SOFTWARE.
+ ```
++
++## Machine Learning Interviews
++
++- Project: [Machine Learning Interviews](https://github.com/alirezadir/Machine-Learning-Interviews)
++- Copyright holder, as the licence states: Alireza Dirafzoon (2021)
++- Licence: MIT, as found in `LICENSE` at the commit pinned in `sources.yaml`
++- Used: the English guides under `src/` and the README; no translations or notebooks
++
++```text
++MIT License
++
++Copyright (c) 2021 Alireza Dirafzoon
++
++Permission is hereby granted, free of charge, to any person obtaining a copy
++of this software and associated documentation files (the "Software"), to deal
++in the Software without restriction, including without limitation the rights
++to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++copies of the Software, and to permit persons to whom the Software is
++furnished to do so, subject to the following conditions:
++
++The above copyright notice and this permission notice shall be included in all
++copies or substantial portions of the Software.
++
++THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++SOFTWARE.
++```
++
++## Generative AI for Beginners
++
++- Project: [Generative AI for Beginners](https://github.com/microsoft/generative-ai-for-beginners)
++- Copyright holder, as the licence states: Microsoft Corporation
++- Licence: MIT, as found in `LICENSE` at the commit pinned in `sources.yaml`
++- Used: the English lesson pages; no translations, images or code samples
++
++```text
++MIT License
++
++Copyright (c) Microsoft Corporation.
++
++Permission is hereby granted, free of charge, to any person obtaining a copy
++of this software and associated documentation files (the "Software"), to deal
++in the Software without restriction, including without limitation the rights
++to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++copies of the Software, and to permit persons to whom the Software is
++furnished to do so, subject to the following conditions:
++
++The above copyright notice and this permission notice shall be included in all
++copies or substantial portions of the Software.
++
++THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++SOFTWARE
++```
++
++## AI Agents for Beginners
++
++- Project: [AI Agents for Beginners](https://github.com/microsoft/ai-agents-for-beginners)
++- Copyright holder, as the licence states: Microsoft Corporation
++- Licence: MIT, as found in `LICENSE` at the commit pinned in `sources.yaml`
++- Used: the English lesson pages and study guide; no translations, images or code samples
++
++```text
++MIT License
++
++Copyright (c) Microsoft Corporation.
++
++Permission is hereby granted, free of charge, to any person obtaining a copy
++of this software and associated documentation files (the "Software"), to deal
++in the Software without restriction, including without limitation the rights
++to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++copies of the Software, and to permit persons to whom the Software is
++furnished to do so, subject to the following conditions:
++
++The above copyright notice and this permission notice shall be included in all
++copies or substantial portions of the Software.
++
++THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++SOFTWARE
++```
++
++## LLM Course
++
++- Project: [LLM Course](https://github.com/mlabonne/llm-course)
++- Authors, as the repository states them: Maxime Labonne
++- Licence: [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0), as found in
++  `LICENSE` at the commit pinned in `sources.yaml`; the repository has no NOTICE file
++- Used: the course README; no images
++
++The licence names no copyright holder; the notice below is the licence's own
++recommended boilerplate (its appendix), filled in with the project and authors.
++
++```text
++LLM Course, by Maxime Labonne
++https://github.com/mlabonne/llm-course
++
++Licensed under the Apache License, Version 2.0 (the "License");
++you may not use this file except in compliance with the License.
++You may obtain a copy of the License at
++
++    http://www.apache.org/licenses/LICENSE-2.0
++
++Unless required by applicable law or agreed to in writing, software
++distributed under the License is distributed on an "AS IS" BASIS,
++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++See the License for the specific language governing permissions and
++limitations under the License.
++```
++
++## The Hugging Face Agents Course
++
++- Project: [The Hugging Face Agents Course](https://github.com/huggingface/agents-course)
++- Authors, as the repository states them: Ben Burtenshaw, Joffrey Thomas, Thomas Simonini and Sergio Paniego, Hugging Face (2025)
++- Licence: [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0), as found in
++  `LICENSE` at the commit pinned in `sources.yaml`; the repository has no NOTICE file
++- Used: selected English units under `units/en/`; no other languages or images
++
++The licence names no copyright holder; the notice below is the licence's own
++recommended boilerplate (its appendix), filled in with the project and authors.
++
++```text
++The Hugging Face Agents Course, by Ben Burtenshaw, Joffrey Thomas,
++Thomas Simonini and Sergio Paniego, Hugging Face (2025)
++https://github.com/huggingface/agents-course
++
++Licensed under the Apache License, Version 2.0 (the "License");
++you may not use this file except in compliance with the License.
++You may obtain a copy of the License at
++
++    http://www.apache.org/licenses/LICENSE-2.0
++
++Unless required by applicable law or agreed to in writing, software
++distributed under the License is distributed on an "AS IS" BASIS,
++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++See the License for the specific language governing permissions and
++limitations under the License.
++```
+diff --git a/sources.yaml b/sources.yaml
+index ebac37f..b178deb 100644
+--- a/sources.yaml
++++ b/sources.yaml
+@@ -2,13 +2,17 @@
+ # `coach setup` downloads these files into the git-ignored data/study-material/
+ # folder; nothing here is committed (see docs/adr/0002 and THIRD_PARTY_NOTICES.md).
+ # The schema is the `Source` model in src/interview_coach/study_material.py.
++# Every source here has a licence that allows sharing it; personal sources
++# without one go in the git-ignored sources.local.yaml (same schema, see README.md).
+ #
+ # Fields:
+ #   name          folder name under data/study-material/
+ #   repository    where the material lives
+ #   commit        the pinned commit SHA, so every download is the same text
+-#   licence       SPDX identifier, https://spdx.org/licenses/
+-#   local_only    true if the licence allows only personal, local use
++#   licence       SPDX identifier, https://spdx.org/licenses/, or NONE when the
++#                 repository has no licence (all rights reserved)
++#   local_only    true if the licence allows only personal, local use; always
++#                 true for NONE
+ #   download_url  template; {commit} and {path} are filled in for each file
+ #   files         paths inside the repository; text only, never images
+ 
+@@ -76,3 +80,176 @@ sources:
+       - apps/website/contents/engineering-levels.md
+       - apps/website/contents/coding-interview-rubrics.md
+       - LICENSE
++
++  # Machine Learning Interviews, MIT: https://opensource.org/license/mit
++  # The English guides only: the cn/ and fa/ translations and the notebooks are skipped.
++  - name: machine-learning-interviews
++    repository: https://github.com/alirezadir/Machine-Learning-Interviews
++    commit: 9ee330857b953e6e95376a901f8b12cd89bd2234
++    licence: MIT
++    local_only: false
++    download_url: https://raw.githubusercontent.com/alirezadir/Machine-Learning-Interviews/{commit}/{path}
++    files:
++      - README.md
++      - src/MLC/ml-coding.md
++      - src/MLC/pytorch-ml-coding.md
++      - src/MLSD/ml-companies.md
++      - src/MLSD/ml-system-design.md
++      - src/MLSD/mlsd-ads-ranking.md
++      - src/MLSD/mlsd-av.md
++      - src/MLSD/mlsd-event-recom.md
++      - src/MLSD/mlsd-feature-eng.md
++      - src/MLSD/mlsd-game-recom.md
++      - src/MLSD/mlsd-harmful-content.md
++      - src/MLSD/mlsd-image-search.md
++      - src/MLSD/mlsd-metrics.md
++      - src/MLSD/mlsd-mm-video-search.md
++      - src/MLSD/mlsd-modeling-popular-archs.md
++      - src/MLSD/mlsd-newsfeed.md
++      - src/MLSD/mlsd-prediction.md
++      - src/MLSD/mlsd-preprocessing.md
++      - src/MLSD/mlsd-pymk.md
++      - src/MLSD/mlsd-search.md
++      - src/MLSD/mlsd-template.md
++      - src/MLSD/mlsd-video-recom.md
++      - src/MLSD/mlsd_obj_detection.md
++      - src/behavioral/behavior.md
++      - src/genai-resources.md
++      - src/lc-coding.md
++      - src/ml-depth.md
++      - src/ml-fundamental.md
++      - LICENSE
++
++  # LLM Course, Apache-2.0: https://www.apache.org/licenses/LICENSE-2.0
++  # The course is its README; the images/ folder is skipped.
++  - name: llm-course
++    repository: https://github.com/mlabonne/llm-course
++    commit: 7abd96e8284bfae232048fdb77b52397a2114847
++    licence: Apache-2.0
++    local_only: false
++    download_url: https://raw.githubusercontent.com/mlabonne/llm-course/{commit}/{path}
++    files:
++      - README.md
++      - LICENSE
++
++  # Hugging Face Agents Course, Apache-2.0: https://www.apache.org/licenses/LICENSE-2.0
++  # English units only (units/en/): agent fundamentals, LangGraph, agentic RAG, GAIA,
++  # function calling and observability; the smolagents and LlamaIndex chapters,
++  # the onboarding pages and the other languages are skipped.
++  - name: agents-course
++    repository: https://github.com/huggingface/agents-course
++    commit: 3c469e773ec04e5f338b727ff20e3a6ea823ff81
++    licence: Apache-2.0
++    local_only: false
++    download_url: https://raw.githubusercontent.com/huggingface/agents-course/{commit}/{path}
++    files:
++      - units/en/bonus-unit1/conclusion.mdx
++      - units/en/bonus-unit1/fine-tuning.mdx
++      - units/en/bonus-unit1/introduction.mdx
++      - units/en/bonus-unit1/what-is-function-calling.mdx
++      - units/en/bonus-unit2/introduction.mdx
++      - units/en/bonus-unit2/monitoring-and-evaluating-agents-notebook.mdx
++      - units/en/bonus-unit2/quiz.mdx
++      - units/en/bonus-unit2/what-is-agent-observability-and-evaluation.mdx
++      - units/en/unit0/introduction.mdx
++      - units/en/unit1/README.md
++      - units/en/unit1/actions.mdx
++      - units/en/unit1/agent-steps-and-structure.mdx
++      - units/en/unit1/conclusion.mdx
++      - units/en/unit1/dummy-agent-library.mdx
++      - units/en/unit1/final-quiz.mdx
++      - units/en/unit1/introduction.mdx
++      - units/en/unit1/messages-and-special-tokens.mdx
++      - units/en/unit1/observations.mdx
++      - units/en/unit1/quiz1.mdx
++      - units/en/unit1/quiz2.mdx
++      - units/en/unit1/thoughts.mdx
++      - units/en/unit1/tools.mdx
++      - units/en/unit1/tutorial.mdx
++      - units/en/unit1/what-are-agents.mdx
++      - units/en/unit1/what-are-llms.mdx
++      - units/en/unit2/introduction.mdx
++      - units/en/unit2/langgraph/building_blocks.mdx
++      - units/en/unit2/langgraph/conclusion.mdx
++      - units/en/unit2/langgraph/document_analysis_agent.mdx
++      - units/en/unit2/langgraph/first_graph.mdx
++      - units/en/unit2/langgraph/introduction.mdx
++      - units/en/unit2/langgraph/quiz1.mdx
++      - units/en/unit2/langgraph/when_to_use_langgraph.mdx
++      - units/en/unit3/agentic-rag/agent.mdx
++      - units/en/unit3/agentic-rag/agentic-rag.mdx
++      - units/en/unit3/agentic-rag/conclusion.mdx
++      - units/en/unit3/agentic-rag/introduction.mdx
++      - units/en/unit3/agentic-rag/invitees.mdx
++      - units/en/unit3/agentic-rag/tools.mdx
++      - units/en/unit4/additional-readings.mdx
++      - units/en/unit4/conclusion.mdx
++      - units/en/unit4/hands-on.mdx
++      - units/en/unit4/introduction.mdx
++      - units/en/unit4/what-is-gaia.mdx
++      - LICENSE
++
++  # Generative AI for Beginners, MIT: https://opensource.org/license/mit
++  # The repository is several GB with translations; only the English lesson pages
++  # are fetched, never translations/, translated_images/, images or code samples.
++  - name: generative-ai-for-beginners
++    repository: https://github.com/microsoft/generative-ai-for-beginners
++    commit: d8ec07e31c4b32bd283d565c1abd9b58bb5cf2e8
++    licence: MIT
++    local_only: false
++    download_url: https://raw.githubusercontent.com/microsoft/generative-ai-for-beginners/{commit}/{path}
++    files:
++      - README.md
++      - 01-introduction-to-genai/README.md
++      - 02-exploring-and-comparing-different-llms/README.md
++      - 03-using-generative-ai-responsibly/README.md
++      - 04-prompt-engineering-fundamentals/README.md
++      - 05-advanced-prompts/README.md
++      - 06-text-generation-apps/README.md
++      - 07-building-chat-applications/README.md
++      - 08-building-search-applications/README.md
++      - 09-building-image-applications/README.md
++      - 10-building-low-code-ai-applications/README.md
++      - 11-integrating-with-function-calling/README.md
++      - 12-designing-ux-for-ai-applications/README.md
++      - 13-securing-ai-applications/README.md
++      - 14-the-generative-ai-application-lifecycle/README.md
++      - 15-rag-and-vector-databases/README.md
++      - 16-open-source-models/README.md
++      - 17-ai-agents/README.md
++      - 18-fine-tuning/README.md
++      - 19-slm/README.md
++      - 20-mistral/README.md
++      - 21-meta/README.md
++      - LICENSE
++
++  # AI Agents for Beginners, MIT: https://opensource.org/license/mit
++  # English lesson pages only, as for Generative AI for Beginners above.
++  - name: ai-agents-for-beginners
++    repository: https://github.com/microsoft/ai-agents-for-beginners
++    commit: ff2ba665e088bf51d9959126c5893e089b50da30
++    licence: MIT
++    local_only: false
++    download_url: https://raw.githubusercontent.com/microsoft/ai-agents-for-beginners/{commit}/{path}
++    files:
++      - README.md
++      - STUDY_GUIDE.md
++      - 01-intro-to-ai-agents/README.md
++      - 02-explore-agentic-frameworks/README.md
++      - 03-agentic-design-patterns/README.md
++      - 04-tool-use/README.md
++      - 05-agentic-rag/README.md
++      - 06-building-trustworthy-agents/README.md
++      - 07-planning-design/README.md
++      - 08-multi-agent/README.md
++      - 09-metacognition/README.md
++      - 10-ai-agents-production/README.md
++      - 11-agentic-protocols/README.md
++      - 12-context-engineering/README.md
++      - 13-agent-memory/README.md
++      - 14-microsoft-agent-framework/README.md
++      - 15-browser-use/README.md
++      - 16-deploying-scalable-agents/README.md
++      - 17-creating-local-ai-agents/README.md
++      - 18-securing-ai-agents/README.md
++      - LICENSE
+diff --git a/src/interview_coach/study_material.py b/src/interview_coach/study_material.py
+index d09cdf4..811b4f5 100644
+--- a/src/interview_coach/study_material.py
++++ b/src/interview_coach/study_material.py
+@@ -18,6 +18,9 @@
+ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
+ 
+ SOURCES_FILE = Path("sources.yaml")
++# Optional and git-ignored: personal sources whose licence does not allow sharing
++# them, such as a repository with no licence, stay out of the public list.
++LOCAL_SOURCES_FILE = Path("sources.local.yaml")
+ DATA_DIR = Path("data/study-material")
+ # Written last, so a source counts as downloaded only once every file is in.
+ STAMP_FILE = ".commit"
+@@ -121,9 +124,27 @@ def download_source(source: Source, data_dir: Path = DATA_DIR) -> bool:
+     return True
+ 
+ 
+-def run_setup(sources_file: Path = SOURCES_FILE, data_dir: Path = DATA_DIR) -> None:
+-    """Download every source in the list, printing one line per source."""
+-    for source in load_sources(sources_file).sources:
++def load_all_sources(
++    sources_file: Path = SOURCES_FILE, local_file: Path = LOCAL_SOURCES_FILE
++) -> SourcesList:
++    """The committed list plus the optional local one, checked together.
++
++    Validating the merged list keeps names unique across both files, so a local
++    source can never overwrite a committed source's folder.
++    """
++    sources = list(load_sources(sources_file).sources)
++    if local_file.is_file():
++        sources += load_sources(local_file).sources
++    return SourcesList(sources=sources)
++
++
++def run_setup(
++    sources_file: Path = SOURCES_FILE,
++    data_dir: Path = DATA_DIR,
++    local_file: Path = LOCAL_SOURCES_FILE,
++) -> None:
++    """Download every source in both lists, printing one line per source."""
++    for source in load_all_sources(sources_file, local_file).sources:
+         downloaded = download_source(source, data_dir)
+         scope = " (local only)" if source.local_only else ""
+         status = "downloaded" if downloaded else "already up to date"
+diff --git a/tests/test_study_material.py b/tests/test_study_material.py
+index 154d3da..5e09840 100644
+--- a/tests/test_study_material.py
++++ b/tests/test_study_material.py
+@@ -1,5 +1,6 @@
+ """The sources list schema, and the downloader against a local fake source (no network)."""
+ 
++import subprocess
+ from pathlib import Path
+ from typing import Any
+ 
+@@ -10,10 +11,12 @@
+ from interview_coach.cli import main
+ from interview_coach.config import API_KEY_VAR
+ from interview_coach.study_material import (
++    LOCAL_SOURCES_FILE,
+     STAMP_FILE,
+     Source,
+     SourcesList,
+     download_source,
++    load_all_sources,
+     load_sources,
+ )
+ 
+@@ -61,8 +64,19 @@ def test_the_committed_sources_list_validates() -> None:
+         "system-design-primer-solutions",
+         "system-design-primer-anki",
+         "tech-interview-handbook",
++        "machine-learning-interviews",
++        "llm-course",
++        "agents-course",
++        "generative-ai-for-beginners",
++        "ai-agents-for-beginners",
+     }
+     assert all(not path.startswith("images/") for s in sources for path in s.files)
++    # English text only: no translation folders from the multilingual repositories.
++    translated = ("translations/", "translated_images/", "Translation/", "cn/", "fa/")
++    assert not [p for s in sources for p in s.files if p.startswith(translated)]
++    assert not [p for s in sources for p in s.files if p.startswith("units/") and "/en/" not in p]
++    # The public list holds only material licensed for sharing; the rest is local.
++    assert not [s.name for s in sources if s.local_only or s.licence == "NONE"]
+ 
+ 
+ @pytest.mark.parametrize(
+@@ -89,6 +103,47 @@ def test_the_schema_rejects_duplicate_names() -> None:
+         SourcesList.model_validate({"sources": [source_data(), source_data()]})
+ 
+ 
++# --- The optional local sources list -----------------------------------------------
++
++
++def write_sources(path: Path, *sources: dict[str, Any]) -> Path:
++    path.write_text(yaml.safe_dump({"sources": list(sources)}))
++    return path
++
++
++def test_the_local_sources_list_is_added_when_present(tmp_path: Path) -> None:
++    committed = write_sources(tmp_path / "sources.yaml", source_data())
++    local = write_sources(
++        tmp_path / "sources.local.yaml",
++        source_data(name="personal", licence="NONE", local_only=True),
++    )
++    names = [source.name for source in load_all_sources(committed, local).sources]
++    assert names == ["fake-source", "personal"]
++
++
++def test_without_a_local_sources_list_only_the_committed_one_is_read(tmp_path: Path) -> None:
++    committed = write_sources(tmp_path / "sources.yaml", source_data())
++    sources = load_all_sources(committed, tmp_path / "sources.local.yaml").sources
++    assert [source.name for source in sources] == ["fake-source"]
++
++
++def test_a_local_source_may_not_reuse_a_committed_name(tmp_path: Path) -> None:
++    committed = write_sources(tmp_path / "sources.yaml", source_data())
++    local = write_sources(tmp_path / "sources.local.yaml", source_data())
++    with pytest.raises(ValidationError):
++        load_all_sources(committed, local)
++
++
++def test_the_local_sources_list_is_git_ignored() -> None:
++    # git check-ignore exits 0 when a path is ignored: https://git-scm.com/docs/git-check-ignore
++    result = subprocess.run(
++        ["git", "check-ignore", "--quiet", "--no-index", str(LOCAL_SOURCES_FILE)],
++        cwd=REPO_ROOT,
++        check=False,
++    )
++    assert result.returncode == 0
++
++
+ # --- The downloader -------------------------------------------------------------
+ 
+ 
+@@ -157,6 +212,26 @@ def test_coach_setup_downloads_without_an_api_key(
+     ]
+ 
+ 
++def test_coach_setup_also_downloads_the_local_sources(
++    remote: Path,
++    tmp_path: Path,
++    monkeypatch: pytest.MonkeyPatch,
++    capsys: pytest.CaptureFixture[str],
++) -> None:
++    monkeypatch.chdir(tmp_path)
++    monkeypatch.delenv(API_KEY_VAR, raising=False)
++    write_sources(tmp_path / "sources.yaml", fake_source(remote).model_dump())
++    personal = fake_source(remote, name="personal", licence="NONE", local_only=True)
++    write_sources(tmp_path / "sources.local.yaml", personal.model_dump())
++
++    assert main(["setup"]) == 0
++    assert (tmp_path / "data/study-material/personal/README.md").is_file()
++    assert capsys.readouterr().out.splitlines() == [
++        "fake-source: downloaded",
++        "personal (local only): downloaded",
++    ]
++
++
+ def test_coach_setup_without_a_sources_list_prints_a_readable_error(
+     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+ ) -> None:

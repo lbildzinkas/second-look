@@ -1,0 +1,200 @@
+{
+  "formatVersion": 1,
+  "id": "lbildzinkas-interview-coach-98",
+  "source": "https://github.com/lbildzinkas/interview-coach/pull/98",
+  "recordedAt": "2026-10-12T09:55:19.997Z",
+  "prompts": [
+    "verdicts"
+  ],
+  "pullRequest": {
+    "url": "https://github.com/lbildzinkas/interview-coach/pull/98",
+    "number": 98,
+    "title": "feat: add hand-written search metrics and the coach eval qasper random baseline",
+    "author": "lbildzinkas",
+    "description": "## Intent\n\nImplement issue #9: hand-written search metrics and the first baseline number for the QASPER evaluation.\n\nThe change adds six retrieval metrics written by hand, hit@k, recall@k, all-evidence@k (1 only when every relevant paragraph is in the top k), precision@k, MRR@k and nDCG@k with binary relevance, each with a comment linking the paper or page that defines it. It also adds `coach eval qasper --retriever random`, which ranks each paper's paragraphs in a seeded random order for every QASPER dev question with text evidence and prints one table row of averaged metrics as the floor later retrievers must beat. No model is called.\n\nAcceptance criteria from the issue:\n\n- The six metrics are written by hand, each with a comment linking its definition.\n- The seeded, repeatable random baseline lands within about 0.02 of the expected random row (recall@5 close to 0.13, recall@10 close to 0.28).\n- Tests cover hand-computed examples for each metric, edge cases (no relevant paragraphs, relevant paragraphs outside k) and one cross-check against `ranx` on a small run.\n- The project's single check command (lint, format, types, tests) passes locally and in CI.\n- Comments link the technical references used so the change can be studied while reviewed.\n\nCloses #9\n\n## What Changed\n\n- Add `src/interview_coach/metrics.py` with hand-written hit@k, recall@k, all-evidence@k, precision@k, MRR@k and nDCG@k, each with a docstring linking the reference that defines it (ranx docs, the IR book, the QASPER paper, TREC-8, Järvelin and Kekäläinen).\n- Add `coach eval qasper --retriever random`: the new `search_eval.py` ranks each paper's paragraphs at random with a per-question seed, averages the six metrics over QASPER dev questions with text evidence, and prints the table row; the command is wired into the CLI and calls no model.\n- Add tests with hand-computed examples, edge cases (no relevant ids, gold outside k) and a cross-check against ranx (added as a dev dependency), plus tests for the eval command on a hand-made paper, and document the command in the README.\n\n## Risk Assessment\n\n✅ Low: Small, single-purpose change: the six metrics are hand-written, reference-linked, cross-checked against ranx, and edge-tested; the CLI wiring is minimal and the seeded baseline is repeatable with numbers within (or at the very edge of) the stated tolerance, leaving only the owner's report-row comparison open.\n\n## Testing\n\nDrove `uv run coach eval qasper --retriever random` live against the real QASPER dev split (888 scored questions) in two separate processes with byte-identical seeded output, hit the report-row tolerance (recall@5 0.1273 vs ~0.13, recall@10 0.2596 vs ~0.28, within 'about 0.02'), and confirmed argparse rejects unknown or missing --retriever with exit 2. The ranx cross-check and the no-gold/gold-outside-k edge cases were exercised only through pytest unit tests, not by driving the live product, so their scenarios are reported as untested at live scope rather than pass. The 23 new unit tests plus the CLI regression tests all pass; the ranx cross-check was confirmed non-vacuous by mutating metric formulas. No failures; no blockers. Lint/format/type checks were not run here per phase rules (CI and the outer pipeline own scripts/check.sh).\n\n- Live validation: ✅ go - 4 of 6 scenarios driven live against the product\n\n| Scenario | Result | Live | Evidence |\n| --- | --- | --- | --- |\n| Run the random-retriever search eval on the real QASPER dev split and read the printed metrics row | ✅ pass | live | uv run coach eval qasper --retriever random printed &#39;QASPER dev split: 888 questions with text evidence&#39; plus the hit@5/recall@5/recall@10/all-evidence@10/precision@5/MRR@10/nDCG@10 row (evidence file… |\n| Random baseline lands within about 0.02 of the report&#39;s random row (recall@5~0.13, recall@10~0.28) | ✅ pass | live | Exact means: recall@5=0.1273 (delta 0.0027), recall@10=0.2596 (delta 0.0204, at the edge of &#39;about 0.02&#39; but within it; deterministic because the ranking is seeded) |\n| Seeded repeatability: two runs in separate processes print identical numbers | ✅ pass | live | diff of two full CLI runs was empty; string seeding via random.Random is independent of PYTHONHASHSEED |\n| Hand-written metrics agree with the ranx library on a small run (cross-check) | ⏸️ untested | no | The prior payload recorded only a pytest run (tests/test_metrics.py::test_metrics_match_ranx_on_a_small_run) against small test fixtures, which is not a drive of the live running product (the coach CL… |\n| Edge cases: no gold ids and gold outside the top k both score 0.0 for every metric | ⏸️ untested | no | The prior payload recorded only unit tests of the public metric functions (tests/test_metrics.py parametrized cases); these edge cases were never triggered through the live running product in this run… |\n| CLI guards: unknown retriever and missing --retriever are rejected | ✅ pass | live | coach eval qasper --retriever bogus, coach eval qasper, and coach eval each exit 2 with an argparse usage error naming valid choices |\n\n<details>\n<summary>Evidence: Live transcript: coach eval qasper --retriever random (two runs, repeatability diff, exact means vs report row)</summary>\n\n```text\n$ uv run coach eval qasper --retriever random  (live, real QASPER dev split downloaded from the HF Hub)\nQASPER dev split: 888 questions with text evidence\nretriever  hit@5  recall@5  recall@10  all-evidence@10  precision@5  MRR@10  nDCG@10\nrandom     0.213  0.127     0.260      0.172            0.048        0.127   0.136\n\n$ uv run coach eval qasper --retriever random  (second run, separate process)\nQASPER dev split: 888 questions with text evidence\nretriever  hit@5  recall@5  recall@10  all-evidence@10  precision@5  MRR@10  nDCG@10\nrandom     0.213  0.127     0.260      0.172            0.048        0.127   0.136\n\ndiff of the two runs: empty -> seeded and repeatable\n\nExact means (4 d.p.) vs the report's random row (recall@5~0.13, recall@10~0.28):\ncount=888  hit@5=0.2128  recall@5=0.1273 (diff 0.0027)  recall@10=0.2596 (diff 0.0204)  all-evidence@10=0.1723  precision@5=0.0484  MRR@10=0.1273  nDCG@10=0.1365\n```\n</details>\n\n## Pipeline\n\nUpdates from [git push no-mistakes](https://github.com/kunchenguid/no-mistakes)\n\n<!-- no-mistakes-pipeline-attestation:v1 {\"head_sha\":\"3fe701346b0f1deb2886864ce61d31e3adbc8409\",\"steps\":[{\"step\":\"intent\",\"status\":\"completed\"},{\"step\":\"rebase\",\"status\":\"completed\"},{\"step\":\"review\",\"status\":\"completed\"},{\"step\":\"test\",\"status\":\"completed\"},{\"step\":\"document\",\"status\":\"completed\"},{\"step\":\"lint\",\"status\":\"completed\"},{\"step\":\"push\",\"status\":\"completed\"},{\"step\":\"pr\",\"status\":\"running\"},{\"step\":\"ci\",\"status\":\"pending\"}],\"live_validation\":{\"verdict\":\"go\",\"live\":4,\"total\":6}} -->\n\n<details>\n<summary>✅ **intent** - passed</summary>\n\n✅ No issues found.\n</details>\n\n<details>\n<summary>✅ **Rebase** - passed</summary>\n\n✅ No issues found.\n</details>\n\n<details>\n<summary>⚠️ **Review** - 1 info</summary>\n\n- ℹ️ `src/interview_coach/search_eval.py:29` - Measured the real seeded baseline end to end: recall@5 = 0.1273 (target ~0.13, gap 0.0027 ✓) and recall@10 = 0.2596 (target ~0.28, gap 0.0204 — a few ten-thousandths past the &#39;about 0.02&#39; acceptance bound). The run is repeatable (byte-identical output) and scores exactly 888 questions, matching the dataset&#39;s &#39;answerable with text evidence&#39; count. No code change proposed: a seeded random baseline is what it is, and tuning the seed to close the gap would be dishonest. Only the owner can compare the other five columns (hit@5 0.213, all-evidence@10 0.172, precision@5 0.048, MRR@10 0.127, nDCG@10 0.137) against the private report&#39;s random row during personal review.\n</details>\n\n<details>\n<summary>✅ **Test** - passed</summary>\n\n✅ No issues found.\n- Live validation: ✅ go - 4 of 6 scenarios driven live against the product\n\n| Scenario | Result | Live | Evidence |\n| --- | --- | --- | --- |\n| Run the random-retriever search eval on the real QASPER dev split and read the printed metrics row | ✅ pass | live | uv run coach eval qasper --retriever random printed &#39;QASPER dev split: 888 questions with text evidence&#39; plus the hit@5/recall@5/recall@10/all-evidence@10/precision@5/MRR@10/nDCG@10 row (evidence file… |\n| Random baseline lands within about 0.02 of the report&#39;s random row (recall@5~0.13, recall@10~0.28) | ✅ pass | live | Exact means: recall@5=0.1273 (delta 0.0027), recall@10=0.2596 (delta 0.0204, at the edge of &#39;about 0.02&#39; but within it; deterministic because the ranking is seeded) |\n| Seeded repeatability: two runs in separate processes print identical numbers | ✅ pass | live | diff of two full CLI runs was empty; string seeding via random.Random is independent of PYTHONHASHSEED |\n| Hand-written metrics agree with the ranx library on a small run (cross-check) | ⏸️ untested | no | The prior payload recorded only a pytest run (tests/test_metrics.py::test_metrics_match_ranx_on_a_small_run) against small test fixtures, which is not a drive of the live running product (the coach CL… |\n| Edge cases: no gold ids and gold outside the top k both score 0.0 for every metric | ⏸️ untested | no | The prior payload recorded only unit tests of the public metric functions (tests/test_metrics.py parametrized cases); these edge cases were never triggered through the live running product in this run… |\n| CLI guards: unknown retriever and missing --retriever are rejected | ✅ pass | live | coach eval qasper --retriever bogus, coach eval qasper, and coach eval each exit 2 with an argparse usage error naming valid choices |\n\n- `uv run coach eval qasper --retriever random (live, twice, against the real QASPER dev split from the HF Hub cache)`\n- `uv run python one-off: exact 4-d.p. means via search_eval.evaluate to compare against the report's random row`\n- `diff of two full CLI runs in separate processes (seeded repeatability)`\n- `uv run pytest tests/test_metrics.py tests/test_search_eval.py -v (23 passed: hand-computed values, no-gold and gold-outside-k edge cases, ranx cross-check at k=1,3,5) - unit-level, not a live drive`\n- `uv run pytest tests/test_cli.py -q (regression on the modified cli.py, 2 passed) - unit-level, not a live drive`\n- `CLI guards driven live: coach eval qasper --retriever bogus (exit 2), coach eval qasper (exit 2), coach eval (exit 2)`\n- `Discrimination probe of the ranx cross-check fixtures with deliberately wrong MRR/nDCG/precision formulas (all caught at k>=3, MRR at every k) - unit-level, not a live drive`\n</details>\n\n<details>\n<summary>✅ **Document** - passed</summary>\n\n✅ No issues found.\n</details>\n\n<details>\n<summary>✅ **Lint** - passed</summary>\n\n✅ No issues found.\n</details>\n\n<details>\n<summary>✅ **Push** - passed</summary>\n\n✅ No issues found.\n</details>\n",
+    "base": "master",
+    "head": "fm/ic-search-metrics",
+    "baseCommit": "1a93d28d7c0f7d8eec7d4c19cb52355531c1294b",
+    "headSha": "3fe701346b0f1deb2886864ce61d31e3adbc8409"
+  },
+  "gitAttributes": null,
+  "baseCommit": "1a93d28d7c0f7d8eec7d4c19cb52355531c1294b",
+  "headCommit": "3fe701346b0f1deb2886864ce61d31e3adbc8409",
+  "criteria": {
+    "outcome": "read",
+    "detail": "1 issue this pull request closes and 3 issues that reference it",
+    "heading": "Acceptance criteria",
+    "issues": [
+      {
+        "number": 9,
+        "title": "Hand-written search metrics and the first number",
+        "url": "https://github.com/lbildzinkas/interview-coach/issues/9",
+        "repository": "lbildzinkas/interview-coach",
+        "body": "Milestone: M0 · Size: ~150 changed lines, tests and lockfiles excluded · Delivery: no-mistakes\n\n## What to build\n\nHand-written hit@k, recall@k, all-evidence@k, precision@k, MRR@k and nDCG@k, and `coach eval qasper --retriever random` that ranks each paper's paragraphs at random and prints the first row of the design report's table. Each metric links to the paper or page that defines it.\n\n**What you'll learn:** What each retrieval metric measures and how to test your own evaluator against a standard library (report sections 5.3 and 6.3).\n\n**How to try it by hand:** Run `coach eval qasper --retriever random` and check that recall@5 is close to 0.13 and recall@10 close to 0.28.\n\n## Acceptance criteria\n\n- [ ] The six metrics are written by hand, each with a comment linking its definition.\n- [ ] The random baseline's numbers land within about 0.02 of the report's random row (seeded, repeatable).\n- [ ] Tests: hand-computed examples for each metric, edge cases (no gold, gold outside k), and one cross-check against `ranx` on a small run.\n- [ ] The project's single check command (lint, format, types, tests) passes locally and in CI.\n- [ ] Comments link the technical references used (library docs, papers, or the design report section) so the change can be studied while reviewed.\n\n## Blocked by\n\n- #8 Load QASPER and see what is in it\n",
+        "link": "closes"
+      },
+      {
+        "number": 172,
+        "title": "Show each claim's reason and evidence on its step 5 row, and link where it is made",
+        "url": "https://github.com/lbildzinkas/second-look/issues/172",
+        "repository": "lbildzinkas/second-look",
+        "body": "- Milestone: v1.1 · size ~250 changed lines (excluding tests) · delivery: code, through no-mistakes\n\n## What to build\n\nA claim's row in side bar step 5 (`side-bar/page.ts`) shows only its verdict, where the claim is made as plain text, and its quote. The result already holds the verdict's reason, its evidence source, its cited head-copy lines, its cited CI log lines and its recheck, but they show only in the overview's collapsed detail row or in a finding's thread. An unverifiable claim therefore gives the reviewer no reason and nothing to check it against.\n\n- Each step 5 claim row shows its reason, its evidence source, its cited head-copy lines as chips that open the head copy at the line (as the overview's claim evidence chips do), its cited CI log lines linking to the check run on GitHub (the check's `url` is already in the result), and its recheck when the engine dropped a citation.\n- Where a claim is made becomes a link, in step 5 and in the overview's claims table (`claimWhere` returns plain text today): a docstring or comment claim opens its line in the head copy; \"description, line N\" opens the overview with the description scrolled to that line and the line marked, since a pull request description has no line anchors on GitHub; a story claim opens the story.\n- Agent-derived text stays escaped as it is everywhere else. A link carries only a validated finding reference; the only outside link is a check run's GitHub page, opened through the extension and only for `https://github.com/` addresses.\n\nHow to try it by hand: review https://github.com/lbildzinkas/interview-coach/pull/98 and read, on each unverifiable claim in step 5, why it was not verified; press a description claim's place and land on its marked line in the overview.\n\n## Acceptance criteria\n\n- [ ] An unverifiable claim's step 5 row shows its reason without opening anything else.\n- [ ] Cited head-copy lines open the head copy at the line; cited CI log lines open the check run on GitHub.\n- [ ] \"description, line N\" opens the overview's description scrolled to that line, marked.\n- [ ] Agent-derived text in the new places is escaped (test).\n- [ ] Extension tests that need VS Code run in CI only.\n\n## Blocked by\n\n- None\n",
+        "link": "references"
+      },
+      {
+        "number": 173,
+        "title": "Verdicts say what they looked at and what would settle a claim (verdicts prompt v6)",
+        "url": "https://github.com/lbildzinkas/second-look/issues/173",
+        "repository": "lbildzinkas/second-look",
+        "body": "- Milestone: v1.1 · size ~300 changed lines (excluding tests) · delivery: code, through no-mistakes\n\n## What to build\n\nAn unverifiable verdict today carries a one-sentence reason and whatever it cites, often nothing, and nothing records what the agent read for it (the Claude Code adapter keeps only tool call ids). The reviewer cannot tell \"code cannot settle this\" from \"the agent did not look\". Most unverifiable claims are about a run, a measurement or the outside world, yet the result does not say so.\n\n- Each verdict gains `looked`: the head-copy files and line ranges the agent read for that claim. The engine re-checks each entry exists, as it does cited lines, and drops one that does not with a recheck note.\n- Each unverifiable verdict gains `settles`: what could settle the claim, from a fixed list (`code`, `library`, `ci-log`, `sandboxed-run`, `outside-repository`, `author`), with a one-line note. `code` means the code should settle it, so the verdict is a finding to check.\n- `protocol.ts` gains both fields beside `libraryFetch`; the extension's validators accept them; the result version goes up.\n- Bump the `verdicts` prompt to v6 in `packages/evaluation/prompts.json` with its baseline in `docs/tested-models.md`, and add evaluation cases (ADR 0006) from two public pull requests:\n  - https://github.com/lbildzinkas/interview-coach/pull/98 with hand verdicts: the description's measured numbers and live-run claims unverifiable with `settles` `author`; the docstring \"A str seed is hashed with SHA-512, the same on every run\" verified from the code and the standard library; the two claims about ranx behaviour unverifiable with `settles` `library`; \"tests/test_metrics.py checks these functions against ranx\" refuted, since all-evidence@k is not compared against ranx.\n  - https://github.com/lbildzinkas/interview-coach/pull/97 with the description's \"`scripts/check.sh` passes: ruff, pyright and 39 tests\" unverifiable with `settles` `ci-log`.\n- #107 later turns `settles` `sandboxed-run` into its run offer.\n\nHow to try it by hand: review interview-coach#98 with the engine CLI and read `looked` and `settles` on each unverifiable verdict in the result.\n\n## Acceptance criteria\n\n- [ ] Every verdict carries `looked`, and every unverifiable verdict carries `settles` from the fixed list.\n- [ ] A `looked` entry naming a missing file or line is dropped with a recheck note (test).\n- [ ] The new evaluation cases pass, and the prompt version is bumped with its baseline.\n- [ ] A result from an older result version is ignored, never misread.\n\n## Blocked by\n\n- None\n",
+        "link": "references"
+      },
+      {
+        "number": 175,
+        "title": "Step 5 shows each claim's evidence trail and groups claims by what can settle them",
+        "url": "https://github.com/lbildzinkas/second-look/issues/175",
+        "repository": "lbildzinkas/second-look",
+        "body": "- Milestone: v1.1 · size ~250 changed lines (excluding tests) · delivery: code, through no-mistakes\n\n## What to build\n\nWith each verdict's `looked` and `settles` (#173) and each claim row's reason and citations (#172), step 5 shows each claim's evidence trail and stops counting claims that code cannot settle as findings.\n\n- Each step 5 claim row and the overview's claim detail row show **Looked at** (the `looked` lines, as head-copy chips) and, for an unverifiable claim, **Would settle it** (its `settles` route and note).\n- Step 5 splits unverifiable claims into groups:\n  - **Should be checkable** (`settles` `code`): findings, with Draft comment, Open and Verify again, as today.\n  - **Needs a library** (`settles` `library`): findings, with Fetch library first.\n  - **The author's run** and **Outside the repository** (`ci-log`, `sandboxed-run`, `author`, `outside-repository`): listed quietly, with no thread, and not counted as findings in the step's header or the tree. Each offers the route that can settle it when one exists: Read the CI log (#174) and, once the sandbox ships, the run offer (#109).\n- The step header counts findings only, and says how many claims the quiet groups hold.\n\nHow to try it by hand: review https://github.com/lbildzinkas/interview-coach/pull/98; step 5 shows its run and measurement claims in the author's-run group, not as findings, and the ranx claims under Needs a library.\n\n## Acceptance criteria\n\n- [ ] Unverifiable claims appear in the group their `settles` names; only the first two groups count as findings.\n- [ ] Every row shows Looked at, and every unverifiable row shows Would settle it.\n- [ ] Extension tests that need VS Code run in CI only.\n\n## Blocked by\n\n- #172\n- #173\n",
+        "link": "references"
+      }
+    ],
+    "criteria": [
+      {
+        "quote": "The six metrics are written by hand, each with a comment linking its definition.",
+        "issue": 0,
+        "line": 13,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "The random baseline's numbers land within about 0.02 of the report's random row (seeded, repeatable).",
+        "issue": 0,
+        "line": 14,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "Tests: hand-computed examples for each metric, edge cases (no gold, gold outside k), and one cross-check against `ranx` on a small run.",
+        "issue": 0,
+        "line": 15,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "The project's single check command (lint, format, types, tests) passes locally and in CI.",
+        "issue": 0,
+        "line": 16,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "Comments link the technical references used (library docs, papers, or the design report section) so the change can be studied while reviewed.",
+        "issue": 0,
+        "line": 17,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "An unverifiable claim's step 5 row shows its reason without opening anything else.",
+        "issue": 1,
+        "line": 15,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "Cited head-copy lines open the head copy at the line; cited CI log lines open the check run on GitHub.",
+        "issue": 1,
+        "line": 16,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "\"description, line N\" opens the overview's description scrolled to that line, marked.",
+        "issue": 1,
+        "line": 17,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "Agent-derived text in the new places is escaped (test).",
+        "issue": 1,
+        "line": 18,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "Extension tests that need VS Code run in CI only.",
+        "issue": 1,
+        "line": 19,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "Every verdict carries `looked`, and every unverifiable verdict carries `settles` from the fixed list.",
+        "issue": 2,
+        "line": 19,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "A `looked` entry naming a missing file or line is dropped with a recheck note (test).",
+        "issue": 2,
+        "line": 20,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "The new evaluation cases pass, and the prompt version is bumped with its baseline.",
+        "issue": 2,
+        "line": 21,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "A result from an older result version is ignored, never misread.",
+        "issue": 2,
+        "line": 22,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "Unverifiable claims appear in the group their `settles` names; only the first two groups count as findings.",
+        "issue": 3,
+        "line": 18,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "Every row shows Looked at, and every unverifiable row shows Would settle it.",
+        "issue": 3,
+        "line": 19,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "Extension tests that need VS Code run in CI only.",
+        "issue": 3,
+        "line": 20,
+        "verdict": {
+          "kind": "not checked"
+        }
+      }
+    ]
+  }
+}
