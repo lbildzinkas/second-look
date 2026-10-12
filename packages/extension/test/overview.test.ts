@@ -25,6 +25,7 @@ import {
   mixedResult,
   nonDefaultBranchResult,
   pipelineResult,
+  settledResult,
   storyResult,
   unexplainedResult,
   verdictsRunningStages,
@@ -244,13 +245,16 @@ describe('the pipeline and CI on the overview', () => {
 
   it("says a claim offers Read the CI log, and labels a passing check's cited line once the claim was judged again with its log", () => {
     const offered = overviewHtml({ result: ciLogOfferedResult() }, 'N');
+    // The claim is no finding, so it has no thread and no draft: Read the CI log is its one action here.
     expect(offered).toContain(
-      "<div class=\"why\">CI log read offered: check / lint passed at the head commit; reading its log could settle the claim. Press Read the CI log on the finding&#39;s thread.</div>",
+      '<div class="why">CI log read offered: check / lint passed at the head commit; reading its log could settle the claim.</div><div class="acts"><button type="button" class="pt ci-log" data-claim="1">Read the CI log</button></div>',
     );
+    expect(offered).not.toContain('data-draft="claim" data-index="1"');
     const read = overviewHtml({ result: ciLogReadResult() }, 'N');
     expect(read).toContain('<span class="l"><span class="ref">CI log of check / lint (a passing check), line 2</span> <span class="cited">1 problem (0 errors, 1 warning)</span></span>');
     expect(read).toContain('<div class="why">judged again with the logs of the checks that passed: check / lint (the log marks no failing step, so its last 3 lines are kept)</div>');
     expect(read).not.toContain('CI log read offered');
+    expect(read).not.toContain('class="pt ci-log"');
   });
 
   it("lists the checks as run on the merge commit, with annotations and a failed job's trimmed log as escaped text", () => {
@@ -311,6 +315,30 @@ describe('the verdicts on the overview', () => {
     expect(html).toContain('<div class="why">dropped to unverifiable: the model&#39;s memory never yields verified</div>');
     expect(html).toContain('Each is judged against the change, its read-only copy and any failed check&#39;s CI log by pi · zai/glm-4.6 · default effort · verdicts prompt v1;');
     expect(html).toContain('<li><b>Verdicts</b> judged by pi · zai/glm-4.6 · default effort · verdicts prompt v1: every citation was re-read in the head copy</li>');
+  });
+
+  it('shows in each claim\u2019s detail what its agent looked at, and for an unverifiable one what would settle it', () => {
+    const shown = settledResult();
+    const docstring = shown.claims!.claims[1]!;
+    docstring.verdict = { ...(docstring.verdict as Exclude<typeof docstring.verdict, { kind: 'not checked' }>), lookedRecheck: 'the range <b>gone.py</b>:1 names a file the head copy does not have' };
+    const html = overviewHtml({ result: shown }, 'N');
+
+    // Each range is a chip that opens it in the head copy, a single line read as one.
+    expect(html).toContain(
+      '<span class="label">Looked at</span><span class="v"><button type="button" class="pt ref claim-looked" data-claim="1" data-index="0">src/retry.py:5–6</button> <button type="button" class="pt ref claim-looked" data-claim="1" data-index="1">src/settings.ts:2</button></span>',
+    );
+    expect(html).toContain('<div class="why">dropped from what it looked at: the range &lt;b&gt;gone.py&lt;/b&gt;:1 names a file the head copy does not have</div>');
+    // A verdict that read nothing says so; the verified one shows its reading too.
+    expect(html).toContain('<span class="label">Looked at</span><span class="v">no line of the head copy</span>');
+    expect(html).toContain('<button type="button" class="pt ref claim-looked" data-claim="0" data-index="0">src/retry.py:1–8</button>');
+    expect(html.match(/<span class="label">Looked at<\/span>/g)).toHaveLength(6);
+    // Every unverifiable claim says what would settle it, and no other does.
+    expect(html.match(/<span class="label">Would settle it<\/span>/g)).toHaveLength(4);
+    expect(html).toContain('<span class="label">Would settle it</span><span class="v">the author: the measured numbers come from the author&#39;s own run</span>');
+    expect(html).toContain('<span class="label">Would settle it</span><span class="v">something outside the repository: the delivery service limits</span>');
+    // A claim the code cannot settle is no finding: it offers no draft comment.
+    expect(html).toContain('data-draft="claim" data-index="3"');
+    expect(html).not.toMatch(/data-draft="claim" data-index="[45]"/);
   });
 
   it('labels a verdict judged in a named repository weaker than pinned source, and says plainly why no fetch is offered', () => {
@@ -399,7 +427,7 @@ describe('the verdicts on the overview', () => {
     const html = overviewHtml({ result: judged }, 'N');
 
     expect(html).toContain(
-      ', save the one checked verdict that came from the Verify this claim ask; the refuted and unverifiable ones are findings, each a thread on the diff.',
+      ', save the one checked verdict that came from the Verify this claim ask; the refuted ones, and the unverifiable ones the code or a library&#39;s source could settle, are findings, each a thread on the diff.',
     );
     expect(html).toContain('<div class="why">judged singly by the Verify this claim ask</div>');
     expect(overviewHtml({ result: shown }, 'N')).not.toContain('save the one checked verdict');
@@ -1260,6 +1288,29 @@ describe('OverviewPanel', () => {
     ]);
   });
 
+  it('opens each range a claim’s agent looked at in the head copy, and none it did not look at', () => {
+    const lines: [string, number, CommentSide][] = [];
+    const overview = new OverviewPanel(() => undefined, (path, line, side) => lines.push([path, line, side]), () => undefined);
+    overview.update(settledResult());
+    overview.open();
+    const panel = stub.webviewPanels[0]!;
+    // The page's own script posts the claim and range a chip names, which the panel then opens.
+    const page = PageDouble.load(panel.webview.html);
+    page.matching('button.claim-looked').forEach((chip) => chip.click());
+    expect(page.posted).toContainEqual({ type: 'openClaimLooked', claim: 1, index: 1 });
+
+    panel.webview.receive({ type: 'openClaimLooked', claim: 1, index: 0 });
+    panel.webview.receive({ type: 'openClaimLooked', claim: 1, index: 1 });
+    panel.webview.receive({ type: 'openClaimLooked', claim: 1, index: 5 });
+    panel.webview.receive({ type: 'openClaimLooked', claim: 99, index: 0 });
+    panel.webview.receive({ type: 'openClaimLooked', claim: '1', index: 0 });
+
+    expect(lines).toEqual([
+      ['src/retry.py', 5, 'head'],
+      ['src/settings.ts', 2, 'head'],
+    ]);
+  });
+
   it('opens where a claim is made: its file’s line in the head copy, its description line in the page’s description, its sentence in the story', () => {
     const lines: [string, number, CommentSide][] = [];
     const overview = new OverviewPanel(() => undefined, (path, line, side) => lines.push([path, line, side]), () => undefined);
@@ -1287,6 +1338,21 @@ describe('OverviewPanel', () => {
     panel.webview.receive({ type: 'openClaimWhere', claim: '1' });
 
     expect(lines).toEqual([['src/retry.py', 3, 'head']]);
+  });
+
+  it('presses Read the CI log on the claim its button names, and ignores a message naming no claim', () => {
+    const pressed: number[] = [];
+    const overview = new OverviewPanel(() => undefined, () => undefined, () => undefined, (claim) => pressed.push(claim));
+    overview.update(ciLogOfferedResult());
+    overview.open();
+    const panel = stub.webviewPanels[0]!;
+    expect(panel.webview.html).toContain("document.querySelectorAll('button.ci-log')");
+
+    panel.webview.receive({ type: 'readCiLog', claim: 1 });
+    panel.webview.receive({ type: 'readCiLog', claim: '1' });
+    panel.webview.receive({ type: 'readCiLog' });
+
+    expect(pressed).toEqual([1]);
   });
 
   it('drafts from a finding a button names, and ignores a draft message naming no finding kind', () => {

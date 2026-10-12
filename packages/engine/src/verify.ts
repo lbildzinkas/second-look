@@ -95,7 +95,7 @@ function verdictSections(claim: Claim): AskSection[] {
   if (verdict.kind === 'not checked') return sections;
   const recheck = verdict.recheck === undefined ? '' : ` The engine kept it from a firmer verdict: ${verdict.recheck}.`;
   sections.push({ heading: 'Verdict', text: `${verdict.kind}, from ${verdict.source}: ${verdict.reason}${recheck}` });
-  if (verdict.ciLogFetch !== undefined) sections.push({ heading: 'CI log', text: `${verdict.ciLogFetch.reason} Press Read the CI log on the claim's finding to read it.` });
+  if (verdict.ciLogFetch !== undefined) sections.push({ heading: 'CI log', text: `${verdict.ciLogFetch.reason} Press Read the CI log on the claim's step 5 row or in the overview to read it.` });
   if (verdict.libraryFetch !== undefined) {
     sections.push({ heading: 'Library fetch', text: `${verdict.libraryFetch.reason} Press the fetch on the claim's finding to start it.` });
   } else if (verdict.noLibraryFetch !== undefined) {

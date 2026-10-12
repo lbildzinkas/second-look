@@ -77,8 +77,8 @@ export const FETCH_LIBRARY_COMMAND = 'second-look.fetchLibrary' as const;
 /**
  * Presses one finding's Read the CI log: the engine reads the logs of
  * the checks that passed at the head commit and judges the claim again.
- * Runs only from the link in the finding's thread and the side bar's
- * button, which the reviewer presses.
+ * Runs only from the claim's button on step 5 and in the overview, which
+ * the reviewer presses; such a claim is no finding, so it has no thread.
  */
 export const READ_CI_LOG_COMMAND = 'second-look.readCiLog' as const;
 

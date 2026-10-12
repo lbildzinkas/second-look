@@ -23,6 +23,7 @@ import type {
   LookedRange,
   Part,
   Settles,
+  SettlesKind,
 } from './protocol.js';
 import { SETTLES_KINDS } from './protocol.js';
 import { sinksPart } from './rank.js';
@@ -552,9 +553,20 @@ export async function judgeVerdict(read: ReadLines, answered: AnsweredVerdict, l
   return settleVerdict(answered, named, 'a CI log', looked);
 }
 
-/** Whether a claim is a finding: refuted or unverifiable, which the reviewer is shown on the diff. */
+/** What can settle an unverifiable claim that is still a finding: the code, or a library's source the reviewer can fetch. */
+export const FINDING_SETTLES: readonly SettlesKind[] = ['code', 'library'];
+
+/**
+ * Whether a claim is a finding, which the reviewer is shown on the diff:
+ * refuted, or unverifiable where the code or a library's source could
+ * settle it. An unverifiable claim only a CI log, a sandboxed run, the
+ * author or something outside the repository can settle is listed
+ * quietly instead.
+ */
 export function isFinding(claim: Claim): boolean {
-  return claim.verdict.kind === 'refuted' || claim.verdict.kind === 'unverifiable';
+  const { verdict } = claim;
+  if (verdict.kind === 'refuted') return true;
+  return verdict.kind === 'unverifiable' && (verdict.settles === undefined || FINDING_SETTLES.includes(verdict.settles.kind));
 }
 
 /** How many findings each part has, by the part's index. */

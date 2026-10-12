@@ -23,7 +23,7 @@ import { SideBarProvider, sideBarMessage, type SideBarDeps } from '../src/side-b
 import { StepTickStore } from '../src/side-bar/step-ticks.js';
 import { nextPartToReview, setupLine, sideBarSteps, type SideBarState } from '../src/side-bar/steps.js';
 import { anchorOf, buildTree, pendingReviewSection, treeMessage } from '../src/tree.js';
-import { REQUESTS_FETCH, carriedResult, ciLogOfferedResult, ciLogReadResult, claimsResult, criteriaResult, fetchedResult, judgedResult, mappedCriteriaResult, mixedResult, nonDefaultBranchResult, offeredResult, pipelineResult, reviewStages, unexplainedResult } from './results.js';
+import { REQUESTS_FETCH, carriedResult, ciLogOfferedResult, ciLogReadResult, claimsResult, criteriaResult, fetchedResult, judgedResult, mappedCriteriaResult, mixedResult, nonDefaultBranchResult, offeredResult, pipelineResult, reviewStages, settledResult, unexplainedResult } from './results.js';
 import { ConfigurationTarget, stub, stubContext, window, type StubWebviewView } from './vscode-stub.js';
 
 const NOW = new Date('2026-10-06T12:00:00Z');
@@ -128,6 +128,12 @@ describe('the review path', () => {
     expect(sideBarSteps(mapped)[5]!.summary).toBe('1 not met · 1 met');
     const unexplained = reviewState({ result: unexplainedResult(), storyRead: true, marks: marked(...mixedResult().parts) });
     expect(sideBarSteps(unexplained)[5]!.summary).toBe('2 criteria · 3 unexplained');
+  });
+
+  it('counts only the findings on step 5, then how many claims the code cannot settle', () => {
+    const settled = reviewState({ result: settledResult(), storyRead: true, marks: marked(...mixedResult().parts) });
+    // The author's-run and outside-the-repository claims are unverifiable too, but no finding: counted apart.
+    expect(sideBarSteps(settled)[4]!.summary).toBe('1 refuted · 2 unverifiable · 1 verified · 2 the code cannot settle');
   });
 
   it('marks a step done when its "I\u2019ve checked these" tick holds, and opens the next one', () => {
@@ -320,6 +326,68 @@ describe("the side bar's page", () => {
     expect(body).toMatch(/<input type="checkbox" id="step-5-tick" data-tick="claims" aria-label="I&#39;ve checked the claims">/);
   });
 
+  it('groups the unverifiable claims on step 5 by what can settle them, the author\u2019s run and outside the repository listed quietly, with no thread', () => {
+    const body = sideBarBody(reviewState({ result: settledResult(), storyRead: true, marks: marked(...mixedResult().parts) }));
+    const headings = [
+      '<ul class="findings" aria-label="Refuted claims">',
+      '<h3 class="group">Should be checkable</h3><ul class="findings" aria-label="Should be checkable">',
+      '<h3 class="group">Needs a library</h3><ul class="findings" aria-label="Needs a library">',
+      '<h3 class="group">The author&#39;s run <span class="aside">· not findings</span></h3><ul class="findings quiet" aria-label="The author&#39;s run">',
+      '<h3 class="group">Outside the repository <span class="aside">· not findings</span></h3><ul class="findings quiet" aria-label="Outside the repository">',
+    ];
+    const at = headings.map((heading) => body.indexOf(heading));
+    expect(at.every((each) => each >= 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+    // Each claim sits in the group its settles names: the story claim the code's, the comment claim a library's.
+    const where = (claim: number): number => body.indexOf(`data-claim-where="${claim}"`);
+    expect(where(1)).toBeLessThan(at[1]!);
+    expect(where(3)).toBeGreaterThan(at[1]!);
+    expect(where(3)).toBeLessThan(at[2]!);
+    expect(where(2)).toBeGreaterThan(at[2]!);
+    expect(where(2)).toBeLessThan(at[3]!);
+    expect(where(4)).toBeGreaterThan(at[3]!);
+    expect(where(4)).toBeLessThan(at[4]!);
+    expect(where(5)).toBeGreaterThan(at[4]!);
+    // The quiet rows carry no thread to act on: no Draft comment, Open or Verify again.
+    expect(body).toContain('<li class="finding quiet">');
+    expect(body).not.toMatch(/data-kind="claim" data-index="[45]"/);
+    expect(body).toContain('id="step-5-draft-claim-3"');
+    expect(body).toContain('id="step-5-draft-claim-2"');
+    // The verified claim stays folded.
+    expect(body).toContain('<p class="folded"><span class="tone-ok" aria-hidden="true">✓</span> 1 verified</p>');
+  });
+
+  it('keeps a carried-over claim\u2019s reading and what would settle it, finding or quiet', () => {
+    const result = settledResult();
+    result.claims = { ...result.claims!, claims: result.claims!.claims.map((claim, index) => (index === 1 || index === 4 ? { ...claim, carried: true } : claim)) };
+    const body = sideBarBody(reviewState({ result, storyRead: true, marks: marked(...mixedResult().parts) }));
+    expect(body).toContain('data-claim-where="1">docstring · src/retry.py:3–4</button><span class="carried">carried over</span>');
+    expect(body).toContain('id="step-5-looked-claim-1-0"');
+    expect(body).toContain('data-claim-where="4">pull request description, line 7</button><span class="carried">carried over</span>');
+    expect(body).toContain('id="step-5-looked-claim-4-0"');
+    expect(body).toContain('<span class="label">Would settle it</span> the author: the measured numbers come from the author&#39;s own run');
+  });
+
+  it('shows on every step 5 row what the agent looked at, and on every unverifiable one what would settle it', () => {
+    const body = sideBarBody(reviewState({ result: settledResult(), storyRead: true, marks: marked(...mixedResult().parts) }));
+    // Each range of the head copy is a chip that opens it; a single line reads as one line.
+    expect(body).toContain(
+      '<div class="meta"><span class="label">Looked at</span>' +
+        '<button type="button" class="chip" id="step-5-looked-claim-1-0" data-claim-looked="1" data-index="0" title="Open the lines in the head copy" aria-label="Open the lines in the head copy of src/retry.py:5–6">src/retry.py:5–6</button>' +
+        '<button type="button" class="chip" id="step-5-looked-claim-1-1" data-claim-looked="1" data-index="1" title="Open the lines in the head copy" aria-label="Open the lines in the head copy of src/settings.ts:2">src/settings.ts:2</button></div>',
+    );
+    // A verdict that read nothing says so.
+    expect(body).toContain('<div class="meta"><span class="label">Looked at</span><span class="none">no line of the head copy</span></div>');
+    expect(body.match(/<li class="finding/g)).toHaveLength(5);
+    expect(body.match(/<span class="label">Looked at<\/span>/g)).toHaveLength(5);
+    // Every unverifiable row says what would settle it, and the refuted one does not.
+    expect(body.match(/<span class="label">Would settle it<\/span>/g)).toHaveLength(4);
+    expect(body).toContain('<div class="why"><span class="label">Would settle it</span> the code: the agent judged it verified, so the code should settle it: check it</div>');
+    expect(body).toContain('<div class="why"><span class="label">Would settle it</span> the library&#39;s source: the source of requests could settle it</div>');
+    expect(body).toContain('<div class="why"><span class="label">Would settle it</span> the author: the measured numbers come from the author&#39;s own run</div>');
+    expect(body).toContain('<div class="why"><span class="label">Would settle it</span> something outside the repository: the delivery service limits</div>');
+  });
+
   it('keeps a pipeline claim\u2019s where as text, and a fetched library\u2019s cited lines as chips that do not open', () => {
     const shown = pipelineResult();
     shown.claims = {
@@ -353,6 +421,8 @@ describe("the side bar's page", () => {
     const result = offeredResult();
     const body = sideBarBody(reviewState({ result, storyRead: true, marks: marked(...mixedResult().parts) }));
     expect(body).toContain('id="step-5-fetch-claim-2" class="secondary" data-finding="fetch" data-kind="claim" data-index="2">Fetch library</button>');
+    // A claim a library's source would settle offers its fetch first.
+    expect(body).toContain('<div class="actions"><button type="button" id="step-5-fetch-claim-2"');
     // The verdict's own words, which name the library, are the reason the thread shows; the card names the button only.
     expect(body).not.toContain('>Decompile<');
     // A .NET package with no exact source turns the button into the decompile offer, still pressed only when pressed.
@@ -377,8 +447,14 @@ describe("the side bar's page", () => {
     const marks = marked(...mixedResult().parts);
     const offered = sideBarBody(reviewState({ result: ciLogOfferedResult(), storyRead: true, marks }));
     expect(offered).toContain('id="step-5-ciLog-claim-1" class="secondary" data-finding="ciLog" data-kind="claim" data-index="1">Read the CI log</button>');
+    // The claim is listed quietly under The author's run, with no thread: Read the CI log is its one action.
+    const quiet = offered.slice(offered.indexOf('aria-label="The author&#39;s run"'));
+    expect(quiet).toContain('<li class="finding quiet">');
+    expect(quiet.slice(0, quiet.indexOf('</ul>'))).toContain('data-finding="ciLog"');
+    expect(offered).not.toContain('id="step-5-draft-claim-1"');
     const read = sideBarBody(reviewState({ result: ciLogReadResult(), storyRead: true, marks }));
     expect(read).not.toContain('Read the CI log');
+    expect(read).toContain('<div class="why">judged again with the logs of the checks that passed: check / lint</div>');
     expect(read).toContain('aria-label="Open its check run on GitHub of CI log of check / lint (a passing check), line 2">CI log of check / lint (a passing check), line 2</button>');
   });
 
@@ -421,10 +497,16 @@ describe("the side bar's page", () => {
     // The verdict's reason, its cited line's path and the recheck are the agent's words too: they stay text.
     docstring.location = { ...docstring.location, kind: 'file', path: '<img src=y>.py', line: 3, endLine: 4 };
     const docstringVerdict = docstring.verdict as Exclude<typeof docstring.verdict, { kind: 'not checked' }>;
-    docstring.verdict = { ...docstringVerdict, reason: 'The loop runs <img src=y> times.', evidence: [{ path: '<script>a.py</script>', line: 6, quote: 'for attempt in range(5):' }] };
+    docstring.verdict = {
+      ...docstringVerdict,
+      reason: 'The loop runs <img src=y> times.',
+      evidence: [{ path: '<script>a.py</script>', line: 6, quote: 'for attempt in range(5):' }],
+      looked: [{ path: '<img src=z>.py', line: 1, endLine: 2 }],
+      lookedRecheck: 'the range <script>b.py</script>:1 names a file the head copy does not have',
+    };
     const story = hostile.claims!.claims[3]!;
     const storyVerdict = story.verdict as Exclude<typeof story.verdict, { kind: 'not checked' }>;
-    story.verdict = { ...storyVerdict, recheck: 'the model\u2019s memory never yields <script>verified</script>' };
+    story.verdict = { ...storyVerdict, recheck: 'the model\u2019s memory never yields <script>verified</script>', settles: { kind: 'author', note: 'the <img src=w> run' } };
     const criteria = mappedCriteriaResult();
     criteria.criteria!.criteria[1]!.quote = 'The retries are <script>logged</script>';
     const body = sideBarBody(reviewState({ result: { ...hostile, criteria: criteria.criteria, unexplained: unexplainedResult().unexplained }, storyRead: true, marks: marked(...mixedResult().parts) }));
@@ -434,6 +516,10 @@ describe("the side bar's page", () => {
     expect(body).toContain('<div class="why">dropped to unverifiable: the model\u2019s memory never yields &lt;script&gt;verified&lt;/script&gt;</div>');
     expect(body).toContain('&lt;img src=y&gt;.py:3–4');
     expect(body).toContain('&lt;script&gt;a.py&lt;/script&gt;:6');
+    // What the agent looked at, why the engine dropped a range, and what would settle a claim are the agent's words too.
+    expect(body).toContain('&lt;img src=z&gt;.py:1–2');
+    expect(body).toContain('<div class="why">dropped from what it looked at: the range &lt;script&gt;b.py&lt;/script&gt;:1 names a file the head copy does not have</div>');
+    expect(body).toContain('the author: the &lt;img src=w&gt; run');
     expect(body).not.toMatch(/<img|<script/);
   });
 
@@ -530,6 +616,7 @@ describe('the side bar messages', () => {
     expect(sideBarMessage({ type: 'finding', action: 'fetch', kind: 'criterion', index: 0 })).toEqual({ type: 'finding', action: 'fetch', finding: { kind: 'criterion', index: 0 } });
     expect(sideBarMessage({ type: 'claimWhere', claim: 1 })).toEqual({ type: 'claimWhere', claim: 1 });
     expect(sideBarMessage({ type: 'claimEvidence', claim: 1, index: 0 })).toEqual({ type: 'claimEvidence', claim: 1, index: 0 });
+    expect(sideBarMessage({ type: 'claimLooked', claim: 1, index: 0 })).toEqual({ type: 'claimLooked', claim: 1, index: 0 });
     expect(sideBarMessage({ type: 'openIssue', issue: 1 })).toEqual({ type: 'openIssue', issue: 1 });
     expect(sideBarMessage({ type: 'tick', step: 'criteria', checked: true })).toEqual({ type: 'tick', step: 'criteria', checked: true });
     for (const command of ['filterChanged', 'partsMenu', 'openSent']) expect(sideBarMessage({ type: 'command', command })).toEqual({ type: 'command', command });
@@ -551,6 +638,7 @@ describe('the side bar messages', () => {
     expect(sideBarMessage({ type: 'claimWhere', claim: '1' })).toBeUndefined();
     expect(sideBarMessage({ type: 'claimEvidence', claim: 1, index: '0' })).toBeUndefined();
     expect(sideBarMessage({ type: 'claimEvidence', claim: '1', index: 0 })).toBeUndefined();
+    expect(sideBarMessage({ type: 'claimLooked', claim: 1, index: '0' })).toBeUndefined();
     expect(sideBarMessage({ type: 'openIssue', issue: '0' })).toBeUndefined();
     expect(sideBarMessage({ type: 'tick', step: 'parts', checked: true })).toBeUndefined();
     expect(sideBarMessage({ type: 'tick', step: 'claims', checked: 'yes' })).toBeUndefined();
@@ -697,6 +785,9 @@ describe('the side bar view', () => {
     view.webview.receive({ type: 'claimEvidence', claim: 0, index: 0 });
     view.webview.receive({ type: 'claimEvidence', claim: 0, index: 5 });
     view.webview.receive({ type: 'claimEvidence', claim: 99, index: 0 });
+    // A range the claim's agent did not look at, or a claim that is not there, opens nothing.
+    view.webview.receive({ type: 'claimLooked', claim: 1, index: 9 });
+    view.webview.receive({ type: 'claimLooked', claim: 99, index: 0 });
     await settle;
     await Promise.all(stub.commandRuns);
 

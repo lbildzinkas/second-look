@@ -1,4 +1,4 @@
-import { parsePullRequestUrl, partsLeft, reviewedState, CRITERION_VERDICT_KINDS, type AgentName, type Part, type ReviewedMarks, type ReviewResult, type ReviewStageId, type SubmitKind } from '@second-look/engine';
+import { isFinding, parsePullRequestUrl, partsLeft, reviewedState, CRITERION_VERDICT_KINDS, type AgentName, type Part, type ReviewedMarks, type ReviewResult, type ReviewStageId, type SubmitKind } from '@second-look/engine';
 import type { AgentSettings } from '../agent-settings.js';
 import type { ListedComment } from '../comments.js';
 import { partsInReadingOrder, type TreeSection } from '../tree.js';
@@ -169,15 +169,22 @@ export function pullRequestLine(result: ReviewResult): string {
   return ref === null ? `#${result.pullRequest.number}` : `${ref.owner}/${ref.repo} #${result.pullRequest.number}`;
 }
 
-/** Step 5’s summary: the claims’ verdicts once judged, findings first, else how many are listed. */
+/**
+ * Step 5’s summary: the claims’ verdicts once judged, findings first —
+ * an unverifiable claim counted only when it is a finding — then how
+ * many the code cannot settle, listed quietly; else how many are listed.
+ */
 function claimsSummary(result: ReviewResult): string {
   const claims = result.claims?.claims ?? [];
   const judged = claims.filter((claim) => claim.verdict.kind !== 'not checked');
   if (judged.length === 0) return claims.length === 0 ? '' : `${claims.length} listed`;
-  return (['refuted', 'unverifiable', 'verified'] as const)
-    .map((kind) => ({ kind, count: judged.filter((claim) => claim.verdict.kind === kind).length }))
-    .filter(({ count }) => count > 0)
-    .map(({ kind, count }) => `${count} ${kind}`)
+  const counted = judged.filter((claim) => claim.verdict.kind === 'verified' || isFinding(claim));
+  const quiet = judged.length - counted.length;
+  const counts: [string, number][] = (['refuted', 'unverifiable', 'verified'] as const).map((kind) => [kind, counted.filter((claim) => claim.verdict.kind === kind).length]);
+  counts.push(['the code cannot settle', quiet]);
+  return counts
+    .filter(([, count]) => count > 0)
+    .map(([label, count]) => `${count} ${label}`)
     .join(' · ');
 }
 

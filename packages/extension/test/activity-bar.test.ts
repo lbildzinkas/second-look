@@ -46,7 +46,7 @@ const SIDE_BAR_PLACES: Record<string, string> = {
   'second-look.openOverview': 'steps 3, 5 and 6: Open the overview; the title bar',
   'second-look.whyThisMatters': "a part row's ⋯ menu",
   'second-look.fetchLibrary': "step 5: a finding's Fetch library or Decompile",
-  'second-look.readCiLog': "step 5: a finding's Read the CI log",
+  'second-look.readCiLog': "step 5: a quietly listed claim's Read the CI log",
   'second-look.openLibraryEvidence': "step 5: a finding's Open",
   'second-look.draftComment': "steps 5 and 6: a finding's Draft comment",
   'second-look.addDraft': "step 7: a draft's Add to review",

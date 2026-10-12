@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { AgentRunRequest } from '../src/agent.js';
 import { CLAIMS_INSTRUCTIONS } from '../src/claims.js';
-import type { CiResults, Claim, ClaimVerdict, Claims, NoiseAssessment, Part } from '../src/protocol.js';
+import type { CiResults, Claim, ClaimVerdict, Claims, NoiseAssessment, Part, SettlesKind } from '../src/protocol.js';
 import { reviewChange, type ReviewInput, type ReviewStage } from '../src/review.js';
 import { STORY_INSTRUCTIONS } from '../src/story.js';
 import {
@@ -504,9 +504,9 @@ describe('judgeVerdict', () => {
 describe('findings', () => {
   const refuted: ClaimVerdict = { kind: 'refuted', source: 'the change itself', reason: 'r', evidence: [{ path: 'app/settings.py', line: 2, quote: 'RETRIES = 5' }], looked: [] };
   const verified: ClaimVerdict = { kind: 'verified', source: 'the change itself', reason: 'r', evidence: [], looked: [] };
-  const unverifiable: ClaimVerdict = { kind: 'unverifiable', source: "the model's memory", reason: 'r', evidence: [], looked: [], settles: { kind: 'author', note: 'n' } };
+  const unverifiable = (kind: SettlesKind): ClaimVerdict => ({ kind: 'unverifiable', source: "the model's memory", reason: 'r', evidence: [], looked: [], settles: { kind, note: 'n' } });
 
-  it('are the refuted and unverifiable claims, counted on their parts', () => {
+  it('are the refuted claims and the unverifiable ones the code or a library could settle, counted on their parts', () => {
     const [docstring, description] = claims();
     const judged: Claims = {
       promptVersion: '1',
@@ -516,20 +516,28 @@ describe('findings', () => {
       claims: [
         { ...docstring!, verdict: refuted },
         { ...description!, verdict: verified },
-        { ...description!, part: 1, verdict: unverifiable },
+        { ...description!, part: 1, verdict: unverifiable('code') },
         { ...description!, part: 1, verdict: NOT_CHECKED },
+        { ...description!, part: 1, verdict: unverifiable('library') },
       ],
     };
-    expect(judged.claims.map(isFinding)).toEqual([true, false, true, false]);
-    expect(findingCounts(judged, 2)).toEqual([1, 1]);
+    expect(judged.claims.map(isFinding)).toEqual([true, false, true, false, true]);
+    expect(findingCounts(judged, 2)).toEqual([1, 2]);
     expect(findingCounts(undefined, 2)).toEqual([0, 0]);
+  });
+
+  it('leave out the unverifiable claims only a CI log, a sandboxed run, the author or something outside the repository could settle', () => {
+    const [, description] = claims();
+    const quiet = (['ci-log', 'sandboxed-run', 'author', 'outside-repository'] as const).map((kind) => ({ ...description!, verdict: unverifiable(kind) }));
+    expect(quiet.map(isFinding)).toEqual([false, false, false, false]);
+    expect(findingCounts({ promptVersion: '1', outcome: 'listed', detail: '', stamp: { agent: 'fake', agentVersion: '1', model: null, effort: null, runAt: '' }, claims: quiet }, 1)).toEqual([0]);
   });
 
   it("sit on the claim's own line, else on the first line the verdict cites, else nowhere on the diff", () => {
     const [docstring, description] = claims();
     expect(findingAnchor({ ...docstring!, verdict: refuted }, [retryPart()])).toEqual({ path: 'app/retry.py', line: 2 });
     expect(findingAnchor({ ...description!, verdict: refuted }, [retryPart()])).toEqual({ path: 'app/settings.py', line: 2 });
-    expect(findingAnchor({ ...description!, verdict: unverifiable }, [retryPart()])).toBeUndefined();
+    expect(findingAnchor({ ...description!, verdict: unverifiable('code') }, [retryPart()])).toBeUndefined();
   });
 
   it("sit on the line a pipeline finding names only when the diff shows it, else on their part's first added line", () => {

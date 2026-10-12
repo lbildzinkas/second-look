@@ -76,6 +76,7 @@ export type SideBarMessage =
   | { type: 'finding'; action: FindingAction; finding: FindingRef }
   | { type: 'claimWhere'; claim: number }
   | { type: 'claimEvidence'; claim: number; index: number }
+  | { type: 'claimLooked'; claim: number; index: number }
   | { type: 'openIssue'; issue: number }
   | { type: 'tick'; step: StepTick; checked: boolean }
   | { type: 'partMenu'; menu: PartMenu; anchor: PartAnchor }
@@ -95,6 +96,7 @@ export function sideBarMessage(value: unknown): SideBarMessage | undefined {
   }
   if (type === 'claimWhere' && Number.isInteger(claim)) return { type, claim: claim as number };
   if (type === 'claimEvidence' && Number.isInteger(claim) && Number.isInteger(index)) return { type, claim: claim as number, index: index as number };
+  if (type === 'claimLooked' && Number.isInteger(claim) && Number.isInteger(index)) return { type, claim: claim as number, index: index as number };
   const ref = { kind, index };
   if (type === 'finding' && (FINDING_ACTIONS as readonly string[]).includes(action as string) && isFindingRef(ref)) {
     return { type, action: action as FindingAction, finding: { kind: ref.kind, index: ref.index } };
@@ -129,7 +131,8 @@ export function sideBarMessage(value: unknown): SideBarMessage | undefined {
  * made — its file's line in the head copy, its description line in the
  * overview's description, or its sentence in the story — a claim's
  * cited lines, which open the head copy's line or, for a CI log, its
- * check run on GitHub, the one outside link, a linked issue, which opens on GitHub, and the
+ * check run on GitHub, the one outside link, the ranges a claim's agent
+ * looked at, which open in the head copy, a linked issue, which opens on GitHub, and the
  * steps' “I've checked these” ticks, which the store keeps per pull
  * request, step 7's rows, which act on the pending comments and drafts,
  * step 4's ⋯, which toggles mirroring the reviewed marks to GitHub's
@@ -260,6 +263,13 @@ export class SideBarProvider implements vscode.WebviewViewProvider {
       // A pull request description has no line anchors on GitHub, and the story lives only in the overview: both open there, marked.
       else if (location?.kind === 'description') this.deps?.openOverviewAt({ descriptionLine: location.line });
       else if (location?.kind === 'story') this.deps?.openOverviewAt({ storySentence: location.sentence });
+      return;
+    }
+    if (message.type === 'claimLooked') {
+      const claim = result?.claims?.claims[message.claim];
+      // What the agent read is always a range of the head copy, even for a verdict judged again in a library's source.
+      const range = claim === undefined || claim.verdict.kind === 'not checked' ? undefined : claim.verdict.looked[message.index];
+      if (range !== undefined) this.deps?.openLine(range.path, range.line);
       return;
     }
     if (message.type === 'claimEvidence') {

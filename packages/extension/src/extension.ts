@@ -210,8 +210,9 @@ function carriedPart(arg: unknown): Part | undefined {
  * The session keeps the result it shows, so a part click can open the
  * multi-file diff from the same copies the engine downloaded. The review's
  * overview opens with its first result, without taking the focus from the
- * side bar, and follows every stage, as do the findings — the refuted and
- * unverifiable claims — shown as the companion's own threads on the diff.
+ * side bar, and follows every stage, as do the findings — the refuted
+ * claims, and the unverifiable ones the code or a library's source could
+ * settle — shown as the companion's own threads on the diff.
  *
  * Each part's checkbox — in the side bar, or in the banner above the part's
  * diff, which also carries its importance, signals and asks — marks it
@@ -250,8 +251,9 @@ class ReviewSession {
     (part) => void this.openPart(part),
     (path, line, side) => void this.openLine(path, line, side),
     (finding) => void this.draftComment(finding),
+    (claim) => void this.readCiLog(claim),
   );
-  /** The review's findings, its refuted and unverifiable claims, as threads on the diff. */
+  /** The review's findings — its refuted claims, and its unverifiable ones the code or a library's source could settle — as threads on the diff. */
   private readonly findings = new FindingThreads();
   /** The banner above the diff of the part opened last, with its importance, signals, asks and reviewed checkbox. */
   private readonly banner = new PartBanner();

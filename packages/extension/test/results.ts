@@ -1,12 +1,15 @@
 import {
   REVIEW_RESULT_VERSION,
   REVIEW_STAGE_IDS,
+  type Claim,
+  type ClaimVerdict,
   type Hunk,
   type NoiseAssessment,
   type Part,
   type ReviewResult,
   type ReviewStageId,
   type ReviewStageRecord,
+  type Settles,
 } from '@second-look/engine';
 
 /** The noise assessment every part carries: no rule applied. */
@@ -321,6 +324,37 @@ export function carriedResult(copies?: CopyPaths): ReviewResult {
     carriedOver: { commit: '5555555555555555555555555555555555555555', reviewedAt: '2026-10-11T14:03:27.000Z', agent: { agent: 'pi', model: null, effort: 'high' } },
     parts: shown.parts.map((each, index) => (index === 0 ? { ...each, carried: true } : each)),
     claims: { ...claims, claims: claims.claims.map((claim, index) => (index < 2 ? { ...claim, carried: true } : claim)) },
+  };
+}
+
+/**
+ * The judged result with the agent's reading on the refuted claim, and
+ * two more description claims the code cannot settle: one only the
+ * author's run can, one only something outside the repository can.
+ */
+export function settledResult(copies?: CopyPaths): ReviewResult {
+  const shown = judgedResult(copies);
+  const claims = shown.claims!;
+  const [description, docstring] = claims.claims;
+  const quiet = (quote: string, line: number, settles: Settles): Claim => ({
+    ...description!,
+    quote,
+    location: { kind: 'description', line },
+    verdict: { kind: 'unverifiable', source: 'the change itself', reason: 'Nothing in the change can show it.', evidence: [], looked: [{ path: 'src/retry.py', line: 1, endLine: 8 }], settles },
+  });
+  return {
+    ...shown,
+    claims: {
+      ...claims,
+      claims: [
+        description!,
+        { ...docstring!, verdict: { ...(docstring!.verdict as Exclude<ClaimVerdict, { kind: 'not checked' }>), looked: [{ path: 'src/retry.py', line: 5, endLine: 6 }, { path: 'src/settings.ts', line: 2, endLine: 2 }] } },
+        claims.claims[2]!,
+        claims.claims[3]!,
+        quiet('Sends 40% fewer duplicates in our runs.', 7, { kind: 'author', note: "the measured numbers come from the author's own run" }),
+        quiet('The delivery service accepts five retries.', 8, { kind: 'outside-repository', note: 'the delivery service limits' }),
+      ],
+    },
   };
 }
 
