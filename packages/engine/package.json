@@ -1,7 +1,7 @@
 {
   "name": "@second-look/engine",
   "description": "Second Look engine: fetches and parses a pull request for the reviewer's companion.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "license": "MIT",
   "type": "module",

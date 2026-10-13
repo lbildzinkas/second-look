@@ -2,7 +2,7 @@
   "name": "second-look-extension",
   "displayName": "Second Look",
   "description": "The reviewer's companion: ranks a pull request by what matters, so the human reviews it faster and better.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -451,7 +451,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@second-look/engine": "0.2.0"
+    "@second-look/engine": "0.2.1"
   },
   "devDependencies": {
     "@types/vscode": "^1.90.0"
