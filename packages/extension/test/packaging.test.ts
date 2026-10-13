@@ -33,11 +33,11 @@ describe('stagedEngineManifest', () => {
     expect(
       stagedEngineManifest({
         name: '@second-look/engine',
-        version: '0.2.0',
+        version: '0.2.1',
         bin: { 'second-look-engine': './dist/main.js' },
         dependencies: { '@octokit/rest': '^21.1.1' },
       }),
-    ).toEqual({ name: '@second-look/engine', version: '0.2.0', type: 'module' });
+    ).toEqual({ name: '@second-look/engine', version: '0.2.1', type: 'module' });
   });
 });
 
@@ -48,7 +48,7 @@ describe('stagedExtensionManifest', () => {
         name: 'second-look-extension',
         displayName: 'Second Look',
         description: "The reviewer's companion.",
-        version: '0.2.0',
+        version: '0.2.1',
         private: true,
         license: 'MIT',
         type: 'module',
@@ -61,16 +61,16 @@ describe('stagedExtensionManifest', () => {
         exports: { '.': './dist/index.js' },
         contributes: { commands: [] },
         scripts: { build: 'tsc -b', test: 'vitest run' },
-        dependencies: { '@second-look/engine': '0.2.0' },
+        dependencies: { '@second-look/engine': '0.2.1' },
         devDependencies: { '@types/vscode': '^1.90.0' },
       },
-      { '@second-look/engine': '0.2.0', '@vscode/tree-sitter-wasm': '0.3.1' },
+      { '@second-look/engine': '0.2.1', '@vscode/tree-sitter-wasm': '0.3.1' },
     );
     expect(staged).toEqual({
       name: 'second-look-extension',
       displayName: 'Second Look',
       description: "The reviewer's companion.",
-      version: '0.2.0',
+      version: '0.2.1',
       license: 'MIT',
       type: 'module',
       publisher: 'lbildzinkas',
@@ -79,7 +79,7 @@ describe('stagedExtensionManifest', () => {
       categories: ['Other'],
       main: './dist/index.js',
       contributes: { commands: [] },
-      dependencies: { '@second-look/engine': '0.2.0', '@vscode/tree-sitter-wasm': '0.3.1' },
+      dependencies: { '@second-look/engine': '0.2.1', '@vscode/tree-sitter-wasm': '0.3.1' },
     });
   });
 });
