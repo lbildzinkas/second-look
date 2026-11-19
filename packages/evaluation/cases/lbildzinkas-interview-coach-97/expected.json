@@ -1,0 +1,24 @@
+{
+  "noise": {
+    "src/interview_coach/study_material.py": null,
+    "sources.yaml": null,
+    "THIRD_PARTY_NOTICES.md": null,
+    "tests/test_study_material.py": null,
+    "README.md": null,
+    ".gitignore": null
+  },
+  "importantParts": [],
+  "claims": [
+    {
+      "text": "`scripts/check.sh` passes: ruff, pyright and 39 tests.",
+      "origin": {
+        "in": "description",
+        "line": 44
+      },
+      "verdict": {
+        "kind": "unverifiable",
+        "settles": "ci-log"
+      }
+    }
+  ]
+}

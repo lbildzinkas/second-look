@@ -4,6 +4,10 @@
  * `stub`, and read back what the extension showed.
  */
 
+import { randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 export interface StubDisposable {
   dispose(): void;
 }
@@ -161,6 +165,8 @@ export interface StubState {
   executedCommands: StubExecutedCommand[];
   /** What each executed command's run settles with, in the order of executedCommands. */
   commandRuns: Promise<unknown>[];
+  /** The context keys the extension set through the editor's setContext command, which executedCommands leaves out. */
+  contextKeys: Record<string, unknown>;
   treeViews: StubTreeView[];
   fileSystemProviders: StubFileSystemProvider[];
   decorationTypes: StubDecorationType[];
@@ -178,6 +184,8 @@ export interface StubState {
   workspaceConfiguration: Record<string, unknown>;
   /** The settings the extension wrote, in order: the key, the value and the target. */
   configurationUpdates: { key: string; value: unknown; target: unknown }[];
+  /** The extension's global state, which the context's memento reads and writes. */
+  globalState: Record<string, unknown>;
   /** The editors currently visible; tests set these and fire the change. */
   visibleTextEditors: unknown[];
   /** The editor that has focus, with its document and selection; none unless a test sets one. */
@@ -203,6 +211,8 @@ export interface StubState {
   /** The URIs the extension opened in the browser, as strings. */
   openedExternals: string[];
   progressTitles: string[];
+  /** Every progress shown: its title, and where it shows. */
+  progress: { title: string; location: unknown }[];
   sessionRequests: { id: string; scopes: string[]; createIfNone: boolean }[];
   /** What getSession resolves with; undefined reads as no sign-in. */
   session: StubSession | undefined;
@@ -222,6 +232,7 @@ export const stub: StubState = {
   commands: [],
   executedCommands: [],
   commandRuns: [],
+  contextKeys: {},
   treeViews: [],
   fileSystemProviders: [],
   decorationTypes: [],
@@ -233,6 +244,7 @@ export const stub: StubState = {
   configuration: {},
   workspaceConfiguration: {},
   configurationUpdates: [],
+  globalState: {},
   visibleTextEditors: [],
   activeTextEditor: undefined,
   files: new Map(),
@@ -246,6 +258,7 @@ export const stub: StubState = {
   informationChoice: undefined,
   openedExternals: [],
   progressTitles: [],
+  progress: [],
   sessionRequests: [],
   session: undefined,
   cancelSignIn: false,
@@ -253,6 +266,7 @@ export const stub: StubState = {
     stub.commands = [];
     stub.executedCommands = [];
     stub.commandRuns = [];
+    stub.contextKeys = {};
     stub.treeViews = [];
     stub.fileSystemProviders = [];
     stub.decorationTypes = [];
@@ -264,6 +278,7 @@ export const stub: StubState = {
     stub.configuration = {};
     stub.workspaceConfiguration = {};
     stub.configurationUpdates = [];
+    stub.globalState = {};
     stub.visibleTextEditors = [];
     stub.activeTextEditor = undefined;
     visibleEditorListeners.clear();
@@ -279,6 +294,7 @@ export const stub: StubState = {
     stub.informationChoice = undefined;
     stub.openedExternals = [];
     stub.progressTitles = [];
+    stub.progress = [];
     stub.sessionRequests = [];
     stub.session = undefined;
     stub.cancelSignIn = false;
@@ -510,6 +526,11 @@ export const commands = {
     return { dispose: () => undefined };
   },
   executeCommand(id: string, ...args: unknown[]): PromiseLike<unknown> {
+    // The editor's setContext only sets a key a manifest's `when` reads.
+    if (id === 'setContext') {
+      stub.contextKeys[String(args[0])] = args[1];
+      return Promise.resolve(undefined);
+    }
     stub.executedCommands.push({ id, args });
     // The registry runs a command the extension registered; the editor's
     // own commands only record that they ran.
@@ -571,10 +592,11 @@ export const window = {
     return Promise.resolve(stub.informationChoice);
   },
   async withProgress(
-    options: { title?: string },
+    options: { title?: string; location?: unknown },
     task: (progress: { report(): void }) => Promise<unknown>,
   ): Promise<unknown> {
     stub.progressTitles.push(options.title ?? '');
+    stub.progress.push({ title: options.title ?? '', location: options.location });
     return task({ report: () => undefined });
   },
   createTreeView(id: string): StubTreeView & StubDisposable {
@@ -707,6 +729,13 @@ export const ViewColumn = {
   One: 1,
   Two: 2,
   Three: 3,
+} as const;
+
+/** The places a progress can show, as the editor numbers them. */
+export const ProgressLocation = {
+  SourceControl: 1,
+  Window: 10,
+  Notification: 15,
 } as const;
 
 /** The states a comment thread can be shown in. */
@@ -882,7 +911,27 @@ export const authentication = {
   },
 };
 
-/** An extension context with the subscriptions activate records. */
-export function stubContext(): { subscriptions: StubDisposable[] } {
-  return { subscriptions: [] };
+/** The memento a context keeps its state in, backed by `stub.globalState`. */
+export interface StubMemento {
+  get<T>(key: string, defaultValue?: T): T | undefined;
+  update(key: string, value: unknown): Promise<void>;
+  keys(): readonly string[];
+}
+
+/** An extension context with the subscriptions activate records, its global state, and its global storage folder. */
+export function stubContext(): { subscriptions: StubDisposable[]; globalState: StubMemento; globalStorageUri: Uri } {
+  return {
+    subscriptions: [],
+    globalState: {
+      get: <T,>(key: string, defaultValue?: T): T | undefined => (stub.globalState[key] as T | undefined) ?? defaultValue,
+      update: (key: string, value: unknown): Promise<void> => {
+        stub.globalState[key] = value;
+        return Promise.resolve();
+      },
+      keys: () => Object.keys(stub.globalState),
+    },
+    // Each context gets its own storage folder, so tests that save
+    // comments through activate never see another's.
+    globalStorageUri: Uri.file(join(tmpdir(), 'second-look-global-storage', randomUUID())),
+  };
 }

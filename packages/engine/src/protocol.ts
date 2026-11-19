@@ -11,7 +11,7 @@ import type { AgentStamp } from './agent.js';
 import type { AskKind } from './asks.js';
 
 /** Version of the review result schema. */
-export const REVIEW_RESULT_VERSION = 20 as const;
+export const REVIEW_RESULT_VERSION = 25 as const;
 
 /**
  * Version 2 added the head commit's SHA and each part's noise assessment;
@@ -52,7 +52,21 @@ export const REVIEW_RESULT_VERSION = 20 as const;
  * version 19 added the review's budget: the limits the reviewer's
  * settings set and what the review and its later fetches, asks and drafts
  * have used so far; version 20 added the reason a claim or acceptance
- * criterion is not checked, when a budget limit left it so.
+ * criterion is not checked, when a budget limit left it so; version 21
+ * added the review's stages: each one's id, position, start time,
+ * duration, who worked on it and how it ended, a stage the reviewer's
+ * cancel kept from finishing marked stopped; version 22 added the saved
+ * review a review shows instead of running again: when it was produced,
+ * by which agent, model and effort, and the pull request's head now when
+ * it has new commits since; version 23 added the results a review carries
+ * over from the saved review of an earlier commit: the commit and who
+ * produced it, each part and claim carried over, and a stage carried over
+ * whole; version 24 added what each checked verdict's agent looked at in
+ * the head copy, and what could settle each unverifiable claim; version
+ * 25 added the Read the CI log offer on an unverifiable claim a CI log
+ * could settle, the passing checks' logs a claim was judged again with
+ * once the reviewer pressed it, and the label on a citation of a passing
+ * check's log.
  */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
@@ -147,15 +161,18 @@ export interface PendingReview {
   comments: Comment[];
 }
 
-/** The review that reached GitHub, with the link the reviewer reads it at. */
+/** The review that reached GitHub, with the link the reviewer reads it at and the head commit it is pinned to. */
 export interface SentReview {
   /** The review's HTML URL on GitHub. */
   url: string;
+  /** The head commit the review is pinned to: the one whose diff its comments were mapped against. */
+  commit: string;
 }
 
 /**
  * A finding the reviewer asks a draft comment from, by its index in the
- * review result's list that holds it: a refuted or unverifiable claim in
+ * review result's list that holds it: a refuted claim or an unverifiable
+ * one the code or a library's source could settle in
  * the claims, a part neither the description nor a linked issue explains
  * in the unexplained changes' parts, a change they describe that the diff
  * does not contain in their described changes, or a not met or partly met
@@ -364,6 +381,44 @@ export interface ReviewResult {
   docLinks?: DocLinks;
   /** The review's budget: its limits and what it has used so far; absent when the review was not metered, such as an offline replay. */
   budget?: Budget;
+  /** The review's stages in the order they run, each with how it stands; absent when no agent was asked, such as a plain review. */
+  stages?: ReviewStageRecord[];
+  /** Set when the review showed the pull request's saved result instead of running again; absent on a review that ran. */
+  saved?: SavedReview;
+  /**
+   * Set when the review re-ran only what new commits changed since the
+   * saved review of an earlier commit, carrying the rest over from it;
+   * absent on a review that ran in full.
+   */
+  carriedOver?: CarriedOver;
+}
+
+/**
+ * The saved review of an earlier commit a review carried results over
+ * from: the parts whose code did not change since, marked carried, and
+ * the stages whose input did not change, marked carried over.
+ */
+export interface CarriedOver {
+  /** The earlier head commit the saved review was of. */
+  commit: string;
+  /** When the review that produced it finished, as an ISO 8601 time. */
+  reviewedAt: string;
+  /** The agent, model and effort its agent passes ran on; absent for a review that ran no agent. */
+  agent?: ReviewStageAgent;
+}
+
+/**
+ * A saved review: the latest result the engine saved in the pull
+ * request's cache folder, shown as it stood with no agent run. It is of
+ * the head commit its pull request summary names.
+ */
+export interface SavedReview {
+  /** When the review that produced it finished, as an ISO 8601 time. */
+  reviewedAt: string;
+  /** The agent, model and effort its agent passes ran on; absent for a review that ran no agent. */
+  agent?: ReviewStageAgent;
+  /** The pull request's head commit now, when it has new commits since the one reviewed: the result is from an earlier commit, never current. Absent when it is current. */
+  newHead?: string;
 }
 
 /**
@@ -704,7 +759,7 @@ export interface CiResults {
   checks: CheckRun[];
 }
 
-/** One check run at the head commit, with its annotations and, when it failed, its trimmed log. */
+/** One check run at the head commit, with its annotations and, when it failed, its trimmed log; a passing check's log is read only on the reviewer's press. */
 export interface CheckRun {
   name: string;
   /** Its status as GitHub reports it, such as `completed` or `in_progress`. */
@@ -880,8 +935,10 @@ export const CHECKED_VERDICT_KINDS: readonly CheckedVerdictKind[] = ['refuted', 
 export interface Citation {
   /** The file, by its path in the head copy; for a CI log's line, the check run's name. */
   path: string;
-  /** True when the line is one of a failed check's trimmed CI log rather than a file's. */
+  /** True when the line is one of a check's trimmed CI log rather than a file's. */
   ciLog?: true;
+  /** True when that CI log is a passing check's, read on the reviewer's press, rather than a failed check's. */
+  passingCheck?: true;
   /** The 1-based line the quote starts on. */
   line: number;
   /** The quote, on one line: runs of white space as one space. */
@@ -928,6 +985,26 @@ export type ClaimVerdict =
       /** Why no library fetch is offered for the library the claim needs, said plainly. */
       noLibraryFetch?: string;
       /**
+       * The lines of the head copy the agent read for this claim, each
+       * re-checked by the engine; an entry naming a file or a line the
+       * copy does not have is dropped, and said so in `lookedRecheck`.
+       */
+      looked: LookedRange[];
+      /** Why the engine dropped entries of `looked`, when it did. */
+      lookedRecheck?: string;
+      /** What could settle the claim; set on every unverifiable verdict, and only on one. */
+      settles?: Settles;
+      /**
+       * The Read the CI log the companion offers on an unverifiable claim
+       * a CI log could settle, when the pull request has checks that
+       * passed at its head; nothing is fetched until the reviewer presses
+       * it (ADR 0003). A verdict judged again with those logs keeps the
+       * offer that was pressed.
+       */
+      ciLogFetch?: CiLogFetchOffer;
+      /** The passing checks' logs the verdict was judged again with, once the reviewer pressed Read the CI log; its citations are lines of those logs. */
+      ciLogs?: ReadCiLogs;
+      /**
        * The library source the verdict was judged against, once the
        * reviewer pressed its library fetch; its citations are paths in
        * that source, not in the head copy.
@@ -936,6 +1013,51 @@ export type ClaimVerdict =
       /** Why the engine dropped the agent's verdict to unverifiable, when it did. */
       recheck?: string;
     };
+
+/** A range of lines of one file of the head copy that the agent read for a claim. */
+export interface LookedRange {
+  /** The file, by its path in the head copy. */
+  path: string;
+  /** The 1-based first line read. */
+  line: number;
+  /** The 1-based last line read, at or after `line`. */
+  endLine: number;
+}
+
+/**
+ * What could settle an unverifiable claim: the code itself, which makes
+ * the verdict a finding to check; a library's source; a CI log; a
+ * sandboxed run; something outside the repository, such as a service or
+ * a dataset; or only the pull request's author.
+ */
+export type SettlesKind = 'code' | 'library' | 'ci-log' | 'sandboxed-run' | 'outside-repository' | 'author';
+
+/** What can settle an unverifiable claim, in the order a reviewer can act on it. */
+export const SETTLES_KINDS: readonly SettlesKind[] = ['code', 'library', 'ci-log', 'sandboxed-run', 'outside-repository', 'author'];
+
+/** What could settle an unverifiable claim, with a one-line note saying how. */
+export interface Settles {
+  kind: SettlesKind;
+  /** One plain line, such as which log or which measurement would settle it. */
+  note: string;
+}
+
+/** The read of passing checks' CI logs the companion offers with a verdict, started only by the reviewer. */
+export interface CiLogFetchOffer {
+  /** The checks that passed at the head commit, whose logs a press reads, by name in GitHub's order. */
+  checks: string[];
+  /** The companion's one-line reason for reading them. */
+  reason: string;
+}
+
+/** The passing checks' logs one press of Read the CI log read, and who judged the claim again with them. */
+export interface ReadCiLogs {
+  /** Each check that passed, with its page on GitHub and how its log was trimmed, or why it has none. */
+  checks: { name: string; url: string; detail: string }[];
+  /** The version of the verdicts prompt that judged the claim again. */
+  promptVersion: string;
+  stamp: AgentStamp;
+}
 
 /**
  * A library fetch the companion offers with a verdict (the glossary's
@@ -1078,6 +1200,13 @@ export interface Claim {
    * back; the pass's own outcome stays as it was.
    */
   asked?: true;
+  /**
+   * True when the claim and its verdict were carried over from the saved
+   * review of an earlier commit: its part did not change since, and no
+   * line its evidence cites did; absent when listed or judged in this
+   * review.
+   */
+  carried?: true;
 }
 
 /**
@@ -1303,7 +1432,7 @@ export type NoiseAssessment =
 export type PartOrigin = 'plain' | 'agent' | 'not grouped by the agent';
 
 /** One file's share of a part: the file's own fields and the hunks of it the part holds. */
-export type FileSlice = Omit<Part, 'name' | 'signals' | 'rank' | 'origin' | 'otherFiles'>;
+export type FileSlice = Omit<Part, 'name' | 'signals' | 'rank' | 'origin' | 'otherFiles' | 'carried'>;
 
 /**
  * A named group of related edits. The plain pass gives a part the hunks of
@@ -1374,6 +1503,12 @@ export interface Part {
    * hunks across files; absent when the part stays within one file.
    */
   otherFiles?: FileSlice[];
+  /**
+   * True when the part's code did not change since the saved review of an
+   * earlier commit, so its grouping and ranking were carried over from it;
+   * absent when it was grouped and ranked in this review.
+   */
+  carried?: true;
 }
 
 /** Whether a part's code is new, changed or removed. */
@@ -1621,3 +1756,53 @@ export interface PullRequestGroup {
 export type PullRequestList =
   | { outcome: 'listed'; groups: PullRequestGroup[] }
   | { outcome: 'signed out' | 'unreachable'; reason: string };
+
+/**
+ * The stages of a review with an agent, by their stable ids, in the order
+ * they run: the plain pass, then the agent grouping the hunks, ranking
+ * the parts, writing the story, comparing the change with its description
+ * and issues, listing the claims, judging them, mapping the acceptance
+ * criteria, and last the documentation links.
+ */
+export const REVIEW_STAGE_IDS = ['plain', 'grouping', 'ranking', 'story', 'unexplained', 'claims', 'verdicts', 'criteria', 'docLinks'] as const;
+
+/** One stage's stable id. */
+export type ReviewStageId = (typeof REVIEW_STAGE_IDS)[number];
+
+/**
+ * How a stage stands: **to come** before it starts; **running**; then
+ * **done**, **fell back** when its agent gave no usable answer or was not
+ * tested, so the result says why, **failed** when it broke, **skipped**
+ * when it had nothing to do, such as fewer than two parts to rank,
+ * **stopped** when the reviewer cancelled the review before it finished,
+ * or **carried over** when its input did not change since the saved
+ * review of an earlier commit, so that review's result of it was kept.
+ */
+export type ReviewStageState = 'to come' | 'running' | 'done' | 'fell back' | 'failed' | 'skipped' | 'stopped' | 'carried over';
+
+/** The agent working on a stage, with the model and effort asked for; null for the agent's own default. */
+export interface ReviewStageAgent {
+  agent: string;
+  model: string | null;
+  effort: string | null;
+}
+
+/** One stage of a review: where it sits, when it ran, who worked on it and how it ended. */
+export interface ReviewStageRecord {
+  id: ReviewStageId;
+  /** Its place in the order, from 1. */
+  position: number;
+  /** How many stages the review has. */
+  total: number;
+  state: ReviewStageState;
+  /** When it started, as an ISO 8601 time; absent until it starts, and for a stage skipped or stopped before it started. */
+  startedAt?: string;
+  /** How long it took, in milliseconds; absent until it finishes. */
+  durationMs?: number;
+  /** The agent working on it; absent for the plain pass, which runs no agent. */
+  agent?: ReviewStageAgent;
+  /** Who answered, as the finished stage's result stamps it; absent when no agent ran. */
+  stamp?: AgentStamp;
+  /** One plain line: why it fell back, failed, was skipped or was stopped. */
+  detail?: string;
+}

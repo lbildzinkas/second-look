@@ -47,7 +47,7 @@ describe('sendReview against recorded responses', () => {
       { token: 'test-token', fetch: transport.fetch },
     );
 
-    expect(sent).toEqual({ url: SENT_REVIEW_URL });
+    expect(sent).toEqual({ url: SENT_REVIEW_URL, commit: pull42().headSha });
     const writes = transport.requests.filter((request) => request.method === 'POST');
     expect(writes).toHaveLength(1);
     expect(writes[0]!.url).toBe('https://api.github.com/repos/example-org/example-repo/pulls/42/reviews');

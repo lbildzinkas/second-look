@@ -22,10 +22,10 @@ const DETAILS = /<details>\s*<summary>([\s\S]*?)<\/summary>([\s\S]*?)<\/details>
 /** A finding's line in a step's report: a severity mark, then an optional `path:line`, then the text. */
 const FINDING_LINE = /^\s*[-*]\s+(❌|⚠️|⚠|ℹ️|ℹ)\s+(?:`([^`\s]+):(\d+)`\s+-\s+)?(.+)$/u;
 
-/** The line after which a step lists the findings its fixes left open. */
+/** The line saying how many findings a step's round left still open. */
 const STILL_OPEN = /^\s*\d+\s+.*\bstill open:\s*$/;
 
-/** The line a step writes when its fixes resolved its findings. */
+/** The line a round writes when it applied a fix; what follows it, its re-check, opens the next round or closes the step. */
 const FIX_APPLIED = /^\s*🔧\s*Fix applied\.\s*$/u;
 
 /** How the report's marks read as severities. */
@@ -53,6 +53,12 @@ function short(sha: string): string {
   return sha.slice(0, 7);
 }
 
+/** The last line matching `mark`, or -1 when none does. */
+function lastMarked(lines: readonly string[], mark: RegExp): number {
+  for (let at = lines.length - 1; at >= 0; at -= 1) if (mark.test(lines[at]!)) return at;
+  return -1;
+}
+
 /** The attestation's steps, or why they cannot be read. */
 function readSteps(value: unknown): PipelineStep[] | string {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return 'its JSON is not an object';
@@ -69,28 +75,37 @@ function readSteps(value: unknown): PipelineStep[] | string {
 }
 
 /**
- * The findings each step's report leaves open: every finding line after
- * the line saying how many are still open, else none once a fix was
- * applied, else every finding line.
+ * The findings each step's report leaves open: those of its last round
+ * only — the finding lines after the last line saying how many are
+ * still open, unless a fix was applied after that listing, which leaves
+ * none. A step with neither listing nor fix lists every finding line,
+ * and a finding repeated within the round read appears once.
  */
 export function readFindings(section: string): PipelineFinding[] {
   const findings: PipelineFinding[] = [];
   for (const [, summary, body] of section.matchAll(DETAILS)) {
     const step = /\*\*([^*]+)\*\*/.exec(summary!)?.[1]?.trim() ?? plainText(summary!);
     const lines = body!.split('\n');
-    const openAt = lines.findIndex((line) => STILL_OPEN.test(line));
-    if (openAt < 0 && lines.some((line) => FIX_APPLIED.test(line))) continue;
+    const openAt = lastMarked(lines, STILL_OPEN);
+    // A fix applied after the last listing resolved that round; its
+    // re-check left nothing open.
+    if (lastMarked(lines, FIX_APPLIED) > openAt) continue;
+    const seen = new Set<string>();
     for (const line of lines.slice(openAt + 1)) {
       const match = FINDING_LINE.exec(line);
       if (!match) continue;
       const [, mark, path, lineNumber, text] = match;
       const at = Number(lineNumber);
-      findings.push({
+      const finding: PipelineFinding = {
         step,
         severity: SEVERITIES[mark!]!,
         text: plainText(text!),
         ...(path !== undefined && at >= 1 ? { path: plainText(path), line: at } : {}),
-      });
+      };
+      const repeated = `${finding.severity}\u0000${finding.path ?? ''}\u0000${finding.line ?? ''}\u0000${finding.text}`;
+      if (seen.has(repeated)) continue;
+      seen.add(repeated);
+      findings.push(finding);
     }
   }
   return findings;

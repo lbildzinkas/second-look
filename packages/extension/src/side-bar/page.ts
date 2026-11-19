@@ -1,11 +1,29 @@
-import { escapeHtml } from '../overview.js';
-import { anchorOf, type PartAnchor, type TreeComment, type TreePart, type TreeSection } from '../tree.js';
+import { escapeHtml, claimWhere, citedWhere, issueName, lookedWhere, sanitiseUntrusted, settlesLine, stageEndLine, STATES } from '../overview.js';
+import { FINDING_SETTLES, isFinding, isUnmetCriterion, isUnprovenSource, type AcceptanceCriterion, type Claim, type ClaimVerdict, type FindingRef, type LinkedIssue, type ReviewResult, type ReviewStageId, type SettlesKind, type SubmitKind } from '@second-look/engine';
+import type { ListedComment } from '../comments.js';
+import { anchorOf, preview, type PartAnchor, type TreePart, type TreeSection } from '../tree.js';
+import { progressBody } from './progress.js';
+import { pullRequestsBody } from './pull-requests.js';
+import { setupFormBody } from './setup.js';
+import type { StepTick } from './step-ticks.js';
 import { pullRequestLine, sideBarSteps, type SideBarState, type Step, type StepState } from './steps.js';
 
 /** The buttons the side bar's cards carry, each running an existing command. */
-export type SideBarButton = 'review' | 'overview' | 'nextPart' | 'allParts' | 'send';
+export type SideBarButton = 'review' | 'reviewAgain' | 'overview' | 'nextPart' | 'allParts' | 'filterChanged' | 'partsMenu' | 'send' | 'openSent' | 'verifyClaim' | 'criteriaHeading';
 
-const STATE_ICONS: Record<StepState, string> = { done: '✓', current: '●', running: '↻', 'to come': '○' };
+/** A part row's two menus: Ask… with the asks, and ⋯ with Comment on this part… and Why this matters. */
+export const PART_MENUS = ['ask', 'more'] as const;
+export type PartMenu = (typeof PART_MENUS)[number];
+
+/** The presses a step 7 row offers: open its thread, discard it, or add a draft to the review. */
+export const COMMENT_ACTIONS = ['open', 'discard', 'add'] as const;
+export type CommentAction = (typeof COMMENT_ACTIONS)[number];
+
+/** The actions a finding's row offers, each running the existing command for it. */
+export const FINDING_ACTIONS = ['draft', 'open', 'verify', 'fetch', 'ciLog'] as const;
+export type FindingAction = (typeof FINDING_ACTIONS)[number];
+
+const STATE_ICONS: Record<StepState, string> = { done: '✓', current: '●', running: '↻', waiting: '◷', 'to come': '○' };
 
 /** A button on a card, known by a stable id so the keyboard focus survives a redraw. */
 function button(step: number, command: SideBarButton, label: string, options: { primary?: boolean; disabled?: boolean } = {}): string {
@@ -18,6 +36,23 @@ function note(text: string): string {
   return `<p class="note">${escapeHtml(text)}</p>`;
 }
 
+/** True while one of the stages that produce a step's results is still running or yet to come. */
+function producing(state: SideBarState, ...ids: ReviewStageId[]): boolean {
+  const { reviewing, result } = state;
+  if (!reviewing || result === undefined) return false;
+  const stages = result.stages;
+  if (stages === undefined) return true;
+  return stages.some((stage) => ids.includes(stage.id) && (stage.state === 'running' || stage.state === 'to come'));
+}
+
+/** How one of the stages that produce a step's results ended, as the overview words it; undefined while it runs or is yet to come. */
+function stageLine(state: SideBarState, id: ReviewStageId): string | undefined {
+  const { result, progress } = state;
+  if (result === undefined) return undefined;
+  const stages = progress?.state === 'finished' ? progress.stages : result.stages;
+  return stageEndLine(stages?.find((record) => record.id === id));
+}
+
 /** A stable key for a part, from where it starts, for its row's ids. */
 function partKey(anchor: PartAnchor): string {
   return escapeHtml(`${anchor.path}@${anchor.hunk?.oldStart ?? ''},${anchor.hunk?.newStart ?? ''}`);
@@ -26,8 +61,9 @@ function partKey(anchor: PartAnchor): string {
 /**
  * A part's row: its reviewed checkbox, which Space ticks, the button that
  * opens it in the diff editor, which Enter presses, and what the tree
- * shows beside it, its tooltip on hover; a right click offers the asks,
- * Why this matters and Comment on this part, as the part banner does.
+ * shows beside it, its tooltip on hover; its Ask… button offers the asks,
+ * its ⋯ button Comment on this part… and Why this matters, and a right
+ * click all of them, as the part banner does.
  */
 function partRow(node: TreePart): string {
   if (node.part === undefined) return '';
@@ -45,14 +81,10 @@ function partRow(node: TreePart): string {
     `<li class="part ${node.kind}" data-vscode-context="${context}">` +
     `<input type="checkbox" id="mark-${key}" data-anchor="${data}" aria-label="Reviewed: ${label}"${checked}>` +
     `<span class="row"><button type="button" class="open" id="open-${key}" data-anchor="${data}"${title}>${label}</button>${description}</span>` +
+    `<span class="menus"><button type="button" class="link" id="ask-${key}" data-part-menu="ask" data-anchor="${data}" aria-label="Ask about ${label}">Ask…</button>` +
+    `<button type="button" class="link" id="more-${key}" data-part-menu="more" data-anchor="${data}" aria-label="More for ${label}">⋯</button></span>` +
     `</li>`
   );
-}
-
-function commentRow(node: TreeComment): string {
-  const title = node.tooltip === undefined ? '' : ` title="${escapeHtml(node.tooltip)}"`;
-  const description = node.description === undefined ? '' : `<span class="desc">${escapeHtml(node.description)}</span>`;
-  return `<li class="comment"${title}><span class="row"><span>${escapeHtml(node.label)}</span>${description}</span></li>`;
 }
 
 function isPartSection(section: TreeSection): boolean {
@@ -68,42 +100,420 @@ function partsBody(state: SideBarState, allReviewed: boolean): string {
       `<ul class="parts" aria-label="${escapeHtml(section.label)}">${section.parts.map((node) => partRow(node as TreePart)).join('')}</ul>`,
   );
   const message = state.message === undefined ? '' : note(state.message);
+  // The filter has something to show only on a second visit.
+  const filter = state.result.sinceLastLook === undefined ? '' : button(4, 'filterChanged', state.onlyChanged === true ? 'Show all parts' : 'Changed since last look');
   return (
     message +
     groups.join('') +
-    `<div class="actions">${button(4, 'nextPart', 'Open next part', { primary: true, disabled: allReviewed })}${button(4, 'allParts', 'All in order')}</div>`
+    `<div class="actions">${button(4, 'nextPart', 'Open next part', { primary: true, disabled: allReviewed })}${button(4, 'allParts', 'All in order')}${filter}</div>`
   );
 }
 
-/** Step 7's body: the pending review's comments, and the button that opens the diff they are written on. */
+/** A button on a step 7 row, carrying the comment's id so the press acts on that comment. */
+function commentButton(action: CommentAction, comment: ListedComment, label: string, attributes = ''): string {
+  return `<button type="button" id="step-7-${action}-${comment.id}" class="${action === 'open' ? 'open' : 'secondary'}" data-comment="${action}" data-id="${comment.id}"${attributes}>${label}</button>`;
+}
+
+/** Step 7's row for one pending comment or draft: where it points, which opens its thread, its first words, and its buttons. */
+function commentRow(comment: ListedComment): string {
+  const draft = comment.kind === 'draft';
+  const from = draft ? `<span class="pill tone-info"><span class="icon" aria-hidden="true">✎</span> draft</span><span class="where">${escapeHtml(`from the ${comment.from ?? 'finding'}`)}</span>` : '';
+  const changed = comment.changed === true ? `<span class="pill tone-warn" title="New commits changed the line this points at since it was written; it stays for you to check."><span class="icon" aria-hidden="true">⚠</span> line changed</span>` : '';
+  const actions = draft
+    ? commentButton('add', comment, 'Add to review') + commentButton('discard', comment, 'Discard draft')
+    : commentButton('discard', comment, 'Discard');
+  return (
+    `<li class="finding">` +
+    `<div class="head">${commentButton('open', comment, escapeHtml(comment.location), ` title="Open its thread"`)}${changed}${from}</div>` +
+    `<q class="quote">${sanitiseUntrusted(preview(comment.body)).html}</q>` +
+    `<div class="actions">${actions}</div>` +
+    `</li>`
+  );
+}
+
+/** Step 7's body: the pending comments and the drafts, each with its buttons, how to write more, and the button that opens the diff. */
 function commentsBody(state: SideBarState): string {
-  const comments = state.sections.filter((section) => !isPartSection(section)).flatMap((section) => section.parts as TreeComment[]);
-  const list = comments.length === 0 ? note('No comment yet: write them in threads on the diff.') : `<ul class="comments" aria-label="Pending review">${comments.map(commentRow).join('')}</ul>`;
-  return list + `<div class="actions">${button(7, 'allParts', 'Open the threads in the diff', { disabled: state.result === undefined })}</div>`;
+  const comments = state.comments ?? [];
+  const list = comments.length === 0 ? note('No comment yet.') : `<ul class="findings" aria-label="Pending comments and drafts">${comments.map(commentRow).join('')}</ul>`;
+  const drafted = comments.some((comment) => comment.kind === 'draft') ? note('Add takes a draft as drafted; to change it first, edit it in its thread and add it there.') : '';
+  return (
+    list +
+    drafted +
+    note('Add more: the + beside any diff line, or “Comment on this part…” in a part’s ⋯ menu.') +
+    `<div class="actions">${button(7, 'allParts', 'Open the threads in the diff', { disabled: state.result === undefined })}</div>`
+  );
+}
+
+/** How the page words each way of submitting a review. */
+const SUBMIT_WORDS: Record<SubmitKind, string> = { comment: 'Comment', approve: 'Approve', 'request changes': 'Request changes' };
+
+/** Step 8's body: the button that opens the Send review page, why the last send failed, and once sent, the review with its link. */
+function sendBody(state: SideBarState): string {
+  const { result, sent } = state;
+  const unsent = (state.comments ?? []).length > 0;
+  const failure = state.sendFailure === undefined ? '' : `<p class="note problem">${escapeHtml(`The send failed: ${state.sendFailure}. Every comment is kept.`)}</p>`;
+  const page = button(8, 'send', 'Open the Send review page', { primary: sent === undefined || unsent, disabled: result === undefined });
+  if (sent === undefined) return failure + note('Nothing reaches GitHub until you press Submit on the page.') + `<div class="actions">${page}</div>`;
+  const count = `${sent.comments} comment${sent.comments === 1 ? '' : 's'}`;
+  return (
+    `<p class="sent"><span class="tone-ok" aria-hidden="true">✓</span> ${escapeHtml(`Sent as ${SUBMIT_WORDS[sent.submit]} · ${count} · pinned to ${sent.commit.slice(0, 7)}`)}</p>` +
+    failure +
+    `<div class="actions">${button(8, 'openSent', 'Open on GitHub', { primary: !unsent })}${page}</div>`
+  );
+}
+
+/** A verdict or a state as a finding's row shows it: its glyph in its tone's colour, with its word. */
+function statePill(state: string): string {
+  const { tone, icon } = STATES[state] ?? { tone: 'mut', icon: '○' };
+  return `<span class="pill tone-${tone}"><span class="icon" aria-hidden="true">${icon}</span> ${escapeHtml(state)}</span>`;
+}
+
+/** A button on a finding's row, carrying the finding so the press runs the existing command for its action. */
+function findingButton(step: number, action: FindingAction, finding: FindingRef, label: string): string {
+  const key = `${finding.kind.replace(/ /g, '-')}-${finding.index}`;
+  return `<button type="button" id="step-${step}-${action}-${key}" class="secondary" data-finding="${action}" data-kind="${escapeHtml(finding.kind)}" data-index="${finding.index}">${escapeHtml(label)}</button>`;
+}
+
+/** The step's “I've checked these” tick, kept per pull request and re-opened by new commits. */
+function tickRow(step: number, tick: StepTick, checked: boolean, label: string): string {
+  return `<div class="tick"><input type="checkbox" id="step-${step}-tick" data-tick="${tick}" aria-label="${escapeHtml(label)}"${checked ? ' checked' : ''}><label for="step-${step}-tick">${escapeHtml(label)}</label></div>`;
+}
+
+/** A claim's verdict once checked: verified, refuted or unverifiable, with its evidence. */
+type CheckedVerdict = Exclude<ClaimVerdict, { kind: 'not checked' }>;
+
+/** Where a claim is made on its row: a link that opens its place — its file's line in the head copy, its description line in the overview's description, or its sentence in the story — and plain text for a pipeline finding, which sits in the pipeline report. */
+function claimWhereButton(claim: Claim, index: number): string {
+  const text = escapeHtml(claimWhere(claim));
+  if (claim.location.kind === 'pipeline') return `<span class="where">${text}</span>`;
+  return `<button type="button" class="where" id="step-5-where-claim-${index}" data-claim-where="${index}">${text}</button>`;
+}
+
+/**
+ * A checked verdict's evidence on its step 5 row: its evidence source
+ * with its reason, each cited head-copy line a chip that opens the line
+ * as the overview's chips do, each cited CI log line a chip that opens
+ * its check run on GitHub — the one outside link the row carries — and
+ * labelled when the check passed, each
+ * cited line of fetched library source a plain chip, since it is not a
+ * line of the head copy, and the recheck when the engine dropped a
+ * citation.
+ */
+function claimEvidence(verdict: CheckedVerdict, index: number): string {
+  const decompiled = verdict.library?.archive === 'decompiled NuGet package';
+  const chips = verdict.evidence.map((each, at) => {
+    if (each.ciLog !== true && verdict.library !== undefined) {
+      const suffix = decompiled ? ' (decompiled)' : isUnprovenSource(each.path, verdict.library.unproven) ? ' (unproven)' : '';
+      return `<span class="chip">${escapeHtml(`${citedWhere(each)}${suffix}`)}</span>`;
+    }
+    const open = each.ciLog === true ? ' its check run on GitHub' : ' the line in the head copy';
+    return `<button type="button" class="chip" id="step-5-cite-claim-${index}-${at}" data-claim-evidence="${index}" data-index="${at}" title="Open${open}" aria-label="Open${escapeHtml(open)} of ${escapeHtml(citedWhere(each))}">${escapeHtml(citedWhere(each))}</button>`;
+  });
+  const cited = chips.length === 0 ? '' : `<div class="meta">${chips.join('')}</div>`;
+  const recheck = verdict.recheck === undefined ? '' : `<div class="why">${escapeHtml(`dropped to unverifiable: ${verdict.recheck}`)}</div>`;
+  const read = verdict.ciLogs === undefined ? '' : `<div class="why">${escapeHtml(`judged again with the logs of the checks that passed: ${verdict.ciLogs.checks.map((check) => check.name).join(', ')}`)}</div>`;
+  return `<div class="why">${escapeHtml(`${verdict.source}: ${verdict.reason}`)}</div>` + cited + recheck + read + claimTrail(verdict, index);
+}
+
+/** That a claim was carried over from the saved review of an earlier commit, when it was. */
+function carriedMark(claim: Claim): string {
+  return claim.carried ? '<span class="carried">carried over</span>' : '';
+}
+
+/**
+ * What a checked verdict's agent looked at, each range of the head copy
+ * a chip that opens it there, why the engine dropped any, and, for an
+ * unverifiable claim, what would settle it.
+ */
+function claimTrail(verdict: CheckedVerdict, index: number): string {
+  const chips = verdict.looked.map((range, at) => {
+    const where = escapeHtml(lookedWhere(range));
+    return `<button type="button" class="chip" id="step-5-looked-claim-${index}-${at}" data-claim-looked="${index}" data-index="${at}" title="Open the lines in the head copy" aria-label="Open the lines in the head copy of ${where}">${where}</button>`;
+  });
+  const looked = chips.length === 0 ? `<span class="none">no line of the head copy</span>` : chips.join('');
+  const dropped = verdict.lookedRecheck === undefined ? '' : `<div class="why">${escapeHtml(`dropped from what it looked at: ${verdict.lookedRecheck}`)}</div>`;
+  const settles = verdict.settles === undefined ? '' : `<div class="why"><span class="label">Would settle it</span> ${escapeHtml(settlesLine(verdict.settles))}</div>`;
+  return `<div class="meta"><span class="label">Looked at</span>${looked}</div>` + dropped + settles;
+}
+
+/** Step 5's row for one claim finding: its verdict and where it is made as a link that opens it, whether it was carried over from the saved review of an earlier commit, its quote, its reason, evidence and trail, and its actions, Fetch library first for a claim a library's source would settle. */
+function claimFindingRow(claim: Claim, index: number): string {
+  const verdict = claim.verdict.kind === 'not checked' ? undefined : claim.verdict;
+  const offer = verdict === undefined || verdict.library !== undefined ? undefined : verdict.libraryFetch;
+  const fetch = offer === undefined ? '' : findingButton(5, 'fetch', { kind: 'claim', index }, offer.decompile === undefined ? 'Fetch library' : 'Decompile');
+  const finding = { kind: 'claim' as const, index };
+  const thread = `${findingButton(5, 'draft', finding, 'Draft comment')}${findingButton(5, 'open', finding, 'Open')}${findingButton(5, 'verify', finding, 'Verify again')}`;
+  return (
+    `<li class="finding">` +
+    `<div class="head">${statePill(claim.verdict.kind)}${claimWhereButton(claim, index)}${carriedMark(claim)}</div>` +
+    `<q class="quote">${sanitiseUntrusted(claim.quote).html}</q>` +
+    (verdict === undefined ? '' : claimEvidence(verdict, index)) +
+    `<div class="actions">${verdict?.settles?.kind === 'library' ? fetch + thread : thread + fetch}</div>` +
+    `</li>`
+  );
+}
+
+/**
+ * Step 5's row for a claim listed quietly: its verdict, where it is made,
+ * whether it was carried over, its quote, its reason, evidence and trail,
+ * with no thread to act on; its one action is Read the CI log, when a CI
+ * log could settle it and passing checks' logs are there to read.
+ */
+function quietClaimRow(claim: Claim, index: number): string {
+  const verdict = claim.verdict.kind === 'not checked' ? undefined : claim.verdict;
+  const ciLog = verdict?.ciLogFetch === undefined || verdict.ciLogs !== undefined ? '' : `<div class="actions">${findingButton(5, 'ciLog', { kind: 'claim', index }, 'Read the CI log')}</div>`;
+  return (
+    `<li class="finding quiet">` +
+    `<div class="head">${statePill(claim.verdict.kind)}${claimWhereButton(claim, index)}${carriedMark(claim)}</div>` +
+    `<q class="quote">${sanitiseUntrusted(claim.quote).html}</q>` +
+    (verdict === undefined ? '' : claimEvidence(verdict, index)) +
+    ciLog +
+    `</li>`
+  );
+}
+
+/**
+ * Step 5's groups of unverifiable claims, by what can settle them: the
+ * code's and a library's are findings, the author's run and outside the
+ * repository listed quietly, counted as none.
+ */
+const CLAIM_GROUPS: readonly { title: string; settles: readonly SettlesKind[] }[] = [
+  { title: 'Should be checkable', settles: ['code'] },
+  { title: 'Needs a library', settles: ['library'] },
+  { title: "The author's run", settles: ['ci-log', 'sandboxed-run', 'author'] },
+  { title: 'Outside the repository', settles: ['outside-repository'] },
+];
+
+/** The group an unverifiable claim falls in: the one its settles names, the code's when it names none. */
+function claimGroup(claim: Claim): (typeof CLAIM_GROUPS)[number] {
+  const kind = claim.verdict.kind === 'unverifiable' ? (claim.verdict.settles?.kind ?? 'code') : 'code';
+  return CLAIM_GROUPS.find((group) => group.settles.includes(kind))!;
+}
+
+/** Whether a group is listed quietly: nothing in it is a finding. */
+function isQuietGroup(group: (typeof CLAIM_GROUPS)[number]): boolean {
+  return !group.settles.some((kind) => FINDING_SETTLES.includes(kind));
+}
+
+/** What step 5 says of claims none of which is checked: how the listing ended with none, why the judging left none, or that the verdicts are still to come. */
+function unjudgedNote(state: SideBarState, claims: NonNullable<ReviewResult['claims']>): string {
+  if (claims.claims.length === 0) return claims.outcome === 'fell back' ? `No claims: ${claims.detail}.` : 'The agent found no claim in the change.';
+  if (claims.judging !== undefined) return `None is checked: ${claims.judging.detail}.`;
+  if (producing(state, 'verdicts')) return 'The verdicts show here once the claims are checked.';
+  return `None is checked: ${stageLine(state, 'verdicts') ?? 'the verdicts pass did not run'}.`;
+}
+
+/**
+ * Step 5's body: the refuted claims, then the unverifiable ones grouped by
+ * what can settle them — the code's and a library's as findings with their
+ * actions, the author's run and outside the repository listed quietly —
+ * the verified claims folded below them, the verify ask, and the tick.
+ */
+function claimsBody(state: SideBarState): string {
+  const { result, ticks } = state;
+  if (result === undefined) return note('The claims and their verdicts show here once a review opens.');
+  const listing = result.claims;
+  const claims = listing?.claims ?? [];
+  const judged = claims.some((claim) => claim.verdict.kind !== 'not checked');
+  if (!judged) {
+    if (producing(state, 'claims', 'verdicts')) {
+      return note(listing === undefined ? 'The claims show here once the review lists them.' : unjudgedNote(state, listing)) + `<div class="actions">${button(5, 'overview', 'Open the overview')}</div>`;
+    }
+    return (
+      note(listing === undefined ? 'No claims were listed for this review.' : unjudgedNote(state, listing)) +
+      `<div class="actions">${button(5, 'verifyClaim', 'Verify a claim…')}${button(5, 'overview', 'Open the overview')}</div>` +
+      tickRow(5, 'claims', ticks?.claims === true, "I've checked the claims")
+    );
+  }
+  const refuted: string[] = [];
+  const grouped = new Map(CLAIM_GROUPS.map((group) => [group, [] as string[]]));
+  let verified = 0;
+  let carried = 0;
+  for (const [index, claim] of claims.entries()) {
+    if (claim.verdict.kind === 'refuted') refuted.push(claimFindingRow(claim, index));
+    else if (claim.verdict.kind === 'unverifiable') {
+      grouped.get(claimGroup(claim))!.push(isFinding(claim) ? claimFindingRow(claim, index) : quietClaimRow(claim, index));
+    } else if (claim.verdict.kind === 'verified') {
+      verified += 1;
+      if (claim.carried) carried += 1;
+    }
+  }
+  const groups = CLAIM_GROUPS.filter((group) => grouped.get(group)!.length > 0).map((group) => {
+    const quiet = isQuietGroup(group);
+    return (
+      `<h3 class="group">${escapeHtml(group.title)}${quiet ? ' <span class="aside">· not findings</span>' : ''}</h3>` +
+      `<ul class="findings${quiet ? ' quiet' : ''}" aria-label="${escapeHtml(group.title)}">${grouped.get(group)!.join('')}</ul>`
+    );
+  });
+  const list =
+    refuted.length === 0 && groups.length === 0
+      ? note('No refuted or unverifiable claim.')
+      : (refuted.length === 0 ? '' : `<ul class="findings" aria-label="Refuted claims">${refuted.join('')}</ul>`) + groups.join('');
+  const folded = verified === 0 ? '' : `<p class="folded"><span class="tone-ok" aria-hidden="true">✓</span> ${verified} verified${carried === 0 ? '' : `, ${carried} carried over`}</p>`;
+  return (
+    list +
+    folded +
+    `<div class="actions">${button(5, 'verifyClaim', 'Verify a claim…')}${button(5, 'overview', 'Open the overview')}</div>` +
+    tickRow(5, 'claims', ticks?.claims === true, "I've checked the claims")
+  );
+}
+
+/** The linked issue a criterion comes from, as a button that opens it on GitHub. */
+function issueButton(issue: LinkedIssue, id: string, index: number): string {
+  return `<button type="button" class="issue" id="${id}" data-issue="${index}" aria-label="Open ${escapeHtml(issueName(issue))} on GitHub">${escapeHtml(issueName(issue))}</button>`;
+}
+
+/** Step 6's row for one criterion not fully met: its verdict, its quote, its issue link, and the draft. */
+function criterionRow(criterion: AcceptanceCriterion, index: number, issues: readonly LinkedIssue[]): string {
+  const issue = issues[criterion.issue];
+  const from = issue === undefined ? '' : `<div class="meta">${issueButton(issue, `step-6-issue-criterion-${index}`, criterion.issue)} · ${escapeHtml(issue.link)}</div>`;
+  const draft = isUnmetCriterion(criterion) ? `<div class="actions">${findingButton(6, 'draft', { kind: 'criterion', index }, 'Draft comment')}</div>` : '';
+  return (
+    `<li class="finding">` +
+    `<div class="head">${statePill(criterion.verdict.kind)}</div>` +
+    `<q class="quote">${sanitiseUntrusted(criterion.quote).html}</q>` +
+    from +
+    draft +
+    `</li>`
+  );
+}
+
+/** Where a described change is quoted from: a description line, or a linked issue as a button, with its line. */
+function describedWhere(change: { location: { kind: 'description'; line: number } | { kind: 'issue'; issue: number; line: number } }, index: number, issues: readonly LinkedIssue[]): string {
+  const { location } = change;
+  if (location.kind === 'description') return `<span>${escapeHtml(`pull request description, line ${location.line}`)}</span>`;
+  const issue = issues[location.issue];
+  return issue === undefined
+    ? `<span>${escapeHtml(`linked issue, line ${location.line}`)}</span>`
+    : `${issueButton(issue, `step-6-issue-described-${index}`, location.issue)} <span>${escapeHtml(`line ${location.line}`)}</span>`;
+}
+
+/** Step 6's rows for the unexplained changes in both directions: the parts nothing explains, then the changes described that the diff lacks. */
+function unexplainedRows(result: ReviewResult, settled: boolean): { heading: boolean; body: string } {
+  const unexplained = result.unexplained;
+  if (unexplained === undefined) {
+    return {
+      heading: false,
+      body: note(settled ? 'The change was not compared with its description and issues for this review.' : 'The unexplained changes show here once the change is compared with its description.'),
+    };
+  }
+  if (unexplained.outcome !== 'compared') return { heading: false, body: note(`Not compared: ${unexplained.detail}.`) };
+  if (unexplained.parts.length === 0 && unexplained.described.length === 0) {
+    return { heading: false, body: `<p class="folded"><span class="tone-ok" aria-hidden="true">✓</span> Every part is explained, and every change the description promises is in the diff.</p>` };
+  }
+  const issues = result.criteria?.issues ?? [];
+  const parts = unexplained.parts.map(({ part, reason }, index) => {
+    const shown = result.parts[part];
+    const open = shown === undefined ? escapeHtml(reason) : `<button type="button" class="open" data-anchor="${escapeHtml(JSON.stringify(anchorOf(shown)))}">${escapeHtml(shown.name ?? shown.path)}</button><span class="where">${escapeHtml(reason)}</span>`;
+    return (
+      `<li class="finding">` +
+      `<div class="head">${statePill('in the code, not explained')}</div>` +
+      `<div class="meta">${open}</div>` +
+      `<div class="actions">${findingButton(6, 'draft', { kind: 'unexplained part', index }, 'Draft comment')}</div>` +
+      `</li>`
+    );
+  });
+  const described = unexplained.described.map((change, index) => (
+    `<li class="finding">` +
+    `<div class="head">${statePill('described, not in the code')}</div>` +
+    `<q class="quote">${sanitiseUntrusted(change.quote).html}</q>` +
+    `<div class="meta">${describedWhere(change, index, issues)}</div>` +
+    `<div class="actions">${findingButton(6, 'draft', { kind: 'described change', index }, 'Draft comment')}</div>` +
+    `</li>`
+  ));
+  return { heading: true, body: `<ul class="findings" aria-label="Unexplained changes">${[...parts, ...described].join('')}</ul>` };
+}
+
+/** What step 6 says of criteria none of which is checked: how the reading ended with none, why the mapping left none, or that the verdicts are still to come. */
+function unmappedNote(state: SideBarState, criteria: NonNullable<ReviewResult['criteria']>): string {
+  if (criteria.mapping !== undefined) return `None is checked: ${criteria.mapping.detail}.`;
+  if (criteria.criteria.length === 0) return 'None is checked: no checklist was found to map.';
+  if (producing(state, 'criteria')) return 'The verdicts show here once the criteria are mapped.';
+  return `None is checked: ${stageLine(state, 'criteria') ?? 'the criteria mapping did not run'}.`;
+}
+
+/** Step 6's body: the criteria not fully met with their issue links and drafts, the met ones folded, the unexplained changes, and the tick. */
+function criteriaBody(state: SideBarState): string {
+  const { result, ticks } = state;
+  if (result === undefined) return note('The acceptance criteria and the unexplained changes show here once a review opens.');
+  const criteria = result.criteria;
+  const rows: string[] = [];
+  let met = 0;
+  if (criteria !== undefined) {
+    for (const [index, criterion] of criteria.criteria.entries()) {
+      const { kind } = criterion.verdict;
+      if (kind === 'not checked') continue;
+      if (kind === 'met') met += 1;
+      else rows.push(criterionRow(criterion, index, criteria.issues));
+    }
+  }
+  // The tick shows once the step's results are in: its stages ended, whatever they left.
+  const settled = !producing(state, 'unexplained', 'criteria');
+  const unexplained = unexplainedRows(result, settled);
+  const list =
+    criteria === undefined
+      ? note(settled ? 'No criteria were read for this review.' : 'The acceptance criteria show here once the review reads the linked issues.')
+      : criteria.outcome === 'unreadable'
+        ? note(`${criteria.detail}. No criteria were read, so none is checked.`)
+        : rows.length > 0
+          ? `<ul class="findings" aria-label="Criteria not fully met">${rows.join('')}</ul>`
+          : criteria.criteria.some((criterion) => criterion.verdict.kind !== 'not checked')
+            ? note('Every criterion is met.')
+            : note(unmappedNote(state, criteria));
+  const folded = met === 0 ? '' : `<p class="folded"><span class="tone-ok" aria-hidden="true">✓</span> ${met} met</p>`;
+  const unexplainedHeading = unexplained.heading ? '<h3 class="group">Unexplained changes</h3>' : '';
+  return (
+    list +
+    folded +
+    unexplainedHeading +
+    unexplained.body +
+    `<div class="actions">${button(6, 'overview', 'Open the overview')}</div>` +
+    (settled ? tickRow(6, 'criteria', ticks?.criteria === true, "I've checked the criteria") : '')
+  );
 }
 
 function stepBody(step: Step, state: SideBarState): string {
   const { result } = state;
   switch (step.number) {
     case 1:
-      return note(`Every agent pass runs on ${step.summary}. Change it in the settings or from the status bar.`);
-    case 2:
-      return result === undefined
-        ? note(state.reviewing ? 'Reading the pull request…' : 'Pick the pull request to review.') + `<div class="actions">${button(2, 'review', 'Review a pull request', { primary: true })}</div>`
-        : `<p class="pr"><b>${escapeHtml(result.pullRequest.title)}</b><br>${escapeHtml(pullRequestLine(result))}</p><div class="actions">${button(2, 'review', 'Review another pull request')}</div>`;
+      return state.setup?.open === true
+        ? setupFormBody(state.setup)
+        : note(`Every agent pass runs on ${step.summary}. Change it with the change link, in the settings or from the status bar.`);
+    case 2: {
+      // The list of the reviewer's pull requests, with its URL box, when the side bar carries one.
+      const picker = state.pullRequests === undefined ? undefined : pullRequestsBody(state.pullRequests);
+      if (result !== undefined) {
+        return `<p class="pr"><b>${escapeHtml(result.pullRequest.title)}</b><br>${escapeHtml(pullRequestLine(result))}</p><div class="actions">${button(2, 'review', 'Review another pull request')}</div>${picker ?? ''}`;
+      }
+      if (picker !== undefined) return (state.reviewing ? note('Reading the pull request…') : '') + picker;
+      return note(state.reviewing ? 'Reading the pull request…' : 'Pick the pull request to review.') + `<div class="actions">${button(2, 'review', 'Review a pull request', { primary: true })}</div>`;
+    }
     case 3:
       return note('The story tells what the change does, in the order to read the parts.') + `<div class="actions">${button(3, 'overview', 'Open the overview', { primary: true, disabled: result === undefined })}</div>`;
     case 4:
       return partsBody(state, step.state === 'done');
     case 5:
-      return note('The claims and their verdicts are in the overview.') + `<div class="actions">${button(5, 'overview', 'Open the overview', { disabled: result === undefined })}</div>`;
+      return claimsBody(state);
     case 6:
-      return note('The acceptance criteria and the unexplained changes are in the overview.') + `<div class="actions">${button(6, 'overview', 'Open the overview', { disabled: result === undefined })}</div>`;
+      return criteriaBody(state);
     case 7:
       return commentsBody(state);
     default:
-      return note('Every comment goes to GitHub as one review, only when you submit it.') + `<div class="actions">${button(8, 'send', 'Open the Send review page', { primary: true, disabled: result === undefined })}</div>`;
+      return sendBody(state);
   }
+}
+
+/** Step 1's change link, which opens the setup form, beside its folded heading. */
+function changeLink(step: Step, state: SideBarState): string {
+  if (step.number !== 1 || state.setup === undefined || state.setup.open) return '';
+  return '<button type="button" class="link" id="step-1-change" data-action="open" data-value="" aria-label="Change the agent, model and effort">change</button>';
+}
+
+/** Step 4's ⋯ link, whose menu toggles mirroring the reviewed marks to GitHub's Viewed, and step 6's, which opens the editor's settings at the criteria heading setting. */
+function menuLink(step: Step): string {
+  if (step.number === 4) return '<button type="button" class="link" id="step-4-partsMenu" data-command="partsMenu" aria-label="Mirror reviewed files to GitHub’s Viewed">⋯</button>';
+  if (step.number !== 6) return '';
+  return '<button type="button" class="link" id="step-6-criteriaHeading" data-command="criteriaHeading" aria-label="Change the criteria heading setting">⋯</button>';
 }
 
 /**
@@ -120,17 +530,17 @@ function stepCard(step: Step, state: SideBarState): string {
     `<li class="step ${step.state.replace(' ', '-')}" id="${id}"${current}>` +
     `<h2><button type="button" class="fold" id="${id}-title" data-step="${step.number}" aria-expanded="${step.open}" aria-controls="${id}-body">` +
     `<span class="icon" aria-hidden="true">${STATE_ICONS[step.state]}</span>` +
-    `<span class="title">${step.number} ${escapeHtml(step.title)}</span>${summary}<span class="state">${step.state}</span></button></h2>` +
+    `<span class="title">${step.number} ${escapeHtml(step.title)}</span>${summary}<span class="state">${step.state}</span></button>${changeLink(step, state)}${menuLink(step)}</h2>` +
     `<div class="body" id="${id}-body" role="region" aria-labelledby="${id}-title"${hidden}>${stepBody(step, state)}</div>` +
     `</li>`
   );
 }
 
-/** The side bar's content: the eight step cards, every piece of text escaped. */
-export function sideBarBody(state: SideBarState): string {
+/** The side bar's content: the review's count tiles and progress strip, then the eight step cards, every piece of text escaped. */
+export function sideBarBody(state: SideBarState, now: number = Date.now()): string {
   const steps = sideBarSteps(state);
   const current = steps.find((step) => step.open)?.number ?? 0;
-  return `<ol class="steps" aria-label="Review path" data-current="${current}">${steps.map((step) => stepCard(step, state)).join('')}</ol>`;
+  return `${progressBody(state, now)}<ol class="steps" aria-label="Review path" data-current="${current}">${steps.map((step) => stepCard(step, state)).join('')}</ol>`;
 }
 
 /**
@@ -139,7 +549,8 @@ export function sideBarBody(state: SideBarState): string {
  * page's own style and script, marked with this render's nonce: no image,
  * font, frame or connection of any origin. The script redraws the cards
  * the extension posts, keeping the keyboard focus and the cards the
- * reviewer folded or opened, and reports each press as a message.
+ * reviewer folded or opened, ticks the running stage's time each second,
+ * and reports each press as a message.
  */
 export function sideBarHtml(nonce: string, body: string): string {
   return `<!DOCTYPE html>
@@ -153,7 +564,7 @@ export function sideBarHtml(nonce: string, body: string): string {
   .step { border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); border-radius: 4px; }
   .step[aria-current] { border-color: var(--vscode-focusBorder); }
   .step.to-come { opacity: 0.75; }
-  h2 { margin: 0; font-size: inherit; }
+  h2 { display: flex; align-items: center; margin: 0; font-size: inherit; }
   button { font: inherit; cursor: pointer; }
   button:focus-visible, input:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
   .fold { display: flex; align-items: center; gap: 6px; width: 100%; padding: 5px 8px; color: inherit; background: none; border: none; text-align: left; font-weight: 600; }
@@ -162,9 +573,26 @@ export function sideBarHtml(nonce: string, body: string): string {
   .title { white-space: nowrap; flex: none; }
   .done .icon { color: var(--vscode-testing-iconPassed, var(--vscode-foreground)); }
   .current .icon, .running .icon { color: var(--vscode-progressBar-background, var(--vscode-focusBorder)); }
-  .running .icon { animation: spin 1.2s linear infinite; }
+  .running .icon, .spin { display: inline-block; animation: spin 1.2s linear infinite; }
+  .waiting .icon { color: var(--vscode-descriptionForeground); }
   @keyframes spin { to { transform: rotate(360deg); } }
-  @media (prefers-reduced-motion: reduce) { .running .icon { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .running .icon, .spin { animation: none; } }
+  .progress { margin-bottom: 6px; }
+  .tiles { list-style: none; margin: 0 0 5px; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+  .tile { display: flex; flex-direction: column; padding: 4px 6px; border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); border-radius: 4px; min-width: 0; }
+  .tile .big { font-size: 16px; font-weight: 700; line-height: 1.2; }
+  .tile small { font-size: 11px; font-weight: 400; color: var(--vscode-descriptionForeground); }
+  .tile .lb { font-size: 11px; color: var(--vscode-descriptionForeground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .strip { margin: 0; padding: 5px 8px; border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); border-radius: 4px; overflow-wrap: anywhere; }
+  .strip.running .icon { color: var(--vscode-progressBar-background, var(--vscode-focusBorder)); }
+  .strip.complete .icon { color: var(--vscode-testing-iconPassed, var(--vscode-foreground)); }
+  .strip.saved.earlier .icon { color: var(--vscode-editorWarning-foreground, var(--vscode-foreground)); }
+  .progress > .actions { margin-top: 5px; }
+  .stage-notes { list-style: none; margin: 4px 0 0; padding: 0 8px; font-size: 12px; }
+  .stage-notes li { margin: 2px 0; overflow-wrap: anywhere; }
+  .stage-notes .fell-back .icon { color: var(--vscode-editorWarning-foreground, var(--vscode-foreground)); }
+  .stage-notes .failed .icon { color: var(--vscode-errorForeground); }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .summary { margin-left: auto; font-weight: 400; color: var(--vscode-descriptionForeground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .state { font-weight: 400; font-size: 11px; color: var(--vscode-descriptionForeground); white-space: nowrap; }
   .summary + .state::before { content: "· "; }
@@ -173,9 +601,12 @@ export function sideBarHtml(nonce: string, body: string): string {
   .note { margin: 4px 0; color: var(--vscode-descriptionForeground); }
   .pr { margin: 4px 0; overflow-wrap: anywhere; }
   .group { margin: 8px 0 2px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--vscode-descriptionForeground); }
-  .parts, .comments { list-style: none; margin: 0; padding: 0; }
-  .part, .comment { display: flex; align-items: flex-start; gap: 6px; padding: 2px 0; }
+  .parts { list-style: none; margin: 0; padding: 0; }
+  .part { display: flex; align-items: flex-start; gap: 6px; padding: 2px 0; }
   .row { display: flex; flex-direction: column; min-width: 0; }
+  .menus { display: flex; margin-left: auto; flex: none; }
+  .menus .link { padding: 0 4px; font-size: 12px; }
+  .sent { margin: 4px 0; overflow-wrap: anywhere; }
   .open { padding: 0; color: var(--vscode-foreground); background: none; border: none; text-align: left; overflow-wrap: anywhere; }
   .open:hover { color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground)); text-decoration: underline; }
   .desc { font-size: 12px; color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; }
@@ -187,6 +618,61 @@ export function sideBarHtml(nonce: string, body: string): string {
   .secondary { color: var(--vscode-button-secondaryForeground); background-color: var(--vscode-button-secondaryBackground); }
   .secondary:hover { background-color: var(--vscode-button-secondaryHoverBackground); }
   button:disabled { opacity: 0.5; cursor: default; }
+  .link { flex: none; padding: 0 8px; color: var(--vscode-textLink-foreground); background: none; border: none; }
+  .link:hover { text-decoration: underline; }
+  .setup .label { display: block; margin: 8px 0 3px; font-size: 11px; font-weight: 600; color: var(--vscode-descriptionForeground); }
+  .choices { display: flex; flex-wrap: wrap; gap: 4px; }
+  .choice { display: flex; flex-direction: column; align-items: flex-start; padding: 3px 8px; color: var(--vscode-foreground); background: none; border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); border-radius: 3px; text-align: left; }
+  .choice[aria-checked="true"] { border-color: var(--vscode-focusBorder); background-color: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground, var(--vscode-foreground)); }
+  .choice small { font-size: 11px; color: var(--vscode-descriptionForeground); }
+  .setup-text { box-sizing: border-box; width: 100%; padding: 3px 6px; color: var(--vscode-input-foreground); background-color: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; font: inherit; }
+  .problem { color: var(--vscode-errorForeground); }
+  .picker { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+  .pr-filter { box-sizing: border-box; width: 100%; padding: 3px 6px; color: var(--vscode-input-foreground); background-color: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; font: inherit; }
+  .chip { padding: 0 8px; font-size: 11px; color: var(--vscode-descriptionForeground); background: none; border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); border-radius: 10px; line-height: 18px; }
+  .chip[aria-pressed="true"] { color: var(--vscode-list-activeSelectionForeground, var(--vscode-foreground)); background-color: var(--vscode-list-activeSelectionBackground); border-color: var(--vscode-focusBorder); }
+  .group .count { padding: 0 5px; border-radius: 8px; color: var(--vscode-badge-foreground); background-color: var(--vscode-badge-background); letter-spacing: 0; }
+  .pr-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+  .pr-card, .pr-state { padding: 6px 8px; border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); border-radius: 4px; }
+  .pr-state h3 { margin: 0; font-size: inherit; }
+  .pr-title { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+  .pr-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 2px 0 0; font-size: 12px; color: var(--vscode-descriptionForeground); }
+  .pr-summary { margin: 3px 0 0; font-size: 12px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+  .pill { padding: 0 5px; border: 1px solid currentColor; border-radius: 4px; font-size: 11px; line-height: 16px; }
+  .pr-size { font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; }
+  .pr-size .add { color: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-foreground)); }
+  .pr-size .del { color: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-foreground)); }
+  .pr-meta button { margin-left: auto; }
+  .test { overflow-wrap: anywhere; }
+  .findings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .finding { padding: 6px 8px; border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); border-radius: 4px; }
+  .finding .head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .finding .where { color: var(--vscode-descriptionForeground); font-size: 12px; overflow-wrap: anywhere; }
+  .finding button.where { padding: 0; color: var(--vscode-descriptionForeground); background: none; border: none; text-align: left; font-size: 12px; overflow-wrap: anywhere; }
+  .finding button.where:hover { color: var(--vscode-textLink-foreground); text-decoration: underline; }
+  .finding .carried { color: var(--vscode-descriptionForeground); font-size: 12px; font-style: italic; }
+  .finding .why { color: var(--vscode-descriptionForeground); font-size: 12px; overflow-wrap: anywhere; margin-top: 2px; }
+  .finding .label { font-size: 11px; font-weight: 600; }
+  .finding .none { font-style: italic; }
+  .findings.quiet .finding { border-style: dashed; }
+  .group .aside { font-weight: normal; text-transform: none; letter-spacing: normal; }
+  .finding .quote { display: block; margin: 3px 0; overflow-wrap: anywhere; }
+  .hidden { border: 1px dashed var(--vscode-editorWarning-foreground, var(--vscode-foreground)); border-radius: 3px; padding: 0 4px; }
+  .flag { color: var(--vscode-editorWarning-foreground, var(--vscode-foreground)); font-size: 11px; font-weight: 600; margin-right: 6px; }
+  .shown { font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; }
+  .finding .meta { display: flex; align-items: center; gap: 4px 6px; flex-wrap: wrap; margin-top: 2px; font-size: 12px; color: var(--vscode-descriptionForeground); }
+  .finding .pill { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; border: 1px solid currentColor; border-radius: 4px; padding: 0 5px; line-height: 16px; white-space: nowrap; }
+  .finding .pill .icon { width: 1em; text-align: center; }
+  .tone-ok { color: var(--vscode-testing-iconPassed, var(--vscode-foreground)); }
+  .tone-bad { color: var(--vscode-errorForeground, var(--vscode-foreground)); }
+  .tone-warn { color: var(--vscode-editorWarning-foreground, var(--vscode-foreground)); }
+  .tone-info { color: var(--vscode-editorInfo-foreground, var(--vscode-textLink-foreground, var(--vscode-foreground))); }
+  .tone-mut { color: var(--vscode-descriptionForeground); }
+  .folded { display: flex; align-items: center; gap: 6px; margin: 6px 0 0; font-size: 12px; color: var(--vscode-descriptionForeground); }
+  .issue { padding: 0; color: var(--vscode-textLink-foreground); background: none; border: none; font-size: 12px; }
+  .issue:hover { color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground)); text-decoration: underline; }
+  .tick { display: flex; align-items: center; gap: 6px; margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--vscode-widget-border, var(--vscode-panel-border)); }
+  .tick label { font-size: 12px; }
 </style>
 </head>
 <body>
@@ -222,26 +708,91 @@ export function sideBarHtml(nonce: string, body: string): string {
       var open = pressed.getAttribute('aria-expanded') !== 'true';
       folds[pressed.getAttribute('data-step')] = open;
       setOpen(pressed, open);
+      // Step 2's list loads the first time its card shows.
+      if (open && pressed.getAttribute('data-step') === '2') vscode.postMessage({ type: 'pullRequests', action: 'show', value: '' });
+    } else if (pressed.hasAttribute('data-comment')) {
+      vscode.postMessage({ type: 'comment', action: pressed.getAttribute('data-comment'), id: Number(pressed.getAttribute('data-id')) });
+    } else if (pressed.hasAttribute('data-part-menu')) {
+      vscode.postMessage({ type: 'partMenu', menu: pressed.getAttribute('data-part-menu'), anchor: anchorOf(pressed) });
     } else if (pressed.classList.contains('open')) {
       vscode.postMessage({ type: 'openPart', anchor: anchorOf(pressed) });
+    } else if (pressed.hasAttribute('data-claim-where')) {
+      vscode.postMessage({ type: 'claimWhere', claim: Number(pressed.getAttribute('data-claim-where')) });
+    } else if (pressed.hasAttribute('data-claim-looked')) {
+      vscode.postMessage({ type: 'claimLooked', claim: Number(pressed.getAttribute('data-claim-looked')), index: Number(pressed.getAttribute('data-index')) });
+    } else if (pressed.hasAttribute('data-claim-evidence')) {
+      vscode.postMessage({ type: 'claimEvidence', claim: Number(pressed.getAttribute('data-claim-evidence')), index: Number(pressed.getAttribute('data-index')) });
+    } else if (pressed.hasAttribute('data-finding')) {
+      vscode.postMessage({ type: 'finding', action: pressed.getAttribute('data-finding'), kind: pressed.getAttribute('data-kind'), index: Number(pressed.getAttribute('data-index')) });
+    } else if (pressed.hasAttribute('data-issue')) {
+      vscode.postMessage({ type: 'openIssue', issue: Number(pressed.getAttribute('data-issue')) });
+    } else if (pressed.hasAttribute('data-pr-action')) {
+      vscode.postMessage({ type: 'pullRequests', action: pressed.getAttribute('data-pr-action'), value: pressed.getAttribute('data-value') });
     } else if (pressed.hasAttribute('data-command')) {
       vscode.postMessage({ type: 'command', command: pressed.getAttribute('data-command') });
+    } else if (pressed.hasAttribute('data-field')) {
+      vscode.postMessage({ type: 'setup', field: pressed.getAttribute('data-field'), value: pressed.getAttribute('data-value') });
+    } else if (pressed.hasAttribute('data-action')) {
+      var fields = {};
+      Array.prototype.forEach.call(root.querySelectorAll('input.setup-text'), function (box) { fields[box.getAttribute('data-field')] = box.value; });
+      vscode.postMessage({ type: 'setup', action: pressed.getAttribute('data-action'), value: pressed.getAttribute('data-value'), fields: fields });
     }
   });
   root.addEventListener('change', function (event) {
     var box = event.target;
+    if (box.classList.contains('setup-text')) {
+      vscode.postMessage({ type: 'setup', field: box.getAttribute('data-field'), value: box.value });
+      return;
+    }
     if (box.type !== 'checkbox') return;
+    if (box.hasAttribute('data-tick')) {
+      vscode.postMessage({ type: 'tick', step: box.getAttribute('data-tick'), checked: box.checked });
+      return;
+    }
     vscode.postMessage({ type: 'mark', anchor: anchorOf(box), reviewed: box.checked });
+  });
+  // The list's box filters as the reviewer types; a paste or Enter can start a review of the URL in it.
+  root.addEventListener('input', function (event) {
+    var box = event.target;
+    if (box.id !== 'pr-filter') return;
+    vscode.postMessage({ type: 'pullRequests', action: 'filter', value: box.value, pasted: event.inputType === 'insertFromPaste' });
+  });
+  root.addEventListener('keydown', function (event) {
+    var box = event.target;
+    if (box.id !== 'pr-filter' || event.key !== 'Enter') return;
+    event.preventDefault();
+    vscode.postMessage({ type: 'pullRequests', action: 'go', value: box.value });
   });
   window.addEventListener('message', function (event) {
     var message = event.data;
     if (message === null || typeof message !== 'object' || message.type !== 'render' || typeof message.body !== 'string') return;
-    var focused = document.activeElement !== null && root.contains(document.activeElement) ? document.activeElement.id : '';
+    var active = document.activeElement !== null && root.contains(document.activeElement) ? document.activeElement : null;
+    var focused = active === null ? '' : active.id;
+    // A text box being typed in keeps its text: it reaches the extension only once it changes.
+    var typed = active !== null && (active.classList.contains('setup-text') || active.id === 'pr-filter') ? active.value : null;
+    var caret = typed === null ? null : [active.selectionStart, active.selectionEnd];
     root.innerHTML = message.body;
     keepFolds();
     var again = focused === '' ? null : document.getElementById(focused);
+    if (again !== null && typed !== null) again.value = typed;
     if (again !== null) again.focus();
+    if (again !== null && caret !== null && typeof again.setSelectionRange === 'function') again.setSelectionRange(caret[0], caret[1]);
   });
+  // The running stage's time so far, as the extension wrote it, moves on each second.
+  function elapsed(ms) {
+    var seconds = Math.max(0, Math.floor(ms / 1000));
+    var hours = Math.floor(seconds / 3600);
+    var minutes = Math.floor((seconds % 3600) / 60);
+    var rest = seconds % 60;
+    var ss = (rest < 10 ? '0' : '') + rest;
+    return hours > 0 ? hours + ':' + (minutes < 10 ? '0' : '') + minutes + ':' + ss : minutes + ':' + ss;
+  }
+  window.setInterval(function () {
+    Array.prototype.forEach.call(root.querySelectorAll('.elapsed'), function (span) {
+      var started = Number(span.getAttribute('data-started') || NaN);
+      if (isFinite(started)) span.textContent = elapsed(Date.now() - started);
+    });
+  }, 1000);
   keepFolds();
   vscode.postMessage({ type: 'ready' });
 }());

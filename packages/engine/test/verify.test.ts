@@ -60,7 +60,7 @@ function reviewed(root: string, claims: Claim[] = [LISTED]): ReviewResult {
 
 /** The verdicts pass's answer for the one claim it is shown. */
 function verdictAnswer(verdict: Record<string, unknown>): string {
-  return JSON.stringify({ verdicts: [{ id: 'c1', library: null, repository: null, ...verdict }] });
+  return JSON.stringify({ verdicts: [{ id: 'c1', looked: [], settles: null, library: null, repository: null, ...verdict }] });
 }
 
 const REFUTED = verdictAnswer({
@@ -136,6 +136,7 @@ describe('the verify ask', () => {
         source: 'the change itself',
         reason: '`send_with_retry` always passes 3, but `retry` stops on a 4xx status.',
         evidence: [{ path: 'app/retry.py', line: 4, quote: 'return retry(send, 3)' }],
+        looked: [],
       },
     };
     expect(answer).toEqual({
@@ -156,7 +157,7 @@ describe('the verify ask', () => {
   it("re-judges a picked claim in its place, and offers the library fetch a claim needs, downloading nothing", async () => {
     const root = headCopy();
     const agent = scriptedAgent([
-      verdictAnswer({ verdict: 'unverifiable', source: "the model's memory", reason: 'It turns on how `httpx` retries.', evidence: [], library: 'httpx' }),
+      verdictAnswer({ verdict: 'unverifiable', source: "the model's memory", reason: 'It turns on how `httpx` retries.', evidence: [], settles: { kind: 'library', note: 'Its source would settle it.' }, library: 'httpx' }),
     ]);
 
     const answer = await askAboutPart('verify', { result: reviewed(root), part: 0, adapter: agent, claim: { index: 0 } });
@@ -180,6 +181,7 @@ describe('the verify ask', () => {
         source: 'library source at the pinned version',
         reason: 'It does not.',
         evidence: [],
+        looked: [],
         library: { library: 'httpx', pinnedVersion: '0.27.2', pinnedBy: 'requirements.txt', file: 'httpx.whl', sha256: HASH, archive: 'wheel', path: '/cache/httpx', promptVersion: '3', stamp: { agent: 'fake', agentVersion: '1', model: 'm', effort: null, runAt: '2026-10-02T00:00:00.000Z' } },
       },
     };
@@ -199,7 +201,7 @@ describe('the verify ask', () => {
 });
 
 describe('withVerifiedClaim', () => {
-  const judged: Claim = { ...LISTED, verdict: { kind: 'verified', source: 'the change itself', reason: 'It does.', evidence: [] } };
+  const judged: Claim = { ...LISTED, verdict: { kind: 'verified', source: 'the change itself', reason: 'It does.', evidence: [], looked: [] } };
 
   it("puts a picked claim's verdict in its place, and a new selection after every claim", () => {
     const result = reviewed('/cache/head');

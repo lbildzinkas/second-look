@@ -4,17 +4,21 @@ import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import {
   ASK_METHOD,
+  CANCEL_REVIEW_METHOD,
   DRAFT_COMMENT_METHOD,
   ENGINE_PROTOCOL_VERSION,
   FETCH_LIBRARY_METHOD,
   INITIALIZE_METHOD,
+  LIST_PULL_REQUESTS_METHOD,
   MARK_REVIEWED_METHOD,
   MARK_VIEWED_METHOD,
   PROBE_AGENTS_METHOD,
+  READ_CI_LOG_METHOD,
   REVIEWED_MARKS_METHOD,
   REVIEW_METHOD,
   REVIEW_STAGE_METHOD,
   SEND_REVIEW_METHOD,
+  TEST_AGENT_METHOD,
   type AskAnswer,
   type AskedClaim,
   type AskKind,
@@ -23,26 +27,35 @@ import {
   type DraftComment,
   type FindingRef,
   type InitializeResult,
+  type ListPullRequestsParams,
   type MarkedPart,
   type PendingReview,
   type ProbeAgentsRpcResult,
+  type PullRequestList,
   type ReviewAgentChoice,
   type ReviewedMarks,
   type ReviewResult,
+  type ReviewStageRecord,
   type SentReview,
+  type TestAgentRpcResult,
   type ViewedFiles,
 } from '@second-look/engine';
 import {
+  AgentTestProtocolError,
   AgentsProtocolError,
   AskProtocolError,
   DraftProtocolError,
   MarksProtocolError,
   ProtocolError,
+  PullRequestListProtocolError,
   SendProtocolError,
+  isAgentTestResult,
   isAgentsProbe,
   isAskAnswer,
   isDraftComment,
+  isPullRequestList,
   isReviewResult,
+  isReviewStageRecord,
   isReviewedMarks,
   isSentReview,
   isViewedFiles,
@@ -99,11 +112,20 @@ const HANDSHAKE_TIMEOUT_MS = 10_000;
 /** How long probing the installed agents may take: each agent's version, help and guard check. */
 const PROBE_AGENTS_TIMEOUT_MS = 90_000;
 
+/** How long the pull request list may take: its searches run side by side, each within the engine's own limit. */
+const LIST_PULL_REQUESTS_TIMEOUT_MS = 60_000;
+
+/** How long the agent test may take: the agent's probe, and its one run of up to five minutes. */
+const TEST_AGENT_TIMEOUT_MS = 390_000;
+
 /** How long one review request may take before the engine is given up on. */
 const REVIEW_TIMEOUT_MS = 120_000;
 
 /** How long one library fetch may take, its download and the agent judging the claim again. */
 const FETCH_LIBRARY_TIMEOUT_MS = 900_000;
+
+/** How long one CI log read may take: the logs' download, and the agent's run judging the claim again with its one retry. */
+const READ_CI_LOG_TIMEOUT_MS = 720_000;
 
 /** How long one draft may take: the agent's probe, and its run with its one retry. */
 const DRAFT_COMMENT_TIMEOUT_MS = 720_000;
@@ -123,6 +145,9 @@ const MARK_VIEWED_TIMEOUT_MS = 60_000;
 /** How long a stalled engine gets to die from SIGTERM before it is killed outright. */
 const KILL_GRACE_MS = 2_000;
 
+/** How long the engine may take to answer a cancel: it stops the review and answers at once. */
+const CANCEL_TIMEOUT_MS = 10_000;
+
 /** What a review stage notification gives on top of the deadline the engine names for its stage. */
 const STAGE_GRACE_MS = 30_000;
 
@@ -131,6 +156,8 @@ export interface ReviewStageUpdate {
   /** The stage now running, in words for the reviewer. */
   running: string;
   result: ReviewResult;
+  /** The stage now running, with its place, start time and the agent, model and effort working on it, when the engine names it. */
+  stage?: ReviewStageRecord;
 }
 
 interface Pending {
@@ -155,10 +182,11 @@ function stageNotification(
   if (typeof value !== 'object' || value === null) return undefined;
   const { method, params } = value as { method?: unknown; params?: unknown };
   if (method !== REVIEW_STAGE_METHOD || typeof params !== 'object' || params === null) return undefined;
-  const { id, running, timeoutMs, result } = params as Record<string, unknown>;
+  const { id, running, timeoutMs, result, stage } = params as Record<string, unknown>;
   if (typeof id !== 'number' || typeof running !== 'string') return undefined;
   if (typeof timeoutMs !== 'number' || !(timeoutMs > 0) || !isReviewResult(result)) return undefined;
-  return { id, running, timeoutMs, result };
+  if (stage !== undefined && !isReviewStageRecord(stage)) return undefined;
+  return { id, running, timeoutMs, result, ...(stage !== undefined ? { stage } : {}) };
 }
 
 /** The id of a JSON-RPC response, when the line carries one. */
@@ -199,6 +227,8 @@ export class EngineClient {
   private readonly pending = new Map<number, Pending>();
   private nextId = 1;
   private handshaken = false;
+  /** The id of the review request in flight, which a cancel names; absent when none is. */
+  private reviewId: number | undefined;
 
   constructor(spawnEngine: SpawnEngine) {
     this.spawnEngine = spawnEngine;
@@ -251,6 +281,43 @@ export class EngineClient {
   }
 
   /**
+   * Tests one agent, model and effort (issue 132), sent only when the
+   * reviewer presses Test: the engine runs the choice once, locked down as
+   * a review runs it, on a tiny fixed prompt. A failed run is an answer —
+   * the reason in plain words, with whatever stamp the run had — not a
+   * rejection; rejects with the engine's plain message when the engine
+   * fails.
+   */
+  async testAgent(agent: ReviewAgentChoice): Promise<TestAgentRpcResult> {
+    if (!this.handshaken) {
+      throw new Error('the engine has not completed its handshake yet');
+    }
+    const result = await this.request(TEST_AGENT_METHOD, { agent }, TEST_AGENT_TIMEOUT_MS);
+    if (!isAgentTestResult(result)) {
+      throw new AgentTestProtocolError();
+    }
+    return result;
+  }
+
+  /**
+   * Lists the reviewer's open pull requests (issue 136) with the token
+   * VS Code's GitHub sign-in gave for this one request, and the open
+   * folder's repository when it is a GitHub one. Not signed in and GitHub
+   * out of reach are answers, each with its plain reason; rejects with the
+   * engine's plain message when the engine fails.
+   */
+  async listPullRequests(params: ListPullRequestsParams): Promise<PullRequestList> {
+    if (!this.handshaken) {
+      throw new Error('the engine has not completed its handshake yet');
+    }
+    const result = await this.request(LIST_PULL_REQUESTS_METHOD, params, LIST_PULL_REQUESTS_TIMEOUT_MS);
+    if (!isPullRequestList(result)) {
+      throw new PullRequestListProtocolError();
+    }
+    return result;
+  }
+
+  /**
    * Sends one review request with the token VS Code's GitHub sign-in gave
    * for it, the agent choice the settings picked, the heading the
    * acceptance criteria checklist sits under and the budget's limits: the
@@ -261,7 +328,10 @@ export class EngineClient {
    *
    * A review can arrive in stages: each stage notification hands its
    * result so far to `onStage` and gives the request the stage's own
-   * deadline; the returned result is the final one.
+   * deadline; the returned result is the final one. A review of a pull
+   * request the engine saved a result for answers with that result at
+   * once, or, once the pull request has new commits, re-runs only what
+   * they changed, unless `fresh` asks for Review again.
    */
   async review(
     url: string,
@@ -270,6 +340,7 @@ export class EngineClient {
     onStage?: (stage: ReviewStageUpdate) => void,
     criteriaHeading?: string,
     budget?: BudgetLimits,
+    fresh?: boolean,
   ): Promise<ReviewResult> {
     if (!this.handshaken) {
       throw new Error('the engine has not completed its handshake yet');
@@ -277,22 +348,46 @@ export class EngineClient {
     // The heading names a checklist only once trimmed to something; an
     // empty one stays off the request, and the engine reads its default.
     const heading = criteriaHeading?.trim();
-    const result = await this.request(
-      REVIEW_METHOD,
-      {
-        url,
-        token,
-        ...(agent !== undefined ? { agent } : {}),
-        ...(heading !== undefined && heading !== '' ? { criteriaHeading: heading } : {}),
-        ...(budget !== undefined ? { budget } : {}),
-      },
-      REVIEW_TIMEOUT_MS,
-      onStage,
-    );
+    let sent: number | undefined;
+    let result: unknown;
+    try {
+      result = await this.request(
+        REVIEW_METHOD,
+        {
+          url,
+          token,
+          ...(agent !== undefined ? { agent } : {}),
+          ...(heading !== undefined && heading !== '' ? { criteriaHeading: heading } : {}),
+          ...(budget !== undefined ? { budget } : {}),
+          ...(fresh === true ? { fresh } : {}),
+        },
+        REVIEW_TIMEOUT_MS,
+        onStage,
+        (id) => (sent = this.reviewId = id),
+      );
+    } finally {
+      if (this.reviewId === sent) this.reviewId = undefined;
+    }
     if (!isReviewResult(result)) {
       throw new ProtocolError();
     }
     return result;
+  }
+
+  /**
+   * Stops the review request in flight, when the reviewer stops it: the
+   * engine stops the stage running, its agent run with it, and the review
+   * answers with the results that already landed, every stage not run
+   * marked stopped. Resolves whether a review was running and is now
+   * stopping; false when none was, such as one that just finished.
+   */
+  async cancelReview(): Promise<boolean> {
+    if (!this.handshaken || this.reviewId === undefined) return false;
+    const answer = await this.request(CANCEL_REVIEW_METHOD, { id: this.reviewId }, CANCEL_TIMEOUT_MS);
+    if (typeof answer !== 'object' || answer === null || typeof (answer as { cancelled?: unknown }).cancelled !== 'boolean') {
+      throw new Error(`the engine's answer to ${CANCEL_REVIEW_METHOD} is not one`);
+    }
+    return (answer as { cancelled: boolean }).cancelled;
   }
 
   /**
@@ -313,6 +408,26 @@ export class EngineClient {
       { url, claim, ...(agent !== undefined ? { agent } : {}) },
       FETCH_LIBRARY_TIMEOUT_MS,
     );
+    if (!isReviewResult(result)) {
+      throw new ProtocolError();
+    }
+    return result;
+  }
+
+  /**
+   * Presses one claim's Read the CI log, sent only when the reviewer
+   * presses it, with the token for its GitHub reads only: the engine reads
+   * the logs of the checks that passed at the head commit its latest
+   * review of the pull request read, and has the agent the settings
+   * picked judge the claim again with them. Resolves with the review
+   * result holding the new verdict; rejects with the engine's plain
+   * message, such as no passing check's log having lines.
+   */
+  async readCiLog(url: string, token: string, claim: number, agent?: ReviewAgentChoice): Promise<ReviewResult> {
+    if (!this.handshaken) {
+      throw new Error('the engine has not completed its handshake yet');
+    }
+    const result = await this.request(READ_CI_LOG_METHOD, { url, token, claim, ...(agent !== undefined ? { agent } : {}) }, READ_CI_LOG_TIMEOUT_MS);
     if (!isReviewResult(result)) {
       throw new ProtocolError();
     }
@@ -438,9 +553,11 @@ export class EngineClient {
     params: unknown,
     timeoutMs: number,
     onStage?: (stage: ReviewStageUpdate) => void,
+    onSent?: (id: number) => void,
   ): Promise<unknown> {
     const engine = this.ensureEngine();
     const id = this.nextId++;
+    onSent?.(id);
     const message = { jsonrpc: '2.0' as const, id, method, params };
     return new Promise<unknown>((resolve, reject) => {
       const expire = (): void => {
@@ -512,7 +629,7 @@ export class EngineClient {
       const pending = this.pending.get(stage.id);
       if (pending?.onStage === undefined) return;
       pending.restart(stage.timeoutMs + STAGE_GRACE_MS);
-      pending.onStage({ running: stage.running, result: stage.result });
+      pending.onStage({ running: stage.running, result: stage.result, ...(stage.stage !== undefined ? { stage: stage.stage } : {}) });
       return;
     }
     const id = responseId(value);

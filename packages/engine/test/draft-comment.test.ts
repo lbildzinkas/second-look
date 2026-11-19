@@ -29,6 +29,7 @@ function claims(): Claim[] {
         source: 'the change itself',
         reason: 'MAX_ATTEMPTS is 5, so the loop gives up after five attempts.',
         evidence: [{ path: 'app/retry.py', line: 1, quote: 'MAX_ATTEMPTS = 5' }],
+        looked: [],
       },
     },
     {
@@ -36,14 +37,14 @@ function claims(): Claim[] {
       source: 'description',
       location: { kind: 'description', line: 2 },
       part: 0,
-      verdict: { kind: 'unverifiable', source: 'the change itself', reason: 'The status check is in the library.', evidence: [], needsLibrary: 'requests' },
+      verdict: { kind: 'unverifiable', source: 'the change itself', reason: 'The status check is in the library.', evidence: [], needsLibrary: 'requests', looked: [], settles: { kind: 'library', note: 'the source of requests could settle it' } },
     },
     {
       quote: 'Retries failed sends.',
       source: 'description',
       location: { kind: 'description', line: 1 },
       part: 0,
-      verdict: { kind: 'verified', source: 'the change itself', reason: 'send_with_retry retries.', evidence: [{ path: 'app/retry.py', line: 4, quote: 'return retry(send, MAX_ATTEMPTS)' }] },
+      verdict: { kind: 'verified', source: 'the change itself', reason: 'send_with_retry retries.', evidence: [{ path: 'app/retry.py', line: 4, quote: 'return retry(send, MAX_ATTEMPTS)' }], looked: [] },
     },
     { quote: 'It logs each try.', source: 'agent', location: { kind: 'story', sentence: 0 }, part: 0, verdict: { kind: 'not checked' } },
   ];
@@ -131,6 +132,27 @@ describe('draftFinding', () => {
     });
   });
 
+  it("labels a cited line of a passing check's CI log as one, as the draft must cite it", () => {
+    const result = reviewed();
+    const fromLog: Claim = {
+      ...result.claims!.claims[0]!,
+      verdict: {
+        kind: 'refuted',
+        source: 'a CI log',
+        reason: 'The lint check reports a warning.',
+        evidence: [{ path: 'check / lint', line: 2, quote: '1 problem (0 errors, 1 warning)', ciLog: true, passingCheck: true }],
+        looked: [],
+      },
+    };
+    const finding = draftFinding({ ...result, claims: { ...result.claims!, claims: [fromLog] } }, { kind: 'claim', index: 0 })!;
+    expect(finding).toMatchObject({
+      evidence: [{ at: 'CI log of check / lint (a passing check), line 2', quote: '1 problem (0 errors, 1 warning)' }],
+      locations: ['CI log of check / lint (a passing check), line 2'],
+    });
+    const checks = draftChecks(finding, 'The passing check reports `1 problem (0 errors, 1 warning)` at CI log of check / lint (a passing check), line 2. Could you fix it?');
+    expect(checks.cited).toEqual(['CI log of check / lint (a passing check), line 2']);
+  });
+
   it('reads an unverifiable claim that cites nothing, so the draft cites where the claim is made, and names the library it needs', () => {
     expect(draftFinding(reviewed(), { kind: 'claim', index: 1 })).toMatchObject({
       kind: 'unverifiable claim',
@@ -146,6 +168,16 @@ describe('draftFinding', () => {
     expect(draftFinding(reviewed(), { kind: 'claim', index: 9 })).toBeUndefined();
     expect(draftFinding(reviewed(), { kind: 'unexplained part', index: 1 })).toBeUndefined();
     expect(draftFinding(reviewed(), { kind: 'described change', index: 2 })).toBeUndefined();
+  });
+
+  it('reads no finding from an unverifiable claim only the author or something outside the repository can settle', () => {
+    const result = reviewed();
+    const claim = result.claims!.claims[1]!;
+    const verdict = claim.verdict as Exclude<typeof claim.verdict, { kind: 'not checked' }>;
+    claim.verdict = { ...verdict, settles: { kind: 'author', note: "the numbers come from the author's own run" } };
+    expect(draftFinding(result, { kind: 'claim', index: 1 })).toBeUndefined();
+    claim.verdict = { ...verdict, settles: { kind: 'outside-repository', note: 'the service limits' } };
+    expect(draftFinding(result, { kind: 'claim', index: 1 })).toBeUndefined();
   });
 
   it('reads an unexplained part by its name, citing its files', () => {

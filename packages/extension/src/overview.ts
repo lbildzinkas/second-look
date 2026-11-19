@@ -22,11 +22,17 @@ import {
   type FindingRef,
   type HiddenKind,
   type LinkedIssue,
+  type LookedRange,
   type Part,
   type ReviewResult,
+  type ReviewStageAgent,
+  type ReviewStageId,
+  type ReviewStageRecord,
+  type Settles,
+  type SettlesKind,
   type Story,
 } from '@second-look/engine';
-import { sinceLastLookLine } from './tree.js';
+import { carriedOverLine, earlierCommitLine, sinceLastLookLine } from './tree.js';
 
 /** The view type of the overview's one webview panel. */
 export const OVERVIEW_VIEW_TYPE = 'second-look.overview' as const;
@@ -42,6 +48,10 @@ export interface OverviewState {
   answers?: readonly AskAnswer[];
   /** True when the page is opened at the newest answer. */
   focusAnswer?: boolean;
+  /** The description line the page is opened at, marked in the description; a pull request description has no line anchors on GitHub. */
+  descriptionLine?: number;
+  /** The story sentence the page is opened at, marked in the story. */
+  storySentence?: number;
 }
 
 /** The evidence of a criterion's verdict that cites lines of the head copy. */
@@ -68,6 +78,11 @@ export type OverviewMessage =
       finding: FindingRef;
     }
   | {
+      type: 'readCiLog';
+      /** The claim whose Read the CI log is pressed, by its index in the claims. */
+      claim: number;
+    }
+  | {
       type: 'openCited';
       /** The answer, by its index in the answers shown, newest first. */
       answer: number;
@@ -85,6 +100,18 @@ export type OverviewMessage =
       claim: number;
       /** The cited line, by its index in that claim's verdict evidence. */
       index: number;
+    }
+  | {
+      type: 'openClaimWhere';
+      /** The claim whose where it is, by its index in the claims. */
+      claim: number;
+    }
+  | {
+      type: 'openClaimLooked';
+      /** The claim, by its index in the claims. */
+      claim: number;
+      /** The range the agent read, by its index in that claim's verdict's looked. */
+      index: number;
     };
 
 
@@ -93,7 +120,10 @@ function overviewMessage(value: unknown): OverviewMessage | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
   const { type, part, issue, criterion, evidence, index, finding, answer, doc, claim } = value as Record<string, unknown>;
   if (type === 'openDoc' && Number.isInteger(doc)) return { type, target: doc as number };
+  if (type === 'openClaimWhere' && Number.isInteger(claim)) return { type, claim: claim as number };
+  if (type === 'readCiLog' && Number.isInteger(claim)) return { type, claim: claim as number };
   if (type === 'openClaimEvidence' && Number.isInteger(claim) && Number.isInteger(index)) return { type, claim: claim as number, index: index as number };
+  if (type === 'openClaimLooked' && Number.isInteger(claim) && Number.isInteger(index)) return { type, claim: claim as number, index: index as number };
   if (type === 'openCited' && Number.isInteger(answer) && Number.isInteger(index)) return { type, answer: answer as number, index: index as number };
   if (type === 'openPart' && Number.isInteger(part)) return { type, target: part as number };
   if (type === 'openIssue' && Number.isInteger(issue)) return { type, target: issue as number };
@@ -108,8 +138,11 @@ function overviewMessage(value: unknown): OverviewMessage | undefined {
 /**
  * The review's overview (issue #30), the tab at the top of the review in
  * the recorded design (docs/ux), in its dashboard-and-tables style: the
- * pull request's title and where it comes from, a chip for each stage
- * done and the one still running, count tiles, then each section as a
+ * pull request's title and where it comes from, the stage list while a
+ * review runs — each stage done with its duration, the one running with
+ * its agent, model, effort and elapsed time, and the ones to come —
+ * folding, once the review is done, into one line with each fallback and
+ * its reason, count tiles, then each section as a
  * block in a bounded reading column beside a contents rail that scrolls to
  * it — the claims, criteria and unexplained changes as tables, findings
  * first, each row opening in place to its reason and evidence — the
@@ -126,7 +159,9 @@ function overviewMessage(value: unknown): OverviewMessage | undefined {
  * opens its page in the browser — the pipeline report and whether it is trusted, the checks run on the merge
  * commit with their annotations and failed jobs' trimmed logs, the pull
  * request's description in full with its hidden content shown and flagged,
- * and who made each result.
+ * and who made each result. While the review runs, each section still
+ * being produced shows a skeleton and a line naming the agent checking
+ * it, and claims already listed read as being checked, never as finished.
  *
  * Everything on the page but the companion's own words was written by
  * someone else, the agent's story and reasons, the claims' quotes, the
@@ -152,13 +187,22 @@ export class OverviewPanel implements vscode.Disposable {
   /** Drafts a comment from a finding the page lists. */
   private readonly draft: (finding: FindingRef) => void;
 
+  /** Presses Read the CI log on a claim the page lists, by its index in the claims. */
+  private readonly readCiLog: (claim: number) => void;
+
   /** The answers to the reviewer's asks about the review shown, newest first. */
   private answers: AskAnswer[] = [];
 
-  constructor(openPart: (part: Part) => void, openLine: (path: string, line: number, side: CommentSide) => void, draft: (finding: FindingRef) => void) {
+  constructor(
+    openPart: (part: Part) => void,
+    openLine: (path: string, line: number, side: CommentSide) => void,
+    draft: (finding: FindingRef) => void,
+    readCiLog: (claim: number) => void = () => undefined,
+  ) {
     this.openPart = openPart;
     this.openLine = openLine;
     this.draft = draft;
+    this.readCiLog = readCiLog;
   }
 
   /**
@@ -185,10 +229,11 @@ export class OverviewPanel implements vscode.Disposable {
 
   /**
    * Opens the page, or brings it to the front, at the story's start, at
-   * the first sentence that mentions one part, or at the newest answer.
-   * True when there was a review to show.
+   * the first sentence that mentions one part, at the newest answer, at
+   * the description line a claim is made on, or at the story sentence a
+   * claim is made in. True when there was a review to show.
    */
-  open(options: { focus?: number; preserveFocus?: boolean; answer?: boolean } = {}): boolean {
+  open(options: { focus?: number; preserveFocus?: boolean; answer?: boolean; descriptionLine?: number; storySentence?: number } = {}): boolean {
     if (this.disposed || this.state === undefined) return false;
     const { result, running } = this.state;
     this.state = {
@@ -196,6 +241,8 @@ export class OverviewPanel implements vscode.Disposable {
       ...(running !== undefined ? { running } : {}),
       ...(options.focus !== undefined ? { focus: options.focus } : {}),
       ...(options.answer ? { focusAnswer: true } : {}),
+      ...(options.descriptionLine !== undefined ? { descriptionLine: options.descriptionLine } : {}),
+      ...(options.storySentence !== undefined ? { storySentence: options.storySentence } : {}),
     };
     if (this.panel === undefined) {
       const panel = vscode.window.createWebviewPanel(
@@ -220,7 +267,10 @@ export class OverviewPanel implements vscode.Disposable {
    * The part a story, claim or unexplained-change button names, opened in
    * the diff editor; a linked issue, opened on GitHub; a line a criterion's
    * or a claim's verdict cites, opened in the head copy; a line an answer
-   * cites, opened in the copy of its side; a finding, drafted from.
+   * cites, opened in the copy of its side; where a claim is made, opened:
+   * its file's line in the head copy, its description line in the page's
+   * own description, or its story sentence in the page's own story; a
+   * finding, drafted from; a claim's Read the CI log, pressed.
    */
   private handle(value: unknown): void {
     const message = overviewMessage(value);
@@ -230,8 +280,20 @@ export class OverviewPanel implements vscode.Disposable {
       if (cited !== undefined) this.openLine(cited.path, cited.line, cited.side);
       return;
     }
+    if (message.type === 'openClaimWhere') {
+      const { location } = this.state?.result.claims?.claims[message.claim] ?? {};
+      if (location?.kind === 'file') this.openLine(location.path, location.line, 'head');
+      // A pull request description has no line anchors on GitHub, and the story lives only here: both open in this page, their line and sentence marked.
+      else if (location?.kind === 'description') this.open({ descriptionLine: location.line, preserveFocus: true });
+      else if (location?.kind === 'story') this.open({ storySentence: location.sentence, preserveFocus: true });
+      return;
+    }
     if (message.type === 'draft') {
       this.draft(message.finding);
+      return;
+    }
+    if (message.type === 'readCiLog') {
+      this.readCiLog(message.claim);
       return;
     }
     if (message.type === 'openClaimEvidence') {
@@ -239,6 +301,13 @@ export class OverviewPanel implements vscode.Disposable {
       // A CI log's line, or a line of fetched library source, is not a line of the head copy.
       const cited = verdict === undefined || verdict.kind === 'not checked' || verdict.library !== undefined ? undefined : verdict.evidence[message.index];
       if (cited !== undefined && cited.ciLog !== true) this.openLine(cited.path, cited.line, 'head');
+      return;
+    }
+    if (message.type === 'openClaimLooked') {
+      const verdict = this.state?.result.claims?.claims[message.claim]?.verdict;
+      // What the agent read is always a range of the head copy, even for a verdict judged again in a library's source.
+      const range = verdict === undefined || verdict.kind === 'not checked' ? undefined : verdict.looked[message.index];
+      if (range !== undefined) this.openLine(range.path, range.line, 'head');
       return;
     }
     if (message.type === 'openEvidence') {
@@ -364,35 +433,212 @@ function metaLine(result: ReviewResult): string {
     .join(' · ');
 }
 
-/** The line under the meta saying which commit the reviewer's last look was at and what changed since; nothing on a first look. */
+/** The lines under the meta saying a saved review is from an earlier commit, or what the review carried over from one, and which commit the reviewer's last look was at and what changed since; nothing for a review in full on a first look. */
 function sinceLine(result: ReviewResult): string {
-  const line = sinceLastLookLine(result);
-  return line === undefined ? '' : `<div class="meta since">${escapeHtml(line)}</div>`;
+  return [earlierCommitLine(result), carriedOverLine(result), sinceLastLookLine(result)]
+    .map((line) => (line === undefined ? '' : `<div class="meta since">${escapeHtml(line)}</div>`))
+    .join('');
 }
 
-/** A chip for each stage done, and one for the stage still running. */
-function stageChips(state: OverviewState): string {
-  const { result } = state;
-  const chips: { text: string; done: boolean }[] = [
-    { text: 'parts', done: true },
-    { text: 'noise checks', done: true },
-  ];
-  const grouping = result.grouping.agent;
-  if (grouping) chips.push({ text: grouping.outcome === 'grouped' ? 'grouped by the agent' : 'plain grouping kept', done: true });
-  const ranking = result.ranking.agent;
-  if (ranking) chips.push({ text: result.ranking.by === 'agent' ? 'ranked by the agent' : 'plain ranking kept', done: true });
-  if (result.story) chips.push({ text: result.story.outcome === 'written' ? 'story' : 'no story', done: true });
-  if (result.unexplained) chips.push({ text: result.unexplained.outcome === 'compared' ? 'unexplained changes' : 'no comparison', done: true });
-  if (result.claims) chips.push({ text: result.claims.outcome === 'listed' ? 'claims' : 'no claims', done: true });
-  const judging = result.claims?.judging;
-  if (judging) chips.push({ text: judging.outcome === 'judged' ? 'verdicts' : 'no verdicts', done: true });
-  const mapping = result.criteria?.mapping;
-  if (mapping) chips.push({ text: mapping.outcome === 'mapped' ? 'criteria mapped' : 'criteria not mapped', done: true });
-  if (result.docLinks) chips.push({ text: 'documentation links', done: true });
-  if (state.running !== undefined) chips.push({ text: state.running, done: false });
-  return chips
-    .map((chip) => `<span class="stg ${chip.done ? 'done' : 'run'}">${escapeHtml(chip.text)}${chip.done ? '' : '…'}</span>`)
+/** One stage's time, whole seconds as `m:ss`: a duration once a stage is done, an elapsed time while it runs. */
+export function clockText(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+/** How the page names each stage of a review, in the order they run. */
+const STAGE_NAMES: Record<ReviewStageId, string> = {
+  plain: 'Parts and noise checks',
+  grouping: 'Grouping',
+  ranking: 'Ranking',
+  story: 'Story',
+  unexplained: 'Unexplained changes',
+  claims: 'Claims',
+  verdicts: 'Verdicts',
+  criteria: 'Acceptance criteria',
+  docLinks: 'Documentation links',
+};
+
+/** A stage's worker as one line: agent · model · effort, naming each of the agent's own defaults. */
+export function stageAgentLine(agent: ReviewStageAgent): string {
+  return [agent.agent, agent.model ?? 'default model', agent.effort ?? 'default effort'].join(' · ');
+}
+
+/** The record of one stage of the review shown, by its id. */
+function stageOf(state: OverviewState, id: ReviewStageId): ReviewStageRecord | undefined {
+  return state.result.stages?.find((record) => record.id === id);
+}
+
+/** Whether one stage of the review shown is running now. */
+function stageRunning(state: OverviewState, id: ReviewStageId): boolean {
+  return stageOf(state, id)?.state === 'running';
+}
+
+/** The agent, model and effort the review runs on, as the newest stage record that names them does. */
+function reviewAgentLine(state: OverviewState): string | undefined {
+  const records = state.result.stages ?? [];
+  for (let index = records.length - 1; index >= 0; index -= 1) {
+    const { agent } = records[index]!;
+    if (agent !== undefined) return stageAgentLine(agent);
+  }
+  return undefined;
+}
+
+/** A stage's name with what it says of its own result: who ran it, what it listed or is checking, or why it did not land. */
+function stageName(record: ReviewStageRecord, state: OverviewState): string {
+  let name = STAGE_NAMES[record.id];
+  const claims = state.result.claims;
+  if (record.id === 'claims' && claims?.outcome === 'listed') name += ` · ${claims.claims.length} listed`;
+  if (record.id === 'verdicts' && record.state === 'running' && claims !== undefined) name += `: checking ${claims.claims.length} claims`;
+  const by = record.state === 'done' && record.agent !== undefined ? ` <span class="who">by ${escapeHtml(record.agent.agent)}</span>` : '';
+  const why =
+    record.detail !== undefined && (record.state === 'fell back' || record.state === 'failed')
+      ? ` <span class="fallback${record.state === 'failed' ? ' tone-bad' : ''}">${escapeHtml(record.detail)}</span>`
+      : '';
+  return escapeHtml(name) + by + why;
+}
+
+/** One stage of the list: its icon by how it stands, its name with what it left, and its time or its place. */
+function stageRow(record: ReviewStageRecord, state: OverviewState): string {
+  const name = stageName(record, state);
+  const time = record.durationMs === undefined ? '' : escapeHtml(clockText(record.durationMs));
+  const quiet = record.detail === undefined ? '' : ` title="${escapeHtml(record.detail)}"`;
+  switch (record.state) {
+    case 'running': {
+      const agent = record.agent === undefined ? '' : ` <span class="who">· ${escapeHtml(stageAgentLine(record.agent))}</span>`;
+      const started = record.startedAt === undefined ? Number.NaN : Date.parse(record.startedAt);
+      const elapsed = Number.isNaN(started) ? '0:00' : clockText(Date.now() - started);
+      const mark = Number.isNaN(started) ? '' : ` data-started="${started}"`;
+      return (
+        `<div class="srow run"><span class="ic run tone-info" aria-hidden="true">◌</span><span class="nm">${name}${agent}</span>` +
+        `<span class="w tone-info elapsed"${mark}>${escapeHtml(elapsed)}</span><span class="bar" aria-hidden="true"></span></div>`
+      );
+    }
+    case 'to come': {
+      const run = state.result.stages?.find((each) => each.state === 'running');
+      const next = run !== undefined && record.position === run.position + 1;
+      return `<div class="srow todo"><span class="ic tone-mut" aria-hidden="true">○</span><span class="nm">${name}</span><span class="w">${next ? 'next' : 'to come'}</span></div>`;
+    }
+    case 'skipped':
+      return `<div class="srow todo"${quiet}><span class="ic tone-mut" aria-hidden="true">○</span><span class="nm">${name}</span><span class="w">skipped</span></div>`;
+    case 'stopped':
+      return `<div class="srow todo"${quiet}><span class="ic tone-mut" aria-hidden="true">□</span><span class="nm">${name}</span><span class="w">stopped</span></div>`;
+    case 'carried over':
+      return `<div class="srow"${quiet}><span class="ic tone-mut" aria-hidden="true">⧉</span><span class="nm">${name}</span><span class="w">carried over</span></div>`;
+    case 'fell back':
+      return `<div class="srow"><span class="ic tone-warn" aria-hidden="true">⊘</span><span class="nm">${name}</span><span class="w">${time}</span></div>`;
+    case 'failed':
+      return `<div class="srow"><span class="ic tone-bad" aria-hidden="true">✕</span><span class="nm">${name}</span><span class="w">${time}</span></div>`;
+    default:
+      return `<div class="srow"><span class="ic tone-ok" aria-hidden="true">✓</span><span class="nm">${name}</span><span class="w">${time}</span></div>`;
+  }
+}
+
+/** Every stage of the review shown, one row each, in the order they run. */
+function stageRows(state: OverviewState): string {
+  return (state.result.stages ?? []).map((record) => stageRow(record, state)).join('');
+}
+
+/**
+ * The stage list while a review runs: every stage in the order it runs,
+ * the done ones with their durations and who ran them, the running one
+ * with the agent, model and effort working on it and its elapsed time,
+ * and the ones to come, under a header naming how far the review has
+ * come and how long it has run so far.
+ */
+function runningList(state: OverviewState): string {
+  const records = state.result.stages ?? [];
+  const run = records.find((record) => record.state === 'running');
+  const place = run === undefined ? '' : ` <span class="cnt">stage ${run.position} of ${run.total}</span>`;
+  const first = records.find((record) => record.startedAt !== undefined)?.startedAt;
+  const startedAt = first === undefined ? Number.NaN : Date.parse(first);
+  const soFar = Number.isNaN(startedAt)
+    ? ''
+    : `<span class="tm"><span class="elapsed" data-started="${startedAt}">${escapeHtml(clockText(Date.now() - startedAt))}</span> so far</span>`;
+  return `<div class="slist"><div class="shead"><span class="ic run tone-info" aria-hidden="true">◌</span><b>Review in progress</b>${place}${soFar}</div>${stageRows(state)}</div>`;
+}
+
+/**
+ * The stages folded into one line once the review is done: how long the
+ * whole review took, how many stages it ran and who ran them, the list
+ * itself behind a fold, and beneath it each stage that fell back,
+ * failed or was stopped, with its reason. A review a stage was stopped
+ * in says so rather than claiming to be complete.
+ */
+function completeLine(state: OverviewState): string {
+  const records = state.result.stages ?? [];
+  const total = records.reduce((sum, record) => sum + (record.durationMs ?? 0), 0);
+  const agent = reviewAgentLine(state);
+  const stopped = records.some((record) => record.state === 'stopped');
+  const head = `<span class="ic ${stopped ? 'tone-mut' : 'tone-ok'}" aria-hidden="true">${stopped ? '□' : '✓'}</span> <b>${stopped ? 'Review stopped' : 'Review complete'}</b>`;
+  const who = agent === undefined ? '' : ` · ${escapeHtml(agent)}`;
+  const stagesWord = records.length === 1 ? 'stage' : 'stages';
+  const notes = records
+    .filter((record) => record.state === 'fell back' || record.state === 'failed' || record.state === 'stopped')
+    .map((record) => {
+      const tone = record.state === 'failed' ? 'bad' : record.state === 'stopped' ? 'mut' : 'warn';
+      const icon = record.state === 'failed' ? '✕' : record.state === 'stopped' ? '□' : '⊘';
+      const reason = record.detail === undefined ? '' : `: ${escapeHtml(record.detail)}`;
+      return `<div class="fbnote tone-${tone}"><span class="ic" aria-hidden="true">${icon}</span><span><b>${escapeHtml(`${STAGE_NAMES[record.id]} ${record.state}`)}</b>${reason}</span></div>`;
+    })
     .join('');
+  return (
+    `<div class="sdone">${head} in ${escapeHtml(clockText(total))} · ${records.length} ${stagesWord}${who}` +
+    `<details class="sfold"><summary>show stages</summary><div class="slist">${stageRows(state)}</div></details>${notes}</div>`
+  );
+}
+
+/**
+ * The line under where the pull request comes from: the stage list while
+ * a review runs, folding into one line once it is done; a result no
+ * stages came with shows none.
+ */
+function progressBlock(state: OverviewState): string {
+  const records = state.result.stages;
+  if (records === undefined || records.length === 0) return '';
+  return state.running !== undefined || records.some((record) => record.state === 'running') ? runningList(state) : completeLine(state);
+}
+
+/**
+ * One stage of the review shown that already ended, in the words the
+ * page says of it — its name, how it ended, and why — or undefined
+ * while it runs or is yet to come.
+ */
+function endedStage(state: OverviewState, id: ReviewStageId): string | undefined {
+  return stageEndLine(stageOf(state, id));
+}
+
+/** One ended stage as a plain line — its name, how it ended, and why — or undefined while it runs or is yet to come. */
+export function stageEndLine(record: ReviewStageRecord | undefined): string | undefined {
+  if (record === undefined || record.state === 'running' || record.state === 'to come') return undefined;
+  const detail = record.detail === undefined ? '' : `: ${record.detail}`;
+  return `${STAGE_NAMES[record.id]} ${record.state}${detail}`;
+}
+
+/**
+ * A section the review is still producing: a skeleton where its rows
+ * will land, and a line naming the agent checking it — never a quiet
+ * note that reads empty or finished. A section whose stage already
+ * ended without its result says what happened to it, in the words the
+ * folded stage list uses, since nothing is checking it and none will.
+ */
+function beingChecked(state: OverviewState, id: ReviewStageId): string {
+  const ended = endedStage(state, id);
+  if (ended !== undefined) return `<p class="note">${escapeHtml(`${ended}.`)}</p>`;
+  const own = stageOf(state, id);
+  const line = own?.agent !== undefined ? stageAgentLine(own.agent) : reviewAgentLine(state);
+  const words =
+    own?.state === 'to come'
+      ? line === undefined
+        ? 'Still to come.'
+        : `Still to come; ${line} will check it.`
+      : line === undefined
+        ? 'Being checked.'
+        : `Being checked by ${line}.`;
+  return (
+    '<div class="skel" aria-hidden="true"><span class="sk a"></span><span class="sk b"></span><span class="sk c"></span></div>' +
+    `<p class="checking"><span class="ic run tone-info" aria-hidden="true">◌</span> ${escapeHtml(words)}</p>`
+  );
 }
 
 /**
@@ -410,14 +656,15 @@ function stampChip(text: string): string {
 }
 
 /** The theme colour a state shows in, always beside its icon and its word. */
-type Tone = 'ok' | 'bad' | 'warn' | 'info' | 'must' | 'mut';
+export type Tone = 'ok' | 'bad' | 'warn' | 'info' | 'must' | 'mut';
 
 /** How the page shows each state: its tone, and its icon as a text glyph, which needs no font the page's policy would block. */
-const STATES: Record<string, { tone: Tone; icon: string }> = {
+export const STATES: Record<string, { tone: Tone; icon: string }> = {
   verified: { tone: 'ok', icon: '✓' },
   refuted: { tone: 'bad', icon: '✕' },
   unverifiable: { tone: 'warn', icon: '?' },
   'not checked': { tone: 'mut', icon: '○' },
+  checking: { tone: 'info', icon: '◌' },
   met: { tone: 'ok', icon: '✓' },
   'partly met': { tone: 'warn', icon: '◐' },
   'not met': { tone: 'bad', icon: '✕' },
@@ -456,12 +703,29 @@ const CLAIM_ORDER = ['refuted', 'unverifiable', 'not checked', 'verified'];
 /** The criteria's verdicts in the order a reviewer reads them: findings first, confirmations last. */
 const CRITERION_ORDER: readonly string[] = [...CRITERION_VERDICT_KINDS, 'not checked'];
 
-function claimTallies(result: ReviewResult): Tally[] {
-  return tally(result.claims?.claims.map((claim) => claim.verdict.kind) ?? [], CLAIM_ORDER);
+/** A reading order with `not checked` reading `checking`, for a section whose verdicts are being checked. */
+function checkingOrder(order: readonly string[]): readonly string[] {
+  return order.map((state) => (state === 'not checked' ? 'checking' : state));
 }
 
-function criterionTallies(result: ReviewResult): Tally[] {
-  return tally(result.criteria?.criteria.map((criterion) => criterion.verdict.kind) ?? [], CRITERION_ORDER);
+function claimTallies(result: ReviewResult, checking = false): Tally[] {
+  return tally(claimStates(result, checking), checking ? checkingOrder(CLAIM_ORDER) : CLAIM_ORDER);
+}
+
+function criterionTallies(result: ReviewResult, checking = false): Tally[] {
+  return tally(criterionStates(result, checking), checking ? checkingOrder(CRITERION_ORDER) : CRITERION_ORDER);
+}
+
+/** The claims' verdicts, `not checked` reading `checking` while the verdicts stage runs. */
+function claimStates(result: ReviewResult, checking: boolean): string[] {
+  const kinds = result.claims?.claims.map((claim) => claim.verdict.kind) ?? [];
+  return checking ? kinds.map((kind) => (kind === 'not checked' ? 'checking' : kind)) : kinds;
+}
+
+/** The criteria's verdicts, `not checked` reading `checking` while the mapping stage runs. */
+function criterionStates(result: ReviewResult, checking: boolean): string[] {
+  const kinds = result.criteria?.criteria.map((criterion) => criterion.verdict.kind) ?? [];
+  return checking ? kinds.map((kind) => (kind === 'not checked' ? 'checking' : kind)) : kinds;
 }
 
 /** How many unexplained changes the comparison found, in both directions; nothing until it compared. */
@@ -479,11 +743,15 @@ function tile({ state, count }: Tally, label: string): string {
 }
 
 /** The count tiles at the top of the page: the criteria and the claims by verdict, the unexplained changes, and the parts that must be reviewed. */
-function countTiles(result: ReviewResult): string {
+function countTiles(result: ReviewResult, criteriaChecking = false, claimsChecking = false): string {
   const plural = (count: number, one: string, many: string): string => (count === 1 ? one : many);
   const tiles = [
-    ...criterionTallies(result).map((each) => tile(each, `${plural(each.count, 'criterion', 'criteria')} ${each.state}`)),
-    ...claimTallies(result).map((each) => tile(each, `${plural(each.count, 'claim', 'claims')} ${each.state}`)),
+    ...criterionTallies(result, criteriaChecking).map((each) =>
+      tile(each, each.state === 'checking' ? plural(each.count, 'criterion being checked', 'criteria being checked') : `${plural(each.count, 'criterion', 'criteria')} ${each.state}`),
+    ),
+    ...claimTallies(result, claimsChecking).map((each) =>
+      tile(each, each.state === 'checking' ? plural(each.count, 'claim being checked', 'claims being checked') : `${plural(each.count, 'claim', 'claims')} ${each.state}`),
+    ),
   ];
   const unexplained = unexplainedTally(result);
   if (unexplained) tiles.push(tile(unexplained, plural(unexplained.count, 'unexplained change', 'unexplained changes')));
@@ -534,8 +802,8 @@ function evidenceGroups(groups: readonly [string, string][]): string {
   return `<div class="evidence">${groups.map(([label, value]) => `<span class="label">${escapeHtml(label)}</span><span class="v">${value}</span>`).join('')}</div>`;
 }
 
-/** A story's sentences, each part a button that opens it; the sentence that first mentions the focused part is marked. */
-function storySentences(story: Story, focus: number | undefined): string {
+/** A story's sentences, each part a button that opens it; the sentence that first mentions the focused part, or the one the page is opened at, is marked. */
+function storySentences(story: Story, focus: number | undefined, marked: number | undefined): string {
   const focused = focus === undefined ? -1 : story.sentences.findIndex((sentence) => sentence.segments.some((segment) => segment.part === focus));
   return story.sentences
     .map((sentence, index) => {
@@ -547,12 +815,12 @@ function storySentences(story: Story, focus: number | undefined): string {
           return segment.code ? `<code>${escapeHtml(segment.text)}</code>` : escapeHtml(segment.text);
         })
         .join('');
-      return `<span class="sentence${index === focused ? ' focus' : ''}">${runs}</span>`;
+      return `<span class="sentence${index === focused || index === marked ? ' focus' : ''}">${runs}</span>`;
     })
     .join(' ');
 }
 
-/** The story section: the story with its stamp, why there is none, or that it is still coming. */
+/** The story section: the story with its stamp, why there is none, or a skeleton and the line naming who is writing it. */
 function storySection(state: OverviewState): string {
   const { result, focus } = state;
   const story = result.story;
@@ -562,14 +830,14 @@ function storySection(state: OverviewState): string {
       ? `<p class="note">The story does not mention ${escapeHtml(part.name ?? part.path)}.</p>`
       : '';
   if (story === undefined) {
-    const why = state.running !== undefined ? 'The story comes once the agent has written it.' : 'No story was written for this review.';
-    return `<h2>Story</h2><p class="note">${why}</p>`;
+    if (state.running !== undefined) return `<h2>Story</h2>${beingChecked(state, 'story')}`;
+    return `<h2>Story</h2><p class="note">No story was written for this review.</p>`;
   }
   const stamp = stampChip(stampText(story.stamp, 'story', story.promptVersion));
   if (story.outcome === 'fell back') {
     return `<h2>Story ${stamp}</h2><p class="note">No story: ${escapeHtml(story.detail)}.</p>`;
   }
-  return `<h2>Story ${stamp}</h2>${missing}<div class="story">${storySentences(story, focus)}</div>`;
+  return `<h2>Story ${stamp}</h2>${missing}<div class="story">${storySentences(story, focus, state.storySentence)}</div>`;
 }
 
 /** Agent text as the page shows it: escaped, each name it sets in backticks as code. */
@@ -624,7 +892,7 @@ const ISSUE_LINKS: Record<LinkedIssue['link'], string> = {
 };
 
 /** A linked issue as the page names it: its number in its repository. */
-function issueName(issue: LinkedIssue): string {
+export function issueName(issue: LinkedIssue): string {
   return `#${issue.number} in ${issue.repository}`;
 }
 
@@ -679,20 +947,25 @@ function draftButton(finding: FindingRef): string {
 }
 
 /** One acceptance criterion's row: its verdict, its quote, the issue it comes from as a button that opens it, and, once mapped, its reason and evidence to open. */
-function criterionRow(criterion: AcceptanceCriterion, index: number, criteria: NonNullable<ReviewResult['criteria']>, open: boolean): string {
+function criterionRow(criterion: AcceptanceCriterion, index: number, criteria: NonNullable<ReviewResult['criteria']>, open: boolean, checking = false): string {
   const issue = criteria.issues[criterion.issue];
   const from =
     issue === undefined
       ? ''
       : `<button type="button" class="pt issue" data-issue="${criterion.issue}">${escapeHtml(issueName(issue))}</button> · ${escapeHtml(ISSUE_LINKS[issue.link])}`;
-  const cells = [pill(criterion.verdict.kind), `<q class="quote">${sanitiseUntrusted(criterion.quote).html}</q>`, `<span class="where">${from}</span>`];
-  return tableRow(`criterion-${index}`, index + 1, criterion.verdict.kind, cells, criterionEvidence(criterion, index), open);
+  const state = criterion.verdict.kind === 'not checked' && checking ? 'checking' : criterion.verdict.kind;
+  const cells = [pill(state), `<q class="quote">${sanitiseUntrusted(criterion.quote).html}</q>`, `<span class="where">${from}</span>`];
+  return tableRow(`criterion-${index}`, index + 1, state, cells, criterionEvidence(criterion, index), open);
 }
 
-/** What the criteria section says of their verdicts: mapped, why none was, or that none is yet. */
-function mappingNote(criteria: NonNullable<ReviewResult['criteria']>): string {
+/** What the criteria section says of their verdicts: mapped, why none was, being checked, how the stage ended, or that none is yet. */
+function mappingNote(criteria: NonNullable<ReviewResult['criteria']>, checking?: string, ended?: string): string {
   const mapping = criteria.mapping;
-  if (mapping === undefined) return 'None is checked yet.';
+  if (mapping === undefined) {
+    if (checking !== undefined) return `Each is being checked by ${checking}.`;
+    if (ended !== undefined) return `None is checked: ${ended}.`;
+    return 'None is checked yet.';
+  }
   if (mapping.outcome === 'fell back') return `None is checked: ${mapping.detail}.`;
   return (
     'Each is judged against the change, its read-only copy and the manual checks the description reports, ' +
@@ -725,17 +998,18 @@ function issuesWithoutChecklist(criteria: NonNullable<ReviewResult['criteria']>)
 function criteriaSection(state: OverviewState): string {
   const criteria = state.result.criteria;
   if (criteria === undefined) {
-    const why = state.running !== undefined ? 'The criteria come once the linked issues are read.' : 'No criteria were read for this review.';
-    return `<h2>Acceptance criteria</h2><p class="note">${why}</p>`;
+    if (state.running !== undefined) return `<h2>Acceptance criteria</h2>${beingChecked(state, 'criteria')}`;
+    return `<h2>Acceptance criteria</h2><p class="note">No criteria were read for this review.</p>`;
   }
   const detail = `<p class="note">${escapeHtml(criteria.detail)}.</p>`;
   if (criteria.outcome === 'unreadable') {
     return `<h2>Acceptance criteria</h2>${detail}<p class="note">No criteria were read, so none is checked.</p>`;
   }
   const heading = `, quoted from the checklist under ${escapeHtml(JSON.stringify(criteria.heading))}`;
-  const note = `<p class="note">Each condition listed in the issues this pull request links${heading}. Issue text is untrusted: its hidden content is shown and flagged. ${escapeHtml(mappingNote(criteria))}</p>`;
-  const rows = byState(criteria.criteria, (criterion) => criterion.verdict.kind, CRITERION_ORDER).map(([criterion, index], at) =>
-    criterionRow(criterion, index, criteria, at === 0 && isUnmetCriterion(criterion)),
+  const checking = stageRunning(state, 'criteria') ? reviewAgentLine(state) : undefined;
+  const note = `<p class="note">Each condition listed in the issues this pull request links${heading}. Issue text is untrusted: its hidden content is shown and flagged. ${escapeHtml(mappingNote(criteria, checking, endedStage(state, 'criteria')))}</p>`;
+  const rows = byState(criteria.criteria, (criterion) => (criterion.verdict.kind === 'not checked' && checking !== undefined ? 'checking' : criterion.verdict.kind), checkingOrder(CRITERION_ORDER)).map(([criterion, index], at) =>
+    criterionRow(criterion, index, criteria, at === 0 && isUnmetCriterion(criterion), checking !== undefined),
   );
   const list = rows.length === 0 ? '' : sectionTable(['Verdict', 'Criterion', 'From'], rows);
   const { mapping } = criteria;
@@ -765,11 +1039,8 @@ function unexplainedSection(state: OverviewState): string {
   const { result } = state;
   const unexplained = result.unexplained;
   if (unexplained === undefined) {
-    const why =
-      state.running !== undefined
-        ? 'The unexplained changes come once the agent has compared the change with its description and issues.'
-        : 'The change was not compared with its description and issues for this review.';
-    return `<h2>Unexplained changes</h2><p class="note">${why}</p>`;
+    if (state.running !== undefined) return `<h2>Unexplained changes</h2>${beingChecked(state, 'unexplained')}`;
+    return `<h2>Unexplained changes</h2><p class="note">The change was not compared with its description and issues for this review.</p>`;
   }
   const stamp = unexplained.stamp === undefined ? '' : ` ${stampChip(stampText(unexplained.stamp, 'unexplained', unexplained.promptVersion))}`;
   if (unexplained.outcome !== 'compared') {
@@ -828,17 +1099,43 @@ export function claimWhere(claim: Claim): string {
   }
 }
 
-/** A citation as the reader reads it: a file's line, or a line of a check's CI log. */
-export function citedWhere(cited: { path: string; line: number; ciLog?: true }): string {
-  return cited.ciLog ? `CI log of ${cited.path}, line ${cited.line}` : `${cited.path}:${cited.line}`;
+/** A citation as the reader reads it: a file's line, or a line of a check's CI log, labelled when the check passed. */
+export function citedWhere(cited: { path: string; line: number; ciLog?: true; passingCheck?: true }): string {
+  if (!cited.ciLog) return `${cited.path}:${cited.line}`;
+  return `CI log of ${cited.path}${cited.passingCheck ? ' (a passing check)' : ''}, line ${cited.line}`;
+}
+
+/** A range of the head copy the agent read, as the reader reads it: `path:line`, or `path:line–endLine`. */
+export function lookedWhere(range: LookedRange): string {
+  return range.endLine > range.line ? `${range.path}:${range.line}–${range.endLine}` : `${range.path}:${range.line}`;
+}
+
+/** How a reader names what could settle an unverifiable claim. */
+const SETTLES_WORDS: Record<SettlesKind, string> = {
+  code: 'the code',
+  library: "the library's source",
+  'ci-log': 'a CI log',
+  'sandboxed-run': 'a sandboxed run',
+  'outside-repository': 'something outside the repository',
+  author: 'the author',
+};
+
+/** What could settle an unverifiable claim, in words: its route, then its note. */
+export function settlesLine(settles: Settles): string {
+  const note = settles.note.trim();
+  return note === '' ? SETTLES_WORDS[settles.kind] : `${SETTLES_WORDS[settles.kind]}: ${note}`;
 }
 
 /**
- * A checked verdict's evidence source, reason, citations, the library it
- * needs — with the library fetch offered for it, or the library source it
- * was judged against — why the engine dropped it, when it did, and that
- * the Verify this claim ask judged the claim alone, when it did;
- * nothing for a claim not checked.
+ * A checked verdict's evidence source, reason, citations, what the agent
+ * looked at — each range a chip that opens it in the head copy — and, for
+ * an unverifiable one, what would settle it, the library it needs — with
+ * the library fetch offered for it, or the library source it was judged
+ * against — the Read the CI log it offers, a button that presses it, or
+ * the passing checks' logs it was judged with, why the engine dropped it
+ * or any range it looked at, when it did, and that the Verify this claim
+ * ask judged the claim alone, when it did; nothing for a claim not
+ * checked.
  */
 function verdictDetail(claim: Claim, index: number): string {
   const { verdict } = claim;
@@ -856,7 +1153,14 @@ function verdictDetail(claim: Claim, index: number): string {
         : `<button type="button" class="pt ref claim-cite" data-claim="${index}" data-index="${at}">${where}</button>`;
     return `<span class="l">${chip} <span class="cited">${escapeHtml(each.quote)}</span></span>`;
   });
-  const evidence = cited.length === 0 ? '' : evidenceGroups([['Evidence', foldedLines(cited)]]);
+  const looked = verdict.looked.map(
+    (range, at) => `<button type="button" class="pt ref claim-looked" data-claim="${index}" data-index="${at}">${escapeHtml(lookedWhere(range))}</button>`,
+  );
+  const groups: [string, string][] = [];
+  if (cited.length > 0) groups.push(['Evidence', foldedLines(cited)]);
+  groups.push(['Looked at', looked.length === 0 ? escapeHtml('no line of the head copy') : looked.join(' ')]);
+  if (verdict.settles !== undefined) groups.push(['Would settle it', escapeHtml(settlesLine(verdict.settles))]);
+  const evidence = evidenceGroups(groups);
   const lines: string[] = [];
   if (library !== undefined) {
     lines.push(
@@ -874,58 +1178,78 @@ function verdictDetail(claim: Claim, index: number): string {
     lines.push(`needs the source of ${verdict.needsLibrary}, which the companion does not have`);
     if (verdict.noLibraryFetch !== undefined) lines.push(verdict.noLibraryFetch);
   }
+  if (verdict.ciLogs !== undefined) lines.push(`judged again with the logs of the checks that passed: ${verdict.ciLogs.checks.map((check) => `${check.name} (${check.detail})`).join('; ')}`);
+  else if (verdict.ciLogFetch !== undefined) lines.push(`CI log read offered: ${verdict.ciLogFetch.reason}`);
   if (verdict.recheck !== undefined) lines.push(`dropped to unverifiable: ${verdict.recheck}`);
+  if (verdict.lookedRecheck !== undefined) lines.push(`dropped from what it looked at: ${verdict.lookedRecheck}`);
   const why = (each: string): string => `<div class="why">${escapeHtml(each)}</div>`;
-  const draft = isFinding(claim) ? `<div class="acts">${draftButton({ kind: 'claim', index })}</div>` : '';
-  return reason.map(why).join('') + evidence + lines.map(why).join('') + draft;
+  // A claim a CI log could settle is no finding, so it has no thread: Read the CI log is pressed here, and on step 5's row.
+  const ciLog = verdict.ciLogFetch === undefined || verdict.ciLogs !== undefined ? '' : `<button type="button" class="pt ci-log" data-claim="${index}">Read the CI log</button>`;
+  const acts = [isFinding(claim) ? draftButton({ kind: 'claim', index }) : '', ciLog].join('');
+  return reason.map(why).join('') + evidence + lines.map(why).join('') + (acts === '' ? '' : `<div class="acts">${acts}</div>`);
 }
 
-/** One claim's row: its verdict, its quote, where it is made with the part it is attached to as a button that opens it, and, once judged, its reason and evidence to open. */
-function claimRow(claim: Claim, index: number, result: ReviewResult, open: boolean): string {
+/** Where a claim is made, as the claims table shows it: a link that opens its place — its file's line in the head copy, its description line in this page's description, or its sentence in this page's story — and plain text for a pipeline finding, which sits in the pipeline report. */
+function claimWhereCell(claim: Claim, index: number): string {
+  const text = escapeHtml(claimWhere(claim));
+  if (claim.location.kind === 'pipeline') return text;
+  return `<button type="button" class="pt where" data-claim-where="${index}">${text}</button>`;
+}
+
+/** One claim's row: its verdict, its quote, where it is made — a link that opens its place — with the part it is attached to as a button that opens it, and, once judged, its reason and evidence to open. */
+function claimRow(claim: Claim, index: number, result: ReviewResult, open: boolean, checking = false): string {
   const part = result.parts[claim.part];
   const button =
     part === undefined
       ? ''
       : ` · <button type="button" class="pt" data-part="${claim.part}">${escapeHtml(part.name ?? part.path)}</button>`;
-  const cells = [pill(claim.verdict.kind), `<q class="quote">${sanitiseUntrusted(claim.quote).html}</q>`, `<span class="where">${escapeHtml(claimWhere(claim))}${button}</span>`];
-  return tableRow(`claim-${index}`, index + 1, claim.verdict.kind, cells, verdictDetail(claim, index), open);
+  const state = claim.verdict.kind === 'not checked' && checking ? 'checking' : claim.verdict.kind;
+  const carried = claim.carried && result.carriedOver ? ` · <span class="carried">carried over from ${escapeHtml(result.carriedOver.commit.slice(0, 7))}</span>` : '';
+  const cells = [pill(state), `<q class="quote">${sanitiseUntrusted(claim.quote).html}</q>`, `<span class="where">${claimWhereCell(claim, index)}${button}${carried}</span>`];
+  return tableRow(`claim-${index}`, index + 1, state, cells, verdictDetail(claim, index), open);
 }
 
-/** What the claims section says of their verdicts: judged, why none was, or that none is yet. */
-function verdictsNote(claims: NonNullable<ReviewResult['claims']>): string {
+/** What the claims section says of their verdicts: judged, why none was, being checked, how the stage ended, or that none is yet. */
+function verdictsNote(claims: NonNullable<ReviewResult['claims']>, checking?: string, ended?: string): string {
   const asked = claims.claims.filter((claim) => claim.asked === true).length;
   const counted = asked === 1 ? 'one checked verdict' : `${asked} checked verdicts`;
   const judging = claims.judging;
-  if (judging === undefined) return asked === 0 ? 'None is checked yet.' : `The verdicts pass did not run; the ${counted} came from the Verify this claim ask.`;
+  if (judging === undefined) {
+    if (checking !== undefined) return `Each is being checked by ${checking}.`;
+    if (ended !== undefined) return asked === 0 ? `None is checked: ${ended}.` : `${ended}; the ${counted} came from the Verify this claim ask.`;
+    return asked === 0 ? 'None is checked yet.' : `The verdicts pass did not run; the ${counted} came from the Verify this claim ask.`;
+  }
   if (judging.outcome === 'fell back') return asked === 0 ? `None is checked: ${judging.detail}.` : `The judging pass fell back (${judging.detail}); the ${counted} came from the Verify this claim ask.`;
   return (
     `Each is judged against the change, its read-only copy and any failed check's CI log by ${stampText(judging.stamp, 'verdicts', judging.promptVersion)}` +
     (asked === 0 ? '' : `, save the ${counted} that came from the Verify this claim ask`) +
-    '; the refuted and unverifiable ones are findings, each a thread on the diff.'
+    "; the refuted ones, and the unverifiable ones the code or a library's source could settle, are findings, each a thread on the diff."
   );
 }
 
-/** The claims section: the claims with their stamp, why there are none, or that they are still coming. */
+/** The claims section: the claims with their stamp, why there are none, or a skeleton and the line naming who is listing or checking them. */
 function claimsSection(state: OverviewState): string {
   const { result } = state;
   const claims = result.claims;
   if (claims === undefined) {
-    const why = state.running !== undefined ? 'The claims come once the agent has listed them.' : 'No claims were listed for this review.';
-    return `<h2>Claims</h2><p class="note">${why}</p>`;
+    if (state.running !== undefined) return `<h2>Claims</h2>${beingChecked(state, 'claims')}`;
+    return `<h2>Claims</h2><p class="note">No claims were listed for this review.</p>`;
   }
   const stamp = stampChip(stampText(claims.stamp, 'claims', claims.promptVersion));
   if (claims.outcome === 'fell back' && claims.claims.length === 0) return `<h2>Claims ${stamp}</h2><p class="note">No claims: ${escapeHtml(claims.detail)}.</p>`;
   if (claims.claims.length === 0) return `<h2>Claims ${stamp}</h2><p class="note">The agent found no claim in the change.</p>`;
+  const checking = stageRunning(state, 'verdicts');
+  const who = checking ? reviewAgentLine(state) : undefined;
   const note =
     '<p class="note">Statements about how code or a library behaves, from a fresh pipeline report, the description, the docstrings and comments ' +
-    `the change adds, and the story, in that order. ${escapeHtml(verdictsNote(claims))}</p>`;
+    `the change adds, and the story, in that order. ${escapeHtml(verdictsNote(claims, who, endedStage(state, 'verdicts')))}</p>`;
   const askedListed = claims.claims.some((claim) => claim.asked === true);
   const fellBack =
     claims.outcome === 'fell back'
       ? `<p class="note">Only the pipeline's claims are listed${askedListed ? ', with any the reviewer asked to verify' : ''}: ${escapeHtml(claims.detail)}.</p>`
       : '';
-  const rows = byState(claims.claims, (claim) => claim.verdict.kind, CLAIM_ORDER).map(([claim, index], at) => claimRow(claim, index, result, at === 0 && isFinding(claim)));
-  return `<h2>Claims${tallyPills(claimTallies(result))} ${stamp}</h2>${fellBack}${note}${sectionTable(['Verdict', 'Claim', 'Where it is made'], rows)}`;
+  const rows = byState(claims.claims, (claim) => (claim.verdict.kind === 'not checked' && checking ? 'checking' : claim.verdict.kind), checkingOrder(CLAIM_ORDER)).map(([claim, index], at) => claimRow(claim, index, result, at === 0 && isFinding(claim), checking));
+  return `<h2>Claims${tallyPills(claimTallies(result, checking))} ${stamp}</h2>${fellBack}${note}${sectionTable(['Verdict', 'Claim', 'Where it is made'], rows)}`;
 }
 
 /** How the page names each state of the pipeline report. */
@@ -1014,8 +1338,8 @@ function docLinkItem(link: DocLink, index: number): string {
 function docsSection(state: OverviewState): string {
   const docs = state.result.docLinks;
   if (docs === undefined) {
-    const why = state.running !== undefined ? 'The documentation links come once the review is done.' : 'No documentation links were looked for in this review.';
-    return `<h2>Documentation</h2><p class="note">${why}</p>`;
+    if (state.running !== undefined) return `<h2>Documentation</h2>${beingChecked(state, 'docLinks')}`;
+    return `<h2>Documentation</h2><p class="note">No documentation links were looked for in this review.</p>`;
   }
   const suggestions = docs.suggestions;
   const stamp = suggestions === undefined ? '' : ` ${stampChip(stampText(suggestions.stamp, 'doc-links', suggestions.promptVersion))}`;
@@ -1041,12 +1365,37 @@ function pipelineSection(result: ReviewResult): string {
   return `<h2>Pipeline and CI</h2>${pipelineBlock(result)}${ciBlock(result)}`;
 }
 
-/** The description section: the description in full, its hidden content shown and flagged. */
-function descriptionSection(result: ReviewResult): string {
+/** The description's lines, each as the page shows it: its visible runs escaped, and any hidden run that falls on it flagged, split where it crosses lines. */
+function descriptionLines(description: string): string[] {
+  const lines: string[] = [''];
+  for (const piece of hiddenContent(description)) {
+    const parts = piece.text.split('\n');
+    const shown = piece.hidden === undefined ? undefined : piece.shown.split('\n');
+    for (const [at, part] of parts.entries()) {
+      lines[lines.length - 1] +=
+        piece.hidden === undefined
+          ? escapeHtml(part)
+          : `<span class="hidden" data-kind="${escapeHtml(piece.hidden)}">${at === 0 ? `<span class="flag">${escapeHtml(HIDDEN_LABELS[piece.hidden])}</span>` : ''}<span class="shown">${escapeHtml(shown![at]!)}</span></span>`;
+      if (at < parts.length - 1) lines.push('');
+    }
+  }
+  return lines;
+}
+
+/**
+ * The description section: the description in full, its hidden content
+ * shown and flagged, one span per line so the line a claim is made on
+ * can be marked, since a pull request description has no line anchors
+ * on GitHub.
+ */
+function descriptionSection(result: ReviewResult, mark: number | undefined): string {
   const description = result.pullRequest.description;
   if (description.trim() === '') return '<h2>Pull request description</h2><p class="note">The pull request has no description.</p>';
-  const { html, hidden } = sanitiseUntrusted(description);
-  return `<h2>Pull request description</h2>${hiddenSummary(hidden)}<div class="description">${html}</div>`;
+  const { hidden } = sanitiseUntrusted(description);
+  const lines = descriptionLines(description)
+    .map((html, at) => `<span class="dline${at + 1 === mark ? ' focus' : ''}" data-line="${at + 1}">${html}</span>`)
+    .join('\n');
+  return `<h2>Pull request description</h2>${hiddenSummary(hidden)}<div class="description">${lines}</div>`;
 }
 
 /** Who made each result: the plain pass or the agent, with its stamp, or why the plain result stayed. */
@@ -1156,9 +1505,9 @@ function contentsRail(state: OverviewState): string {
   const entries = [
     answers === 0 ? '' : railEntry('asks', 'Asks', '↳', { state: 'answered', count: answers }),
     railEntry('story', 'Story', '¶'),
-    railEntry('criteria', 'Acceptance criteria', '○', criterionTallies(result)[0]),
+    railEntry('criteria', 'Acceptance criteria', '○', criterionTallies(result, stageRunning(state, 'criteria'))[0]),
     railEntry('unexplained', 'Unexplained changes', '○', unexplainedTally(result)),
-    railEntry('claims', 'Claims', '○', claimTallies(result)[0]),
+    railEntry('claims', 'Claims', '○', claimTallies(result, stageRunning(state, 'verdicts'))[0]),
     railEntry('docs', 'Documentation', '↗', links === 0 ? undefined : { state: 'links', count: links }),
     railEntry('pipeline', 'Pipeline and CI', '▸', failed === 0 ? undefined : { state: 'failed', count: failed }),
     railEntry('description', 'Pull request description', '≡'),
@@ -1176,6 +1525,8 @@ function contentsRail(state: OverviewState): string {
  */
 export function overviewHtml(state: OverviewState, nonce: string): string {
   const { result } = state;
+  const claimsChecking = stageRunning(state, 'verdicts');
+  const criteriaChecking = stageRunning(state, 'criteria');
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1226,10 +1577,35 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
   h2 { font-size: 15px; font-weight: 600; margin: 10px 0 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .meta, .note { color: var(--mut); font-size: 12px; }
   .note { margin: 0 0 6px; }
-  .stages { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 4px; }
-  .stg { font-size: 12px; border: 1px solid var(--vscode-panel-border); border-radius: 12px; padding: 1px 9px; }
-  .stg.done::before { content: "✓ "; color: var(--ok); }
-  .stg.run { color: var(--mut); }
+  /* The stage list while a review runs. */
+  .slist { border: 1px solid var(--vscode-panel-border); border-radius: 6px; padding: 4px 0 2px; margin: 10px 0 4px; }
+  .shead { display: flex; align-items: baseline; gap: 8px; padding: 2px 10px 6px; border-bottom: 1px solid var(--vscode-panel-border); margin-bottom: 2px; font-size: 12.5px; }
+  .shead .cnt { color: var(--mut); font-size: 12px; }
+  .shead .tm { margin-left: auto; color: var(--mut); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .srow { display: flex; align-items: baseline; gap: 8px; padding: 2px 10px; font-size: 12.5px; position: relative; }
+  .srow .ic { width: 1.1em; text-align: center; flex: none; }
+  .srow .nm { min-width: 0; overflow-wrap: anywhere; }
+  .srow .who { color: var(--mut); }
+  .srow .w { margin-left: auto; color: var(--mut); font-variant-numeric: tabular-nums; flex: none; padding-left: 12px; }
+  .srow .fallback { color: var(--warn); font-size: 12px; }
+  .srow .bar { position: absolute; left: 10px; right: 10px; bottom: 0; height: 2px; overflow: hidden; }
+  .srow .bar::before { content: ""; display: block; height: 100%; width: 40%; border-radius: 1px; background: var(--info); animation: sl-slide 1.6s ease-in-out infinite; }
+  @keyframes sl-slide { from { transform: translateX(-40%); } to { transform: translateX(260%); } }
+  @keyframes sl-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+  .ic.run { display: inline-block; animation: sl-pulse 1.2s ease-in-out infinite; }
+  /* The stages folded into one line once the review is done, with each fallback and its reason beneath it. */
+  .sdone { font-size: 12.5px; margin: 10px 0 4px; }
+  .sfold { display: inline; font-weight: 400; }
+  .sfold summary { color: var(--vscode-textLink-foreground); cursor: pointer; font-size: 12px; margin-left: 8px; white-space: nowrap; }
+  .sfold .slist { margin-top: 6px; }
+  .fbnote { display: flex; gap: 6px; align-items: baseline; color: var(--mut); font-size: 12px; margin: 3px 0 0 20px; }
+  .fbnote.warn b { color: var(--warn); } .fbnote.bad b { color: var(--bad); } .fbnote.mut b { color: var(--mut); }
+  /* A section still being produced: a skeleton where its rows will land, and the line naming who is checking it. */
+  .skel { display: grid; gap: 6px; margin: 8px 0 6px; }
+  .sk { height: 10px; border-radius: 5px; background: var(--vscode-foreground); animation: sk-pulse 1.4s ease-in-out infinite; }
+  .sk.a { width: 88%; } .sk.b { width: 64%; } .sk.c { width: 76%; }
+  @keyframes sk-pulse { 0%, 100% { opacity: .08; } 50% { opacity: .16; } }
+  .checking { color: var(--info); font-size: 12px; margin: 0 0 6px; }
   .stamp { margin-left: auto; font-size: 11px; font-weight: 400; color: var(--mut); }
   .dash { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 12px 0; }
   .tile { border: 1px solid var(--vscode-panel-border); border-radius: 6px; padding: 8px 10px; }
@@ -1252,7 +1628,7 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
     font-size: 13.5px;
     line-height: 1.55;
   }
-  .sentence.focus, .answer.focus { background-color: var(--vscode-editor-findMatchHighlightBackground); }
+  .sentence.focus, .answer.focus, .dline.focus { background-color: var(--vscode-editor-findMatchHighlightBackground); }
   .pt {
     font: inherit;
     color: var(--vscode-textLink-foreground);
@@ -1332,8 +1708,8 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
   <h1>${escapeHtml(result.pullRequest.title)}</h1>
   <div class="meta">${metaLine(result)}</div>
   ${sinceLine(result)}
-  <div class="stages">${stageChips(state)}</div>
-  ${countTiles(result)}
+  ${progressBlock(state)}
+  ${countTiles(result, criteriaChecking, claimsChecking)}
   ${asksSection(state)}
   <section id="story">${storySection(state)}</section>
   <section id="criteria">${criteriaSection(state)}</section>
@@ -1341,7 +1717,7 @@ export function overviewHtml(state: OverviewState, nonce: string): string {
   <section id="claims">${claimsSection(state)}</section>
   <section id="docs">${docsSection(state)}</section>
   <section id="pipeline">${pipelineSection(result)}</section>
-  <section id="description">${descriptionSection(result)}</section>
+  <section id="description">${descriptionSection(result, state.descriptionLine)}</section>
   <section id="stamps">${stampsSection(state)}</section>
 </main>
 ${contentsRail(state)}
@@ -1380,6 +1756,11 @@ ${contentsRail(state)}
       vscode.postMessage({ type: 'openCited', answer: Number(button.getAttribute('data-answer')), index: Number(button.getAttribute('data-index')) });
     });
   });
+  Array.prototype.forEach.call(document.querySelectorAll('button.ci-log'), function (button) {
+    button.addEventListener('click', function () {
+      vscode.postMessage({ type: 'readCiLog', claim: Number(button.getAttribute('data-claim')) });
+    });
+  });
   Array.prototype.forEach.call(document.querySelectorAll('button.draft'), function (button) {
     button.addEventListener('click', function () {
       vscode.postMessage({ type: 'draft', finding: button.getAttribute('data-draft'), index: Number(button.getAttribute('data-index')) });
@@ -1396,6 +1777,16 @@ ${contentsRail(state)}
   Array.prototype.forEach.call(document.querySelectorAll('button.claim-cite'), function (button) {
     button.addEventListener('click', function () {
       vscode.postMessage({ type: 'openClaimEvidence', claim: Number(button.getAttribute('data-claim')), index: Number(button.getAttribute('data-index')) });
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('button.claim-looked'), function (button) {
+    button.addEventListener('click', function () {
+      vscode.postMessage({ type: 'openClaimLooked', claim: Number(button.getAttribute('data-claim')), index: Number(button.getAttribute('data-index')) });
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('button.where'), function (button) {
+    button.addEventListener('click', function () {
+      vscode.postMessage({ type: 'openClaimWhere', claim: Number(button.getAttribute('data-claim-where')) });
     });
   });
   Array.prototype.forEach.call(document.querySelectorAll('button.tg'), function (button) {
@@ -1437,9 +1828,26 @@ ${contentsRail(state)}
   });
   window.addEventListener('scroll', spy, { passive: true });
   spy();
-  var focused = document.querySelector('.answer.focus') || document.querySelector('.sentence.focus');
+  var focused = document.querySelector('.answer.focus') || document.querySelector('.sentence.focus') || document.querySelector('.dline.focus');
   if (focused !== null) {
     focused.scrollIntoView({ block: 'center' });
+  }
+  // The running stage's elapsed time, and the review's time so far, tick while the page is open.
+  var clocks = Array.prototype.slice.call(document.querySelectorAll('.elapsed'));
+  function clockText(ms) {
+    var seconds = Math.max(0, Math.floor(ms / 1000));
+    return Math.floor(seconds / 60) + ':' + (seconds % 60 < 10 ? '0' : '') + (seconds % 60);
+  }
+  function tick() {
+    var now = Date.now();
+    clocks.forEach(function (el) {
+      var started = Number(el.getAttribute('data-started'));
+      if (!isNaN(started)) el.textContent = clockText(now - started);
+    });
+  }
+  if (clocks.length > 0) {
+    tick();
+    window.setInterval(tick, 1000);
   }
 }());
 </script>

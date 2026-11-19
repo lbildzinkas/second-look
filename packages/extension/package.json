@@ -2,7 +2,7 @@
   "name": "second-look-extension",
   "displayName": "Second Look",
   "description": "The reviewer's companion: ranks a pull request by what matters, so the human reviews it faster and better.",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -51,6 +51,11 @@
         "title": "Review pull request",
         "category": "Second Look",
         "icon": "$(git-pull-request)"
+      },
+      {
+        "command": "second-look.reviewAgain",
+        "title": "Review again",
+        "category": "Second Look"
       },
       {
         "command": "second-look.openPart",
@@ -106,6 +111,11 @@
         "category": "Second Look"
       },
       {
+        "command": "second-look.readCiLog",
+        "title": "Read the CI log",
+        "category": "Second Look"
+      },
+      {
         "command": "second-look.openLibraryEvidence",
         "title": "Open the cited library file",
         "category": "Second Look"
@@ -149,10 +159,42 @@
         "command": "second-look.chooseAgent",
         "title": "Choose agent and model",
         "category": "Second Look"
+      },
+      {
+        "command": "second-look.openSetup",
+        "title": "Open the setup in the side bar",
+        "category": "Second Look"
+      },
+      {
+        "command": "second-look.refreshPullRequests",
+        "title": "Reload the pull request list",
+        "category": "Second Look",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "second-look.stopReview",
+        "title": "Stop review",
+        "category": "Second Look",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "second-look.openSettings",
+        "title": "Open Second Look settings",
+        "category": "Second Look"
       }
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "second-look.refreshPullRequests",
+          "when": "view == second-look.reviewTree",
+          "group": "navigation"
+        },
+        {
+          "command": "second-look.stopReview",
+          "when": "view == second-look.reviewTree && second-look.reviewing",
+          "group": "navigation"
+        },
         {
           "command": "second-look.reviewPullRequest",
           "when": "view == second-look.reviewTree",
@@ -179,9 +221,18 @@
           "command": "second-look.openOverview",
           "when": "view == second-look.reviewTree",
           "group": "navigation"
+        },
+        {
+          "command": "second-look.openSettings",
+          "when": "view == second-look.reviewTree",
+          "group": "settings"
         }
       ],
       "commandPalette": [
+        {
+          "command": "second-look.stopReview",
+          "when": "second-look.reviewing"
+        },
         {
           "command": "second-look.openPart",
           "when": "false"
@@ -204,6 +255,10 @@
         },
         {
           "command": "second-look.fetchLibrary",
+          "when": "false"
+        },
+        {
+          "command": "second-look.readCiLog",
           "when": "false"
         },
         {
@@ -236,6 +291,10 @@
         },
         {
           "command": "second-look.markReviewed",
+          "when": "false"
+        },
+        {
+          "command": "second-look.openSetup",
           "when": "false"
         }
       ],
@@ -392,7 +451,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@second-look/engine": "0.1.0"
+    "@second-look/engine": "0.2.1"
   },
   "devDependencies": {
     "@types/vscode": "^1.90.0"

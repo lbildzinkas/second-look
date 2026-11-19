@@ -9,7 +9,7 @@ The list is the `TESTED_MODELS` constant in [`packages/engine/src/tested-models.
 | Agent | Version | Model | Effort | Run date |
 | --- | --- | --- | --- | --- |
 | Pi | 0.86.1 | `zai-coding-cn/glm-5.3` | default | 2026-10-07T15:08:38.849Z |
-| Claude Code | 2.1.296 | `claude-sonnet-5-5` | high | 2026-10-10T14:26:15.320Z |
+| Claude Code | 2.1.296 | `claude-sonnet-5-5` | high | 2026-10-12T10:06:12.771Z |
 
 One row per tested combination. The run date is the latest run recorded behind it; the scores below keep each prompt's own run date, because the recorded baseline merges the runs taken as each prompt landed.
 
@@ -23,7 +23,7 @@ The agent ranking is the default for this combination (`TESTED_RANKINGS` in [`pa
 | ranking | 2026-10-04T06:32:35.720Z | rank-median 1, rank-top-3 0.9 |
 | story | 2026-10-04T08:38:20.193Z | story-must-review 1, story-order 1, story-names 0.9898 |
 | claims | 2026-10-04T12:45:41.622Z | claims-recall 1, claims-precision 0.9545 |
-| verdicts | 2026-10-07T11:06:40.494Z | verdict-accuracy 1, false-verified 0, verify-accuracy 0.75, verify-false-verified 0, verify-fetch-offered 1 |
+| verdicts (version 5) | 2026-10-07T11:06:40.494Z | verdict-accuracy 1, false-verified 0, verify-accuracy 0.75, verify-false-verified 0, verify-fetch-offered 1 |
 | unexplained changes | 2026-10-05T17:21:41.222Z | unexplained-recall 1, unexplained-precision 1, described-recall 1, described-precision 1 |
 | criteria mapping | 2026-10-06T08:48:12.610Z | criteria-accuracy 1, criteria-false-met 0, criteria-code-recall 0.8889, criteria-tests-recall 1, criteria-manual-recall 1 |
 | draft comments | 2026-10-06T11:33:18.523Z | draft-cites-evidence 1, draft-no-new-claim 1, draft-under-cap 1 |
@@ -43,7 +43,7 @@ The agent ranking is the default for this combination (`TESTED_RANKINGS` in [`pa
 | ranking | 2026-10-10T14:26:15.320Z | rank-median 1, rank-top-3 1 |
 | story | 2026-10-10T14:26:15.320Z | story-must-review 1, story-order 0.4444, story-names 1 |
 | claims | 2026-10-10T14:26:15.320Z | claims-recall 1, claims-precision 0.95 |
-| verdicts | 2026-10-10T14:26:15.320Z | verdict-accuracy 1, false-verified 0, verify-accuracy 1, verify-false-verified 0, verify-fetch-offered 1 |
+| verdicts (version 6) | 2026-10-12T10:06:12.771Z | verdict-accuracy 1, false-verified 0, settles-accuracy 1, verdict-looked 0.96, verify-accuracy 1, verify-false-verified 0, verify-fetch-offered 1 |
 | unexplained changes | 2026-10-10T14:26:15.320Z | unexplained-recall 1, unexplained-precision 1, described-recall 1, described-precision 1 |
 | criteria mapping | 2026-10-10T14:26:15.320Z | criteria-accuracy 1, criteria-false-met 0, criteria-code-recall 1, criteria-tests-recall 1, criteria-manual-recall 1 |
 | draft comments | 2026-10-10T14:26:15.320Z | draft-cites-evidence 1, draft-no-new-claim 1, draft-under-cap 1 |
@@ -51,7 +51,7 @@ The agent ranking is the default for this combination (`TESTED_RANKINGS` in [`pa
 | cover | 2026-10-10T14:26:15.320Z | cover-cites-checked 1, cover-tests-recall 0.8, cover-tests-precision 1, cover-manual-recall 1, cover-none-found 1 |
 | documentation links | 2026-10-10T14:26:15.320Z | doc-links-on-site 1, doc-links-checked 1 |
 
-The library verdicts prompt's claim checks are recorded case by case in the [baseline](../packages/evaluation/baseline.json) for this combination too.
+The verdicts prompt's version 6, which asks for what the agent read for each claim and what could settle an unverifiable one, was run with this combination alone, on its eight cases, the two interview-coach pull requests among them; the verdicts row is that run's, and the library verdicts prompt's claim checks on the canaries were taken in the same run. Pi's verdicts row is still version 5's. The library verdicts prompt's claim checks are recorded case by case in the [baseline](../packages/evaluation/baseline.json) for this combination too.
 
 ## Adding a combination
 

@@ -92,7 +92,7 @@ describe('the documentation section', () => {
 
   it('says when no links were looked for, and when they are still coming', () => {
     expect(overviewHtml({ result: mixedResult() }, 'n')).toContain('No documentation links were looked for in this review.');
-    expect(overviewHtml({ result: mixedResult(), running: 'mapping the acceptance criteria with pi' }, 'n')).toContain('The documentation links come once the review is done.');
+    expect(overviewHtml({ result: mixedResult(), running: 'mapping the acceptance criteria with pi' }, 'n')).toContain('Being checked.');
   });
 
   it('opens a link it lists in the browser, and ignores one it does not have', () => {

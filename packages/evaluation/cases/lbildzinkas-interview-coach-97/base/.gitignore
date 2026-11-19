@@ -1,0 +1,31 @@
+# --- Python ---------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# --- uv ---------------------------------------------------------------------
+# The virtualenv is local; uv.lock IS committed (https://docs.astral.sh/uv/concepts/projects/)
+.venv/
+
+# --- Tool caches --------------------------------------------------------------
+# pytest cache: https://docs.pytest.org/en/stable/how-to/cache.html
+.pytest_cache/
+# ruff cache: https://docs.astral.sh/ruff/
+.ruff_cache/
+
+# --- Local-only data (never commit these; see README.md) -----------------------
+# Local configuration: the .env file holds the API key (.env.example is the template)
+.env
+# Personal data
+data/personal/*
+!data/personal/.gitkeep
+# Downloaded study material
+data/study-material/*
+!data/study-material/.gitkeep
+
+# --- Editors / OS ---------------------------------------------------------------
+.DS_Store
+.idea/
+.vscode/

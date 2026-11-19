@@ -1,0 +1,152 @@
+{
+  "formatVersion": 1,
+  "id": "lbildzinkas-interview-coach-97",
+  "source": "https://github.com/lbildzinkas/interview-coach/pull/97",
+  "recordedAt": "2026-10-12T09:55:21.880Z",
+  "prompts": [
+    "verdicts"
+  ],
+  "pullRequest": {
+    "url": "https://github.com/lbildzinkas/interview-coach/pull/97",
+    "number": 97,
+    "title": "Add licensed AI engineering study sources and an optional local sources list",
+    "author": "lbildzinkas",
+    "description": "## What changed\n\n`sources.yaml` gains five AI engineering sources, so `coach setup` downloads them next to the System Design Primer and the Tech Interview Handbook. This material feeds the AI engineering interview track (#55).\n\nThe committed list holds only material whose licence allows sharing it. Sources without a licence are kept out of the public repository: `coach setup` now also reads an optional, git-ignored `sources.local.yaml` with the same schema, for personal study on one machine.\n\nEach source is pinned to a commit, and only the English text it needs is listed: markdown pages, no images, translations or notebooks. A fresh download of the whole committed list is 154 files, about 2.1 MB.\n\n| Source | Pinned commit | Licence at that commit | Files |\n|---|---|---|---|\n| alirezadir/Machine-Learning-Interviews | `9ee3308` | MIT | 29: English guides under `src/` |\n| mlabonne/llm-course | `7abd96e` | Apache-2.0, no NOTICE file | 2: README and LICENSE |\n| huggingface/agents-course | `3c469e7` | Apache-2.0, no NOTICE file | 45: `units/en/` fundamentals, LangGraph, agentic RAG, GAIA, function calling, observability |\n| microsoft/generative-ai-for-beginners | `d8ec07e` | MIT | 23: English lesson READMEs 01-21 |\n| microsoft/ai-agents-for-beginners | `ff2ba66` | MIT | 21: English lesson READMEs 01-18 and study guide |\n\n## Licences and credits\n\nEvery licence was re-checked at the pinned commit:\n\n- The three MIT `LICENSE` files are the standard MIT text with their own copyright lines (Alireza Dirafzoon, 2021; Microsoft Corporation for both Microsoft courses).\n- The two Apache-2.0 `LICENSE` files are the unmodified licence, they name no copyright holder, and neither repository has a NOTICE file.\n\n`THIRD_PARTY_NOTICES.md` gives each source its own credit block: the project name and link, the authors or copyright holder as the licence or repository states them, the licence, exactly what is used, and that source's own licence notice text. The MIT blocks reproduce each `LICENSE` file verbatim. The Apache-2.0 blocks name the authors from the repository (the README for the LLM Course, the citation entry for the Agents Course) and carry the licence's recommended notice with a link to the full licence.\n\nThis is a reading of the licence files, not legal advice.\n\n## The optional local sources list\n\n- `load_all_sources` reads `sources.yaml` and, when it exists, `sources.local.yaml`, and validates them as one list so a local source cannot reuse a committed source's name or folder.\n- `sources.local.yaml` is in `.gitignore`.\n- `README.md` explains that personal sources go in that file, are marked `local_only: true` and are downloaded for personal study only.\n\n## Tests\n\n- The committed list validates, has the expected names, no translation folders, only `units/en/` from the agents course, and no local-only or unlicensed source.\n- The local list is added when present, is skipped when absent, cannot reuse a committed name, and is git-ignored (`git check-ignore`).\n- `coach setup` downloads local sources and prints them as \"(local only)\".\n\n## How I checked it\n\n- A fresh `uv run coach setup` downloaded all 9 committed sources (154 files, 2.1 MB, no images or translation paths). A second run printed \"already up to date\" for each.\n- `git status` was clean after setup.\n- `scripts/check.sh` passes: ruff, pyright and 39 tests.\n\nCloses #96\n",
+    "base": "master",
+    "head": "fm/ic-ai-sources",
+    "baseCommit": "4dabf2afa454319540a24d650436b3b7456e3a2a",
+    "headSha": "a5828ac9447ca45e92c09f169a2b404f16a0b117"
+  },
+  "gitAttributes": null,
+  "baseCommit": "4dabf2afa454319540a24d650436b3b7456e3a2a",
+  "headCommit": "a5828ac9447ca45e92c09f169a2b404f16a0b117",
+  "criteria": {
+    "outcome": "read",
+    "detail": "1 issue this pull request closes and 2 issues that reference it",
+    "heading": "Acceptance criteria",
+    "issues": [
+      {
+        "number": 96,
+        "title": "AI engineering study sources in the sources list",
+        "url": "https://github.com/lbildzinkas/interview-coach/issues/96",
+        "repository": "lbildzinkas/interview-coach",
+        "body": "Milestone: M0 · Size: ~150 changed lines (sources list, notices, README), tests and lockfiles excluded · Delivery: plain pull request (data and docs; no-mistakes if the downloader needs a code change)\n\n## What to build\n\nAdd AI engineering study material to the committed sources list so `coach setup` downloads it alongside the System Design Primer and the Tech Interview Handbook. This material feeds the AI engineering interview track (#55).\n\nSources to add, each pinned to a commit, with its licence checked at that commit and only the English text needed (markdown, no images, no translations, no notebooks unless they are the material itself):\n\n- `alexeygrigorev/ai-engineering-field-guide`: the interview question bank, AI system design, project deep-dive probes and take-home write-ups. No licence, so **local only**.\n- `chiphuyen/ml-interviews-book` and `chiphuyen/aie-book`: no licence, so **local only**.\n- `alirezadir/Machine-Learning-Interviews` (MIT).\n- `mlabonne/llm-course` (Apache-2.0) and the Hugging Face `agents-course` (Apache-2.0).\n- `microsoft/generative-ai-for-beginners` and `microsoft/ai-agents-for-beginners` (MIT), English lessons only; these repositories are several GB with translations, so fetch only the English lesson files.\n\n**What you'll learn:** how a licence decides whether material may be committed or only read locally, and how to fetch only the part of a large repository you need.\n\n**How to try it by hand:** run `coach setup`, list `data/study-material/`, and check `git status` shows nothing new to commit.\n\n## Acceptance criteria\n\n- [ ] Each new source is in the sources list with download URL, pinned commit, licence as found at that commit, and the local-only flag where there is no licence.\n- [ ] `coach setup` downloads the new sources into the git-ignored folder, stays safe to run twice, and fetches no images, translations or other languages.\n- [ ] Third-party notices credit each committable source with its licence notice; local-only sources are listed as read-only references.\n- [ ] The sources-list schema check passes, and the project's single check command passes locally and in CI.\n\n## Blocked by\n\n- None (#15 merged)\n",
+        "link": "closes"
+      },
+      {
+        "number": 173,
+        "title": "Verdicts say what they looked at and what would settle a claim (verdicts prompt v6)",
+        "url": "https://github.com/lbildzinkas/second-look/issues/173",
+        "repository": "lbildzinkas/second-look",
+        "body": "- Milestone: v1.1 · size ~300 changed lines (excluding tests) · delivery: code, through no-mistakes\n\n## What to build\n\nAn unverifiable verdict today carries a one-sentence reason and whatever it cites, often nothing, and nothing records what the agent read for it (the Claude Code adapter keeps only tool call ids). The reviewer cannot tell \"code cannot settle this\" from \"the agent did not look\". Most unverifiable claims are about a run, a measurement or the outside world, yet the result does not say so.\n\n- Each verdict gains `looked`: the head-copy files and line ranges the agent read for that claim. The engine re-checks each entry exists, as it does cited lines, and drops one that does not with a recheck note.\n- Each unverifiable verdict gains `settles`: what could settle the claim, from a fixed list (`code`, `library`, `ci-log`, `sandboxed-run`, `outside-repository`, `author`), with a one-line note. `code` means the code should settle it, so the verdict is a finding to check.\n- `protocol.ts` gains both fields beside `libraryFetch`; the extension's validators accept them; the result version goes up.\n- Bump the `verdicts` prompt to v6 in `packages/evaluation/prompts.json` with its baseline in `docs/tested-models.md`, and add evaluation cases (ADR 0006) from two public pull requests:\n  - https://github.com/lbildzinkas/interview-coach/pull/98 with hand verdicts: the description's measured numbers and live-run claims unverifiable with `settles` `author`; the docstring \"A str seed is hashed with SHA-512, the same on every run\" verified from the code and the standard library; the two claims about ranx behaviour unverifiable with `settles` `library`; \"tests/test_metrics.py checks these functions against ranx\" refuted, since all-evidence@k is not compared against ranx.\n  - https://github.com/lbildzinkas/interview-coach/pull/97 with the description's \"`scripts/check.sh` passes: ruff, pyright and 39 tests\" unverifiable with `settles` `ci-log`.\n- #107 later turns `settles` `sandboxed-run` into its run offer.\n\nHow to try it by hand: review interview-coach#98 with the engine CLI and read `looked` and `settles` on each unverifiable verdict in the result.\n\n## Acceptance criteria\n\n- [ ] Every verdict carries `looked`, and every unverifiable verdict carries `settles` from the fixed list.\n- [ ] A `looked` entry naming a missing file or line is dropped with a recheck note (test).\n- [ ] The new evaluation cases pass, and the prompt version is bumped with its baseline.\n- [ ] A result from an older result version is ignored, never misread.\n\n## Blocked by\n\n- None\n",
+        "link": "references"
+      },
+      {
+        "number": 174,
+        "title": "Read a passing check's CI log to settle a claim, on the reviewer's press",
+        "url": "https://github.com/lbildzinkas/second-look/issues/174",
+        "repository": "lbildzinkas/second-look",
+        "body": "- Milestone: v1.1 · size ~200 changed lines (excluding tests) · delivery: code, through no-mistakes\n\n## What to build\n\nOnly failed checks' logs are fetched and offered to the verdicts pass as evidence today (`ci.ts`, `verdicts.ts`). A claim such as \"`scripts/check.sh` passes: ruff, pyright and 39 tests\" (https://github.com/lbildzinkas/interview-coach/pull/97) stays unverifiable even though the CI check that runs that script passed at the pull request's head.\n\n- An unverifiable claim whose `settles` is `ci-log` offers **Read the CI log** when the pull request has passing checks at its head.\n- Pressing it fetches those checks' logs, with the same size limits and handling as failed checks' logs, and judges the claim again with them as evidence. The new verdict cites the log lines as it would a failed log's, labelled as from a passing check.\n- Nothing is fetched until the reviewer presses, as for library source (ADR 0003).\n\nHow to try it by hand: review interview-coach#97 and press Read the CI log on the `scripts/check.sh` claim; it is judged again, citing the check's log lines.\n\n## Acceptance criteria\n\n- [ ] Nothing is fetched before the press (test).\n- [ ] A claim judged again with a passing check's log cites its lines, labelled as from a passing check.\n- [ ] `docs/privacy.md` and `docs/reviewing.md` say passing checks' logs are fetched only on the reviewer's press.\n- [ ] Extension tests that need VS Code run in CI only.\n\n## Blocked by\n\n- #173\n",
+        "link": "references"
+      }
+    ],
+    "criteria": [
+      {
+        "quote": "Each new source is in the sources list with download URL, pinned commit, licence as found at that commit, and the local-only flag where there is no licence.",
+        "issue": 0,
+        "line": 21,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "`coach setup` downloads the new sources into the git-ignored folder, stays safe to run twice, and fetches no images, translations or other languages.",
+        "issue": 0,
+        "line": 22,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "Third-party notices credit each committable source with its licence notice; local-only sources are listed as read-only references.",
+        "issue": 0,
+        "line": 23,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "The sources-list schema check passes, and the project's single check command passes locally and in CI.",
+        "issue": 0,
+        "line": 24,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "Every verdict carries `looked`, and every unverifiable verdict carries `settles` from the fixed list.",
+        "issue": 1,
+        "line": 19,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "A `looked` entry naming a missing file or line is dropped with a recheck note (test).",
+        "issue": 1,
+        "line": 20,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "The new evaluation cases pass, and the prompt version is bumped with its baseline.",
+        "issue": 1,
+        "line": 21,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "A result from an older result version is ignored, never misread.",
+        "issue": 1,
+        "line": 22,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "Nothing is fetched before the press (test).",
+        "issue": 2,
+        "line": 15,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "A claim judged again with a passing check's log cites its lines, labelled as from a passing check.",
+        "issue": 2,
+        "line": 16,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "`docs/privacy.md` and `docs/reviewing.md` say passing checks' logs are fetched only on the reviewer's press.",
+        "issue": 2,
+        "line": 17,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "Extension tests that need VS Code run in CI only.",
+        "issue": 2,
+        "line": 18,
+        "verdict": {
+          "kind": "not checked"
+        }
+      }
+    ]
+  }
+}

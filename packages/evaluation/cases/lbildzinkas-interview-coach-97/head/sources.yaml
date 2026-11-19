@@ -1,0 +1,255 @@
+# The sources list: each piece of study material the coach teaches from.
+# `coach setup` downloads these files into the git-ignored data/study-material/
+# folder; nothing here is committed (see docs/adr/0002 and THIRD_PARTY_NOTICES.md).
+# The schema is the `Source` model in src/interview_coach/study_material.py.
+# Every source here has a licence that allows sharing it; personal sources
+# without one go in the git-ignored sources.local.yaml (same schema, see README.md).
+#
+# Fields:
+#   name          folder name under data/study-material/
+#   repository    where the material lives
+#   commit        the pinned commit SHA, so every download is the same text
+#   licence       SPDX identifier, https://spdx.org/licenses/, or NONE when the
+#                 repository has no licence (all rights reserved)
+#   local_only    true if the licence allows only personal, local use; always
+#                 true for NONE
+#   download_url  template; {commit} and {path} are filled in for each file
+#   files         paths inside the repository; text only, never images
+
+sources:
+  # System Design Primer, CC BY 4.0: https://creativecommons.org/licenses/by/4.0/
+  # Text only: images/ is skipped because many figures credit third-party sources.
+  - name: system-design-primer-text
+    repository: https://github.com/donnemartin/system-design-primer
+    commit: ae9bbd7b02d90b9866215de185217d33f39ab733
+    licence: CC-BY-4.0
+    local_only: false
+    download_url: https://raw.githubusercontent.com/donnemartin/system-design-primer/{commit}/{path}
+    files:
+      - README.md
+      - LICENSE.txt
+
+  # The worked system design exercises (the template folder holds only a diagram).
+  - name: system-design-primer-solutions
+    repository: https://github.com/donnemartin/system-design-primer
+    commit: ae9bbd7b02d90b9866215de185217d33f39ab733
+    licence: CC-BY-4.0
+    local_only: false
+    download_url: https://raw.githubusercontent.com/donnemartin/system-design-primer/{commit}/{path}
+    files:
+      - solutions/system_design/mint/README.md
+      - solutions/system_design/pastebin/README.md
+      - solutions/system_design/query_cache/README.md
+      - solutions/system_design/sales_rank/README.md
+      - solutions/system_design/scaling_aws/README.md
+      - solutions/system_design/social_graph/README.md
+      - solutions/system_design/twitter/README.md
+      - solutions/system_design/web_crawler/README.md
+      - LICENSE.txt
+
+  # Anki decks (https://apps.ankiweb.net/): 42 + 8 + 6 notes.
+  - name: system-design-primer-anki
+    repository: https://github.com/donnemartin/system-design-primer
+    commit: ae9bbd7b02d90b9866215de185217d33f39ab733
+    licence: CC-BY-4.0
+    local_only: false
+    download_url: https://raw.githubusercontent.com/donnemartin/system-design-primer/{commit}/{path}
+    files:
+      - resources/flash_cards/System Design.apkg
+      - resources/flash_cards/System Design Exercises.apkg
+      - resources/flash_cards/OO Design.apkg
+      - LICENSE.txt
+
+  # Tech Interview Handbook, MIT: https://opensource.org/license/mit
+  # Fetched from the repository, not the website, whose footer claims copyright.
+  # The six behavioural pages, system design, engineering levels and both rubrics.
+  - name: tech-interview-handbook
+    repository: https://github.com/yangshun/tech-interview-handbook
+    commit: e1d28e8886c0b6ff3e50da991ce0e895134ddc59
+    licence: MIT
+    local_only: false
+    download_url: https://raw.githubusercontent.com/yangshun/tech-interview-handbook/{commit}/{path}
+    files:
+      - apps/website/contents/behavioral-interview.md
+      - apps/website/contents/behavioral-interview-rubrics.md
+      - apps/website/contents/behavioral-interview-questions.md
+      - apps/website/contents/behavioral-interview-senior-candidates.md
+      - apps/website/contents/self-introduction.md
+      - apps/website/contents/final-questions.md
+      - apps/website/contents/system-design.md
+      - apps/website/contents/engineering-levels.md
+      - apps/website/contents/coding-interview-rubrics.md
+      - LICENSE
+
+  # Machine Learning Interviews, MIT: https://opensource.org/license/mit
+  # The English guides only: the cn/ and fa/ translations and the notebooks are skipped.
+  - name: machine-learning-interviews
+    repository: https://github.com/alirezadir/Machine-Learning-Interviews
+    commit: 9ee330857b953e6e95376a901f8b12cd89bd2234
+    licence: MIT
+    local_only: false
+    download_url: https://raw.githubusercontent.com/alirezadir/Machine-Learning-Interviews/{commit}/{path}
+    files:
+      - README.md
+      - src/MLC/ml-coding.md
+      - src/MLC/pytorch-ml-coding.md
+      - src/MLSD/ml-companies.md
+      - src/MLSD/ml-system-design.md
+      - src/MLSD/mlsd-ads-ranking.md
+      - src/MLSD/mlsd-av.md
+      - src/MLSD/mlsd-event-recom.md
+      - src/MLSD/mlsd-feature-eng.md
+      - src/MLSD/mlsd-game-recom.md
+      - src/MLSD/mlsd-harmful-content.md
+      - src/MLSD/mlsd-image-search.md
+      - src/MLSD/mlsd-metrics.md
+      - src/MLSD/mlsd-mm-video-search.md
+      - src/MLSD/mlsd-modeling-popular-archs.md
+      - src/MLSD/mlsd-newsfeed.md
+      - src/MLSD/mlsd-prediction.md
+      - src/MLSD/mlsd-preprocessing.md
+      - src/MLSD/mlsd-pymk.md
+      - src/MLSD/mlsd-search.md
+      - src/MLSD/mlsd-template.md
+      - src/MLSD/mlsd-video-recom.md
+      - src/MLSD/mlsd_obj_detection.md
+      - src/behavioral/behavior.md
+      - src/genai-resources.md
+      - src/lc-coding.md
+      - src/ml-depth.md
+      - src/ml-fundamental.md
+      - LICENSE
+
+  # LLM Course, Apache-2.0: https://www.apache.org/licenses/LICENSE-2.0
+  # The course is its README; the images/ folder is skipped.
+  - name: llm-course
+    repository: https://github.com/mlabonne/llm-course
+    commit: 7abd96e8284bfae232048fdb77b52397a2114847
+    licence: Apache-2.0
+    local_only: false
+    download_url: https://raw.githubusercontent.com/mlabonne/llm-course/{commit}/{path}
+    files:
+      - README.md
+      - LICENSE
+
+  # Hugging Face Agents Course, Apache-2.0: https://www.apache.org/licenses/LICENSE-2.0
+  # English units only (units/en/): agent fundamentals, LangGraph, agentic RAG, GAIA,
+  # function calling and observability; the smolagents and LlamaIndex chapters,
+  # the onboarding pages and the other languages are skipped.
+  - name: agents-course
+    repository: https://github.com/huggingface/agents-course
+    commit: 3c469e773ec04e5f338b727ff20e3a6ea823ff81
+    licence: Apache-2.0
+    local_only: false
+    download_url: https://raw.githubusercontent.com/huggingface/agents-course/{commit}/{path}
+    files:
+      - units/en/bonus-unit1/conclusion.mdx
+      - units/en/bonus-unit1/fine-tuning.mdx
+      - units/en/bonus-unit1/introduction.mdx
+      - units/en/bonus-unit1/what-is-function-calling.mdx
+      - units/en/bonus-unit2/introduction.mdx
+      - units/en/bonus-unit2/monitoring-and-evaluating-agents-notebook.mdx
+      - units/en/bonus-unit2/quiz.mdx
+      - units/en/bonus-unit2/what-is-agent-observability-and-evaluation.mdx
+      - units/en/unit0/introduction.mdx
+      - units/en/unit1/README.md
+      - units/en/unit1/actions.mdx
+      - units/en/unit1/agent-steps-and-structure.mdx
+      - units/en/unit1/conclusion.mdx
+      - units/en/unit1/dummy-agent-library.mdx
+      - units/en/unit1/final-quiz.mdx
+      - units/en/unit1/introduction.mdx
+      - units/en/unit1/messages-and-special-tokens.mdx
+      - units/en/unit1/observations.mdx
+      - units/en/unit1/quiz1.mdx
+      - units/en/unit1/quiz2.mdx
+      - units/en/unit1/thoughts.mdx
+      - units/en/unit1/tools.mdx
+      - units/en/unit1/tutorial.mdx
+      - units/en/unit1/what-are-agents.mdx
+      - units/en/unit1/what-are-llms.mdx
+      - units/en/unit2/introduction.mdx
+      - units/en/unit2/langgraph/building_blocks.mdx
+      - units/en/unit2/langgraph/conclusion.mdx
+      - units/en/unit2/langgraph/document_analysis_agent.mdx
+      - units/en/unit2/langgraph/first_graph.mdx
+      - units/en/unit2/langgraph/introduction.mdx
+      - units/en/unit2/langgraph/quiz1.mdx
+      - units/en/unit2/langgraph/when_to_use_langgraph.mdx
+      - units/en/unit3/agentic-rag/agent.mdx
+      - units/en/unit3/agentic-rag/agentic-rag.mdx
+      - units/en/unit3/agentic-rag/conclusion.mdx
+      - units/en/unit3/agentic-rag/introduction.mdx
+      - units/en/unit3/agentic-rag/invitees.mdx
+      - units/en/unit3/agentic-rag/tools.mdx
+      - units/en/unit4/additional-readings.mdx
+      - units/en/unit4/conclusion.mdx
+      - units/en/unit4/hands-on.mdx
+      - units/en/unit4/introduction.mdx
+      - units/en/unit4/what-is-gaia.mdx
+      - LICENSE
+
+  # Generative AI for Beginners, MIT: https://opensource.org/license/mit
+  # The repository is several GB with translations; only the English lesson pages
+  # are fetched, never translations/, translated_images/, images or code samples.
+  - name: generative-ai-for-beginners
+    repository: https://github.com/microsoft/generative-ai-for-beginners
+    commit: d8ec07e31c4b32bd283d565c1abd9b58bb5cf2e8
+    licence: MIT
+    local_only: false
+    download_url: https://raw.githubusercontent.com/microsoft/generative-ai-for-beginners/{commit}/{path}
+    files:
+      - README.md
+      - 01-introduction-to-genai/README.md
+      - 02-exploring-and-comparing-different-llms/README.md
+      - 03-using-generative-ai-responsibly/README.md
+      - 04-prompt-engineering-fundamentals/README.md
+      - 05-advanced-prompts/README.md
+      - 06-text-generation-apps/README.md
+      - 07-building-chat-applications/README.md
+      - 08-building-search-applications/README.md
+      - 09-building-image-applications/README.md
+      - 10-building-low-code-ai-applications/README.md
+      - 11-integrating-with-function-calling/README.md
+      - 12-designing-ux-for-ai-applications/README.md
+      - 13-securing-ai-applications/README.md
+      - 14-the-generative-ai-application-lifecycle/README.md
+      - 15-rag-and-vector-databases/README.md
+      - 16-open-source-models/README.md
+      - 17-ai-agents/README.md
+      - 18-fine-tuning/README.md
+      - 19-slm/README.md
+      - 20-mistral/README.md
+      - 21-meta/README.md
+      - LICENSE
+
+  # AI Agents for Beginners, MIT: https://opensource.org/license/mit
+  # English lesson pages only, as for Generative AI for Beginners above.
+  - name: ai-agents-for-beginners
+    repository: https://github.com/microsoft/ai-agents-for-beginners
+    commit: ff2ba665e088bf51d9959126c5893e089b50da30
+    licence: MIT
+    local_only: false
+    download_url: https://raw.githubusercontent.com/microsoft/ai-agents-for-beginners/{commit}/{path}
+    files:
+      - README.md
+      - STUDY_GUIDE.md
+      - 01-intro-to-ai-agents/README.md
+      - 02-explore-agentic-frameworks/README.md
+      - 03-agentic-design-patterns/README.md
+      - 04-tool-use/README.md
+      - 05-agentic-rag/README.md
+      - 06-building-trustworthy-agents/README.md
+      - 07-planning-design/README.md
+      - 08-multi-agent/README.md
+      - 09-metacognition/README.md
+      - 10-ai-agents-production/README.md
+      - 11-agentic-protocols/README.md
+      - 12-context-engineering/README.md
+      - 13-agent-memory/README.md
+      - 14-microsoft-agent-framework/README.md
+      - 15-browser-use/README.md
+      - 16-deploying-scalable-agents/README.md
+      - 17-creating-local-ai-agents/README.md
+      - 18-securing-ai-agents/README.md
+      - LICENSE

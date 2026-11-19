@@ -8,7 +8,10 @@ import {
   FINDING_REF_KINDS,
   IMPORTANCE_ORDER,
   LIBRARY_ARCHIVES,
+  PULL_REQUEST_GROUPS,
   REVIEW_RESULT_VERSION,
+  REVIEW_STAGE_IDS,
+  SETTLES_KINDS,
   type AskAnswer,
   type ChangeKind,
   type DiffLineKind,
@@ -25,10 +28,14 @@ import {
   type PartRank,
   type PartRole,
   type ProbeAgentsRpcResult,
+  type PullRequestList,
   type ReviewedMarks,
   type ReviewResult,
+  type ReviewStageRecord,
+  type ReviewStageState,
   type SentReview,
   type SyntaxCheck,
+  type TestAgentRpcResult,
   type ViewedFiles,
 } from '@second-look/engine';
 
@@ -274,6 +281,7 @@ function isPart(value: unknown): boolean {
   if (!isNonEmptyString(value['name'])) return false;
   if (!isPartSignals(value['signals'])) return false;
   if (value['origin'] !== undefined && !isOneOf(value['origin'], ORIGINS)) return false;
+  if (value['carried'] !== undefined && value['carried'] !== true) return false;
   const otherFiles = value['otherFiles'];
   if (otherFiles !== undefined && !(Array.isArray(otherFiles) && otherFiles.every(isFileSlice))) {
     return false;
@@ -386,8 +394,20 @@ function isCitation(value: unknown): boolean {
     isNonEmptyString(value['path']) &&
     isLine(value['line']) &&
     isNonEmptyString(value['quote']) &&
-    (value['ciLog'] === undefined || value['ciLog'] === true)
+    (value['ciLog'] === undefined || value['ciLog'] === true) &&
+    // Only a CI log's line can be a passing check's.
+    (value['passingCheck'] === undefined || (value['passingCheck'] === true && value['ciLog'] === true))
   );
+}
+
+/** A range of lines of the head copy the agent read for a claim: its file, and its first and last line. */
+function isLookedRange(value: unknown): boolean {
+  return isRecord(value) && isNonEmptyString(value['path']) && isLine(value['line']) && isLine(value['endLine']) && value['endLine'] >= value['line'];
+}
+
+/** What could settle an unverifiable claim: one of the fixed kinds, with its note. */
+function isSettles(value: unknown): boolean {
+  return isRecord(value) && isOneOf(value['kind'], SETTLES_KINDS) && isString(value['note']);
 }
 
 /** A repository and tag the agent named for a library. */
@@ -405,6 +425,22 @@ function isLibraryFetchOffer(value: unknown): boolean {
     isString(value['reason']) &&
     (value['namedRepository'] === undefined || isNamedRepository(value['namedRepository'])) &&
     (value['decompile'] === undefined || (isRecord(value['decompile']) && isNonEmptyString(value['decompile']['licence'])))
+  );
+}
+
+/** A Read the CI log a verdict offers: the checks that passed, by name, and why. */
+function isCiLogFetchOffer(value: unknown): boolean {
+  return isRecord(value) && Array.isArray(value['checks']) && value['checks'].length > 0 && value['checks'].every(isNonEmptyString) && isString(value['reason']);
+}
+
+/** The passing checks' logs a verdict was judged again with: each check with its page and how its log was trimmed, and who judged. */
+function isReadCiLogs(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    Array.isArray(value['checks']) &&
+    value['checks'].every((check) => isRecord(check) && isNonEmptyString(check['name']) && isString(check['url']) && isString(check['detail'])) &&
+    isString(value['promptVersion']) &&
+    isAgentStamp(value['stamp'])
   );
 }
 
@@ -429,8 +465,10 @@ function isFetchedLibrary(value: unknown): boolean {
 /**
  * A claim's verdict: not checked, or checked with its evidence source,
  * reason and citations, the library fetch it offers and the library
- * source it was judged against. The model's memory never yields
- * verified, and cites no line.
+ * source it was judged against, the CI log read it offers and the passing
+ * checks' logs it was judged with, what the agent looked at, and — on an
+ * unverifiable verdict alone — what could settle it. The model's memory
+ * never yields verified, and cites no line.
  */
 function isClaimVerdict(value: unknown): boolean {
   if (!isRecord(value)) return false;
@@ -447,6 +485,12 @@ function isClaimVerdict(value: unknown): boolean {
     (value['libraryFetch'] !== undefined && !isLibraryFetchOffer(value['libraryFetch'])) ||
     !isOptionalString(value['noLibraryFetch']) ||
     (value['library'] !== undefined && !isFetchedLibrary(value['library'])) ||
+    (value['ciLogFetch'] !== undefined && !isCiLogFetchOffer(value['ciLogFetch'])) ||
+    (value['ciLogs'] !== undefined && !isReadCiLogs(value['ciLogs'])) ||
+    !Array.isArray(value['looked']) ||
+    !value['looked'].every(isLookedRange) ||
+    !isOptionalString(value['lookedRecheck']) ||
+    (value['kind'] === 'unverifiable' ? !isSettles(value['settles']) : value['settles'] !== undefined) ||
     !isOptionalString(value['recheck'])
   ) {
     return false;
@@ -481,15 +525,18 @@ function isClaim(value: unknown, partCount: number, sentenceCount: number): bool
     isNumber(value['part']) &&
     value['part'] < partCount &&
     isClaimVerdict(value['verdict']) &&
-    (value['asked'] === undefined || value['asked'] === true)
+    (value['asked'] === undefined || value['asked'] === true) &&
+    (value['carried'] === undefined || value['carried'] === true)
   );
 }
 
 /**
  * The claims of the result's parts: listed, or fallen back with only the
- * pipeline's and any the verify ask judged, always stamped; a claim
- * carries a checked verdict only once the claims were judged, or once
- * the Verify this claim ask judged it alone, which marks the claim.
+ * pipeline's, any the verify ask judged and any carried over from the
+ * saved review of an earlier commit, always stamped; a claim carries a
+ * checked verdict only once the claims were judged, once the Verify this
+ * claim ask judged it alone, or when it was carried over with it, each
+ * of which marks the claim.
  */
 function isClaims(value: unknown, partCount: number, sentenceCount: number): boolean {
   if (!isRecord(value)) return false;
@@ -506,11 +553,12 @@ function isClaims(value: unknown, partCount: number, sentenceCount: number): boo
   ) {
     return false;
   }
-  if (value['outcome'] === 'fell back' && !claims.every((claim) => isRecord(claim) && (claim['source'] === 'pipeline' || claim['asked'] === true))) return false;
+  const marked = (claim: Record<string, unknown>): boolean => claim['asked'] === true || claim['carried'] === true;
+  if (value['outcome'] === 'fell back' && !claims.every((claim) => isRecord(claim) && (claim['source'] === 'pipeline' || marked(claim)))) return false;
   return claims.every(
     (claim) =>
       isClaim(claim, partCount, sentenceCount) &&
-      (judged || (claim as { verdict: { kind: unknown }; asked?: unknown }).verdict.kind === 'not checked' || (claim as { asked?: unknown }).asked === true),
+      (judged || (claim as { verdict: { kind: unknown } }).verdict.kind === 'not checked' || marked(claim as Record<string, unknown>)),
   );
 }
 
@@ -817,6 +865,61 @@ function isBudget(value: unknown): boolean {
   );
 }
 
+/** How a review stage can stand, as the result's stages and a stage notification record it. */
+const REVIEW_STAGE_STATES: readonly ReviewStageState[] = ['to come', 'running', 'done', 'fell back', 'failed', 'skipped', 'stopped', 'carried over'];
+
+/**
+ * One stage of a review, as the result's stages and a stage notification
+ * carry it: its id, its integer place of the total, how it stands, when it
+ * started, as a time that parses, how long it took, never negative, the
+ * agent, model and effort working on it, the stamp of its finished pass
+ * and why it ended so.
+ */
+export function isReviewStageRecord(value: unknown): value is ReviewStageRecord {
+  if (!isRecord(value)) return false;
+  const { position, total, startedAt, durationMs, agent } = value;
+  return (
+    isOneOf(value['id'], REVIEW_STAGE_IDS) &&
+    isNumber(position) &&
+    isNumber(total) &&
+    Number.isInteger(position) &&
+    Number.isInteger(total) &&
+    position >= 1 &&
+    position <= total &&
+    isOneOf(value['state'], REVIEW_STAGE_STATES) &&
+    (startedAt === undefined || (isString(startedAt) && Number.isFinite(Date.parse(startedAt)))) &&
+    isOptionalNumber(durationMs) &&
+    (durationMs === undefined || durationMs >= 0) &&
+    (agent === undefined || isStageAgent(agent)) &&
+    (value['stamp'] === undefined || isAgentStamp(value['stamp'])) &&
+    isOptionalString(value['detail'])
+  );
+}
+
+/** The agent working on a stage, or that produced a saved review: its name, and the model and effort asked for, null for its own default. */
+function isStageAgent(value: unknown): boolean {
+  return isRecord(value) && isString(value['agent']) && (value['model'] === null || isString(value['model'])) && (value['effort'] === null || isString(value['effort']));
+}
+
+/** A saved review's label: when it was produced, as a time that parses, by which agent, and the pull request's head now when it has new commits since. */
+function isSavedReview(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const { reviewedAt, agent, newHead } = value;
+  return (
+    isString(reviewedAt) &&
+    Number.isFinite(Date.parse(reviewedAt)) &&
+    (agent === undefined || isStageAgent(agent)) &&
+    (newHead === undefined || isNonEmptyString(newHead))
+  );
+}
+
+/** What a review carried results over from: the earlier commit, and when and by which agent its saved review was produced. */
+function isCarriedOver(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const { commit, reviewedAt, agent } = value;
+  return isNonEmptyString(commit) && isString(reviewedAt) && Number.isFinite(Date.parse(reviewedAt)) && (agent === undefined || isStageAgent(agent));
+}
+
 /**
  * Checks that a value read over the protocol is a review result of the
  * version this extension understands. The engine and the extension share
@@ -842,6 +945,9 @@ export function isReviewResult(value: unknown): value is ReviewResult {
   if (value['sinceLastLook'] !== undefined && !isSinceLastLook(value['sinceLastLook'])) return false;
   if (value['docLinks'] !== undefined && !isDocLinks(value['docLinks'])) return false;
   if (value['budget'] !== undefined && !isBudget(value['budget'])) return false;
+  if (value['stages'] !== undefined && !(Array.isArray(value['stages']) && value['stages'].every(isReviewStageRecord))) return false;
+  if (value['saved'] !== undefined && !isSavedReview(value['saved'])) return false;
+  if (value['carriedOver'] !== undefined && !isCarriedOver(value['carriedOver'])) return false;
   const parts = value['parts'];
   if (!Array.isArray(parts) || !parts.every(isPart)) return false;
   const story = value['story'];
@@ -942,14 +1048,14 @@ export class AskProtocolError extends Error {
 /** Error thrown when a send's answer is not a sent review. */
 export class SendProtocolError extends Error {
   constructor() {
-    super(`the engine's answer is not the link of a sent review`);
+    super(`the engine's answer is not the link and commit of a sent review`);
     this.name = 'SendProtocolError';
   }
 }
 
 /**
- * Checks that a value read over the protocol is a sent review: the one
- * field it carries, the review's link, as a string.
+ * Checks that a value read over the protocol is a sent review: the
+ * review's link, as a string, and the head commit it is pinned to.
  */
 export function isSentReview(value: unknown): value is SentReview {
   return (
@@ -957,7 +1063,9 @@ export function isSentReview(value: unknown): value is SentReview {
     value !== null &&
     !Array.isArray(value) &&
     typeof (value as { url?: unknown }).url === 'string' &&
-    (value as { url: string }).url.length > 0
+    (value as { url: string }).url.length > 0 &&
+    typeof (value as { commit?: unknown }).commit === 'string' &&
+    /^[0-9a-f]{40,64}$/i.test((value as { commit: string }).commit)
   );
 }
 
@@ -1022,6 +1130,76 @@ export function isAgentsProbe(value: unknown): value is ProbeAgentsRpcResult {
           isString(probe['login']['source']) &&
           (probe['login']['warning'] === undefined || isString(probe['login']['warning'])))) &&
       isStringList(probe['lockdown']),
+  );
+}
+
+/** Error thrown when a test answer is not the agent test's result. */
+export class AgentTestProtocolError extends Error {
+  constructor() {
+    super(`the engine's answer is not the result of the agent test`);
+    this.name = 'AgentTestProtocolError';
+  }
+}
+
+/** The reasons an agent test can fail for, as the engine names them. */
+const AGENT_TEST_FAILURES = ['unusable', 'not-signed-in', 'unknown-model', 'timeout', 'failed', 'invalid-answer'] as const;
+
+/**
+ * Checks that a value read over the protocol is the agent test's result:
+ * ok with the run's stamp, or the failure's reason and plain message with
+ * whatever stamp the run had.
+ */
+export function isAgentTestResult(value: unknown): value is TestAgentRpcResult {
+  if (!isRecord(value) || !isAgentStamp(value['stamp'])) return false;
+  if (value['ok'] === true) return true;
+  return value['ok'] === false && isOneOf(value['reason'], AGENT_TEST_FAILURES) && isString(value['message']);
+}
+
+/** Error thrown when a list answer is not the reviewer's pull requests. */
+export class PullRequestListProtocolError extends Error {
+  constructor() {
+    super(`the engine's answer is not the list of your pull requests`);
+    this.name = 'PullRequestListProtocolError';
+  }
+}
+
+function isListedPullRequest(value: unknown): boolean {
+  if (!isRecord(value) || !isRecord(value['review']) || !isRecord(value['size'])) return false;
+  const { review, size } = value;
+  return (
+    isString(value['url']) &&
+    isString(value['repository']) &&
+    isNumber(value['number']) &&
+    isString(value['title']) &&
+    isString(value['author']) &&
+    isString(value['updatedAt']) &&
+    isString(value['summary']) &&
+    typeof review['requested'] === 'boolean' &&
+    isNumber(review['approvals']) &&
+    isNumber(review['changesRequested']) &&
+    typeof review['draft'] === 'boolean' &&
+    isNumber(size['additions']) &&
+    isNumber(size['deletions']) &&
+    isNumber(size['files']) &&
+    typeof value['newCommitsSinceLastLook'] === 'boolean' &&
+    isOptionalString(value['waitingSince'])
+  );
+}
+
+/**
+ * Checks that a value read over the protocol is the list of the
+ * reviewer's open pull requests: their groups, or why they could not be
+ * listed, with its plain reason.
+ */
+export function isPullRequestList(value: unknown): value is PullRequestList {
+  if (!isRecord(value)) return false;
+  if (value['outcome'] === 'signed out' || value['outcome'] === 'unreachable') return isString(value['reason']);
+  return (
+    value['outcome'] === 'listed' &&
+    Array.isArray(value['groups']) &&
+    value['groups'].every(
+      (group) => isRecord(group) && isOneOf(group['group'], PULL_REQUEST_GROUPS) && Array.isArray(group['pullRequests']) && group['pullRequests'].every(isListedPullRequest),
+    )
   );
 }
 

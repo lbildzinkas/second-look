@@ -20,19 +20,27 @@ import type {
   ClaimVerdict,
   Claims,
   EvidenceSource,
+  LookedRange,
   Part,
+  Settles,
+  SettlesKind,
 } from './protocol.js';
+import { SETTLES_KINDS } from './protocol.js';
 import { sinksPart } from './rank.js';
 import { UNTRUSTED_INPUT_RULE, untrustedBlock } from './untrusted.js';
 
 /**
  * The verdicts pass: the agent judges each listed claim against the
  * change, the read-only head copy and the failed checks' trimmed CI logs
+ * — or, once the reviewer pressed Read the CI log, the passing checks'
  * — verified, refuted or unverifiable, with its evidence source, its
  * reason, and the lines it cites as evidence, each a file, a line and a
- * quote — and the engine re-checks every citation before keeping the
- * verdict. A citation whose file, line or quote does not match drops the
- * verdict to unverifiable, and the model's memory never yields verified.
+ * quote, the lines it read for the claim, and for an unverifiable claim
+ * what could settle it — and the engine re-checks every citation before
+ * keeping the verdict. A citation whose file, line or quote does not
+ * match drops the verdict to unverifiable, and the model's memory never
+ * yields verified; a range read that the head copy does not have is
+ * dropped from what the verdict says the agent looked at.
  * The verdicts prompt is versioned
  * like code and lands with its evaluation cases (ADR 0006); bump
  * {@link VERDICTS_PROMPT_VERSION}, and its entry in the evaluation's
@@ -44,7 +52,7 @@ import { UNTRUSTED_INPUT_RULE, untrustedBlock } from './untrusted.js';
 export const VERDICTS_PROMPT_ID = 'verdicts';
 
 /** The verdicts prompt's version. */
-export const VERDICTS_PROMPT_VERSION = '5';
+export const VERDICTS_PROMPT_VERSION = '7';
 
 /** The evidence sources the agent can cite: the change, or its own memory, and a CI log when one is shown. */
 function answerSources(withLogs: boolean): readonly EvidenceSource[] {
@@ -61,7 +69,10 @@ const MAX_CITED_QUOTE = 300;
 const MIN_CITED_QUOTE = 8;
 
 /** How many lines from the cited one a citation's quote may run over. */
-const CITED_SPAN = 10;
+export const CITED_SPAN = 10;
+
+/** The most ranges read one verdict keeps. */
+const MAX_LOOKED = 20;
 
 /** How many diff lines of a part the prompt shows; the agent can read the rest. */
 const SHOWN_LINES = 80;
@@ -78,7 +89,7 @@ export function verdictsSchema(withLogs: boolean): JsonSchema {
         items: {
           type: 'object',
           additionalProperties: false,
-          required: ['id', 'verdict', 'source', 'reason', 'evidence', 'library'],
+          required: ['id', 'verdict', 'source', 'reason', 'evidence', 'looked', 'settles', 'library'],
           properties: {
             id: { type: 'string' },
             verdict: { type: 'string', enum: ['verified', 'refuted', 'unverifiable'] },
@@ -95,6 +106,28 @@ export function verdictsSchema(withLogs: boolean): JsonSchema {
                   line: { type: 'integer' },
                   quote: { type: 'string' },
                 },
+              },
+            },
+            looked: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['file', 'line', 'endLine'],
+                properties: {
+                  file: { type: 'string' },
+                  line: { type: 'integer' },
+                  endLine: { type: 'integer' },
+                },
+              },
+            },
+            settles: {
+              type: ['object', 'null'],
+              additionalProperties: false,
+              required: ['kind', 'note'],
+              properties: {
+                kind: { type: 'string', enum: SETTLES_KINDS },
+                note: { type: 'string' },
               },
             },
             library: { type: ['string', 'null'] },
@@ -122,6 +155,10 @@ export interface AnsweredVerdict {
   source: EvidenceSource;
   reason: string;
   evidence: { file: string; line: number; quote: string }[];
+  /** The lines of the head copy the agent read for the claim, each a file and the first and last line read. */
+  looked: { file: string; line: number; endLine: number }[];
+  /** What could settle an unverifiable claim, or null for a verified or refuted one. */
+  settles: Settles | null;
   /** The library whose source the claim needs, or null when the change settles it. */
   library: string | null;
   /** The library's public repository and the tag of the version the project uses, when the agent names them. */
@@ -141,15 +178,21 @@ const FINAL_ANSWER_RULE =
   'When you have read enough, give your final message as the JSON value alone: start it with { and end it ' +
   'with }, with no summary of what you read before or after it.';
 
-/** The rule for citing a CI log, given only when the prompt shows one. */
-const CI_LOG_RULE = [
-  '- Set source to "a CI log" when the evidence is lines of a failed check\'s CI log shown below, which',
-  '  ran on the merge commit: cite each line as the log\'s id for the file, such as log1, the line\'s',
-  '  number in that log, and a quote of it. One verdict cites lines of one source only.',
-];
+/** The rule for citing a CI log, given only when the prompt shows one: a failed check's, or a passing check's once the reviewer pressed for it. */
+function ciLogRule(passing: boolean): string[] {
+  return [
+    `- Set source to "a CI log" when the evidence is lines of a ${passing ? 'passing' : 'failed'} check's CI log shown below, which`,
+    "  ran on the merge commit: cite each line as the log's id for the file, such as log1, the line's",
+    '  number in that log, and a quote of it. One verdict cites lines of one source only.',
+  ];
+}
 
-/** The verdicts prompt's system prompt: the agent's setting, the rules and the answer's schema; the CI log rule only when a log is shown. */
-export function verdictsInstructions(withLogs: boolean): string {
+/**
+ * The verdicts prompt's system prompt: the agent's setting, the rules and
+ * the answer's schema; the CI log rule only when a log is shown, naming
+ * the logs as passing checks' when they are.
+ */
+export function verdictsInstructions(withLogs: boolean, passing = false): string {
   return [
     'You are the agent of Second Look, a companion that helps a human review a pull request.',
     "Your current folder is a read-only copy of the pull request's head version. You can only use",
@@ -172,12 +215,29 @@ export function verdictsInstructions(withLogs: boolean): string {
     "- Ordinary knowledge of the language and its standard library may be used to read cited code. A",
     "  claim that turns on how a third-party library behaves needs that library's source, which you",
     '  do not have: answer unverifiable and set library to the package name the project uses, even',
-    '  when you remember how the library behaves; say what you remember in the reason. Otherwise set',
-    '  library to null.',
+    '  when you remember how the library behaves and it would refute the claim; say what you remember',
+    '  in the reason. Otherwise set library to null.',
     "- When you set library and know the library's public repository and the tag of the version the project",
     '  uses, from the head copy or from memory, set repository to its https URL and that tag; the companion',
     '  can fetch that tag when nothing pins the library. Otherwise set repository to null.',
-    ...(withLogs ? CI_LOG_RULE : []),
+    ...(withLogs ? ciLogRule(passing) : []),
+    '- Set looked to every range of lines of the head copy you read for the claim, each as the file, the',
+    '  first line and the last line read, as the file numbers them, whatever the verdict: a reviewer reads',
+    '  it to tell a claim the code cannot settle from one nobody looked into. Each range is checked',
+    '  against the file, and one the file does not have is dropped.',
+    '- Set settles on an unverifiable claim to what could settle it, with a one-line note saying what to',
+    '  read or run, and to null on a verified or refuted claim:',
+    '  - "code": the code should settle it after all, so the reviewer should check it.',
+    '  - "library": it turns on how a third-party library behaves, so it needs that library\'s source.',
+    '  - "ci-log": a CI run\'s log would show it, such as a claim that the tests, the linters or the checks pass.',
+    '  - "sandboxed-run": running the change\'s own code in the head copy, with nothing from outside it,',
+    '    would show it.',
+    '  - "outside-repository": it turns on something outside the repository, such as a service, a dataset,',
+    '    a website or another project.',
+    '  - "author": only the author can say, such as a measurement, a timing or a live run they report',
+    '    having made; a result the author reports is theirs even when a run could repeat it.',
+    '- A claim about a whole set, such as "these functions" or "every case", is refuted when any one of',
+    '  them does not do what it says: a claim true only in part is refuted, and its reason names the part.',
     '- Tests the change adds show what its author expects, not that the code does it: judge the code.',
     '- The reason is one plain sentence a reviewer reads beside the verdict.',
     '- Answer every claim exactly once. Set id to the claim\'s id exactly as given, such as c1, and nothing',
@@ -247,13 +307,19 @@ export function diffLines(part: Part): string[] {
   return shown;
 }
 
-/** The failed checks' trimmed logs, each with its id outside the untrusted block and its check's name, failing step and numbered lines inside it. */
+/**
+ * The checks' trimmed logs, each with its id outside the untrusted block
+ * and its check's name, failing step and numbered lines inside it: the
+ * failed checks', or the passing checks' the reviewer pressed to read.
+ */
 function logLines(logs: readonly CiLogItem[], id: string): string[] {
   if (logs.length === 0) return [];
   const head = (item: CiLogItem): string => `check ${JSON.stringify(item.check.name)}${item.log.step ? `, failing step ${JSON.stringify(item.log.step)}` : ''}`;
+  const intro = logs.some((item) => item.passing)
+    ? ['The logs of the checks that passed, run on the merge commit, each kept to its last lines. Each log', "opens with its check's name; every line follows its number in the log."]
+    : ['The logs of the checks that failed, run on the merge commit, each trimmed to its failing step. Each', "log opens with its check's name and failing step; every line follows its number in the log."];
   return [
-    'The logs of the checks that failed, run on the merge commit, each trimmed to its failing step. Each',
-    "log opens with its check's name and failing step; every line follows its number in the log.",
+    ...intro,
     '',
     ...logs.flatMap((item) => [
       `[${item.id}]`,
@@ -309,6 +375,9 @@ export function verdictProblems(items: readonly VerdictItem[], answer: VerdictsA
   }
   const missing = items.filter((item) => !seen.has(item.id)).map((item) => item.id);
   if (missing.length > 0) problems.push(`no verdict for ${missing.join(', ')}`);
+  for (const verdict of answer.verdicts) {
+    if (verdict.verdict === 'unverifiable' && verdict.settles === null) problems.push(`${verdict.id} is unverifiable, so settles must say what could settle it`);
+  }
   return problems;
 }
 
@@ -369,6 +438,48 @@ export async function recheckCitation(
   return { path: cited.file, line: cited.line, quote };
 }
 
+/** What the agent looked at for a claim, as the engine kept it: the ranges the head copy has, and why any were dropped. */
+export interface CheckedLooked {
+  looked: LookedRange[];
+  lookedRecheck?: string;
+}
+
+/**
+ * Re-checks the ranges the agent says it read for a claim against the
+ * head copy, as citations are: each file must exist, and both lines must
+ * be its lines, the last at or after the first. Keeps each range once, up
+ * to {@link MAX_LOOKED}, and says why any other was dropped.
+ */
+export async function recheckLooked(read: ReadLines, looked: readonly { file: string; line: number; endLine: number }[]): Promise<CheckedLooked> {
+  const kept: LookedRange[] = [];
+  const failed: string[] = [];
+  for (const range of looked) {
+    const where = range.endLine > range.line ? `${range.file}:${range.line}-${range.endLine}` : `${range.file}:${range.line}`;
+    const lines = await read(range.file);
+    if (lines === undefined) failed.push(`${where} names a file the head copy does not have`);
+    else if (range.line < 1 || range.endLine < range.line || range.endLine > lines.length) failed.push(`${where} names a line ${range.file} does not have`);
+    else if (!kept.some((each) => each.path === range.file && each.line === range.line && each.endLine === range.endLine)) {
+      kept.push({ path: range.file, line: range.line, endLine: range.endLine });
+    }
+  }
+  const notes: string[] = [];
+  if (failed.length > 0) notes.push(`dropped what the agent read at ${failed.join('; ')}`);
+  if (kept.length > MAX_LOOKED) notes.push(`kept the first ${MAX_LOOKED} ranges read; dropped ${kept.length - MAX_LOOKED} more`);
+  return { looked: kept.slice(0, MAX_LOOKED), ...(notes.length === 0 ? {} : { lookedRecheck: notes.join('; ') }) };
+}
+
+/**
+ * What settles a claim the agent named nothing for, such as one the
+ * engine dropped to unverifiable: the library's source when the claim
+ * needs one, a CI log when a log's line was cited, and otherwise the code,
+ * which makes the verdict a finding to check.
+ */
+function unnamedSettles(answered: AnsweredVerdict, library: string | undefined): Settles {
+  if (library) return { kind: 'library', note: `the source of ${library} could settle it` };
+  if (answered.source === 'a CI log') return { kind: 'ci-log', note: 'a CI log could settle it, once its cited lines hold' };
+  return { kind: 'code', note: `the agent judged it ${answered.verdict}, so the code should settle it: check it` };
+}
+
 /**
  * Settles one answered verdict from its re-checked citations: the rules
  * the engine holds every verdict to, whatever the agent said.
@@ -379,8 +490,17 @@ export async function recheckCitation(
  *   nothing, drops to unverifiable.
  * - A claim that needs library source the companion does not have is
  *   never verified.
+ * - Every verdict carries what the agent looked at, as re-checked, and
+ *   every unverifiable one what could settle it: what the agent named,
+ *   else `unsettled`, else what the engine reads from the answer.
  */
-export function settleVerdict(answered: AnsweredVerdict, rechecked: readonly (Citation | string)[], evidenceIn = 'the change'): ClaimVerdict {
+export function settleVerdict(
+  answered: AnsweredVerdict,
+  rechecked: readonly (Citation | string)[],
+  evidenceIn = 'the change',
+  looked: CheckedLooked = { looked: [] },
+  unsettled?: Settles,
+): ClaimVerdict {
   const library = answered.library === null ? undefined : oneLine(answered.library);
   const named = library && answered.repository ? { url: oneLine(answered.repository.url), tag: oneLine(answered.repository.tag) } : undefined;
   const base = {
@@ -388,15 +508,18 @@ export function settleVerdict(answered: AnsweredVerdict, rechecked: readonly (Ci
     reason: oneLine(answered.reason),
     ...(library ? { needsLibrary: library } : {}),
     ...(named?.url && named.tag ? { namedRepository: named } : {}),
+    ...looked,
   };
-  const drop = (recheck: string, evidence: Citation[]): ClaimVerdict => ({ kind: 'unverifiable', ...base, evidence, recheck });
+  const given = answered.verdict !== 'unverifiable' || answered.settles === null ? undefined : { kind: answered.settles.kind, note: oneLine(answered.settles.note) };
+  const settles = given ?? unsettled ?? unnamedSettles(answered, library);
+  const drop = (recheck: string, evidence: Citation[]): ClaimVerdict => ({ kind: 'unverifiable', ...base, evidence, settles, recheck });
   if (answered.source === "the model's memory") {
     if (answered.verdict === 'verified') return drop("the model's memory never yields verified", []);
-    return { kind: answered.verdict, ...base, evidence: [] };
+    return { kind: answered.verdict, ...base, evidence: [], ...(answered.verdict === 'unverifiable' ? { settles } : {}) };
   }
   const kept = rechecked.filter((each): each is Citation => typeof each !== 'string').slice(0, MAX_CITATIONS);
   const failed = rechecked.filter((each): each is string => typeof each === 'string');
-  if (answered.verdict === 'unverifiable') return { kind: 'unverifiable', ...base, evidence: kept };
+  if (answered.verdict === 'unverifiable') return { kind: 'unverifiable', ...base, evidence: kept, settles };
   if (failed.length > 0) return drop(failed.join('; '), kept);
   if (kept.length === 0) return drop(`the verdict cites no line of ${evidenceIn}`, kept);
   if (answered.verdict === 'verified' && library) return drop(`the claim needs the source of ${library}, which the companion does not have`, kept);
@@ -410,22 +533,40 @@ export function logReader(logs: readonly CiLogItem[]): ReadLines {
 }
 
 /**
- * Re-checks every citation of one answered verdict and settles it: a
- * verdict from a CI log against the logs shown, its citations then named
- * by their check run, and any other against the head copy.
+ * Re-checks every citation of one answered verdict, and every range it
+ * says the agent read, and settles it: a verdict from a CI log against
+ * the logs shown, its citations then named by their check run and
+ * labelled when the check passed, and any other against the head copy;
+ * what the agent read always against the head copy.
  */
 export async function judgeVerdict(read: ReadLines, answered: AnsweredVerdict, logs: readonly CiLogItem[] = []): Promise<ClaimVerdict> {
   const cited = answered.source === "the model's memory" ? [] : answered.evidence;
-  if (answered.source !== 'a CI log') return settleVerdict(answered, await Promise.all(cited.map((each) => recheckCitation(read, each))));
-  const names = new Map(logs.map((item) => [item.id, item.check.name]));
+  const looked = await recheckLooked(read, answered.looked);
+  if (answered.source !== 'a CI log') return settleVerdict(answered, await Promise.all(cited.map((each) => recheckCitation(read, each))), undefined, looked);
+  const byId = new Map(logs.map((item) => [item.id, item]));
   const rechecked = await Promise.all(cited.map((each) => recheckCitation(logReader(logs), each, 'the CI logs')));
-  const named = rechecked.map((each): Citation | string => (typeof each === 'string' ? each : { ...each, path: names.get(each.path)!, ciLog: true }));
-  return settleVerdict(answered, named, 'a CI log');
+  const named = rechecked.map((each): Citation | string => {
+    if (typeof each === 'string') return each;
+    const item = byId.get(each.path)!;
+    return { ...each, path: item.check.name, ciLog: true, ...(item.passing ? { passingCheck: true as const } : {}) };
+  });
+  return settleVerdict(answered, named, 'a CI log', looked);
 }
 
-/** Whether a claim is a finding: refuted or unverifiable, which the reviewer is shown on the diff. */
+/** What can settle an unverifiable claim that is still a finding: the code, or a library's source the reviewer can fetch. */
+export const FINDING_SETTLES: readonly SettlesKind[] = ['code', 'library'];
+
+/**
+ * Whether a claim is a finding, which the reviewer is shown on the diff:
+ * refuted, or unverifiable where the code or a library's source could
+ * settle it. An unverifiable claim only a CI log, a sandboxed run, the
+ * author or something outside the repository can settle is listed
+ * quietly instead.
+ */
 export function isFinding(claim: Claim): boolean {
-  return claim.verdict.kind === 'refuted' || claim.verdict.kind === 'unverifiable';
+  const { verdict } = claim;
+  if (verdict.kind === 'refuted') return true;
+  return verdict.kind === 'unverifiable' && (verdict.settles === undefined || FINDING_SETTLES.includes(verdict.settles.kind));
 }
 
 /** How many findings each part has, by the part's index. */
@@ -479,6 +620,8 @@ export interface VerdictsOptions {
   root: string;
   /** The CI the review read, whose failed checks' trimmed logs the agent may cite. */
   ci?: CiResults;
+  /** The logs to show in place of the failed checks', such as the passing checks' the reviewer pressed to read. */
+  logs?: readonly CiLogItem[];
 }
 
 /**
@@ -495,13 +638,13 @@ export async function judgeClaims(
   options: VerdictsOptions,
 ): Promise<{ claims: Claim[]; judging: ClaimJudging }> {
   const items = verdictItems(claims);
-  const logs = ciLogItems(options.ci);
+  const logs = options.logs ?? ciLogItems(options.ci);
   const { results } = await runAgentTasks(
     options.adapter,
     [
       {
         root: options.root,
-        instructions: verdictsInstructions(logs.length > 0),
+        instructions: verdictsInstructions(logs.length > 0, logs.some((item) => item.passing)),
         prompt: verdictsPrompt(items, parts, undefined, logs),
         schema: verdictsSchema(logs.length > 0),
         check: (value) => verdictProblems(items, value as VerdictsAnswer),

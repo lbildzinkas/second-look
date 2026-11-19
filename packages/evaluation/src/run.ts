@@ -435,6 +435,9 @@ export async function runEvaluation(options: RunOptions): Promise<Run> {
           claims: false,
           criteria: false,
         });
+        // A stage that broke is recorded on the result, not thrown: it fails the pass all the same.
+        const broken = result.stages?.find((stage) => stage.state === 'failed');
+        if (broken) throw new Error(broken.detail);
         const grouping = result.grouping.agent;
         if (grouping) {
           if (grouping.outcome === 'fell back') {

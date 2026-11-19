@@ -9,6 +9,7 @@ import type {
   NoiseState,
   PullRequestSummary,
   ReviewInput,
+  SettlesKind,
 } from '@second-look/engine';
 
 /**
@@ -103,7 +104,8 @@ export interface ExpectedClaim {
   /** The verdict the reviewer expects, with the evidence that proves it; absent until the case labels it. */
   verdict?: {
     kind: Verdict;
-    evidence: {
+    /** Absent for an unverifiable claim nothing the review reads settles, such as a measurement the author reports. */
+    evidence?: {
       /** The evidence file, named as its source names it. */
       file: string;
       /** The 1-based line of the evidence file at the pinned version. */
@@ -116,6 +118,12 @@ export interface ExpectedClaim {
      * change's own type declares it; a first citation at any of them counts.
      */
     otherEvidence?: { file: string; line: number }[];
+    /**
+     * What could settle a claim that deserves unverifiable, such as
+     * `author` for a measurement only the author took; a claim with a
+     * library fetch deserves `library` without it.
+     */
+    settles?: SettlesKind;
   };
   /** That the companion offers a library fetch before checking this claim. */
   libraryFetch?: true;

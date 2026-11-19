@@ -7,8 +7,9 @@ import {
   readAgentSettings,
   testedAtText,
   type AgentSettings,
+  type SettingKey,
 } from './agent-settings.js';
-import { OPEN_REVIEW_CONTAINER_COMMAND } from './commands.js';
+import { OPEN_SETUP_COMMAND } from './commands.js';
 
 /**
  * The quick change of the agent settings (issue 134), opened by clicking
@@ -34,7 +35,7 @@ export async function chooseAgent(): Promise<void> {
   const picked = await vscode.window.showQuickPick(summaryItems(settings), { title: TITLE, placeHolder: 'Pick what to change' });
   if (picked === undefined) return;
   if (picked.field === undefined) {
-    await vscode.commands.executeCommand(OPEN_REVIEW_CONTAINER_COMMAND);
+    await vscode.commands.executeCommand(OPEN_SETUP_COMMAND);
     return;
   }
   if (picked.field === 'agent') return chooseAgentName(settings);
@@ -51,23 +52,23 @@ function summaryItems(settings: AgentSettings): SummaryItem[] {
   const tested = testedAt(settings.agent, settings.model);
   const model = settings.model === '' ? 'default model' : settings.model;
   return [
-    { label: '$(hubot) Agent', description: agentLabel(settings.agent), detail: overrideNote('agent'), field: 'agent' },
+    { label: '$(hubot) Agent', description: agentLabel(settings.agent), detail: overrideNote(AGENT_SETTING_KEYS.agent), field: 'agent' },
     {
       label: '$(sparkle) Model',
       description: tested === undefined ? model : `${model} · ${tested}`,
-      detail: overrideNote('model'),
+      detail: overrideNote(AGENT_SETTING_KEYS.model),
       field: 'model',
     },
     {
       label: '$(dashboard) Effort',
       description: settings.effort === '' ? 'default effort' : settings.effort,
-      detail: overrideNote('effort'),
+      detail: overrideNote(AGENT_SETTING_KEYS.effort),
       field: 'effort',
     },
     {
       label: '$(account) Account label',
       description: settings.account === '' ? 'none' : settings.account,
-      detail: overrideNote('account'),
+      detail: overrideNote(AGENT_SETTING_KEYS.account),
       field: 'account',
     },
     { label: '', kind: vscode.QuickPickItemKind.Separator },
@@ -80,7 +81,7 @@ async function chooseAgentName(settings: AgentSettings): Promise<void> {
   const items = AGENT_NAMES.map((agent) => ({ label: agentLabel(agent), description: inUse(agent === settings.agent), agent }));
   const picked = await vscode.window.showQuickPick(items, { title: `${TITLE}: agent`, placeHolder: 'The installed coding agent the companion drives' });
   if (picked === undefined) return;
-  await writeSetting('agent', picked.agent);
+  await writeSetting(AGENT_SETTING_KEYS.agent, picked.agent);
   const chosen = { ...settings, agent: picked.agent };
   // Another agent's model is rarely this one's, so none is marked in use.
   const model = await chooseModel(chosen, picked.agent === settings.agent ? settings.model : undefined);
@@ -116,7 +117,7 @@ async function chooseModel(settings: AgentSettings, inUseModel: string | undefin
       prompt: 'The model in the agent’s own naming, such as anthropic/claude-sonnet-5 for Pi or sonnet for Claude Code; empty uses its default.',
     }))?.trim();
   if (model === undefined) return undefined;
-  await writeSetting('model', model);
+  await writeSetting(AGENT_SETTING_KEYS.model, model);
   return model;
 }
 
@@ -133,7 +134,7 @@ async function chooseEffort(settings: AgentSettings): Promise<void> {
   }));
   const picked = await vscode.window.showQuickPick(items, { title: `${TITLE}: effort`, placeHolder: `The effort ${agentLabel(settings.agent)} runs at` });
   if (picked === undefined) return;
-  await writeSetting('effort', picked.effort);
+  await writeSetting(AGENT_SETTING_KEYS.effort, picked.effort);
 }
 
 /** Edits the account label; an empty label hides it. */
@@ -144,25 +145,26 @@ async function chooseAccount(settings: AgentSettings): Promise<void> {
     prompt: 'A label for the account or subscription the agent bills, stamped on every result; the companion never reads the login. Empty hides it.',
   });
   if (account === undefined) return;
-  await writeSetting('account', account.trim());
+  await writeSetting(AGENT_SETTING_KEYS.account, account.trim());
 }
 
 /**
- * Writes one agent setting to the user settings, and warns when a
- * workspace setting overrides it, so the choice would not take effect.
+ * Writes one setting of the `second-look` section to the user settings,
+ * and warns when a workspace setting overrides it, so the choice would
+ * not take effect.
  */
-async function writeSetting(field: keyof typeof AGENT_SETTING_KEYS, value: string): Promise<void> {
-  await vscode.workspace.getConfiguration('second-look').update(AGENT_SETTING_KEYS[field], value, vscode.ConfigurationTarget.Global);
-  if (overrideNote(field) === undefined) return;
+export async function writeSetting(key: SettingKey, value: string): Promise<void> {
+  await vscode.workspace.getConfiguration('second-look').update(key, value, vscode.ConfigurationTarget.Global);
+  if (overrideNote(key) === undefined) return;
   void vscode.window.showWarningMessage(
-    `A workspace setting for second-look.${AGENT_SETTING_KEYS[field]} overrides the user setting just changed, ` +
+    `A workspace setting for second-look.${key} overrides the user setting just changed, ` +
       'so the choice takes no effect here. Remove it from the workspace settings to use the choice.',
   );
 }
 
 /** The note on a summary row whose value a workspace or folder setting overrides. */
-function overrideNote(field: keyof typeof AGENT_SETTING_KEYS): string | undefined {
-  const set = vscode.workspace.getConfiguration('second-look').inspect(AGENT_SETTING_KEYS[field]);
+function overrideNote(key: SettingKey): string | undefined {
+  const set = vscode.workspace.getConfiguration('second-look').inspect(key);
   if (set?.workspaceValue === undefined && set?.workspaceFolderValue === undefined) return undefined;
   return '$(warning) Set in the workspace settings, which override the user settings';
 }

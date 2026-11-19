@@ -3,7 +3,7 @@ import type { ReviewResult } from '@second-look/engine';
 import { changeUri } from '../src/change-copies.js';
 import { FINDINGS_CONTROLLER_ID, FINDING_THREAD_CONTEXT } from '../src/commands.js';
 import { FindingThreads, escapeMarkdown, findingBody } from '../src/findings.js';
-import { claimsResult, fetchedResult, judgedResult, offeredResult, pipelineResult } from './results.js';
+import { ciLogOfferedResult, ciLogReadResult, claimsResult, fetchedResult, judgedResult, offeredResult, pipelineResult, settledResult } from './results.js';
 import { StubMarkdownString, stub, type StubCommentController } from './vscode-stub.js';
 
 /** The findings' own controller, beside any other the companion made. */
@@ -40,6 +40,11 @@ describe('FindingThreads', () => {
     expect((threads[0]!.comments[0]!.body as StubMarkdownString).value).toContain('**Refuted** · evidence source: the change itself');
   });
 
+  it('shows no thread for an unverifiable claim only the author\u2019s run or something outside the repository can settle', () => {
+    new FindingThreads().show(settledResult());
+    expect(controller().threads.map((thread) => thread.label)).toEqual(['Refuted claim', 'Unverifiable claim', 'Unverifiable claim']);
+  });
+
   it('puts a refuted description claim on the first line its verdict cites', () => {
     const shown = judgedResult();
     const [description] = shown.claims!.claims;
@@ -47,7 +52,7 @@ describe('FindingThreads', () => {
       ...shown,
       claims: {
         ...shown.claims!,
-        claims: [{ ...description!, verdict: { kind: 'refuted', source: 'the change itself', reason: 'r', evidence: [{ path: 'src/settings.ts', line: 12, quote: 'RETRIES = 5' }] } }],
+        claims: [{ ...description!, verdict: { kind: 'refuted', source: 'the change itself', reason: 'r', evidence: [{ path: 'src/settings.ts', line: 12, quote: 'RETRIES = 5' }], looked: [] } }],
       },
     };
     new FindingThreads().show(refuted);
@@ -85,7 +90,7 @@ describe('the pipeline and CI on the findings', () => {
     const [pipeline] = shown.claims!.claims;
     const refuted: ReviewResult = {
       ...shown,
-      claims: { ...shown.claims!, claims: [{ ...pipeline!, verdict: { kind: 'refuted', source: 'a CI log', reason: 'r', evidence: [{ path: 'check / test', line: 2, quote: 'FAILED', ciLog: true }] } }] },
+      claims: { ...shown.claims!, claims: [{ ...pipeline!, verdict: { kind: 'refuted', source: 'a CI log', reason: 'r', evidence: [{ path: 'check / test', line: 2, quote: 'FAILED', ciLog: true }], looked: [] } }] },
     };
     new FindingThreads().show(refuted);
     expect(controller().threads.map((thread) => [thread.uri.toString(), thread.range?.start.line])).toEqual([[headUri(refuted, 'src/retry.py'), 5]]);
@@ -140,6 +145,22 @@ describe('findingBody', () => {
       'Judged against the source of requests 2\\.32\\.3, as requirements\\.txt pins it: requests\\-2\\.32\\.3\\-py3\\-none\\-any\\.whl, its SHA-256 checked, unpacked read-only and never run.',
     );
     expect(body).not.toContain('command:second-look.fetchLibrary');
+  });
+
+  it('gives a claim only a CI log could settle no thread, so its Read the CI log is pressed on step 5 or the overview', () => {
+    stub.reset();
+    new FindingThreads().show(ciLogOfferedResult());
+
+    const bodies = controller().threads.map((thread) => (thread.comments[0]!.body as StubMarkdownString).value);
+    expect(bodies.some((body) => body.includes('Retries failed sends'))).toBe(false);
+    expect(bodies.some((body) => body.includes('readCiLog'))).toBe(false);
+  });
+
+  it("labels a passing check's cited log line as one, and names the logs the claim was judged again with", () => {
+    const body = findingBody(ciLogReadResult().claims!.claims[1]!, 1);
+    expect(body).toContain('- CI log of check / lint \\(a passing check\\), line 2 — 1 problem \\(0 errors, 1 warning\\)');
+    expect(body).toContain('Judged again with the logs of the checks that passed: check / lint (the log marks no failing step, so its last 3 lines are kept).');
+    expect(body).not.toContain('command:second-look.readCiLog');
   });
 
   it('says when the Verify this claim ask judged the claim alone', () => {

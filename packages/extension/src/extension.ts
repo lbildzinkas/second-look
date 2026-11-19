@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { join } from 'node:path';
 import {
   EngineClient,
   spawnEngineProcess,
@@ -10,6 +11,7 @@ import {
   ADD_DRAFT_COMMAND,
   CHOOSE_AGENT_COMMAND,
   COMMENT_ON_PART_COMMAND,
+  COMPANION_SETTINGS_QUERY,
   DISCARD_COMMENT_COMMAND,
   DISCARD_DRAFT_COMMAND,
   DRAFT_COMMENT_COMMAND,
@@ -17,12 +19,20 @@ import {
   FILTER_CHANGED_COMMAND,
   MARK_REVIEWED_COMMAND,
   OPEN_ALL_PARTS_COMMAND,
+  OPEN_COMPANION_SETTINGS_COMMAND,
   OPEN_LIBRARY_EVIDENCE_COMMAND,
   OPEN_OVERVIEW_COMMAND,
   OPEN_PART_COMMAND,
   OPEN_REVIEW_CONTAINER_COMMAND,
+  OPEN_SETTINGS_COMMAND,
+  OPEN_SETUP_COMMAND,
+  READ_CI_LOG_COMMAND,
+  REFRESH_PULL_REQUESTS_COMMAND,
+  REVIEW_AGAIN_COMMAND,
   REVIEW_COMMAND,
   REVIEW_TREE_VIEW,
+  REVIEWING_CONTEXT,
+  STOP_REVIEW_COMMAND,
   SUBMIT_REVIEW_COMMAND,
   WHY_THIS_MATTERS_COMMAND,
   askCommand,
@@ -40,8 +50,14 @@ import {
   type TreeSection,
 } from './tree.js';
 import { SideBarProvider } from './side-bar/provider.js';
-import type { SideBarState } from './side-bar/steps.js';
+import { StepTickStore } from './side-bar/step-ticks.js';
+import { PullRequestPicker } from './side-bar/pull-request-picker.js';
+import { SetupForm } from './side-bar/setup-form.js';
+import type { SentSummary, SideBarState } from './side-bar/steps.js';
+import type { CommentAction } from './side-bar/page.js';
+import { endNotice, finishedProgress, readingProgress, runningProgress, stoppedProgress, type ReviewProgress } from './side-bar/progress.js';
 import { draftTarget, ReviewComments } from './comments.js';
+import { CommentStore, SAVED_COMMENTS_DIR } from './comment-store.js';
 import { escapeMarkdown, FindingThreads } from './findings.js';
 import { isSubmitKind, SendReviewPage } from './send-page.js';
 import { DocLinkHovers } from './doc-hover.js';
@@ -65,6 +81,7 @@ import {
   withVerifiedClaim,
   type AskedClaim,
   type AskKind,
+  type CiLogFetchOffer,
   type CommentSide,
   type LibraryFetchOffer,
   type Part,
@@ -88,6 +105,7 @@ export {
   OPEN_OVERVIEW_COMMAND,
   OPEN_PART_COMMAND,
   OPEN_REVIEW_CONTAINER_COMMAND,
+  READ_CI_LOG_COMMAND,
   REVIEW_COMMAND,
   REVIEW_TREE_VIEW,
   SUBMIT_REVIEW_COMMAND,
@@ -118,9 +136,36 @@ function libraryFetchOf(result: ReviewResult | undefined, index: number): Librar
   return verdict === undefined || verdict.kind === 'not checked' || verdict.library !== undefined ? undefined : verdict.libraryFetch;
 }
 
+/** The Read the CI log a claim of the result offers and the reviewer has not pressed yet, by the claim's index. */
+function ciLogFetchOf(result: ReviewResult | undefined, index: number): CiLogFetchOffer | undefined {
+  const verdict = result?.claims?.claims[index]?.verdict;
+  return verdict === undefined || verdict.kind === 'not checked' || verdict.ciLogs !== undefined ? undefined : verdict.ciLogFetch;
+}
+
 /** Whether a value is a comment the editor handed a command, such as a draft as the reviewer edited it. */
 function isEditorComment(value: unknown): value is vscode.Comment {
   return typeof value === 'object' && value !== null && 'body' in value && 'mode' in value;
+}
+
+/** Opens a comment thread's file at its line — or at the top, for a thread on a whole part — so the reviewer sees the thread. */
+async function openThread(thread: vscode.CommentThread): Promise<void> {
+  const at = thread.range?.start.line ?? 0;
+  await vscode.commands.executeCommand('vscode.open', thread.uri, {
+    selection: new vscode.Range(at, 0, at, 0),
+    preview: true,
+  });
+}
+
+/**
+ * Shows a new thread: scrolled to in an editor that already shows its
+ * file — the diff a finding's thread was pressed in — else in its file
+ * opened at its line.
+ */
+async function showThread(thread: vscode.CommentThread): Promise<void> {
+  const shown = vscode.window.visibleTextEditors.find((editor) => editor.document.uri.toString() === thread.uri.toString());
+  if (shown === undefined) return openThread(thread);
+  const at = thread.range?.start.line ?? 0;
+  shown.revealRange(new vscode.Range(at, 0, at, 0), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
 }
 
 /**
@@ -155,11 +200,19 @@ function carriedPart(arg: unknown): Part | undefined {
  * and the open diff editor stays as it is. A new review replaces one
  * still running.
  *
+ * While it runs, the side bar's count tiles and progress strip and the
+ * status bar name the stage running, its place, and the agent, model and
+ * effort working on it; the Stop review title button stops it, keeping
+ * what landed. At the end the strip says how long it took and which
+ * stages fell back, failed or were stopped, and why; a notification
+ * appears only when a stage fell back or failed.
+ *
  * The session keeps the result it shows, so a part click can open the
  * multi-file diff from the same copies the engine downloaded. The review's
  * overview opens with its first result, without taking the focus from the
- * side bar, and follows every stage, as do the findings — the refuted and
- * unverifiable claims — shown as the companion's own threads on the diff.
+ * side bar, and follows every stage, as do the findings — the refuted
+ * claims, and the unverifiable ones the code or a library's source could
+ * settle — shown as the companion's own threads on the diff.
  *
  * Each part's checkbox — in the side bar, or in the banner above the part's
  * diff, which also carries its importance, signals and asks — marks it
@@ -183,6 +236,8 @@ class ReviewSession {
   private readonly comments: ReviewComments;
   private readonly spawnEngine: ExtensionDeps['spawnEngine'];
   private engine: EngineClient | undefined;
+  /** The handshake under way with the engine, which every request started meanwhile awaits. */
+  private handshake: { engine: EngineClient; done: Promise<void> } | undefined;
   private result: ReviewResult | undefined;
   /** Counts the reviews started, so a replaced review's late answers are dropped. */
   private reviews = 0;
@@ -196,8 +251,9 @@ class ReviewSession {
     (part) => void this.openPart(part),
     (path, line, side) => void this.openLine(path, line, side),
     (finding) => void this.draftComment(finding),
+    (claim) => void this.readCiLog(claim),
   );
-  /** The review's findings, its refuted and unverifiable claims, as threads on the diff. */
+  /** The review's findings — its refuted claims, and its unverifiable ones the code or a library's source could settle — as threads on the diff. */
   private readonly findings = new FindingThreads();
   /** The banner above the diff of the part opened last, with its importance, signals, asks and reviewed checkbox. */
   private readonly banner = new PartBanner();
@@ -213,6 +269,16 @@ class ReviewSession {
   private stage: string | undefined;
   /** True once the reviewer opened the story, or moved on to the parts, in the review shown. */
   private storyRead = false;
+  /** How the review stands, for the progress strip and the status bar: the stage running, or how the review ended. */
+  private progress: ReviewProgress | undefined;
+  /** The count of the review the reviewer stopped, so its early end reads as stopped, not as a failure. */
+  private stopped = 0;
+  /** The status bar entry, which names the stage running while a review runs. */
+  private readonly status: AgentStatusBar;
+  /** The review sent from the review shown, which step 8 links to. */
+  private sent: SentSummary | undefined;
+  /** Why the last send failed, which step 8 says; cleared by the next send. */
+  private sendFailure: string | undefined;
 
   constructor(
     sideBar: SideBarProvider,
@@ -220,8 +286,10 @@ class ReviewSession {
     marker: PartMarker,
     comments: ReviewComments,
     deps: ExtensionDeps,
+    status: AgentStatusBar,
   ) {
     this.sideBar = sideBar;
+    this.status = status;
     this.copies = copies;
     this.marker = marker;
     this.comments = comments;
@@ -234,7 +302,13 @@ class ReviewSession {
     return this.result;
   }
 
-  async reviewPullRequest(urlArg?: unknown): Promise<void> {
+  /**
+   * Reviews the pull request: its saved result shows at once when the
+   * engine has one, or, once the pull request has new commits, only what
+   * they changed runs again, unless `fresh` asks for a fresh review, as
+   * Review again does.
+   */
+  async reviewPullRequest(urlArg?: unknown, fresh = false): Promise<void> {
     const url =
       typeof urlArg === 'string' && urlArg.trim() !== ''
         ? urlArg
@@ -275,6 +349,8 @@ class ReviewSession {
     // only once they are in.
     let marksRead: Promise<void> = Promise.resolve();
     this.running = true;
+    this.progress = readingProgress(new Date());
+    void vscode.commands.executeCommand('setContext', REVIEWING_CONTEXT, true);
     this.render();
     try {
       const result = await vscode.window.withProgress(
@@ -283,9 +359,11 @@ class ReviewSession {
           this.engineReview(
             url.trim(),
             accessToken,
+            fresh,
             (stage) => {
               if (!current()) return;
               this.stage = stage.running;
+              this.progress = runningProgress(stage) ?? this.progress;
               void this.show(stage.result, shown, stage.running);
               shown = true;
             },
@@ -294,7 +372,10 @@ class ReviewSession {
       );
       if (!current()) return;
       this.stage = undefined;
+      this.progress = finishedProgress(result);
       await this.show(result, shown);
+      // A saved review ran nothing now, so it ends with no notice.
+      if (result.saved === undefined) this.noticeEnd(result);
       await marksRead;
       if (!current()) return;
       this.running = false;
@@ -303,22 +384,80 @@ class ReviewSession {
     } catch (error) {
       if (!current()) return;
       this.stage = undefined;
-      vscode.window.showErrorMessage(
-        error instanceof Error ? error.message : String(error),
-      );
+      // A stopped review is no failure: the strip says it stopped before its
+      // first result landed, or with the results that already landed.
+      this.progress =
+        this.stopped !== review
+          ? undefined
+          : shown
+            ? stoppedProgress(this.result!)
+            : { state: 'stopped early' };
+      if (this.stopped !== review) {
+        vscode.window.showErrorMessage(
+          error instanceof Error ? error.message : String(error),
+        );
+      }
     } finally {
       await marksRead;
       if (current() && this.running) {
         this.running = false;
         this.render();
       }
+      if (current()) void vscode.commands.executeCommand('setContext', REVIEWING_CONTEXT, false);
     }
+  }
+
+  /** Reviews the pull request shown again, afresh: Review again in the side bar and the Command Palette. */
+  async reviewAgain(): Promise<void> {
+    if (this.url === undefined) {
+      vscode.window.showWarningMessage('Review a pull request first, then review it again.');
+      return;
+    }
+    await this.reviewPullRequest(this.url, true);
+  }
+
+  /**
+   * Stops the review running, from the side bar's Stop review title button:
+   * the engine stops the stage running, its agent run with it, and answers
+   * with what already landed, every stage not run marked stopped, which
+   * the progress strip lists. A stop pressed while the review is still
+   * starting — its engine spawning, its request not yet sent — says so,
+   * for nothing has reached the engine to stop yet.
+   */
+  async stopReview(): Promise<void> {
+    if (!this.running) {
+      vscode.window.showInformationMessage('No review is running.');
+      return;
+    }
+    const review = this.reviews;
+    try {
+      if ((await this.engine?.cancelReview()) !== true) {
+        vscode.window.showInformationMessage('The review has not reached the engine yet. Stop it again in a moment.');
+        return;
+      }
+    } catch (error) {
+      this.stopped = review;
+      vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
+      return;
+    }
+    this.stopped = review;
+  }
+
+  /** The end of a review: a notification only when a stage fell back or failed, offering the overview. */
+  private noticeEnd(result: ReviewResult): void {
+    const notice = endNotice(result);
+    if (notice === undefined) return;
+    void vscode.window.showWarningMessage(notice, 'Open overview').then((choice) => {
+      if (choice === 'Open overview') void vscode.commands.executeCommand(OPEN_OVERVIEW_COMMAND);
+    });
   }
 
   /**
    * Shows a result in the side bar. The first result of a review starts
-   * its pending review and opens the overview; a later one updates the
-   * side bar and the overview in place, with every pending comment kept.
+   * its pending review — bringing back, with their threads, the comments
+   * and drafts the reviewer had not sent when the editor last closed —
+   * and opens the overview; a later one updates the side bar and the
+   * overview in place, with every pending comment kept.
    */
   private async show(result: ReviewResult, update: boolean, running?: string): Promise<void> {
     this.result = result;
@@ -334,10 +473,15 @@ class ReviewSession {
       this.page?.dispose();
       this.page = undefined;
       this.comments.setReview(result);
+      // What the reviewer wrote and had not sent comes back with its
+      // threads, per pull request, before the review shows (issue 168).
+      await this.comments.restore();
       this.mirrorWaiting.clear();
       this.overview.clearAnswers();
       this.opened = undefined;
       this.storyRead = false;
+      this.sent = undefined;
+      this.sendFailure = undefined;
       if (previous !== result.pullRequest.url) this.onlyChanged = false;
     }
     this.render();
@@ -376,8 +520,14 @@ class ReviewSession {
       ...(message !== undefined ? { message } : {}),
       reviewing: this.running,
       storyRead: this.storyRead,
+      ...(this.progress !== undefined ? { progress: this.progress } : {}),
+      comments: this.comments.listed(),
+      onlyChanged: this.onlyChanged,
+      ...(this.sent !== undefined ? { sent: this.sent } : {}),
+      ...(this.sendFailure !== undefined ? { sendFailure: this.sendFailure } : {}),
     };
     this.sideBar.update(state, this.result === undefined ? undefined : reviewBadge(this.result, marks));
+    this.status.showProgress(this.running && this.progress?.state === 'running' ? this.progress.stage : undefined);
   }
 
   /** Shows the session again, such as after the agent settings changed. */
@@ -623,6 +773,46 @@ class ReviewSession {
   }
 
   /**
+   * Presses one claim's Read the CI log, the claim named by its index in
+   * the result's claims: asks for the GitHub sign-in, and the engine reads
+   * the logs of the checks that passed at the reviewed head commit, trimmed
+   * as a failed job's are, and has the agent the settings pick judge the
+   * claim again with them; the result it answers with replaces the one
+   * shown, keeping the reviewer's place. Nothing is fetched without this
+   * press (ADR 0003).
+   */
+  async readCiLog(arg?: unknown): Promise<void> {
+    const offer = typeof arg === 'number' ? ciLogFetchOf(this.result, arg) : undefined;
+    if (offer === undefined || this.url === undefined) {
+      vscode.window.showWarningMessage('This finding offers no CI log to read; review the pull request again.');
+      return;
+    }
+    let session: vscode.AuthenticationSession | undefined;
+    try {
+      session = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
+    } catch {
+      session = undefined;
+    }
+    if (!session) {
+      vscode.window.showWarningMessage('Sign in to GitHub to read the CI log.');
+      return;
+    }
+    const review = this.reviews;
+    const token = session.accessToken;
+    try {
+      const result = await vscode.window.withProgress(
+        { location: { viewId: REVIEW_TREE_VIEW }, title: `Reading the logs of ${offer.checks.join(', ')} and checking the claim again…` },
+        async () => (await this.readyEngine()).readCiLog(this.url!, token, arg as number, reviewAgentChoice(readAgentSettings())),
+      );
+      // A review started meanwhile replaces this one, read and all.
+      if (review !== this.reviews) return;
+      await this.show(result, true);
+    } catch (error) {
+      vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  /**
    * Drafts a comment from one finding, the reviewer having asked for it:
    * the engine has the agent the settings pick write a short draft from
    * the finding and its evidence, checked before it arrives. A draft from
@@ -633,6 +823,11 @@ class ReviewSession {
    * unmet acceptance criterion — opens for editing in an input box, and
    * joins the overall comment of the Send review page only when the
    * reviewer accepts it. Nothing is sent on its own (ADR 0002).
+   *
+   * The draft is pressed for from the side bar, the overview or a
+   * finding's thread, so the drafting shows as a notification, seen
+   * wherever the reviewer is, and a draft's thread is shown at its line: a
+   * thread on a file no editor shows is not seen at all.
    */
   async draftComment(arg?: unknown): Promise<void> {
     const ref = isFindingRef(arg) ? { kind: arg.kind, index: arg.index } : undefined;
@@ -644,7 +839,7 @@ class ReviewSession {
     const review = this.reviews;
     try {
       const draft = await vscode.window.withProgress(
-        { location: { viewId: REVIEW_TREE_VIEW }, title: `Drafting a comment from the ${finding.kind}…` },
+        { location: vscode.ProgressLocation.Notification, title: `Drafting a comment from the ${finding.kind}…` },
         async () => (await this.readyEngine()).draftComment(this.url!, ref, reviewAgentChoice(readAgentSettings())),
       );
       // A review started meanwhile replaces this one, drafts and all.
@@ -657,7 +852,8 @@ class ReviewSession {
       // The draft quotes the pull request's own words, so it shows and
       // sends escaped, the way every agent-derived text does.
       if (target !== undefined) {
-        this.comments.draft(target, escapeMarkdown(draft.body), finding.kind);
+        const thread = this.comments.draft(target, escapeMarkdown(draft.body), finding.kind);
+        if (thread !== undefined) await showThread(thread);
         return;
       }
       const edited = await vscode.window.showInputBox({
@@ -678,7 +874,7 @@ class ReviewSession {
       }
       this.sendPage().open();
     } catch (error) {
-      vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
+      vscode.window.showErrorMessage(`Could not draft a comment from the ${finding.kind}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -734,22 +930,42 @@ class ReviewSession {
    * the part is read out of whatever the argument carries, and found in
    * the result shown by where it starts. Verify this claim
    * checks the text selected on the head side of the part's diff, or else
-   * the claim the reviewer picks, and its judged claim joins the review
-   * shown, as a finding with any library fetch it offers.
+   * the claim the reviewer picks — the claim the argument names, when a
+   * side bar finding's Verify again carries it — and without a part, the
+   * claim the reviewer picks from the whole review, the way the side
+   * bar's Verify a claim… button runs the ask. Its judged claim joins the
+   * review shown, as a finding with any library fetch it offers.
    */
   async ask(kind: AskKind, arg?: unknown): Promise<void> {
+    if (this.result === undefined || this.url === undefined) {
+      vscode.window.showWarningMessage('Review a pull request first, then ask about its parts.');
+      return;
+    }
     const part = this.partOf(arg);
     const anchor = part === undefined ? undefined : JSON.stringify(anchorOf(part));
-    const index = this.result?.parts.findIndex((each) => JSON.stringify(anchorOf(each)) === anchor) ?? -1;
-    if (this.result === undefined || this.url === undefined || index < 0) {
+    let index = this.result.parts.findIndex((each) => JSON.stringify(anchorOf(each)) === anchor);
+    let claim: AskedClaim | undefined;
+    if (ASKS[kind].takesClaim) {
+      const named = isBannerPartRef(arg) ? (arg as { claim?: unknown }).claim : undefined;
+      if (typeof named === 'number' && Number.isInteger(named) && this.result.claims?.claims[named]?.part === index) {
+        claim = { index: named };
+      } else if (index >= 0) {
+        claim = await this.claimToVerify(this.result, index);
+      } else {
+        claim = await this.anyClaimToVerify(this.result);
+        const at = claim === undefined ? undefined : this.result.claims?.claims[claim.index]?.part;
+        if (at === undefined) return;
+        index = at;
+      }
+      if (claim === undefined) return;
+    }
+    if (index < 0) {
       vscode.window.showWarningMessage('Review a pull request first, then ask about its parts.');
       return;
     }
     this.moveOnFromStory();
     const review = this.reviews;
     const asked = this.result.parts[index]!;
-    const claim = ASKS[kind].takesClaim ? await this.claimToVerify(this.result, index) : undefined;
-    if (ASKS[kind].takesClaim && claim === undefined) return;
     try {
       const answer = await vscode.window.withProgress(
         { location: { viewId: REVIEW_TREE_VIEW }, title: `${ASKS[kind].title}: asking the agent…` },
@@ -800,9 +1016,28 @@ class ReviewSession {
     return picked === undefined ? undefined : { index: picked.index };
   }
 
-  /** Opens the review's overview at the story's start. */
-  openOverview(): void {
-    if (!this.overview.open()) {
+  /**
+   * The claim a verify ask checks when it names no part, as the side
+   * bar's Verify a claim… button runs it: any claim of the review, picked
+   * from them all. Undefined, having said why, when there is none or the
+   * reviewer dismissed the pick.
+   */
+  private async anyClaimToVerify(result: ReviewResult): Promise<{ index: number } | undefined> {
+    const claims = (result.claims?.claims ?? []).flatMap((claim, index) => (claim.part >= 0 && claim.part < result.parts.length ? [{ index, claim }] : []));
+    if (claims.length === 0) {
+      vscode.window.showInformationMessage('No claim to verify: it shows once the review lists the claims.');
+      return undefined;
+    }
+    const picked = await vscode.window.showQuickPick(
+      claims.map(({ index, claim }) => ({ label: claim.quote, description: claimWhere(claim), detail: claim.verdict.kind, index })),
+      { title: 'Verify this claim', placeHolder: 'Pick a claim to verify' },
+    );
+    return picked === undefined ? undefined : { index: picked.index };
+  }
+
+  /** Opens the review's overview at the story's start, or at the description line or story sentence a claim's where names, marked. */
+  openOverview(options: { descriptionLine?: number; storySentence?: number } = {}): void {
+    if (!this.overview.open(options)) {
       vscode.window.showWarningMessage('Review a pull request first, then open its overview.');
       return;
     }
@@ -862,6 +1097,20 @@ class ReviewSession {
   /** Discards one pending comment, with its thread. */
   discardComment(thread: vscode.CommentThread): void {
     this.comments.discard(thread);
+  }
+
+  /**
+   * Acts on one of step 7's rows: opens its thread, expanded, at its line
+   * — or at the top of its file, for a comment on a whole part — or
+   * discards the comment, or adds or discards the draft.
+   */
+  async commentAction(id: number, action: CommentAction): Promise<void> {
+    if (action !== 'open') {
+      this.comments.act(id, action);
+      return;
+    }
+    const thread = this.comments.reveal(id);
+    if (thread !== undefined) await openThread(thread);
   }
 
   /**
@@ -943,6 +1192,8 @@ class ReviewSession {
           { location: { viewId: REVIEW_TREE_VIEW }, title: 'Sending the review…' },
           () => this.engineSend(this.url!, session!.accessToken, review),
         );
+        this.sent = { submit: review.submit, comments: review.comments.length, commit: sent.commit, url: sent.url };
+        this.sendFailure = undefined;
         this.comments.clear();
         vscode.window.showInformationMessage(`Review sent: ${sent.url}`, 'Open on GitHub').then(
           (open) => {
@@ -954,10 +1205,11 @@ class ReviewSession {
         );
         return true;
       } catch (error) {
-        // The send failed: every comment stays gathered for another try.
-        vscode.window.showErrorMessage(
-          error instanceof Error ? error.message : String(error),
-        );
+        // The send failed: every comment stays gathered for another try,
+        // and step 8 says why.
+        this.sendFailure = error instanceof Error ? error.message : String(error);
+        this.render();
+        vscode.window.showErrorMessage(this.sendFailure);
         return false;
       }
     });
@@ -979,6 +1231,7 @@ class ReviewSession {
   private async engineReview(
     url: string,
     token: string,
+    fresh: boolean,
     onStage: (stage: ReviewStageUpdate) => void,
     onSent: (engine: EngineClient) => void,
   ): Promise<ReviewResult> {
@@ -993,7 +1246,7 @@ class ReviewSession {
       .trim();
     // The budget's limits travel the same way, and the engine meters the
     // review against them.
-    const reviewed = engine.review(url, token, reviewAgentChoice(readAgentSettings()), onStage, heading, readBudgetLimits());
+    const reviewed = engine.review(url, token, reviewAgentChoice(readAgentSettings()), onStage, heading, readBudgetLimits(), fresh);
     onSent(engine);
     return reviewed;
   }
@@ -1002,12 +1255,20 @@ class ReviewSession {
    * The engine, started and past its handshake. The agent, model, effort
    * and account the settings choose travel with each review request, so a
    * settings change needs no engine restart: the next review simply runs
-   * on the chosen agent, and its result is stamped accordingly.
+   * on the chosen agent, and its result is stamped accordingly. Step 1's
+   * setup form probes and tests the agents on it too.
    */
-  private async readyEngine(): Promise<EngineClient> {
+  async readyEngine(): Promise<EngineClient> {
     const engine = this.engine ?? (this.engine = new EngineClient(this.spawnEngine ?? spawnEngineProcess));
     if (!engine.initialized) {
-      await engine.initialize();
+      // The setup form's probe and a review can start together: one handshake serves both.
+      if (this.handshake?.engine !== engine) this.handshake = { engine, done: engine.initialize() };
+      const { done } = this.handshake;
+      try {
+        await done;
+      } finally {
+        if (this.handshake?.done === done) this.handshake = undefined;
+      }
     }
     return engine;
   }
@@ -1034,7 +1295,12 @@ class ReviewSession {
  * whose answer the overview shows, and the command that ticks or clears
  * a part's reviewed mark from the side bar or the banner above its diff,
  * the status bar entry that shows the agent, model and effort in use,
- * and the command it runs, which opens the quick pick that changes them.
+ * and the command it runs, which opens the quick pick that changes them,
+ * and step 1's setup form, which opens by itself on the first open and
+ * from the quick pick's last item, and step 2's list of the reviewer's
+ * open pull requests, with the title button that reloads it, the
+ * Stop review title button that stops the review running, and the title
+ * bar's ⋯ item that opens the companion's settings.
  * Nothing here runs anything from the workspace — the engine is started
  * from the companion's own install, reads GitHub, and writes only the
  * one review the reviewer sends — and, only with the opt-in mirror
@@ -1048,13 +1314,37 @@ export function activate(
   context: vscode.ExtensionContext,
   deps: ExtensionDeps = {},
 ): SideBarProvider {
-  const sideBar = new SideBarProvider({ settings: readAgentSettings(), marks: NO_MARKS, sections: [], reviewing: false, storyRead: false });
+  const setup: SetupForm = new SetupForm({
+    engine: (): Promise<EngineClient> => session.readyEngine(),
+    globalState: context.globalState,
+    onChange: () => sideBar.redraw(),
+  });
+  const picker: PullRequestPicker = new PullRequestPicker({
+    engine: (): Promise<EngineClient> => session.readyEngine(),
+    onChange: () => sideBar.redraw(),
+  });
+  const sideBar: SideBarProvider = new SideBarProvider(
+    { settings: readAgentSettings(), marks: NO_MARKS, sections: [], reviewing: false, storyRead: false },
+    setup,
+    picker,
+    {
+      openLine: (path, line) => void session.openLine(path, line, 'head'),
+      openOverviewAt: (options) => session.openOverview(options),
+      ticks: new StepTickStore(context.globalState),
+      comment: (id, action) => void session.commentAction(id, action),
+    },
+  );
   const copies = new ChangeCopiesProvider();
   const marker = new PartMarker();
-  const comments = new ReviewComments();
-  const session = new ReviewSession(sideBar, copies, marker, comments, deps);
+  // The unsent comments and open drafts are kept per pull request in one
+  // file in the extension's own global storage — never in the workspace —
+  // and sent nowhere until the reviewer sends the review (issue 168).
+  const comments = new ReviewComments(
+    new CommentStore(join(context.globalStorageUri.fsPath, SAVED_COMMENTS_DIR)),
+  );
   const agentStatusBar = new AgentStatusBar(deps.env);
   agentStatusBar.refresh();
+  const session = new ReviewSession(sideBar, copies, marker, comments, deps, agentStatusBar);
   // The untested-combination warning (issue 3): once for the settings the
   // reviewer arrives with, then whenever they choose an agent, model or effort.
   warnUntestedModelChoice();
@@ -1084,6 +1374,7 @@ export function activate(
     vscode.commands.registerCommand(REVIEW_COMMAND, (url?: string) =>
       session.reviewPullRequest(url),
     ),
+    vscode.commands.registerCommand(REVIEW_AGAIN_COMMAND, () => session.reviewAgain()),
     vscode.commands.registerCommand(OPEN_PART_COMMAND, (part?: Part) =>
       part === undefined ? undefined : session.openPart(part),
     ),
@@ -1104,6 +1395,7 @@ export function activate(
     vscode.commands.registerCommand(OPEN_OVERVIEW_COMMAND, () => session.openOverview()),
     vscode.commands.registerCommand(WHY_THIS_MATTERS_COMMAND, (arg?: unknown) => session.whyThisMatters(arg)),
     vscode.commands.registerCommand(FETCH_LIBRARY_COMMAND, (arg?: unknown) => session.fetchLibrary(arg)),
+    vscode.commands.registerCommand(READ_CI_LOG_COMMAND, (arg?: unknown) => session.readCiLog(arg)),
     vscode.commands.registerCommand(OPEN_LIBRARY_EVIDENCE_COMMAND, (claim?: unknown, citation?: unknown) =>
       session.openLibraryEvidence(claim, citation),
     ),
@@ -1117,6 +1409,15 @@ export function activate(
     ...ASK_KINDS.map((kind) => vscode.commands.registerCommand(askCommand(kind), (arg?: unknown) => session.ask(kind, arg))),
     vscode.commands.registerCommand(MARK_REVIEWED_COMMAND, (part?: unknown, reviewed?: unknown) => session.markPart(part, reviewed)),
     vscode.commands.registerCommand(CHOOSE_AGENT_COMMAND, () => chooseAgent()),
+    vscode.commands.registerCommand(OPEN_SETUP_COMMAND, async () => {
+      await vscode.commands.executeCommand(OPEN_REVIEW_CONTAINER_COMMAND);
+      setup.open();
+    }),
+    vscode.commands.registerCommand(REFRESH_PULL_REQUESTS_COMMAND, () => picker.load()),
+    vscode.commands.registerCommand(STOP_REVIEW_COMMAND, () => session.stopReview()),
+    vscode.commands.registerCommand(OPEN_COMPANION_SETTINGS_COMMAND, () =>
+      vscode.commands.executeCommand(OPEN_SETTINGS_COMMAND, COMPANION_SETTINGS_QUERY),
+    ),
   );
   return sideBar;
 }

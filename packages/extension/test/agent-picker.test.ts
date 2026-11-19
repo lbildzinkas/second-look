@@ -5,7 +5,9 @@ import { ConfigurationTarget, QuickPickItemKind, stub, stubContext } from './vsc
 import { activate } from '../src/extension.js';
 import { chooseAgent } from '../src/agent-picker.js';
 import { AgentStatusBar } from '../src/agent-status.js';
-import { CHOOSE_AGENT_COMMAND, OPEN_REVIEW_CONTAINER_COMMAND } from '../src/commands.js';
+import { CHOOSE_AGENT_COMMAND, OPEN_REVIEW_CONTAINER_COMMAND, OPEN_SETUP_COMMAND } from '../src/commands.js';
+import { SETUP_SEEN_KEY } from '../src/side-bar/setup-form.js';
+import { sideBarSteps } from '../src/side-bar/steps.js';
 
 interface Item {
   label: string;
@@ -146,10 +148,24 @@ describe('the agent quick pick', () => {
     ]);
   });
 
-  it('opens the setup in the side bar', async () => {
+  it("opens the setup in the side bar: the container, with step 1's form open", async () => {
+    // Past the first open, the form stays folded until something opens it.
+    stub.globalState[SETUP_SEEN_KEY] = true;
+    const sideBar = activate(stubContext() as never, {
+      spawnEngine: () => {
+        throw new Error('no engine here');
+      },
+    });
+    expect(sideBar.current.setup?.open).toBe(false);
+
     stub.quickPickResult = pick('Open the setup in the side bar');
     await chooseAgent();
-    expect(stub.executedCommands).toEqual([{ id: OPEN_REVIEW_CONTAINER_COMMAND, args: [] }]);
+    expect(stub.executedCommands).toEqual([
+      { id: OPEN_SETUP_COMMAND, args: [] },
+      { id: OPEN_REVIEW_CONTAINER_COMMAND, args: [] },
+    ]);
+    expect(sideBar.current.setup?.open).toBe(true);
+    expect(sideBarSteps(sideBar.current)[0]).toMatchObject({ number: 1, state: 'current', open: true });
     expect(stub.configurationUpdates).toEqual([]);
   });
 

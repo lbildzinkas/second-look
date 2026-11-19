@@ -57,6 +57,8 @@ function claim(location: Claim['location'] = { kind: 'file', path: 'app/doc_link
       evidence: [],
       needsLibrary: 'httpx',
       libraryFetch: OFFER,
+      looked: [{ path: 'app/doc_links.py', line: 1, endLine: 12 }],
+      settles: { kind: 'library', note: 'the source of httpx could settle it' },
     },
   };
 }
@@ -133,6 +135,8 @@ describe('pressLibraryFetch', () => {
       source: 'library source at the pinned version',
       reason: REFUTED.reason,
       evidence: [{ path: 'httpx/_client.py', line: 2, quote: 'def __init__(self, follow_redirects: bool = False):' }],
+      // What the agent read in the head copy stays the verdicts pass's.
+      looked: [{ path: 'app/doc_links.py', line: 1, endLine: 12 }],
       libraryFetch: OFFER,
       library: {
         library: 'httpx',
@@ -155,6 +159,7 @@ describe('pressLibraryFetch', () => {
 
     expect(judging.claim.verdict).toMatchObject({
       kind: 'unverifiable',
+      settles: { kind: 'library', note: 'the source of httpx 0.27.2 did not settle it as the agent read it; the fetched source is there to read' },
       recheck: 'the quote of the citation httpx/_client.py:1 is not on that line',
     });
   });
@@ -258,7 +263,7 @@ describe('the Python canary', () => {
     const agent = answeringAgent((run) => {
       if (run.instructions === CLAIMS_INSTRUCTIONS) return { claims: [{ source: 'docstring', quote: REDIRECT, file: 'app/doc_links.py', line: 9, part: null }] };
       if (run.instructions === VERDICTS_INSTRUCTIONS) {
-        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: 'It turns on how httpx.Client.get treats redirects.', evidence: [], library: 'httpx' }] };
+        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: 'It turns on how httpx.Client.get treats redirects.', evidence: [], looked: [], settles: { kind: 'library', note: 'Its source would settle it.' }, library: 'httpx' }] };
       }
       if (run.instructions === LIBRARY_VERDICTS_INSTRUCTIONS) {
         return {
@@ -297,12 +302,14 @@ describe('holdToExactSource', () => {
       { path: 'src/RecyclableMemoryStream.cs', line: 490, quote: 'The buffer may be longer than the stream length.' },
       { path: 'src/Events.cs', line: 1, quote: 'using System;' },
     ],
+    looked: [],
   };
 
   it('drops a verified verdict citing any unproven file to unverifiable, naming the file', () => {
     expect(holdToExactSource(verified, ['src/Events.cs'])).toEqual({
       ...verified,
       kind: 'unverifiable',
+      settles: { kind: 'library', note: 'exact source of src/Events.cs would settle it' },
       recheck: 'the verdict cites src/Events.cs, which is unproven: no hash its PDB records matches, so it may not be the source the library was built from',
     });
   });
@@ -353,7 +360,7 @@ describe('the C# canary', () => {
       if (run.instructions === VERDICTS_INSTRUCTIONS) {
         return {
           verdicts: [
-            { id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: 'It turns on what GetBuffer returns.', evidence: [], library: 'Microsoft.IO.RecyclableMemoryStream' },
+            { id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: 'It turns on what GetBuffer returns.', evidence: [], looked: [], settles: { kind: 'library', note: 'Its source would settle it.' }, library: 'Microsoft.IO.RecyclableMemoryStream' },
           ],
         };
       }

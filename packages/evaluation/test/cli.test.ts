@@ -261,6 +261,8 @@ describe('the record command', () => {
       'encode-httpx-3690',
       'example-42',
       'example-7',
+      'lbildzinkas-interview-coach-97',
+      'lbildzinkas-interview-coach-98',
       'mine',
       'misstated-python',
       'pallets-click-3781',

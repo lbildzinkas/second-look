@@ -2,8 +2,9 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { removeCopy } from '../src/cache.js';
-import { checkFailed, ciLogItems, readCi, trimLog } from '../src/ci.js';
+import { checkFailed, checkPassed, ciLogItems, offerCiLogReads, passingLogItems, readCi, readPassingLogs, trimLog } from '../src/ci.js';
 import { GitHubClient } from '../src/github.js';
+import type { CiResults, Claim, ClaimVerdict } from '../src/protocol.js';
 import { reviewPullRequest } from '../src/review.js';
 import { PR_URL, fixtureFetch, pull42, temporaryCacheDir } from './helpers.js';
 
@@ -55,7 +56,7 @@ describe('readCi against recorded responses', () => {
       outcome: 'read',
       headSha: HEAD,
       mergeCommit: MERGE,
-      detail: '3 check runs at the head commit, 2 failed; logs are read only for failed jobs',
+      detail: "3 check runs at the head commit, 2 failed; logs are read only for failed jobs, and a passing job's only on the reviewer's press",
     });
     expect(ci.checks.map((check) => [check.name, check.conclusion])).toEqual([
       ['check / test', 'failure'],
@@ -121,6 +122,78 @@ describe('readCi against recorded responses', () => {
     expect(['failure', 'timed_out', 'startup_failure'].every(checkFailed)).toBe(true);
     expect(['success', 'neutral', 'skipped', 'cancelled'].some(checkFailed)).toBe(false);
     expect(checkFailed(null)).toBe(false);
+  });
+
+  it('names a passing conclusion', () => {
+    expect(checkPassed('success')).toBe(true);
+    expect(['failure', 'neutral', 'skipped', 'cancelled'].some(checkPassed)).toBe(false);
+    expect(checkPassed(null)).toBe(false);
+  });
+});
+
+describe('readPassingLogs against recorded responses', () => {
+  it("reads only the passing Actions job's log, trimmed as a failed job's, and gives it its id", async () => {
+    const transport = fixtureFetch({ ...pull42(), ci: true });
+    const checks = await readPassingLogs(new GitHubClient({ token: 'test-token', fetch: transport.fetch }), ref, HEAD);
+
+    expect(checks).toEqual([
+      {
+        name: 'check / lint',
+        status: 'completed',
+        conclusion: 'success',
+        url: 'https://github.com/example-org/example-repo/actions/runs/700/job/9002',
+        annotations: [],
+        log: { lines: expect.arrayContaining(['Lint passed with 0 errors.']), detail: 'the log marks no failing step, so its last 13 lines are kept' },
+      },
+    ]);
+    expect(checks[0]!.log!.lines[0]).toBe("Current runner version: '2.320.0'");
+    expect(transport.requests.every((request) => request.method === 'GET')).toBe(true);
+    expect(transport.requests.filter((request) => request.url.includes('/logs')).map((request) => request.url)).toEqual([`${API}/actions/jobs/9002/logs`]);
+    expect(passingLogItems(checks).map((item) => [item.id, item.check.name, item.passing])).toEqual([['log1', 'check / lint', true]]);
+  });
+
+  it('says why when the check runs cannot be read', async () => {
+    const refused: typeof fetch = async () => Response.json({ message: 'Resource not accessible by integration' }, { status: 403 });
+    await expect(readPassingLogs(new GitHubClient({ token: 'test-token', fetch: refused }), ref, HEAD)).rejects.toThrow('the check runs could not be read: GitHub answered 403');
+  });
+});
+
+describe('offerCiLogReads', () => {
+  const ci = (conclusions: string[]): CiResults => ({
+    outcome: 'read',
+    detail: '',
+    headSha: HEAD,
+    checks: conclusions.map((conclusion, at) => ({ name: `check ${at + 1}`, status: 'completed', conclusion, url: `https://github.com/x/${at}`, annotations: [] })),
+  });
+  const claim = (verdict: ClaimVerdict): Claim => ({ quote: 'scripts/check.sh passes', source: 'description', location: { kind: 'description', line: 1 }, part: 0, verdict });
+  const unverifiable = (kind: 'ci-log' | 'author'): ClaimVerdict => ({
+    kind: 'unverifiable',
+    source: 'the change itself',
+    reason: 'The checks are not in the change.',
+    evidence: [],
+    looked: [],
+    settles: { kind, note: 'the check run would show it' },
+  });
+
+  it('offers Read the CI log only on an unverifiable claim a CI log could settle, naming the checks that passed', () => {
+    const offered = offerCiLogReads([claim(unverifiable('ci-log')), claim(unverifiable('author')), claim({ kind: 'not checked' })], ci(['success', 'failure', 'success']));
+    expect(offered[0]!.verdict).toMatchObject({ ciLogFetch: { checks: ['check 1', 'check 3'], reason: '2 checks passed at the head commit; reading their logs could settle the claim.' } });
+    expect(offered[1]!.verdict).not.toHaveProperty('ciLogFetch');
+    expect(offered[2]!.verdict).toEqual({ kind: 'not checked' });
+  });
+
+  it('makes an unpressed offer again from the CI it is given, or withdraws it', () => {
+    const offered = offerCiLogReads([claim(unverifiable('ci-log'))], ci(['success', 'success']));
+    expect(offerCiLogReads(offered, ci(['success']))[0]!.verdict).toMatchObject({ ciLogFetch: { checks: ['check 1'] } });
+    expect(offerCiLogReads(offered, ci(['failure']))[0]!.verdict).not.toHaveProperty('ciLogFetch');
+  });
+
+  it('offers nothing when no check passed, or once the claim was judged with the passing logs', () => {
+    expect(offerCiLogReads([claim(unverifiable('ci-log'))], ci(['failure']))[0]!.verdict).not.toHaveProperty('ciLogFetch');
+    expect(offerCiLogReads([claim(unverifiable('ci-log'))], undefined)[0]!.verdict).not.toHaveProperty('ciLogFetch');
+    const read = { ...unverifiable('ci-log'), ciLogs: { checks: [], promptVersion: '7', stamp: { agent: 'fake', agentVersion: '1', model: null, effort: null, runAt: '' } } } as ClaimVerdict;
+    expect(offerCiLogReads([claim(read)], ci(['success']))[0]!.verdict).not.toHaveProperty('ciLogFetch');
+    expect(offerCiLogReads([claim(unverifiable('ci-log'))], ci(['success']))[0]!.verdict).toMatchObject({ ciLogFetch: { reason: 'check 1 passed at the head commit; reading its log could settle the claim.' } });
   });
 });
 

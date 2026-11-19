@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseDiff } from '@second-look/engine';
-import type { AcceptanceCriterion, Claim, ClaimVerdict, DescribedChange, LinkedIssue, NoiseAssessment, Part, UnexplainedChanges } from '@second-look/engine';
+import type { AcceptanceCriterion, Claim, ClaimVerdict, DescribedChange, LinkedIssue, NoiseAssessment, Part, SettlesKind, UnexplainedChanges } from '@second-look/engine';
 import type { ExpectedClaim, ExpectedCriterion, ExpectedResults, ExpectedUnexplained } from '../src/case.js';
 import type { PressedClaim } from '../src/claims.js';
 import {
@@ -236,6 +236,18 @@ describe('the claim checks', () => {
     }
   });
 
+  it('matches the evidence of an unverifiable claim labelled with none only when the verdict cites nothing', () => {
+    const measured: ExpectedClaim = { text: 'Ran it: 0.13.', origin: { in: 'description', line: 3 }, verdict: { kind: 'unverifiable', settles: 'author' } };
+    const cited = { file: 'a.py', line: 1, source: 'the change itself' as const };
+    for (const [got, matched] of [
+      [{ text: measured.text, verdict: { kind: 'unverifiable' } }, 1],
+      [{ text: measured.text, verdict: { kind: 'unverifiable', evidence: cited } }, 0],
+      [{ text: measured.text }, 0],
+    ] as const) {
+      expect(byName(scoresOf(tallyCase(DIFF, expecting([measured]), parts({}), [got])))['claims-evidence']).toBe(matched);
+    }
+  });
+
   it('scores each verdict kind in its own class, like the noise classes', () => {
     const expected: ExpectedClaim = {
       ...CLAIM,
@@ -464,17 +476,19 @@ describe('the verdicts the agent gives', () => {
     verdict: { kind: 'refuted', evidence: { file: 'httpx/_client.py', line: 171, source: 'library source at the pinned version' } },
     libraryFetch: true,
   };
-  const got = (kind: 'verified' | 'refuted' | 'unverifiable', needsLibrary?: string): ClaimVerdict => ({
+  const got = (kind: 'verified' | 'refuted' | 'unverifiable', needsLibrary?: string, settles?: SettlesKind): ClaimVerdict => ({
     kind,
     source: 'the change itself',
     reason: 'r',
     evidence: [],
     ...(needsLibrary ? { needsLibrary } : {}),
+    looked: [],
+    ...(kind === 'unverifiable' ? { settles: { kind: settles ?? (needsLibrary ? 'library' : 'author'), note: 'n' } } : {}),
   });
 
   it('deserve the hand verdict, except that a claim checked behind a library fetch is unverifiable before it, naming the library', () => {
     expect(verdictBeforeFetch(verified)).toEqual({ kind: 'verified' });
-    expect(verdictBeforeFetch(library)).toEqual({ kind: 'unverifiable', library: 'httpx' });
+    expect(verdictBeforeFetch(library)).toEqual({ kind: 'unverifiable', library: 'httpx', settles: 'library' });
     expect(verdictBeforeFetch({ text: 't', origin: { file: 'a', line: 1 } })).toBeUndefined();
   });
 
@@ -485,18 +499,46 @@ describe('the verdicts the agent gives', () => {
       { wanted: library, got: got('unverifiable', 'HTTPX') },
       { wanted: { text: 'unlabelled', origin: { file: 'a', line: 1 } }, got: got('verified') },
     ]);
-    expect(tally).toEqual({ labelled: 3, right: 2, notVerified: 2, falseVerified: 1 });
+    expect(tally).toEqual({ labelled: 3, right: 2, notVerified: 2, falseVerified: 1, settlesLabelled: 1, settlesRight: 1, looked: 0 });
     const scores = scoresOf({ ...tallyCase('', { noise: {}, importantParts: [], claims: [] }, undefined), judging: tally });
     expect(scores).toEqual([
       { name: 'verdict-accuracy', value: 2 / 3, better: 'higher' },
       { name: 'false-verified', value: 0.5, better: 'lower' },
+      { name: 'settles-accuracy', value: 1, better: 'higher' },
+      { name: 'verdict-looked', value: 0, better: 'higher' },
     ]);
+  });
+
+  it('score what settles an unverifiable claim against its label, and the verdicts that say what the agent read', () => {
+    const measured: ExpectedClaim = { text: 'Ran it: 0.13.', origin: { in: 'description', line: 3 }, verdict: { kind: 'unverifiable', settles: 'author' } };
+    const aboutLibrary: ExpectedClaim = { ...measured, library: { name: 'ranx', pinnedVersion: '0.3.21', pinnedBy: 'uv.lock' }, verdict: { kind: 'unverifiable' } };
+    expect(verdictBeforeFetch(measured)).toEqual({ kind: 'unverifiable', settles: 'author' });
+    expect(verdictBeforeFetch(aboutLibrary)).toEqual({ kind: 'unverifiable', library: 'ranx', settles: 'library' });
+    expect(verdictBeforeFetch({ ...measured, verdict: { kind: 'verified', settles: 'author' } })).toEqual({ kind: 'verified' });
+    const looked = { ...got('verified'), looked: [{ path: 'a.py', line: 1, endLine: 4 }] } as ClaimVerdict;
+    const tally = tallyJudging([
+      { wanted: measured, got: got('unverifiable', undefined, 'author') },
+      { wanted: measured, got: got('unverifiable', undefined, 'sandboxed-run') },
+      { wanted: measured, got: looked },
+      { wanted: aboutLibrary, got: got('unverifiable', 'ranx') },
+      { wanted: aboutLibrary, got: got('unverifiable') },
+      { wanted: verified, got: looked },
+    ]);
+    expect(tally).toMatchObject({ labelled: 6, right: 4, settlesLabelled: 5, settlesRight: 2, looked: 2 });
   });
 
   it('miss a library claim whose verdict names no library or another one, and a claim left not checked', () => {
     expect(tallyJudging([{ wanted: library, got: got('unverifiable') }]).right).toBe(0);
     expect(tallyJudging([{ wanted: library, got: got('unverifiable', 'requests') }]).right).toBe(0);
-    expect(tallyJudging([{ wanted: refuted, got: { kind: 'not checked' } }])).toEqual({ labelled: 1, right: 0, notVerified: 1, falseVerified: 0 });
+    expect(tallyJudging([{ wanted: refuted, got: { kind: 'not checked' } }])).toEqual({
+      labelled: 1,
+      right: 0,
+      notVerified: 1,
+      falseVerified: 0,
+      settlesLabelled: 0,
+      settlesRight: 0,
+      looked: 0,
+    });
   });
 });
 
@@ -625,9 +667,9 @@ describe('the verify and cover scores', () => {
 
   it('scores a verdict right only when it names the library the selection needs, and counts the fetch offered for it', () => {
     const tally = tallyVerifications([
-      { wanted: { ...selection, verdict: 'unverifiable', library: 'httpx' }, got: { kind: 'unverifiable', source: "the model's memory", reason: 'r', evidence: [], needsLibrary: 'HTTPX', libraryFetch: offer } },
-      { wanted: { ...selection, verdict: 'unverifiable', library: 'httpx' }, got: { kind: 'unverifiable', source: "the model's memory", reason: 'r', evidence: [] } },
-      { wanted: { ...selection, verdict: 'refuted' }, got: { kind: 'verified', source: 'the change itself', reason: 'r', evidence: [] } },
+      { wanted: { ...selection, verdict: 'unverifiable', library: 'httpx' }, got: { kind: 'unverifiable', source: "the model's memory", reason: 'r', evidence: [], needsLibrary: 'HTTPX', libraryFetch: offer, looked: [], settles: { kind: 'library', note: 'n' } } },
+      { wanted: { ...selection, verdict: 'unverifiable', library: 'httpx' }, got: { kind: 'unverifiable', source: "the model's memory", reason: 'r', evidence: [], looked: [], settles: { kind: 'author', note: 'n' } } },
+      { wanted: { ...selection, verdict: 'refuted' }, got: { kind: 'verified', source: 'the change itself', reason: 'r', evidence: [], looked: [] } },
       { wanted: { ...selection, verdict: 'verified' }, got: undefined },
     ]);
 

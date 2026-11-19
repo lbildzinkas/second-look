@@ -29,13 +29,24 @@ const NAME_SEGMENT = /^[A-Za-z0-9_.-]+$/;
 const COMMIT = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 
 /**
+ * Whether a name is a GitHub owner or repository name: only the
+ * characters GitHub allows, and neither `.` nor `..`. Every name that
+ * names a folder or file goes through this check, so no address can
+ * steer the path — a backslash in an owner would act as a folder
+ * separator on Windows.
+ */
+export function isGitHubName(name: string): boolean {
+  return NAME_SEGMENT.test(name) && name !== '.' && name !== '..';
+}
+
+/**
  * The pull request's own cache folder:
  * `<cacheDir>/github.com/<owner>/<repo>/pull-<number>`. Throws when the
  * owner or repository is not a plain name, so no URL can steer the path.
  */
 export function pullRequestCacheDir(cacheDir: string, ref: PullRequestRef): string {
   for (const segment of [ref.owner, ref.repo]) {
-    if (!NAME_SEGMENT.test(segment) || segment === '.' || segment === '..') {
+    if (!isGitHubName(segment)) {
       throw new Error(`not a GitHub owner or repository name: ${segment}`);
     }
   }

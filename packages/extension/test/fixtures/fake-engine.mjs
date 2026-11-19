@@ -10,22 +10,32 @@
 //   FAKE_ENGINE_SEND_RESULT       JSON sent review to return for sendReview
 //   FAKE_ENGINE_SEND_ERROR        answer sendReview with this plain error message
 //   FAKE_ENGINE_SEND_DELAY_MS      wait this long before answering sendReview
-//   FAKE_ENGINE_FETCH_RESULT      JSON review result to return for fetchLibrary
-//   FAKE_ENGINE_FETCH_ERROR       answer fetchLibrary with this plain error message
+//   FAKE_ENGINE_FETCH_RESULT      JSON review result to return for fetchLibrary and readCiLog
+//   FAKE_ENGINE_FETCH_ERROR       answer fetchLibrary and readCiLog with this plain error message
 //   FAKE_ENGINE_DRAFT_RESULT      JSON draft comment to return for draftComment
 //   FAKE_ENGINE_DRAFT_ERROR       answer draftComment with this plain error message
 //   FAKE_ENGINE_ASK_RESULT        JSON answer to return for ask
 //   FAKE_ENGINE_ASK_ERROR         answer ask with this plain error message
 //   FAKE_ENGINE_PROTOCOL_VERSION  protocol version to speak (default 1)
+//   FAKE_ENGINE_INIT_DELAY_MS     wait this long before answering initialize, as an
+//                                  engine slow to start does
 //   FAKE_ENGINE_EXIT_ON           exit right after this method, answering nothing
-//   FAKE_ENGINE_STALL_ON          receive this method, answer nothing, stay alive
+//   FAKE_ENGINE_STALL_ON          receive these methods (comma-separated), answer
+//                                  nothing, stay alive
 //   FAKE_ENGINE_IGNORE_SIGTERM    stay alive when sent SIGTERM, like a frozen engine
 //   FAKE_ENGINE_LOG               path to append every request it received
 //   FAKE_ENGINE_STAGE             JSON { running, timeoutMs, result } to send as a
 //                                 review/stage notification before the answer
 //   FAKE_ENGINE_STAGE_ONLY        send the stage notification, then never answer
 //   FAKE_ENGINE_ANSWER_DELAY_MS   wait this long after the stage before answering
+//   FAKE_ENGINE_STOPPED_RESULT    JSON review result to answer a review the review/cancel
+//                                 request stopped with; without it, the stopped review
+//                                 fails as one stopped before its first result
 //   FAKE_ENGINE_VIEWED_ERROR      answer markViewed with this plain error message
+//   FAKE_ENGINE_PROBE_RESULT      JSON probe of the installed agents to return for agents/probe
+//   FAKE_ENGINE_TEST_RESULT       JSON agent test result to return for agents/test
+//   FAKE_ENGINE_LIST_RESULT       JSON pull request list to return for pullRequests/list
+//                                 (default: listed, with no group)
 //
 // The reviewed marks live in the fake's memory: markReviewed ticks or
 // clears a part by its name, reviewedMarks reads them back, and markViewed
@@ -37,6 +47,7 @@ import { createHash } from 'node:crypto';
 import { appendFileSync } from 'node:fs';
 
 const protocolVersion = Number(process.env.FAKE_ENGINE_PROTOCOL_VERSION ?? '1');
+const initDelayMs = Number(process.env.FAKE_ENGINE_INIT_DELAY_MS ?? '0');
 const reviewResult = process.env.FAKE_ENGINE_RESULT
   ? JSON.parse(process.env.FAKE_ENGINE_RESULT)
   : null;
@@ -46,7 +57,7 @@ const resultsByUrl = process.env.FAKE_ENGINE_RESULTS_BY_URL
 const reviewError = process.env.FAKE_ENGINE_ERROR;
 const sendResult = process.env.FAKE_ENGINE_SEND_RESULT
   ? JSON.parse(process.env.FAKE_ENGINE_SEND_RESULT)
-  : { url: 'https://github.com/example-org/example-repo/pull/42#pullrequestreview-4242' };
+  : { url: 'https://github.com/example-org/example-repo/pull/42#pullrequestreview-4242', commit: 'f00dcafe1234567890abcdef1234567890abcdef12' };
 const sendError = process.env.FAKE_ENGINE_SEND_ERROR;
 const fetchResult = process.env.FAKE_ENGINE_FETCH_RESULT ? JSON.parse(process.env.FAKE_ENGINE_FETCH_RESULT) : null;
 const fetchError = process.env.FAKE_ENGINE_FETCH_ERROR;
@@ -56,13 +67,20 @@ const askResult = process.env.FAKE_ENGINE_ASK_RESULT ? JSON.parse(process.env.FA
 const askError = process.env.FAKE_ENGINE_ASK_ERROR;
 const sendDelayMs = Number(process.env.FAKE_ENGINE_SEND_DELAY_MS ?? '0');
 const exitOn = process.env.FAKE_ENGINE_EXIT_ON;
-const stallOn = process.env.FAKE_ENGINE_STALL_ON;
+const stallOn = process.env.FAKE_ENGINE_STALL_ON
+  ? process.env.FAKE_ENGINE_STALL_ON.split(',').map((method) => method.trim())
+  : null;
 const log = process.env.FAKE_ENGINE_LOG;
 const stage = process.env.FAKE_ENGINE_STAGE ? JSON.parse(process.env.FAKE_ENGINE_STAGE) : null;
 const stageOnly = Boolean(process.env.FAKE_ENGINE_STAGE_ONLY);
 const answerDelayMs = Number(process.env.FAKE_ENGINE_ANSWER_DELAY_MS ?? '0');
 const viewedError = process.env.FAKE_ENGINE_VIEWED_ERROR;
 const probeResult = process.env.FAKE_ENGINE_PROBE_RESULT ? JSON.parse(process.env.FAKE_ENGINE_PROBE_RESULT) : { agents: [] };
+const testResult = process.env.FAKE_ENGINE_TEST_RESULT ? JSON.parse(process.env.FAKE_ENGINE_TEST_RESULT) : null;
+const stoppedResult = process.env.FAKE_ENGINE_STOPPED_RESULT ? JSON.parse(process.env.FAKE_ENGINE_STOPPED_RESULT) : null;
+/** The id of the review request not yet answered, which review/cancel stops. */
+let unanswered = null;
+const listResult = process.env.FAKE_ENGINE_LIST_RESULT ? JSON.parse(process.env.FAKE_ENGINE_LIST_RESULT) : { outcome: 'listed', groups: [] };
 let marks = [];
 
 if (process.env.FAKE_ENGINE_IGNORE_SIGTERM) {
@@ -94,7 +112,9 @@ function handle(line) {
     return;
   }
   if (log) appendFileSync(log, `${JSON.stringify(request)}\n`);
-  if (stallOn && request.method === stallOn) {
+  if (stallOn?.includes(request.method)) {
+    // A stalled review can still be cancelled, as one still reading the pull request can.
+    if (request.method === 'review') unanswered = request.id;
     return;
   }
   if (exitOn && request.method === exitOn) {
@@ -109,11 +129,22 @@ function handle(line) {
       );
       return;
     }
-    send({ jsonrpc: '2.0', id: request.id, result: { protocolVersion } });
+    const answer = () => send({ jsonrpc: '2.0', id: request.id, result: { protocolVersion } });
+    if (initDelayMs > 0) setTimeout(answer, initDelayMs);
+    else answer();
     return;
   }
   if (request.method === 'agents/probe') {
     send({ jsonrpc: '2.0', id: request.id, result: probeResult });
+    return;
+  }
+  if (request.method === 'agents/test') {
+    if (testResult) send({ jsonrpc: '2.0', id: request.id, result: testResult });
+    else fail(request.id, -32002, 'this engine runs no agent, so it has none to test');
+    return;
+  }
+  if (request.method === 'pullRequests/list') {
+    send({ jsonrpc: '2.0', id: request.id, result: listResult });
     return;
   }
   if (request.method === 'review') {
@@ -121,13 +152,27 @@ function handle(line) {
       fail(request.id, -32002, reviewError);
       return;
     }
+    unanswered = request.id;
     if (stage) {
       send({ jsonrpc: '2.0', method: 'review/stage', params: { id: request.id, ...stage } });
       if (stageOnly) return;
     }
-    const answer = () => send({ jsonrpc: '2.0', id: request.id, result: resultsByUrl?.[request.params.url] ?? reviewResult });
+    const answer = () => {
+      if (unanswered !== request.id) return;
+      unanswered = null;
+      send({ jsonrpc: '2.0', id: request.id, result: resultsByUrl?.[request.params.url] ?? reviewResult });
+    };
     if (answerDelayMs > 0) setTimeout(answer, answerDelayMs);
     else answer();
+    return;
+  }
+  if (request.method === 'review/cancel') {
+    const stopping = unanswered !== null && request.params.id === unanswered;
+    send({ jsonrpc: '2.0', id: request.id, result: { cancelled: stopping } });
+    if (!stopping) return;
+    unanswered = null;
+    if (stoppedResult) send({ jsonrpc: '2.0', id: request.params.id, result: stoppedResult });
+    else fail(request.params.id, -32002, 'the review was stopped before its first result landed');
     return;
   }
   if (request.method === 'sendReview') {
@@ -140,7 +185,7 @@ function handle(line) {
     else answer();
     return;
   }
-  if (request.method === 'fetchLibrary') {
+  if (request.method === 'fetchLibrary' || request.method === 'readCiLog') {
     if (fetchError) fail(request.id, -32002, fetchError);
     else send({ jsonrpc: '2.0', id: request.id, result: fetchResult });
     return;

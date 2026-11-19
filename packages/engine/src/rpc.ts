@@ -12,6 +12,8 @@
  *
  * After the handshake, {@link REVIEW_METHOD} reviews a pull request,
  * {@link FETCH_LIBRARY_METHOD} presses one finding's library fetch,
+ * {@link READ_CI_LOG_METHOD} presses one claim's Read the CI log, both
+ * only when the reviewer presses it,
  * {@link DRAFT_COMMENT_METHOD} drafts a comment from one finding,
  * {@link ASK_METHOD} answers one ask about one part,
  * {@link SEND_REVIEW_METHOD} sends the pending review to GitHub as one
@@ -34,7 +36,7 @@ import type { AgentProbe } from './agent.js';
 import type { AgentTestResult } from './agent-test.js';
 import type { AgentName } from './agents.js';
 import type { AskKind } from './asks.js';
-import type { AskAnswer, AskedClaim, BudgetLimits, DraftComment, FindingRef, PendingReview, ReviewedMarks, ReviewResult, SentReview, ViewedFiles } from './protocol.js';
+import type { AskAnswer, AskedClaim, BudgetLimits, DraftComment, FindingRef, PendingReview, ReviewedMarks, ReviewResult, ReviewStageRecord, SentReview, ViewedFiles } from './protocol.js';
 import type { MarkedPart } from './reviewed-marks.js';
 import type { PullRequestList } from './protocol.js';
 
@@ -200,6 +202,14 @@ export interface ReviewParams {
    * the result carries the use so far.
    */
   budget?: BudgetLimits;
+  /**
+   * True to run a fresh review: Review again. Absent or false, a review
+   * of a pull request whose latest result is saved shows that result at
+   * once and runs no agent pass, or, once the pull request has new
+   * commits since, carries it over for what they did not change and runs
+   * the agent again only for the rest.
+   */
+  fresh?: boolean;
 }
 
 /** The review request's result: the engine's typed, versioned review result. */
@@ -228,6 +238,31 @@ export interface FetchLibraryParams {
 
 /** The fetch request's result: the review result with the claim judged against the library's source. */
 export type FetchLibraryRpcResult = ReviewResult;
+
+/**
+ * The request that presses one claim's Read the CI log, sent only when
+ * the reviewer presses it (ADR 0003): the engine lists the check runs at
+ * the head commit its latest review of the pull request read, downloads
+ * the logs of the GitHub Actions jobs that passed, trimmed as a failed
+ * job's are, and has the agent judge the claim again with them. The claim
+ * is one of that review's, by its index.
+ */
+export const READ_CI_LOG_METHOD = 'readCiLog' as const;
+
+/** One CI log read request: the reviewed pull request, the GitHub token, the claim and the agent that judges it again. */
+export interface ReadCiLogParams {
+  /** The pull request's HTML URL, as the review result names it. */
+  url: string;
+  /** The GitHub token for this request's reads only; never stored. */
+  token: string;
+  /** The claim, by its index in the result's claims. */
+  claim: number;
+  /** The agent, model, effort and account that judge the claim again; see {@link ReviewAgentChoice}. */
+  agent?: ReviewAgentChoice;
+}
+
+/** The CI log read request's result: the review result with the claim judged again with the passing checks' logs. */
+export type ReadCiLogRpcResult = ReviewResult;
 
 /**
  * The request that drafts a comment from one finding, sent only when the
@@ -367,6 +402,8 @@ export interface ReviewStageParams {
   timeoutMs: number;
   /** The result so far. */
   result: ReviewResult;
+  /** The stage now running: its id, position, start time and the agent, model and effort working on it; the result's stages carry every stage. */
+  stage?: ReviewStageRecord;
 }
 
 /** A notification the engine writes: no id, a method and its params. */
@@ -427,3 +464,23 @@ export interface ListPullRequestsParams {
 
 /** The list request's result: the groups, or why the reviewer is not signed in or GitHub could not be reached. */
 export type ListPullRequestsRpcResult = PullRequestList;
+
+/**
+ * The request that cancels a running review, sent when the reviewer stops
+ * it: the stage running stops, its agent run with it, and the review
+ * request answers with the results that already landed, every stage not
+ * run marked stopped. A review stopped before its first result landed
+ * fails with a plain message instead.
+ */
+export const CANCEL_REVIEW_METHOD = 'review/cancel' as const;
+
+/** One cancel request: the review request to stop. */
+export interface CancelReviewParams {
+  /** The id of the review request to stop. */
+  id: number;
+}
+
+/** The cancel request's result: whether that review was running and is now stopping; false when it had already finished or never ran. */
+export interface CancelReviewRpcResult {
+  cancelled: boolean;
+}

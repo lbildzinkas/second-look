@@ -3,21 +3,25 @@ import { NO_MARKS, applyMark, changePieces, markedPart, type AgentGrouping, type
 import {
   anchorOf,
   buildTree,
+  CARRIED_OVER,
+  carriedOverLine,
   CHANGED_SINCE_LAST_LOOK,
   CHANGED_SINCE_MARKED,
   claimCountText,
   findingBadge,
   findAnchor,
   NOISE,
+  RECHECKED,
   NOT_RANKED_YET,
   partsInReadingOrder,
   reviewBadge,
   reviewStatus,
   sinceLastLookLine,
   treeMessage,
+  earlierCommitLine,
   UNEXPLAINED_BADGE,
 } from '../src/tree.js';
-import { claimsResult, judgedResult, mixedResult, part, result, unexplainedResult } from './results.js';
+import { carriedResult, claimsResult, judgedResult, mixedResult, part, result, settledResult, unexplainedResult } from './results.js';
 import type { TreeFilter, TreePart } from '../src/tree.js';
 
 /** A hunk adding one line at the given place, on both sides. */
@@ -233,8 +237,17 @@ describe('claim counts in the tree', () => {
       findings: 2,
       description: '⚠ 2 findings · 3 claims · New code the send path now runs on every delivery.',
     });
-    expect(mustReview!.parts[0]!.tooltip).toContain('3 claims, 2 refuted or unverifiable, each a thread on the diff; the overview lists them');
+    expect(mustReview!.parts[0]!.tooltip).toContain("3 claims, 2 refuted, or unverifiable the code or a library's source could settle, each a thread on the diff; the overview lists them");
     expect(worthReviewing!.parts[0]).toMatchObject({ claims: 1, findings: 1, description: '⚠ 1 finding · 1 claim · Changed code that the retry policy reads.' });
+  });
+
+  it('counts no claim the code cannot settle among a part\u2019s findings', () => {
+    const counts = (shown: ReturnType<typeof judgedResult>) => buildTree(shown).flatMap((section) => section.parts.map((each) => [(each as TreePart).claims, (each as TreePart).findings]));
+    // The two quiet claims add to their part's claims, never to its findings.
+    const judged = counts(judgedResult());
+    const settled = counts(settledResult());
+    expect(settled.map(([, findings]) => findings)).toEqual(judged.map(([, findings]) => findings));
+    expect(settled.reduce((sum, [claims]) => sum + (claims ?? 0), 0)).toBe(judged.reduce((sum, [claims]) => sum + (claims ?? 0), 0) + 2);
   });
 
   it('badges no part whose judged claims are all verified', () => {
@@ -247,12 +260,30 @@ describe('claim counts in the tree', () => {
     expect(mustReview!.parts[0]!.tooltip).toContain('1 claim, all verified; the overview lists them');
   });
 
+  it('says a part whose only judged claims the code cannot settle holds no finding, not that all are verified', () => {
+    const shown = settledResult();
+    const authors = {
+      ...shown,
+      claims: {
+        ...shown.claims!,
+        claims: shown.claims!.claims.map((claim, index) =>
+          index === 3
+            ? { ...claim, verdict: { kind: 'unverifiable' as const, source: 'the change itself' as const, reason: 'Nothing in the change can show it.', evidence: [], looked: [], settles: { kind: 'author' as const, note: "the measured numbers come from the author's own run" } } }
+            : claim,
+        ),
+      },
+    };
+    const [, worthReviewing] = buildTree(authors);
+    expect(worthReviewing!.parts[0]).not.toHaveProperty('findings');
+    expect(worthReviewing!.parts[0]!.tooltip).toContain('1 claim, none is a finding, 1 the code cannot settle; the overview lists them');
+  });
+
   it('badges a claim the verify ask judged when the pass did not judge, and says where its verdict came from', () => {
     const shown = claimsResult();
     const asked = {
       ...shown.claims!.claims[0]!,
       asked: true as const,
-      verdict: { kind: 'refuted' as const, source: 'the change itself' as const, reason: 'The loop runs five times.', evidence: [] },
+      verdict: { kind: 'refuted' as const, source: 'the change itself' as const, reason: 'The loop runs five times.', evidence: [], looked: [] },
     };
     const unjudged = { ...shown, claims: { ...shown.claims!, claims: [asked, ...shown.claims!.claims.slice(1)] } };
 
@@ -264,7 +295,7 @@ describe('claim counts in the tree', () => {
       description: '⚠ 1 finding · 3 claims · New code the send path now runs on every delivery.',
     });
     expect(mustReview!.parts[0]!.tooltip).toContain(
-      '3 claims, 1 checked by the Verify this claim ask, 1 refuted or unverifiable, each a thread on the diff, the verdicts pass did not run; the overview lists them',
+      "3 claims, 1 checked by the Verify this claim ask, 1 refuted, or unverifiable the code or a library's source could settle, each a thread on the diff, the verdicts pass did not run; the overview lists them",
     );
 
     const fellBack = {
@@ -273,7 +304,7 @@ describe('claim counts in the tree', () => {
     };
     const [fell] = buildTree(fellBack);
     expect(fell!.parts[0]!.tooltip).toContain(
-      '3 claims, 1 checked by the Verify this claim ask, 1 refuted or unverifiable, each a thread on the diff, the judging pass fell back; the overview lists them',
+      "3 claims, 1 checked by the Verify this claim ask, 1 refuted, or unverifiable the code or a library's source could settle, each a thread on the diff, the judging pass fell back; the overview lists them",
     );
   });
 });
@@ -493,6 +524,34 @@ describe('since your last look in the tree', () => {
     expect(sinceLastLookLine(result([cart, money]))).toBeUndefined();
     expect(sinceLastLookLine(since())).toBe('Since your last look at abcdef0 on 2026-10-01: 1 of 2 parts changed.');
     expect(sinceLastLookLine(since({ from: 'github review' }))).toBe('Since your last GitHub review at abcdef0 on 2026-10-01: 1 of 2 parts changed.');
+  });
+
+  it('says first that a saved review is of an earlier commit, never the current one', () => {
+    const earlier = { ...since(), saved: { reviewedAt: '2026-10-11T14:03:27.000Z', newHead: 'abcdef0123456789abcdef0123456789abcdef01' } };
+    expect(earlierCommitLine(since())).toBeUndefined();
+    expect(earlierCommitLine({ ...since(), saved: { reviewedAt: '2026-10-11T14:03:27.000Z' } })).toBeUndefined();
+    expect(treeMessage(earlier)).toBe(
+      `This saved review is of an earlier commit, ${earlier.pullRequest.headSha.slice(0, 7)}: the pull request has new commits, up to abcdef0. Review again to review them. Since your last look at abcdef0 on 2026-10-01: 1 of 2 parts changed.`,
+    );
+  });
+
+  it('says what a review carried over from the saved review of an earlier commit, and marks each part carried over or re-checked', () => {
+    const shown = carriedResult();
+    const line = `Re-checked only what changed since the review of 5555555 on 2026-10-11: 1 of ${shown.parts.length} parts and 2 of 4 claims carried over from it, the rest re-checked.`;
+    expect(carriedOverLine(judgedResult())).toBeUndefined();
+    expect(carriedOverLine(shown)).toBe(line);
+    expect(treeMessage(shown)).toBe(line);
+
+    const shownNodes = buildTree(shown).flatMap((section) => section.parts) as TreePart[];
+    const node = (index: number) => shownNodes.find((each) => each.part === shown.parts[index])!;
+    expect(node(0).description).toContain(CARRIED_OVER);
+    expect(node(0).tooltip).toContain('Carried over from the review of 5555555: its code did not change since.');
+    expect(node(1).description).toContain(RECHECKED);
+    expect(node(1).tooltip).toContain('Re-checked: its code changed since the review of 5555555.');
+    // A review that ran in full says neither.
+    for (const each of buildTree(judgedResult()).flatMap((section) => section.parts) as TreePart[]) {
+      expect(each.description ?? '').not.toMatch(/carried over|re-checked/);
+    }
   });
 
   it('puts the last look above the review status, saying when the filter is on', () => {

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ENGINE_FAILED_CODE,
   ENGINE_PROTOCOL_VERSION,
@@ -8,7 +8,9 @@ import {
   NOT_INITIALIZED_CODE,
   REVIEW_STAGE_METHOD,
   VERSION_MISMATCH_CODE,
+  type ReviewStageParams,
 } from '../src/rpc.js';
+import type { AgentAdapter, AgentRunRequest } from '../src/agent.js';
 import type { AgentName } from '../src/agents.js';
 import type { ScriptedAgent } from './helpers.js';
 import { CLAIMS_INSTRUCTIONS } from '../src/claims.js';
@@ -17,13 +19,15 @@ import { EXPLAIN_INSTRUCTIONS } from '../src/explain.js';
 import { UNEXPLAINED_INSTRUCTIONS } from '../src/unexplained.js';
 import { GROUPING_INSTRUCTIONS } from '../src/grouping.js';
 import { LIBRARY_VERDICTS_INSTRUCTIONS } from '../src/library-verdicts.js';
-import { VERDICTS_INSTRUCTIONS, VERDICTS_PROMPT_VERSION } from '../src/verdicts.js';
+import { VERDICTS_INSTRUCTIONS, VERDICTS_PROMPT_VERSION, verdictsInstructions } from '../src/verdicts.js';
 import { DEFAULT_EFFORT } from '../src/ranking.js';
 import { runRpcServer, type RpcAgentDeps } from '../src/server.js';
 import { markedPart } from '../src/reviewed-marks.js';
 import { readLooks, recordLook } from '../src/last-look.js';
 import type { ReviewResult } from '../src/protocol.js';
-import { removeCopy } from '../src/cache.js';
+import { pullRequestCacheDir, removeCopy } from '../src/cache.js';
+import { parsePullRequestUrl } from '../src/github.js';
+import { readSavedReview, SAVED_REVIEW_FILE } from '../src/saved-review.js';
 import {
   PR_7_URL,
   PR_URL,
@@ -31,6 +35,7 @@ import {
   answeringAgent,
   fixtureFetch,
   offeredParts,
+  pull42,
   pull7,
   pypiFetch,
   recordedFetch,
@@ -41,6 +46,7 @@ import {
   zipArchive,
 } from './helpers.js';
 import { readFileSync } from 'node:fs';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import type { PullRequestList } from '../src/protocol.js';
 import { failingFetch } from './helpers.js';
@@ -49,11 +55,13 @@ const TOKEN = 'ghp_test-token-do-not-print';
 
 let cacheDir: string;
 
-beforeAll(() => {
+// Each test starts with an empty cache, so no review finds the result an
+// earlier test saved.
+beforeEach(() => {
   cacheDir = temporaryCacheDir();
 });
 
-afterAll(async () => {
+afterEach(async () => {
   await removeCopy(cacheDir);
 });
 
@@ -135,7 +143,7 @@ describe('runRpcServer', () => {
           if (index === lines.length) {
             index++;
             await answered;
-            return request('review', { url: PR_URL, token: 'ghp_another-token' }, 3);
+            return request('review', { url: PR_URL, token: 'ghp_another-token', fresh: true }, 3);
           }
           return null;
         },
@@ -152,7 +160,7 @@ describe('runRpcServer', () => {
 
     expect(responses[0]!.result).toEqual({ protocolVersion: ENGINE_PROTOCOL_VERSION });
     const first = responses[1]!.result as { version: number; parts: unknown[] };
-    expect(first.version).toBe(20);
+    expect(first.version).toBe(25);
     expect(first.parts).toHaveLength(11);
     const second = responses[2]!.result as { parts: unknown[] };
     expect(second.parts).toHaveLength(11);
@@ -160,8 +168,8 @@ describe('runRpcServer', () => {
     // (metadata, diff), the attributes, the merge base, the linked issues,
     // the check runs, the reviewer and their reviews, for want of an
     // earlier look, and on the first run the two commit archives —
-    // always with the token its own request carried; the second review at
-    // the same commits reuses the archives.
+    // always with the token its own request carried; the second review, a
+    // fresh one at the same commits, reuses the archives.
     const authorizations = transport.requests.map((request) => request.authorization);
     expect(authorizations.slice(0, 10)).toEqual(Array<string>(10).fill(`token ${TOKEN}`));
     expect(authorizations.slice(10)).toEqual(Array<string>(8).fill('token ghp_another-token'));
@@ -261,7 +269,7 @@ describe('runRpcServer', () => {
     expect(responses[0]!.id).toBeNull();
     expect(responses[0]!.error!.message).toContain('not JSON');
     expect(responses[1]!.error!.message).toContain('unknown method: start');
-    expect(responses[1]!.error!.message).toContain('initialize, agents/probe, agents/test, review, fetchLibrary, draftComment, ask, sendReview, reviewedMarks, markReviewed, markViewed and pullRequests/list');
+    expect(responses[1]!.error!.message).toContain('initialize, agents/probe, agents/test, review, review/cancel, fetchLibrary, readCiLog, draftComment, ask, sendReview, reviewedMarks, markReviewed, markViewed and pullRequests/list');
     expect(responses[2]!.result).toEqual({ protocolVersion: ENGINE_PROTOCOL_VERSION });
   });
 
@@ -296,7 +304,7 @@ describe('runRpcServer', () => {
       transport.fetch,
     );
 
-    expect(responses[1]!.result).toEqual({ url: SENT_REVIEW_URL });
+    expect(responses[1]!.result).toEqual({ url: SENT_REVIEW_URL, commit: pull42().headSha });
     // Only the send wrote, and it wrote once, with the request's token.
     const writes = transport.requests.filter((served) => served.method === 'POST');
     expect(writes).toHaveLength(1);
@@ -359,6 +367,86 @@ describe('runRpcServer', () => {
   });
 });
 
+describe('runRpcServer cancelling a review', () => {
+  it('stops the stage running, answers the review with what landed and every stage not run stopped, and sends no stage after', async () => {
+    const lines = [
+      request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+      request('review', { url: PR_7_URL, token: TOKEN, agent: { agent: 'pi', model: 'fake/model', effort: 'high' } }, 2),
+    ];
+    // The grouping run goes on until it is stopped.
+    const grouping: AgentRunRequest[] = [];
+    const agent: AgentAdapter = {
+      ...scriptedAgent([]),
+      run: async (run) => {
+        grouping.push(run);
+        await new Promise((resolve) => run.signal!.addEventListener('abort', resolve, { once: true }));
+        return { status: 'failed', text: '', error: 'stopped', stamp: { agent: 'fake', agentVersion: '1.2.3', model: null, effort: null, runAt: new Date().toISOString() } };
+      },
+    };
+    const written: string[] = [];
+    let stageSeen: () => void = () => undefined;
+    const firstStage = new Promise<void>((resolve) => (stageSeen = resolve));
+    let index = 0;
+    await runRpcServer(
+      {
+        readLine: async () => {
+          if (index < lines.length) return lines[index++] as string;
+          if (index === lines.length) {
+            index++;
+            await firstStage;
+            return request('review/cancel', { id: 2 }, 3);
+          }
+          return null;
+        },
+      },
+      {
+        writeLine: (line) => {
+          written.push(line);
+          if (line.includes(REVIEW_STAGE_METHOD)) stageSeen();
+        },
+      },
+      { cacheDir, fetch: fixtureFetch(pull7()).fetch, agent: { adapterFor: () => agent, defaultAgent: 'pi' } },
+    );
+
+    const messages = written.map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(messages.map((message) => message['id'] ?? message['method'])).toEqual([1, REVIEW_STAGE_METHOD, 3, 2]);
+    const stage = (messages[1]!['params'] as ReviewStageParams).stage!;
+    expect(stage).toMatchObject({ id: 'grouping', position: 2, total: 9, state: 'running', agent: { agent: 'fake', model: 'fake/model', effort: 'high' } });
+    expect(Date.parse(stage.startedAt!)).not.toBeNaN();
+    expect(messages[2]).toMatchObject({ id: 3, result: { cancelled: true } });
+    expect(grouping).toHaveLength(1);
+    const result = messages[3]!['result'] as ReviewResult;
+    // The plain parts landed and stay; the grouping was stopped and the rest never ran.
+    expect(result.grouping).toEqual({ by: 'plain' });
+    expect(result.parts.length).toBeGreaterThan(0);
+    expect(result.stages!.map((each) => `${each.id}: ${each.state}`)).toEqual([
+      'plain: done',
+      'grouping: stopped',
+      'ranking: stopped',
+      'story: stopped',
+      'unexplained: stopped',
+      'claims: stopped',
+      'verdicts: stopped',
+      'criteria: stopped',
+      'docLinks: stopped',
+    ]);
+    expect(result.story).toBeUndefined();
+    expect(result.claims).toBeUndefined();
+  });
+
+  it('answers a cancel of a review that is not running, and refuses one that names no review or comes before the handshake', async () => {
+    const responses = await serve([
+      request('review/cancel', { id: 2 }, 1),
+      request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }, 2),
+      request('review/cancel', { id: 9 }, 3),
+      request('review/cancel', { id: 'two' }, 4),
+    ]);
+    expect(responses[0]!.error).toMatchObject({ code: NOT_INITIALIZED_CODE, message: expect.stringContaining('initialize before review/cancel') });
+    expect(responses[2]).toMatchObject({ id: 3, result: { cancelled: false } });
+    expect(responses[3]!.error).toMatchObject({ code: JSON_RPC_INVALID_PARAMS, message: 'review/cancel needs params: { "id": number }, the id of the review request to stop' });
+  });
+});
+
 describe('runRpcServer with an agent', () => {
   it('sends the plain result as a stage notification before the answer with the agent parts, story, unexplained changes and claims', async () => {
     const lines = [
@@ -395,7 +483,7 @@ describe('runRpcServer with an agent', () => {
         id: 2,
         running: 'grouping related hunks with fake',
         timeoutMs: 660_000,
-        result: { version: 20, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
+        result: { version: 25, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
       },
     });
     // The fake agent has no tested ranking, so the story stage follows the grouping.
@@ -480,7 +568,7 @@ describe('runRpcServer with an agent', () => {
     const send = responses.find((response) => response.id === 3);
     const review = responses.find((response) => response.id === 2);
     expect(responses.indexOf(send!)).toBeLessThan(responses.indexOf(review!));
-    expect(send!.result).toEqual({ url: SENT_REVIEW_URL });
+    expect(send!.result).toEqual({ url: SENT_REVIEW_URL, commit: pull7().headSha });
     expect(review!.result).toMatchObject({ grouping: { by: 'agent' } });
     expect((review!.result as { parts: unknown[] }).parts).toHaveLength(2);
   });
@@ -553,7 +641,7 @@ describe('runRpcServer with an agent', () => {
       [
         request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
         request('review', { url: PR_7_URL, token: TOKEN, agent: { agent: 'pi', model: 'pi/model', account: 'Pi personal key' } }, 2),
-        request('review', { url: PR_7_URL, token: TOKEN, agent: { agent: 'claude-code', model: 'claude/model', account: 'Claude Max (work)' } }, 3),
+        request('review', { url: PR_7_URL, token: TOKEN, agent: { agent: 'claude-code', model: 'claude/model', account: 'Claude Max (work)' }, fresh: true }, 3),
       ],
       {
         adapterFor: (name) => (name === 'pi' ? pi : claude),
@@ -588,7 +676,7 @@ describe('runRpcServer with an agent', () => {
       [
         request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
         request('review', { url: PR_7_URL, token: TOKEN, agent: { agent: 'claude-code', model: 'claude/model', effort: 'high' } }, 2),
-        request('review', { url: PR_7_URL, token: TOKEN, agent: { agent: 'claude-code', model: 'claude/model', effort: '' } }, 3),
+        request('review', { url: PR_7_URL, token: TOKEN, agent: { agent: 'claude-code', model: 'claude/model', effort: '' }, fresh: true }, 3),
       ],
       {
         adapterFor: () => claude,
@@ -755,6 +843,160 @@ describe('runRpcServer with an agent', () => {
   });
 });
 
+describe('runRpcServer keeping the latest review', () => {
+  const ref = parsePullRequestUrl(PR_7_URL)!;
+  const HEAD = pull7().headSha;
+  const EARLIER = '5555555555555555555555555555555555555555';
+
+  /**
+   * Serves the lines on a new engine, as a restarted editor starts one,
+   * with an agent that answers every pass and records every run, or with
+   * none when `withAgent` is false; returns the answers and the GitHub
+   * requests made.
+   */
+  async function serveEngine(lines: string[], agent = answeringAgent(() => ({})), withAgent = true) {
+    const transport = fixtureFetch(pull7());
+    let index = 0;
+    const written: string[] = [];
+    const agents = { adapterFor: () => agent, defaultAgent: 'pi' as const, settings: { timeoutMs: 10_000, concurrency: 1, effort: 'high' } };
+    await runRpcServer(
+      { readLine: async () => (index < lines.length ? (lines[index++] as string) : null) },
+      { writeLine: (line) => written.push(line) },
+      { cacheDir, fetch: transport.fetch, ...(withAgent ? { agent: agents } : {}) },
+    );
+    const responses = written.map((line) => JSON.parse(line) as Response);
+    return { answer: (id: number) => responses.find((response) => response.id === id)!, agent, github: transport.requests };
+  }
+
+  const reviewLines = (params: Record<string, unknown> = {}) => [
+    request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+    request('review', { url: PR_7_URL, token: TOKEN, ...params }, 2),
+  ];
+
+  /** Rewrites the saved record on disk, as an older engine or an earlier visit would have left it. */
+  async function rewriteRecord(change: (record: Record<string, unknown> & { result: ReviewResult }) => void): Promise<void> {
+    const path = join(pullRequestCacheDir(cacheDir, ref), SAVED_REVIEW_FILE);
+    const record = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown> & { result: ReviewResult };
+    change(record);
+    await writeFile(path, JSON.stringify(record), 'utf8');
+  }
+
+  it('saves each review, and a later engine shows it at once at the same head commit, labelled, with no agent run', async () => {
+    const first = await serveEngine(reviewLines());
+    const reviewed = first.answer(2).result as ReviewResult;
+    expect(first.agent.requests.length).toBeGreaterThan(0);
+    expect(reviewed.saved).toBeUndefined();
+    const saved = await readSavedReview(cacheDir, ref);
+    expect(saved).toMatchObject({ version: 25, commit: HEAD, agent: { agent: 'fake', model: null, effort: 'high' } });
+    expect(Date.parse(saved!.reviewedAt)).not.toBeNaN();
+    expect(JSON.stringify(saved)).not.toContain(TOKEN);
+    const looks = await readLooks(cacheDir, ref);
+
+    const again = await serveEngine(reviewLines());
+    const shown = again.answer(2).result as ReviewResult;
+    // Only the pull request's metadata is read, to learn its head now; no agent runs and no look is recorded.
+    expect(again.agent.requests).toHaveLength(0);
+    expect(again.github.map((each) => each.url)).toEqual([`https://api.github.com/repos/example-org/example-repo/pulls/7`]);
+    expect(await readLooks(cacheDir, ref)).toEqual(looks);
+    expect(shown.saved).toEqual({ reviewedAt: saved!.reviewedAt, agent: { agent: 'fake', model: null, effort: 'high' } });
+    // The result is the one saved, read from the copies the cache still holds.
+    const { saved: _label, ...kept } = shown;
+    const { base, head } = reviewed.copies;
+    expect(kept).toEqual({ ...reviewed, copies: { base: { ...base, reused: true }, head: { ...head, reused: true } } });
+  });
+
+  it('runs a fresh review when asked to review again, and saves it over the one before', async () => {
+    await serveEngine(reviewLines());
+    await rewriteRecord((record) => {
+      record['reviewedAt'] = '2026-01-01T00:00:00.000Z';
+    });
+
+    const again = await serveEngine(reviewLines({ fresh: true }));
+    const shown = again.answer(2).result as ReviewResult;
+    expect(again.agent.requests.length).toBeGreaterThan(0);
+    expect(shown.saved).toBeUndefined();
+    expect((await readSavedReview(cacheDir, ref))!.reviewedAt).not.toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  /** Saves a review, then leaves it as the saved review of an earlier commit, whose read-only copy the cache still holds. */
+  async function savedAtEarlierCommit(): Promise<void> {
+    await serveEngine(reviewLines());
+    await rewriteRecord((record) => {
+      record['commit'] = EARLIER;
+      record['reviewedAt'] = '2026-01-01T00:00:00.000Z';
+      record.result.pullRequest.headSha = EARLIER;
+      record.result.copies.head.commit = EARLIER;
+    });
+    await mkdir(join(pullRequestCacheDir(cacheDir, ref), EARLIER));
+  }
+
+  it('reviews only what new commits changed since the saved review, carrying the rest over, labelled, and saves it', async () => {
+    await savedAtEarlierCommit();
+
+    const again = await serveEngine(reviewLines());
+    const shown = again.answer(2).result as ReviewResult;
+    expect(shown.saved).toBeUndefined();
+    expect(shown.pullRequest.headSha).toBe(HEAD);
+    expect(shown.carriedOver).toEqual({ commit: EARLIER, reviewedAt: '2026-01-01T00:00:00.000Z', agent: { agent: 'fake', model: null, effort: 'high' } });
+    // The change's code is as the earlier review read it, so every part carries over, with its grouping, its ranking and the documentation links.
+    expect(shown.parts.every((part) => part.carried)).toBe(true);
+    expect(shown.stages!.filter((stage) => stage.state === 'carried over').map((stage) => stage.id)).toEqual(['grouping', 'ranking', 'docLinks']);
+    expect(await readSavedReview(cacheDir, ref)).toMatchObject({ commit: HEAD, result: { carriedOver: { commit: EARLIER } } });
+  });
+
+  it('shows the saved review as from an earlier commit when no agent can review the new commits, and runs nothing', async () => {
+    await savedAtEarlierCommit();
+
+    const again = await serveEngine(reviewLines(), undefined, false);
+    const shown = again.answer(2).result as ReviewResult;
+    expect(shown.pullRequest.headSha).toBe(EARLIER);
+    expect(shown.copies.head).toMatchObject({ commit: EARLIER, reused: true });
+    expect(shown.saved).toMatchObject({ newHead: HEAD });
+    expect(shown).not.toHaveProperty('carriedOver');
+  });
+
+  it('runs a fresh review when asked to review again after new commits, carrying nothing over', async () => {
+    await savedAtEarlierCommit();
+
+    const again = await serveEngine(reviewLines({ fresh: true }));
+    const shown = again.answer(2).result as ReviewResult;
+    expect(shown).not.toHaveProperty('carriedOver');
+    expect(shown.parts.some((part) => part.carried)).toBe(false);
+  });
+
+  it('reviews afresh when the saved review\u2019s commit is gone from the cache and from GitHub', async () => {
+    await serveEngine(reviewLines());
+    await rewriteRecord((record) => {
+      record['commit'] = EARLIER;
+      record.result.pullRequest.headSha = EARLIER;
+      record.result.copies.head.commit = EARLIER;
+    });
+
+    const again = await serveEngine(reviewLines());
+    expect(again.agent.requests.length).toBeGreaterThan(0);
+    expect(again.answer(2).result).toMatchObject({ pullRequest: { headSha: HEAD } });
+    expect((again.answer(2).result as ReviewResult).saved).toBeUndefined();
+  });
+
+  it('ignores a review saved at another result version, and reviews afresh', async () => {
+    await serveEngine(reviewLines());
+    await rewriteRecord((record) => {
+      record['version'] = 21;
+      (record.result as { version: number }).version = 21;
+    });
+
+    const again = await serveEngine(reviewLines());
+    expect(again.agent.requests.length).toBeGreaterThan(0);
+    expect((again.answer(2).result as ReviewResult).saved).toBeUndefined();
+    expect(await readSavedReview(cacheDir, ref)).toMatchObject({ version: 25 });
+  });
+
+  it('refuses a fresh flag that is not a boolean', async () => {
+    const { answer } = await serveEngine(reviewLines({ fresh: 'yes' }));
+    expect(answer(2).error).toEqual({ code: JSON_RPC_INVALID_PARAMS, message: 'review: fresh must be a boolean' });
+  });
+});
+
 describe('runRpcServer fetching a library', () => {
   // A cache of its own: the head copy here pins httpx, unlike the copy of
   // pull request 7 the other tests leave in theirs.
@@ -788,7 +1030,7 @@ describe('runRpcServer fetching a library', () => {
     return answeringAgent((run) => {
       if (run.instructions === CLAIMS_INSTRUCTIONS) return { claims: [{ source: 'description', quote: CLAIM, file: null, line: null, part: 'p1' }] };
       if (run.instructions === VERDICTS_INSTRUCTIONS) {
-        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: `It turns on ${library}.`, evidence: [], library }] };
+        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: `It turns on ${library}.`, evidence: [], looked: [], settles: { kind: 'library', note: 'Its source would settle it.' }, library }] };
       }
       if (run.instructions === EXPLAIN_INSTRUCTIONS) {
         const [, file] = /^file "([^"]+)"/m.exec(run.prompt)!;
@@ -889,7 +1131,7 @@ describe('runRpcServer fetching a library', () => {
     });
     expect(pypiBeforeFetch).toBe(0);
     expect(answer(3).result).toMatchObject({
-      version: 20,
+      version: 25,
       claims: {
         claims: [
           {
@@ -959,7 +1201,7 @@ describe('runRpcServer fetching a library', () => {
       const { answer } = await serveInTurn(
         [
           request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
-          request('review', { url: PR_7_URL, token: TOKEN, budget }, 2),
+          request('review', { url: PR_7_URL, token: TOKEN, budget, fresh: true }, 2),
           request('ask', { url: PR_7_URL, ask: 'explain', part: 0 }, 3),
           request('draftComment', { url: PR_7_URL, finding: { kind: 'claim', index: 0 } }, 4),
           request('fetchLibrary', { url: PR_7_URL, claim: 0 }, 5),
@@ -1014,7 +1256,7 @@ describe('runRpcServer fetching a library', () => {
 
     expect(answer(3).error).toBeUndefined();
     expect(answer(3).result).toMatchObject({
-      version: 20,
+      version: 25,
       claims: {
         claims: [
           {
@@ -1137,6 +1379,9 @@ describe('runRpcServer fetching a library', () => {
     const claims = (answer(4).result as ReviewResult).claims!.claims;
     expect(claims.map((claim) => claim.quote)).toEqual([CLAIM, 'def fresh():']);
     expect(claims[1]!.verdict).toMatchObject({ kind: 'refuted', source: 'library source at the pinned version', library: { library: 'httpx' } });
+    // The saved review follows the ask's claim and the fetch's verdict.
+    const saved = await readSavedReview(libraryCacheDir, parsePullRequestUrl(PR_7_URL)!);
+    expect(saved!.result.claims!.claims).toEqual(claims);
   });
 
   it('marks a claim the verify ask judged alone though the review\u2019s judging fell back, and its pressed fetch lands', async () => {
@@ -1147,7 +1392,7 @@ describe('runRpcServer fetching a library', () => {
       if (run.instructions === VERDICTS_INSTRUCTIONS) {
         verdictRuns += 1;
         if (verdictRuns <= 2) return {};
-        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: 'It turns on httpx.', evidence: [], library: 'httpx' }] };
+        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: 'It turns on httpx.', evidence: [], looked: [], settles: { kind: 'library', note: 'Its source would settle it.' }, library: 'httpx' }] };
       }
       if (run.instructions === LIBRARY_VERDICTS_INSTRUCTIONS) {
         return {
@@ -1191,7 +1436,7 @@ describe('runRpcServer fetching a library', () => {
     state = transports();
     const agent = answeringAgent((run) => {
       if (run.instructions === VERDICTS_INSTRUCTIONS) {
-        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: 'It turns on httpx.', evidence: [], library: 'httpx' }] };
+        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: 'It turns on httpx.', evidence: [], looked: [], settles: { kind: 'library', note: 'Its source would settle it.' }, library: 'httpx' }] };
       }
       if (run.instructions === LIBRARY_VERDICTS_INSTRUCTIONS) {
         return {
@@ -1289,6 +1534,156 @@ describe('runRpcServer fetching a library', () => {
     expect(answers[2]).toMatchObject({ id: 3, error: { code: JSON_RPC_INVALID_PARAMS } });
     expect(answers[3]).toMatchObject({ id: 4, error: { code: JSON_RPC_INVALID_PARAMS } });
     expect(state.pypi.requests).toEqual([]);
+  });
+});
+
+describe('runRpcServer reading a passing check\u2019s CI log', () => {
+  const CHECK_CLAIM = 'The full description must never be truncated by the companion, whatever its length.';
+  const API = 'https://api.github.com/repos/example-org/example-repo';
+
+  /** Answers the claims pass with the description's claim, unverifiable until a passing check's log is shown, then verified by its line. */
+  function ciAgent(): ScriptedAgent {
+    return answeringAgent((run) => {
+      if (run.instructions === CLAIMS_INSTRUCTIONS) return { claims: [{ source: 'description', quote: CHECK_CLAIM, file: null, line: null, part: 'p1' }] };
+      if (run.instructions === verdictsInstructions(true)) {
+        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: 'Only a check run shows it.', evidence: [], looked: [], settles: { kind: 'ci-log', note: 'the lint check would show it' }, library: null }] };
+      }
+      if (run.instructions === verdictsInstructions(true, true)) {
+        return { verdicts: [{ id: 'c1', verdict: 'verified', source: 'a CI log', reason: 'The lint check passed.', evidence: [{ file: 'log1', line: 11, quote: 'Lint passed with 0 errors.' }], looked: [], settles: null, library: null }] };
+      }
+      return {};
+    });
+  }
+
+  /** Serves the lines, each request after the review held back until the one before it is answered; returns the answers and the GitHub reads made before the press. */
+  async function serveCi(lines: string[], agent = ciAgent()) {
+    const transport = fixtureFetch({ ...pull42(), ci: true });
+    const written: string[] = [];
+    const waiting = new Map<number, () => void>();
+    const answered = (id: number) => new Promise<void>((resolve) => waiting.set(id, resolve));
+    let index = 0;
+    let before: string[] = [];
+    let previous: Promise<void> | undefined;
+    await runRpcServer(
+      {
+        readLine: async () => {
+          if (previous !== undefined) await previous;
+          const line = lines[index++];
+          if (line === undefined) return null;
+          const { id } = JSON.parse(line) as { id: number };
+          if (line.includes('"readCiLog"') && before.length === 0) before = transport.requests.map((each) => each.url);
+          previous = id === 1 ? undefined : answered(id);
+          return line;
+        },
+      },
+      {
+        writeLine: (line) => {
+          written.push(line);
+          const { id } = JSON.parse(line) as Response;
+          if (typeof id === 'number') waiting.get(id)?.();
+        },
+      },
+      { cacheDir, fetch: transport.fetch, agent: { adapterFor: () => agent, defaultAgent: 'pi' } },
+    );
+    const responses = written.map((line) => JSON.parse(line) as Response);
+    return { answer: (id: number) => responses.find((response) => response.id === id)!, before, agent };
+  }
+
+  it('offers Read the CI log with the review, reads no passing log until it is pressed, then judges the claim again citing it', async () => {
+    const { answer, before } = await serveCi([
+      request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+      request('review', { url: PR_URL, token: TOKEN }, 2),
+      request('readCiLog', { url: PR_URL, token: TOKEN, claim: 0 }, 3),
+    ]);
+
+    expect(answer(2).error).toBeUndefined();
+    expect((answer(2).result as ReviewResult).claims!.claims[0]!.verdict).toMatchObject({
+      kind: 'unverifiable',
+      settles: { kind: 'ci-log' },
+      ciLogFetch: { checks: ['check / lint'], reason: 'check / lint passed at the head commit; reading its log could settle the claim.' },
+    });
+    // Before the press only the failed job's log was read.
+    expect(before.filter((url) => url.includes('/logs'))).toEqual([`${API}/actions/jobs/9001/logs`]);
+
+    expect(answer(3).error).toBeUndefined();
+    const result = answer(3).result as ReviewResult;
+    expect(result.claims!.claims[0]!.verdict).toMatchObject({
+      kind: 'verified',
+      source: 'a CI log',
+      evidence: [{ path: 'check / lint', line: 11, quote: 'Lint passed with 0 errors.', ciLog: true, passingCheck: true }],
+      ciLogFetch: { checks: ['check / lint'] },
+      ciLogs: {
+        checks: [{ name: 'check / lint', url: 'https://github.com/example-org/example-repo/actions/runs/700/job/9002', detail: 'the log marks no failing step, so its last 13 lines are kept' }],
+        promptVersion: VERDICTS_PROMPT_VERSION,
+        stamp: { agent: 'fake' },
+      },
+    });
+    expect(JSON.stringify(answer(3))).not.toContain(TOKEN);
+    // The saved review follows the new verdict.
+    const saved = await readSavedReview(cacheDir, parsePullRequestUrl(PR_URL)!);
+    expect(saved!.result.claims!.claims).toEqual(result.claims!.claims);
+  });
+
+  it("offers the library fetch again, or says why not, when the claim judged with the log needs a library", async () => {
+    const agent = answeringAgent((run) => {
+      if (run.instructions === CLAIMS_INSTRUCTIONS) return { claims: [{ source: 'description', quote: CHECK_CLAIM, file: null, line: null, part: 'p1' }] };
+      if (run.instructions === verdictsInstructions(true)) {
+        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: 'Only a check run shows it.', evidence: [], looked: [], settles: { kind: 'ci-log', note: 'the lint check would show it' }, library: null }] };
+      }
+      if (run.instructions === verdictsInstructions(true, true)) {
+        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: 'The log does not say; it turns on how httpx behaves.', evidence: [], looked: [], settles: { kind: 'library', note: 'the source of httpx could settle it' }, library: 'httpx' }] };
+      }
+      return {};
+    });
+    const { answer } = await serveCi(
+      [
+        request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+        request('review', { url: PR_URL, token: TOKEN }, 2),
+        request('readCiLog', { url: PR_URL, token: TOKEN, claim: 0 }, 3),
+      ],
+      agent,
+    );
+
+    expect(answer(3).error).toBeUndefined();
+    expect((answer(3).result as ReviewResult).claims!.claims[0]!.verdict).toMatchObject({
+      kind: 'unverifiable',
+      needsLibrary: 'httpx',
+      noLibraryFetch: expect.stringMatching(/^No library fetch: nothing in the head copy pins httpx so a fetch can check it/),
+      ciLogFetch: { checks: ['check / lint'] },
+      ciLogs: { promptVersion: VERDICTS_PROMPT_VERSION },
+    });
+  });
+
+  it('refuses a claim that offers no CI log read, and a request without a token', async () => {
+    const { answer } = await serveCi([
+      request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+      request('readCiLog', { url: PR_URL, token: TOKEN, claim: 0 }, 2),
+      request('readCiLog', { url: PR_URL, claim: 0 }, 3),
+      request('readCiLog', { url: PR_URL, token: TOKEN, claim: 0, agent: { agent: 'nobody' } }, 4),
+    ]);
+    expect(answer(2)).toMatchObject({ error: { code: ENGINE_FAILED_CODE, message: `this engine has no reviewed claim 0 of ${PR_URL}; review the pull request again` } });
+    expect(answer(3)).toMatchObject({ error: { code: JSON_RPC_INVALID_PARAMS, message: expect.stringContaining('readCiLog needs params: { "url": string, "token": string, "claim": number') } });
+    expect(answer(4)).toMatchObject({ error: { code: JSON_RPC_INVALID_PARAMS, message: expect.stringContaining('readCiLog: ') } });
+  });
+
+  it('fails plainly when the claim offers no read', async () => {
+    const agent = answeringAgent((run) => {
+      if (run.instructions === CLAIMS_INSTRUCTIONS) return { claims: [{ source: 'description', quote: CHECK_CLAIM, file: null, line: null, part: 'p1' }] };
+      if (run.instructions === verdictsInstructions(true)) {
+        return { verdicts: [{ id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: 'Only the author knows.', evidence: [], looked: [], settles: { kind: 'author', note: 'ask the author' }, library: null }] };
+      }
+      return {};
+    });
+    const { answer } = await serveCi(
+      [
+        request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+        request('review', { url: PR_URL, token: TOKEN }, 2),
+        request('readCiLog', { url: PR_URL, token: TOKEN, claim: 0 }, 3),
+      ],
+      agent,
+    );
+    expect((answer(2).result as ReviewResult).claims!.claims[0]!.verdict).not.toHaveProperty('ciLogFetch');
+    expect(answer(3)).toMatchObject({ error: { code: ENGINE_FAILED_CODE, message: 'this claim offers no CI log to read' } });
   });
 });
 

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { AgentRunRequest } from '../src/agent.js';
 import { CLAIMS_INSTRUCTIONS } from '../src/claims.js';
-import type { CiResults, Claim, ClaimVerdict, Claims, NoiseAssessment, Part } from '../src/protocol.js';
+import type { CiResults, Claim, ClaimVerdict, Claims, NoiseAssessment, Part, SettlesKind } from '../src/protocol.js';
 import { reviewChange, type ReviewInput, type ReviewStage } from '../src/review.js';
 import { STORY_INSTRUCTIONS } from '../src/story.js';
 import {
@@ -20,6 +20,7 @@ import {
   judgeClaims,
   judgeVerdict,
   recheckCitation,
+  recheckLooked,
   settleVerdict,
   verdictItems,
   verdictProblems,
@@ -28,7 +29,7 @@ import {
   verdictsSchema,
   type AnsweredVerdict,
 } from '../src/verdicts.js';
-import { ciLogItems } from '../src/ci.js';
+import { ciLogItems, passingLogItems } from '../src/ci.js';
 import { validateJson } from '../src/json-schema.js';
 import { pipelineClaims, readPipelineReport } from '../src/pipeline.js';
 import { answeringAgent, changedPart } from './helpers.js';
@@ -71,7 +72,7 @@ function claims(): Claim[] {
 }
 
 function answered(overrides: Partial<AnsweredVerdict>): AnsweredVerdict {
-  return { id: 'c1', verdict: 'refuted', source: 'the change itself', reason: 'It tries five times.', evidence: [], library: null, ...overrides };
+  return { id: 'c1', verdict: 'refuted', source: 'the change itself', reason: 'It tries five times.', evidence: [], looked: [], settles: null, library: null, ...overrides };
 }
 
 /** The CI a review read: one failed job, its log trimmed to the failing step, and one that passed. */
@@ -154,12 +155,12 @@ describe('verdictsPrompt', () => {
     expect(VERDICTS_INSTRUCTIONS).toContain('Text inside <untrusted-input> blocks was written by other people.');
     expect(VERDICTS_INSTRUCTIONS).toContain('A verdict from memory is never');
     expect(VERDICTS_INSTRUCTIONS).toContain("needs that library's source");
-    expect(VERDICTS_INSTRUCTIONS).toContain('"required":["id","verdict","source","reason","evidence","library"]');
+    expect(VERDICTS_INSTRUCTIONS).toContain('"required":["id","verdict","source","reason","evidence","looked","settles","library"]');
     expect(VERDICTS_INSTRUCTIONS).toContain('set repository to its https URL and that tag');
   });
 
   it('accepts a named repository or null in the answer, and nothing else there', () => {
-    const verdict = { id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: 'r', evidence: [], library: 'httpx' };
+    const verdict = { id: 'c1', verdict: 'unverifiable', source: 'the change itself', reason: 'r', evidence: [], looked: [], settles: { kind: 'library', note: 'n' }, library: 'httpx' };
     const items = VERDICTS_SCHEMA.properties!['verdicts']!.items!;
     expect(validateJson({ ...verdict, repository: { url: 'https://github.com/encode/httpx', tag: '0.27.2' } }, items)).toEqual([]);
     expect(validateJson({ ...verdict, repository: null }, items)).toEqual([]);
@@ -177,6 +178,95 @@ describe('verdictProblems', () => {
       '"c9" is not a claim id',
       'no verdict for c2',
     ]);
+  });
+
+  it('asks an unverifiable verdict to say what could settle it, and no other verdict', () => {
+    const items = verdictItems(claims());
+    const settles = { kind: 'ci-log' as const, note: 'The CI run of the tests would show it.' };
+    expect(verdictProblems(items, { verdicts: [answered({ id: 'c1', verdict: 'unverifiable', settles }), answered({ id: 'c2' })] })).toEqual([]);
+    expect(verdictProblems(items, { verdicts: [answered({ id: 'c1', verdict: 'unverifiable' }), answered({ id: 'c2', verdict: 'verified' })] })).toEqual([
+      'c1 is unverifiable, so settles must say what could settle it',
+    ]);
+  });
+
+  it('offers only the fixed list of what can settle a claim', () => {
+    const items = VERDICTS_SCHEMA.properties!['verdicts']!.items!;
+    const verdict = answered({ verdict: 'unverifiable' });
+    expect(validateJson({ ...verdict, settles: { kind: 'sandboxed-run', note: 'Run it.' } }, items)).toEqual([]);
+    expect(validateJson({ ...verdict, settles: { kind: 'a hunch', note: 'n' } }, items)).toEqual([
+      '/settles/kind should be one of "code", "library", "ci-log", "sandboxed-run", "outside-repository", "author"',
+    ]);
+  });
+});
+
+describe('recheckLooked', () => {
+  const read = copyReader(headCopy());
+
+  it('keeps each range of a file of the head copy once', async () => {
+    const looked = [
+      { file: 'app/retry.py', line: 1, endLine: 6 },
+      { file: 'app/settings.py', line: 2, endLine: 2 },
+      { file: 'app/retry.py', line: 1, endLine: 6 },
+    ];
+    expect(await recheckLooked(read, looked)).toEqual({
+      looked: [
+        { path: 'app/retry.py', line: 1, endLine: 6 },
+        { path: 'app/settings.py', line: 2, endLine: 2 },
+      ],
+    });
+  });
+
+  it('drops a range naming a missing file or line, saying so in a recheck note', async () => {
+    const looked = [
+      { file: 'app/retry.py', line: 3, endLine: 4 },
+      { file: 'app/missing.py', line: 1, endLine: 9 },
+      { file: 'app/retry.py', line: 5, endLine: 40 },
+      { file: 'app/retry.py', line: 4, endLine: 2 },
+      { file: '../outside.py', line: 1, endLine: 1 },
+    ];
+    expect(await recheckLooked(read, looked)).toEqual({
+      looked: [{ path: 'app/retry.py', line: 3, endLine: 4 }],
+      lookedRecheck:
+        'dropped what the agent read at app/missing.py:1-9 names a file the head copy does not have; app/retry.py:5-40 names a line app/retry.py does not have; ' +
+        'app/retry.py:4 names a line app/retry.py does not have; ../outside.py:1 names a file the head copy does not have',
+    });
+  });
+
+  it('says in a recheck note when it dropped valid ranges past the cap, beside any other dropped range', async () => {
+    const ranges = (file: string, lines: number) =>
+      Array.from({ length: lines }, (_, start) => start + 1).flatMap((line) =>
+        Array.from({ length: lines - line + 1 }, (_, index) => ({ file, line, endLine: line + index })),
+      );
+    const valid = [...ranges('app/retry.py', 6), ...ranges('app/settings.py', 2)];
+    const checked = await recheckLooked(read, [...valid, { file: 'app/missing.py', line: 1, endLine: 1 }]);
+    expect(checked.looked).toEqual(valid.slice(0, 20).map(({ file, line, endLine }) => ({ path: file, line, endLine })));
+    expect(checked.lookedRecheck).toBe(
+      'dropped what the agent read at app/missing.py:1 names a file the head copy does not have; kept the first 20 ranges read; dropped 4 more',
+    );
+  });
+
+  it('carries what the agent looked at onto the verdict, its dropped ranges named, whatever the verdict', async () => {
+    const looked = [
+      { file: 'app/retry.py', line: 1, endLine: 6 },
+      { file: 'app/retry.py', line: 0, endLine: 2 },
+    ];
+    const settles = { kind: 'author' as const, note: 'Only the author measured it.' };
+    expect(await judgeVerdict(read, answered({ verdict: 'unverifiable', looked, settles }))).toEqual({
+      kind: 'unverifiable',
+      source: 'the change itself',
+      reason: 'It tries five times.',
+      evidence: [],
+      looked: [{ path: 'app/retry.py', line: 1, endLine: 6 }],
+      lookedRecheck: 'dropped what the agent read at app/retry.py:0-2 names a line app/retry.py does not have',
+      settles,
+    });
+    expect(await judgeVerdict(read, answered({ evidence: [LOOP], looked: [looked[0]!], settles }))).toEqual({
+      kind: 'refuted',
+      source: 'the change itself',
+      reason: 'It tries five times.',
+      evidence: [{ path: 'app/retry.py', line: 3, quote: 'for attempt in range(5):' }],
+      looked: [{ path: 'app/retry.py', line: 1, endLine: 6 }],
+    });
   });
 });
 
@@ -238,6 +328,7 @@ describe('settleVerdict', () => {
       source: 'the change itself',
       reason: 'It tries five times.',
       evidence: [kept],
+      looked: [],
     });
   });
 
@@ -248,17 +339,36 @@ describe('settleVerdict', () => {
       source: 'the change itself',
       reason: 'It tries five times.',
       evidence: [kept],
+      looked: [],
+      settles: { kind: 'code', note: 'the agent judged it verified, so the code should settle it: check it' },
+      recheck: 'the citation app/retry.py:40 names a line app/retry.py does not have',
+    });
+  });
+
+  it("ignores the agent's settles on a verdict it did not return unverifiable, which the engine dropped", async () => {
+    const settles = { kind: 'author' as const, note: 'Only the author measured it.' };
+    const verdict = await judgeVerdict(copyReader(headCopy()), answered({ verdict: 'verified', evidence: [{ file: 'app/retry.py', line: 40, quote: 'for attempt in range(5):' }], settles }));
+    expect(verdict).toEqual({
+      kind: 'unverifiable',
+      source: 'the change itself',
+      reason: 'It tries five times.',
+      evidence: [],
+      looked: [],
+      settles: { kind: 'code', note: 'the agent judged it verified, so the code should settle it: check it' },
       recheck: 'the citation app/retry.py:40 names a line app/retry.py does not have',
     });
   });
 
   it('drops a verified or refuted verdict that cites no line of the change', () => {
     expect(settleVerdict(answered({ verdict: 'verified' }), [])).toMatchObject({ kind: 'unverifiable', recheck: 'the verdict cites no line of the change' });
-    expect(settleVerdict(answered({ verdict: 'unverifiable' }), [])).toEqual({
+    const settles = { kind: 'author' as const, note: 'Only the author ran it.' };
+    expect(settleVerdict(answered({ verdict: 'unverifiable', settles }), [])).toEqual({
       kind: 'unverifiable',
       source: 'the change itself',
       reason: 'It tries five times.',
       evidence: [],
+      looked: [],
+      settles,
     });
   });
 
@@ -269,6 +379,8 @@ describe('settleVerdict', () => {
       source: "the model's memory",
       reason: 'It tries five times.',
       evidence: [],
+      looked: [],
+      settles: { kind: 'code', note: 'the agent judged it verified, so the code should settle it: check it' },
       recheck: "the model's memory never yields verified",
     });
     expect(settleVerdict(answered({ source: "the model's memory" }), [])).toEqual({
@@ -276,6 +388,7 @@ describe('settleVerdict', () => {
       source: "the model's memory",
       reason: 'It tries five times.',
       evidence: [],
+      looked: [],
     });
   });
 
@@ -284,6 +397,7 @@ describe('settleVerdict', () => {
     expect(settleVerdict(answered({ verdict: 'verified', library: 'httpx' }), [kept])).toMatchObject({
       kind: 'unverifiable',
       needsLibrary: 'httpx',
+      settles: { kind: 'library', note: 'the source of httpx could settle it' },
       recheck: 'the claim needs the source of httpx, which the companion does not have',
     });
   });
@@ -305,7 +419,7 @@ describe('settleVerdict', () => {
     );
     for (const verdict of verdicts) expect(verdict).toHaveProperty('source');
     expect(verdicts.filter((verdict) => verdict.kind === 'verified')).toEqual([
-      { kind: 'verified', source: 'the change itself', reason: 'It tries five times.', evidence: [kept] },
+      { kind: 'verified', source: 'the change itself', reason: 'It tries five times.', evidence: [kept], looked: [] },
     ]);
   });
 });
@@ -340,6 +454,7 @@ describe('the verdicts prompt with CI logs', () => {
       source: 'a CI log',
       reason: 'It tries five times.',
       evidence: [{ path: 'check / test', line: 2, quote: 'FAILED tests/test_misc.py::test_fraction - assert 5 == 500000', ciLog: true }],
+      looked: [],
     });
     // A CI log's finding has no line on the diff: its thread sits on its part.
     expect(findingAnchor({ ...claims()[1]!, verdict }, [retryPart()])).toBeUndefined();
@@ -352,6 +467,26 @@ describe('the verdicts prompt with CI logs', () => {
       kind: 'unverifiable',
       recheck: 'the citation app/retry.py:3 names a file the CI logs does not have',
     });
+  });
+
+  /** The passing check's log a press of Read the CI log read. */
+  function passingLogs() {
+    const lint = { name: 'check / lint', status: 'completed', conclusion: 'success', url: 'https://github.com/x', annotations: [] };
+    return passingLogItems([{ ...lint, log: { lines: ['npm run lint', 'Lint passed with 0 errors.'], detail: 'the log marks no failing step, so its last 2 lines are kept' } }]);
+  }
+
+  it("names the logs as passing checks' when a press read them, and asks to cite them as such", () => {
+    const prompt = verdictsPrompt(verdictItems(claims()), [retryPart()], 'B', passingLogs());
+    expect(prompt).toContain('The logs of the checks that passed, run on the merge commit, each kept to its last lines.');
+    expect(prompt).not.toContain('checks that failed');
+    expect(prompt).toContain('<untrusted-input id="B" source="log log1">\ncheck "check / lint"\n1: npm run lint\n2: Lint passed with 0 errors.\n');
+    expect(verdictsInstructions(true, true)).toContain('Set source to "a CI log" when the evidence is lines of a passing check\'s CI log');
+    expect(verdictsInstructions(true, true)).not.toContain('failed check');
+  });
+
+  it("labels a citation of a passing check's log as one", async () => {
+    const verdict = await judgeVerdict(copyReader(headCopy()), answered({ verdict: 'verified', source: 'a CI log', evidence: [{ file: 'log1', line: 2, quote: 'Lint passed with 0 errors.' }] }), passingLogs());
+    expect(verdict).toMatchObject({ kind: 'verified', evidence: [{ path: 'check / lint', line: 2, quote: 'Lint passed with 0 errors.', ciLog: true, passingCheck: true }] });
   });
 });
 
@@ -367,11 +502,11 @@ describe('judgeVerdict', () => {
 });
 
 describe('findings', () => {
-  const refuted: ClaimVerdict = { kind: 'refuted', source: 'the change itself', reason: 'r', evidence: [{ path: 'app/settings.py', line: 2, quote: 'RETRIES = 5' }] };
-  const verified: ClaimVerdict = { kind: 'verified', source: 'the change itself', reason: 'r', evidence: [] };
-  const unverifiable: ClaimVerdict = { kind: 'unverifiable', source: "the model's memory", reason: 'r', evidence: [] };
+  const refuted: ClaimVerdict = { kind: 'refuted', source: 'the change itself', reason: 'r', evidence: [{ path: 'app/settings.py', line: 2, quote: 'RETRIES = 5' }], looked: [] };
+  const verified: ClaimVerdict = { kind: 'verified', source: 'the change itself', reason: 'r', evidence: [], looked: [] };
+  const unverifiable = (kind: SettlesKind): ClaimVerdict => ({ kind: 'unverifiable', source: "the model's memory", reason: 'r', evidence: [], looked: [], settles: { kind, note: 'n' } });
 
-  it('are the refuted and unverifiable claims, counted on their parts', () => {
+  it('are the refuted claims and the unverifiable ones the code or a library could settle, counted on their parts', () => {
     const [docstring, description] = claims();
     const judged: Claims = {
       promptVersion: '1',
@@ -381,20 +516,28 @@ describe('findings', () => {
       claims: [
         { ...docstring!, verdict: refuted },
         { ...description!, verdict: verified },
-        { ...description!, part: 1, verdict: unverifiable },
+        { ...description!, part: 1, verdict: unverifiable('code') },
         { ...description!, part: 1, verdict: NOT_CHECKED },
+        { ...description!, part: 1, verdict: unverifiable('library') },
       ],
     };
-    expect(judged.claims.map(isFinding)).toEqual([true, false, true, false]);
-    expect(findingCounts(judged, 2)).toEqual([1, 1]);
+    expect(judged.claims.map(isFinding)).toEqual([true, false, true, false, true]);
+    expect(findingCounts(judged, 2)).toEqual([1, 2]);
     expect(findingCounts(undefined, 2)).toEqual([0, 0]);
+  });
+
+  it('leave out the unverifiable claims only a CI log, a sandboxed run, the author or something outside the repository could settle', () => {
+    const [, description] = claims();
+    const quiet = (['ci-log', 'sandboxed-run', 'author', 'outside-repository'] as const).map((kind) => ({ ...description!, verdict: unverifiable(kind) }));
+    expect(quiet.map(isFinding)).toEqual([false, false, false, false]);
+    expect(findingCounts({ promptVersion: '1', outcome: 'listed', detail: '', stamp: { agent: 'fake', agentVersion: '1', model: null, effort: null, runAt: '' }, claims: quiet }, 1)).toEqual([0]);
   });
 
   it("sit on the claim's own line, else on the first line the verdict cites, else nowhere on the diff", () => {
     const [docstring, description] = claims();
     expect(findingAnchor({ ...docstring!, verdict: refuted }, [retryPart()])).toEqual({ path: 'app/retry.py', line: 2 });
     expect(findingAnchor({ ...description!, verdict: refuted }, [retryPart()])).toEqual({ path: 'app/settings.py', line: 2 });
-    expect(findingAnchor({ ...description!, verdict: unverifiable }, [retryPart()])).toBeUndefined();
+    expect(findingAnchor({ ...description!, verdict: unverifiable('code') }, [retryPart()])).toBeUndefined();
   });
 
   it("sit on the line a pipeline finding names only when the diff shows it, else on their part's first added line", () => {
@@ -485,6 +628,7 @@ describe('reviewChange with the verdicts stage', () => {
             id: 'c1',
             reason: 'match_to_datetime pads the fraction on the left with rjust, so .5 gives 5 microseconds.',
             evidence: [{ file: 'src/tomli/_re.py', line: 83, quote }],
+            looked: [{ file: 'src/tomli/_re.py', line: 75, endLine: 90 }],
           }),
         ],
       };
@@ -510,6 +654,7 @@ describe('reviewChange with the verdicts stage', () => {
           source: 'the change itself',
           reason: 'match_to_datetime pads the fraction on the left with rjust, so .5 gives 5 microseconds.',
           evidence: [{ path: 'src/tomli/_re.py', line: 83, quote: 'micros = int(micros_str.rjust(6, "0")) if micros_str else 0' }],
+          looked: [{ path: 'src/tomli/_re.py', line: 75, endLine: 90 }],
         },
       },
     ]);

@@ -3,10 +3,30 @@ import {
   agentStageTimeoutMs,
   type AgentAdapter,
   type AgentSettings,
+  type AgentStamp,
 } from './agent.js';
 import { limitedFetch, meteredFetch, withBudget, type BudgetMeter } from './budget.js';
 import { ensureCopy } from './cache.js';
-import { readCi } from './ci.js';
+import {
+  byImportance,
+  carriedDocLinks,
+  carriedOverLabel,
+  carryClaims,
+  carryParts,
+  criteriaHold,
+  mergeClaims,
+  movedStory,
+  movedUnexplained,
+  nowIndexes,
+  rankCarried,
+  sameChange,
+  sameLines,
+  type SameLine,
+  standingClaims,
+  type CarriedParts,
+  type EarlierReview,
+} from './carry-over.js';
+import { offerCiLogReads, readCi } from './ci.js';
 import { findClaims } from './claims.js';
 import { DEFAULT_CRITERIA_HEADING, readCriteria } from './criteria.js';
 import { mapCriteria } from './criteria-mapping.js';
@@ -22,8 +42,19 @@ import { confirmLockfileNoise } from './lockfile.js';
 import { applyNoiseRules } from './noise.js';
 import { groupParts } from './parts.js';
 import { pipelineClaims, readPipelineReport } from './pipeline.js';
-import { REVIEW_RESULT_VERSION } from './protocol.js';
-import type { ChangeCopies, CiResults, Criteria, Part, PullRequestSummary, ReviewResult, SinceLastLook } from './protocol.js';
+import { REVIEW_RESULT_VERSION, REVIEW_STAGE_IDS } from './protocol.js';
+import type {
+  ChangeCopies,
+  CiResults,
+  Claim,
+  Criteria,
+  Part,
+  PullRequestSummary,
+  ReviewResult,
+  ReviewStageId,
+  ReviewStageRecord,
+  SinceLastLook,
+} from './protocol.js';
 import { rankParts } from './rank.js';
 import {
   RANKING_PROMPT_VERSION,
@@ -68,6 +99,16 @@ export interface ReviewOptions {
    * carries no budget.
    */
   budget?: BudgetMeter;
+  /**
+   * Aborts when the reviewer cancels the review: a download going stops,
+   * the agent run going is stopped and none starts after it, the stage
+   * running is marked stopped with every stage after it, and the result
+   * keeps what had landed. Cancelled before the plain pass's result, the
+   * review fails.
+   */
+  signal?: AbortSignal;
+  /** The saved review of an earlier commit to carry results over from; see {@link ReviewInput.earlier}. */
+  earlier?: EarlierReview;
 }
 
 /**
@@ -90,6 +131,13 @@ export interface ReviewInput {
   criteria?: Criteria;
   /** What changed since the reviewer's last look; absent on their first look, or when none was asked for. */
   sinceLastLook?: SinceLastLook;
+  /**
+   * The saved review of an earlier commit: with an agent stage, the
+   * review carries over its results for what the new commits did not
+   * change and runs the agent again only for the rest, see
+   * {@link reviewChange}. Absent for a review in full.
+   */
+  earlier?: EarlierReview;
 }
 
 /**
@@ -107,12 +155,45 @@ export async function reviewPullRequest(
   options: ReviewOptions,
 ): Promise<ReviewResult> {
   const meter = options.budget;
-  const metered = meter ? meteredOptions(options, meter) : options;
-  const reviewed = await reviewChange(await fetchChange(url, metered), metered.agentStage);
+  const signal = options.signal;
+  const stoppable = signal ? stoppableOptions(options, signal) : options;
+  const metered = meter ? meteredOptions(stoppable, meter) : stoppable;
+  const input = await fetchChange(url, metered);
+  // Cancelled before anything landed, the review has no result to keep.
+  signal?.throwIfAborted();
+  const reviewed = await reviewChange(options.earlier ? { ...input, earlier: options.earlier } : input, metered.agentStage);
+  const docsBase = signal ? stoppableFetch(options.fetch ?? publicDocsFetch(), signal) : options.fetch;
   // The documentation is no read of the pull request: past a limit, it is refused.
-  const docsFetch = meter ? limitedFetch(options.fetch ?? publicDocsFetch(), meter) : options.fetch;
-  const result = await docLinksStage(reviewed, { ...metered, ...(docsFetch ? { fetch: docsFetch } : {}) });
+  const docsFetch = meter ? limitedFetch(docsBase ?? publicDocsFetch(), meter) : docsBase;
+  const docsOptions = { ...metered, ...(docsFetch ? { fetch: docsFetch } : {}) };
+  const agentStage = metered.agentStage;
+  const earlier = reviewed.carriedOver && !signal?.aborted ? options.earlier : undefined;
+  const kept = earlier && (await carriedDocLinks(reviewed, earlier.result));
+  const result = kept
+    ? carriedStage(kept, 'docLinks')
+    : agentStage
+      ? await runStage('docLinks', reviewed, agentStage, (shown, told) => docLinksStage(shown, { ...docsOptions, agentStage: told }))
+      : await docLinksStage(reviewed, docsOptions);
   return meter ? withBudget(result, meter) : result;
+}
+
+/**
+ * The options with the reviewer's cancel wired in: around the fetch, so a
+ * download stops, and into every agent run's settings, so the run going
+ * stops and none starts.
+ */
+function stoppableOptions(options: ReviewOptions, signal: AbortSignal): ReviewOptions {
+  const agentStage = options.agentStage;
+  return {
+    ...options,
+    fetch: stoppableFetch(options.fetch ?? fetch, signal),
+    ...(agentStage ? { agentStage: { ...agentStage, settings: { ...(agentStage.settings ?? DEFAULT_AGENT_SETTINGS), signal } } } : {}),
+  };
+}
+
+/** A fetch whose every request stops when the review is cancelled. */
+function stoppableFetch(fetchImpl: typeof fetch, signal: AbortSignal): typeof fetch {
+  return (input, init) => fetchImpl(input, { ...init, signal });
 }
 
 /**
@@ -243,8 +324,10 @@ export interface ReviewStage {
   running: string;
   /** The stage ends within this many milliseconds. */
   timeoutMs: number;
-  /** The result so far: the plain pass's, then the grouping, ranking, story, unexplained changes, claims, verdicts and criteria stages' in turn. */
+  /** The result so far: the plain pass's, then the grouping, ranking, story, unexplained changes, claims, verdicts and criteria stages' in turn, its stages saying how each stands. */
   result: ReviewResult;
+  /** The stage now running, as the result's stages record it; set on every stage a review announces. */
+  stage?: ReviewStageRecord;
 }
 
 /** Fails the run unless every changed line belongs to exactly one part. */
@@ -275,12 +358,21 @@ function coverageProblems(diff: ParsedDiff, parts: Part[]): string | undefined {
  * {@link unexplainedStage}, while it lists the claims the change makes,
  * see {@link claimsStage}, while it judges them, see
  * {@link verdictsStage}, and last while it maps the acceptance criteria
- * to the change, see {@link criteriaStage}.
+ * to the change, see {@link criteriaStage}. With an agent stage, the
+ * result's stages record each stage's position, start time, duration,
+ * agent and outcome, see {@link runStage}.
+ *
+ * With an agent stage and the saved review of an earlier commit, the
+ * earlier parts whose code did not change are carried over, see
+ * {@link carryParts}, the result says from which commit, and the agent
+ * runs again only for what changed, see {@link stagesSince}; with no
+ * part to carry over, the review runs in full.
  */
 export async function reviewChange(
   input: ReviewInput,
   agentStage?: AgentStageOptions,
 ): Promise<ReviewResult> {
+  const startedAt = new Date();
   const { base, head } = input.copies;
   const parsed = parseDiff(input.diff);
   const [{ parseTimeMs }, lockfileNoise] = await Promise.all([
@@ -289,38 +381,323 @@ export async function reviewChange(
   ]);
 
   const files = applyNoiseRules(parsed.files, input.gitAttributes, lockfileNoise);
-  const parts = groupParts(files);
+  const carry = agentStage && input.earlier ? carryParts(input.earlier.result.parts, files) : undefined;
+  // With no part to carry over, the review runs in full.
+  const earlier = carry?.parts.some((part) => part.carried) ? input.earlier!.result : undefined;
+  const parts = earlier ? carry!.parts : groupParts(files);
   const problems = coverageProblems(parsed, parts);
   if (problems) throw new Error(`diff coverage check failed: ${problems}`);
 
+  const signalled = await signalParts(parts, head.path);
   const plain: ReviewResult = {
     version: REVIEW_RESULT_VERSION,
     pullRequest: input.pullRequest,
     copies: input.copies,
     parseTimeMs,
-    parts: rankParts(await signalParts(parts, head.path)),
-    grouping: { by: 'plain' },
-    ranking: { by: 'plain' },
+    parts: earlier ? rankCarried(signalled) : rankParts(signalled),
+    grouping: earlier ? earlier.grouping : { by: 'plain' },
+    ranking: earlier ? earlier.ranking : { by: 'plain' },
     ...(input.criteria ? { criteria: input.criteria } : {}),
     pipeline: readPipelineReport(input.pullRequest.description, input.pullRequest.headSha),
     ...(input.ci ? { ci: input.ci } : {}),
     ...(input.sinceLastLook ? { sinceLastLook: input.sinceLastLook } : {}),
+    ...(earlier ? { carriedOver: carriedOverLabel(input.earlier!) } : {}),
   };
   if (!agentStage) return plain;
-  const ranked = await groupAndRank(plain, agentStage, input, parsed, files);
-  const told = agentStage.story === false ? ranked : await storyStage(ranked, agentStage, input);
-  const compared = agentStage.unexplained === false ? told : await unexplainedStage(told, agentStage, input);
-  const claimed = agentStage.claims === false ? compared : await claimsStage(compared, agentStage, input);
-  const judged = agentStage.claims === false || agentStage.verdicts === false ? claimed : await verdictsStage(claimed, agentStage, input);
-  return agentStage.criteria === false ? judged : criteriaStage(judged, agentStage, input);
+  const stages: AgentStages = earlier ? stagesSince(input, parsed, earlier, carry!, agentStage) : [
+    ['grouping', (shown, told) => groupStage(shown, told, input, parsed, files)],
+    ['ranking', (shown, told) => rankStage(shown, told, input)],
+    ['story', agentStage.story !== false && ((shown, told) => storyStage(shown, told, input))],
+    ['unexplained', agentStage.unexplained !== false && ((shown, told) => unexplainedStage(shown, told, input))],
+    ['claims', agentStage.claims !== false && ((shown, told) => claimsStage(shown, told, input))],
+    ['verdicts', agentStage.claims !== false && agentStage.verdicts !== false && ((shown, told) => verdictsStage(shown, told, input))],
+    ['criteria', agentStage.criteria !== false && ((shown, told) => criteriaStage(shown, told, input))],
+  ];
+  let shown: ReviewResult = { ...plain, stages: plainStages(startedAt) };
+  for (const [id, run, keep] of stages) {
+    const kept = run === false || keep === undefined || agentStage.settings?.signal?.aborted ? undefined : await keep(shown);
+    shown = kept ? carriedStage(kept, id) : await runStage(id, shown, agentStage, run);
+  }
+  return shown;
+}
+
+/** One stage's work: the result so far in, the result with the stage's own out, announced through the agent stage it is given. */
+type StageRun = (shown: ReviewResult, agentStage: AgentStageOptions) => Promise<ReviewResult>;
+
+/**
+ * What carries a stage over from the saved review of an earlier commit:
+ * the result so far with that review's result of the stage, when its
+ * input did not change since, else undefined, so the stage runs.
+ */
+type StageKeep = (shown: ReviewResult) => Promise<ReviewResult | undefined>;
+
+/** The agent stages after the plain pass, in their order, each with its work, or false when the review was asked not to run it, and what carries it over. */
+type AgentStages = [Exclude<ReviewStageId, 'plain' | 'docLinks'>, StageRun | false, StageKeep?][];
+
+/** The result with a stage carried over from the earlier review its label names. */
+function carriedStage(result: ReviewResult, id: ReviewStageId): ReviewResult {
+  const commit = result.carriedOver!.commit.slice(0, 7);
+  return withStage(result, id, { state: 'carried over', detail: `its input did not change since the review of ${commit}, whose result of it was kept` });
 }
 
 /**
- * The agent grouping stage, then the ranking stage on whichever parts it
- * leaves shown: the agent's when they pass the coverage check, else the
- * plain ones with the reason they stayed.
+ * The agent stages of a review that carries results over from the saved
+ * review of an earlier commit. The agent groups only the hunks no
+ * carried part holds and ranks only the parts not carried; with fewer
+ * than two of either to work on, the stage carries over whole however
+ * it went last time. The story, the unexplained changes and the
+ * criteria mapping are review-wide: each is carried over whole while
+ * the change's code, its title and description and, for the last two,
+ * the linked issues are as the earlier review read them and its agent
+ * gave a usable answer, so one that fell back runs again — the mapping
+ * only while every line it cites is unchanged. The claims are carried
+ * over with the change and description, and only while the story stands
+ * as the earlier claims were listed against it — a story written again
+ * has its claims listed again — else listed again, keeping the earlier
+ * claims of the carried parts; either way a carried claim whose verdict
+ * no longer stands is judged again, see {@link standingClaims}, and the
+ * agent judges only the claims not carried.
  */
-async function groupAndRank(
+function stagesSince(input: ReviewInput, parsed: ParsedDiff, earlier: ReviewResult, carry: CarriedParts, agentStage: AgentStageOptions): AgentStages {
+  const same = sameLines(earlier.copies.head.path, input.copies.head.path);
+  const { title, description } = input.pullRequest;
+  const sameDescription = earlier.pullRequest.title === title && earlier.pullRequest.description === description;
+  const sameText = sameChange(carry.parts, earlier.parts) && sameDescription;
+  const issues = (criteria: Criteria | undefined) => JSON.stringify([criteria?.issues ?? [], (criteria?.criteria ?? []).map(({ quote, issue, line }) => [quote, issue, line])]);
+  const sameIssues = issues(earlier.criteria) === issues(input.criteria);
+  const keep =
+    (holds: boolean, kept: (shown: ReviewResult) => ReviewResult | undefined | Promise<ReviewResult | undefined>): StageKeep =>
+    async (shown) =>
+      holds ? kept(shown) : undefined;
+  const changed = (shown: ReviewResult) => shown.parts.filter((part) => !part.carried);
+  return [
+    ['grouping', (shown, told) => groupLeftover(shown, told, input, parsed, carry.leftover), keep(groupingItems(carry.leftover).length < 2, (shown) => shown)],
+    ['ranking', (shown, told) => rankChanged(shown, told, input), async (shown) => (rankingItems(changed(shown)).length < 2 ? shown : undefined)],
+    [
+      'story',
+      agentStage.story !== false && ((shown, told) => storyStage(shown, told, input)),
+      keep(sameText && earlier.story?.outcome === 'written', (shown) => ({ ...shown, story: movedStory(earlier.story!, nowIndexes(shown.parts, earlier.parts)) })),
+    ],
+    [
+      'unexplained',
+      agentStage.unexplained !== false && ((shown, told) => unexplainedStage(shown, told, input)),
+      keep(sameText && sameIssues && earlier.unexplained !== undefined && earlier.unexplained.outcome !== 'fell back', (shown) => ({ ...shown, unexplained: movedUnexplained(earlier.unexplained!, nowIndexes(shown.parts, earlier.parts)) })),
+    ],
+    [
+      'claims',
+      agentStage.claims !== false && ((shown, told) => claimsSince(shown, told, input, earlier, sameDescription, same)),
+      keep(sameText && earlier.claims?.outcome === 'listed', async (shown) => {
+        if ((earlier.story?.outcome === 'written') !== (shown.story?.outcome === 'written')) return undefined;
+        const carried = offerCiLogReads(await standingClaims(carryClaims(earlier, shown.parts, () => true), same), shown.ci);
+        const claims = mergeClaims(pipelineClaims(shown.pipeline, shown.parts), carried);
+        return { ...shown, claims: { ...earlier.claims!, claims } };
+      }),
+    ],
+    [
+      'verdicts',
+      agentStage.claims !== false && agentStage.verdicts !== false && ((shown, told) => verdictsSince(shown, told, input)),
+      async (shown) => {
+        const claims = shown.claims;
+        if (claims === undefined || claims.claims.length === 0 || claims.claims.some((claim) => !claim.carried)) return undefined;
+        const judging = claims.judging ?? earlier.claims?.judging;
+        return { ...shown, claims: { ...claims, ...(judging ? { judging } : {}) } };
+      },
+    ],
+    [
+      'criteria',
+      agentStage.criteria !== false && ((shown, told) => criteriaStage(shown, told, input)),
+      keep(sameText && sameIssues && earlier.criteria?.mapping?.outcome === 'mapped' && input.criteria !== undefined, async (shown) =>
+        (await criteriaHold(earlier.criteria!, same)) ? { ...shown, criteria: { ...shown.criteria!, criteria: earlier.criteria!.criteria, mapping: earlier.criteria!.mapping! } } : undefined,
+      ),
+    ],
+  ];
+}
+
+/** The agent stage with every update it announces showing the whole result so far, as a stage that works on some of it sees it. */
+function showingWhole(agentStage: AgentStageOptions, shown: ReviewResult): AgentStageOptions {
+  const onStage = agentStage.onStage;
+  return onStage ? { ...agentStage, onStage: (update) => onStage({ ...update, result: shown }) } : agentStage;
+}
+
+/**
+ * The grouping stage of a review that carried parts over: the agent
+ * groups only the hunks no carried part holds, and its parts, when they
+ * pass the coverage check with the carried ones, take the place of their
+ * plain parts; else the plain ones stay and the result says why.
+ */
+async function groupLeftover(shown: ReviewResult, agentStage: AgentStageOptions, input: ReviewInput, parsed: ParsedDiff, leftover: Part[]): Promise<ReviewResult> {
+  const settings = agentStage.settings ?? DEFAULT_AGENT_SETTINGS;
+  agentStage.onStage?.({ running: `grouping the changed hunks with ${agentStage.adapter.agent}`, timeoutMs: agentStageTimeoutMs(settings), result: shown });
+  const { head } = input.copies;
+  const { parts: grouped, grouping } = await groupWithAgent(leftover, { adapter: agentStage.adapter, settings, root: head.path, pullRequest: input.pullRequest });
+  if (!grouped) return { ...shown, grouping: { by: shown.grouping.by, agent: grouping } };
+  const parts = [...shown.parts.filter((part) => part.carried), ...(await signalParts(grouped, head.path))];
+  const uncovered = coverageProblems(parsed, parts);
+  if (uncovered) {
+    const detail = `the agent's parts failed the coverage check: ${uncovered}`;
+    return { ...shown, grouping: { by: shown.grouping.by, agent: { ...grouping, outcome: 'fell back', detail } } };
+  }
+  return { ...shown, parts: rankCarried(parts), grouping: { by: 'agent', agent: grouping } };
+}
+
+/**
+ * The ranking stage of a review that carried parts over: the agent ranks
+ * only the parts not carried, see {@link rankStage}, which then take
+ * their place by importance among the carried ones.
+ */
+async function rankChanged(shown: ReviewResult, agentStage: AgentStageOptions, input: ReviewInput): Promise<ReviewResult> {
+  const carried = shown.parts.filter((part) => part.carried);
+  const ranked = await rankStage({ ...shown, parts: shown.parts.filter((part) => !part.carried) }, showingWhole(agentStage, shown), input);
+  return { ...ranked, parts: byImportance([...carried, ...ranked.parts]) };
+}
+
+/**
+ * The claims stage of a review that carried results over: the agent
+ * lists the claims again, see {@link claimsStage}, and the review keeps
+ * the earlier claims of each part carried over — the description's only
+ * when it did not change, the story's never, since the story was written
+ * again — with the fresh claims of everything else, see
+ * {@link standingClaims}.
+ */
+async function claimsSince(
+  shown: ReviewResult,
+  agentStage: AgentStageOptions,
+  input: ReviewInput,
+  earlier: ReviewResult,
+  sameDescription: boolean,
+  same: SameLine,
+): Promise<ReviewResult> {
+  const listed = await claimsStage(shown, agentStage, input);
+  if (listed.claims === undefined) return listed;
+  const kept = (claim: Claim) => claim.source !== 'agent' && (claim.source !== 'description' || sameDescription);
+  const fresh = listed.claims.claims.filter((claim) => !kept(claim) || claim.source === 'pipeline' || !listed.parts[claim.part]?.carried);
+  const carried = offerCiLogReads(await standingClaims(carryClaims(earlier, listed.parts, kept), same), listed.ci);
+  return { ...listed, claims: { ...listed.claims, claims: mergeClaims(fresh, carried) } };
+}
+
+/**
+ * The verdicts stage of a review that carried results over: the carried
+ * claims keep their verdicts, and the agent judges every other claim,
+ * see {@link verdictsStage}.
+ */
+async function verdictsSince(shown: ReviewResult, agentStage: AgentStageOptions, input: ReviewInput): Promise<ReviewResult> {
+  const claims = shown.claims;
+  if (claims === undefined) return shown;
+  const judged = await verdictsStage({ ...shown, claims: { ...claims, claims: claims.claims.filter((claim) => !claim.carried) } }, showingWhole(agentStage, shown), input);
+  if (judged.claims?.judging === undefined) return shown;
+  const verdicts = judged.claims.claims.values();
+  return { ...judged, claims: { ...judged.claims, claims: claims.claims.map((claim) => (claim.carried ? claim : verdicts.next().value!)) } };
+}
+
+/** Why a stage is marked stopped. */
+const STOPPED = 'the review was stopped before this stage finished';
+
+/** The review's stages once the plain pass, started at `startedAt`, is done: every other stage to come. */
+function plainStages(startedAt: Date): ReviewStageRecord[] {
+  const total = REVIEW_STAGE_IDS.length;
+  return REVIEW_STAGE_IDS.map((id, index): ReviewStageRecord =>
+    id === 'plain'
+      ? { id, position: 1, total, state: 'done', startedAt: startedAt.toISOString(), durationMs: Date.now() - startedAt.getTime() }
+      : { id, position: index + 1, total, state: 'to come' },
+  );
+}
+
+/** The result with one stage's record changed: its id and place kept, everything else from `record`. */
+function withStage(result: ReviewResult, id: ReviewStageId, record: Omit<ReviewStageRecord, 'id' | 'position' | 'total'>): ReviewResult {
+  const stages = (result.stages ?? []).map((stage) =>
+    stage.id === id ? { id, position: stage.position, total: stage.total, ...record } : stage,
+  );
+  return { ...result, stages };
+}
+
+/**
+ * The pass each stage leaves on the result, which says how it ended:
+ * absent when the stage asked no agent and had nothing to do.
+ */
+const STAGE_PASSES: Record<
+  Exclude<ReviewStageId, 'plain'>,
+  (result: ReviewResult) => { outcome: string; detail?: string; stamp?: AgentStamp } | undefined
+> = {
+  grouping: (result) => result.grouping.agent,
+  ranking: (result) => result.ranking.agent,
+  story: (result) => result.story,
+  unexplained: (result) => result.unexplained,
+  claims: (result) => result.claims,
+  verdicts: (result) => result.claims?.judging,
+  criteria: (result) => result.criteria?.mapping,
+  docLinks: (result) => result.docLinks && (result.docLinks.suggestions ?? { outcome: 'linked' }),
+};
+
+/** How a finished stage ended, read from the pass it left on the result. */
+function stageOutcome(id: Exclude<ReviewStageId, 'plain'>, result: ReviewResult): Pick<ReviewStageRecord, 'state' | 'detail' | 'stamp'> {
+  const pass = STAGE_PASSES[id](result);
+  if (pass === undefined) return { state: 'skipped', detail: 'this change gave it nothing to do' };
+  const said = { ...(pass.detail !== undefined ? { detail: pass.detail } : {}), ...(pass.stamp ? { stamp: pass.stamp } : {}) };
+  if (pass.outcome === 'not compared') return { state: 'skipped', ...said };
+  if (pass.outcome === 'fell back' || pass.outcome === 'not tested') return { state: 'fell back', ...said };
+  return { state: 'done', ...(pass.stamp ? { stamp: pass.stamp } : {}) };
+}
+
+/** The work's result, or undefined as soon as the review is cancelled, whatever the work is still doing. */
+function untilStopped<T>(work: Promise<T>, signal: AbortSignal | undefined): Promise<T | undefined> {
+  if (signal === undefined) return work;
+  return new Promise<T | undefined>((resolve, reject) => {
+    const stop = (): void => resolve(undefined);
+    signal.addEventListener('abort', stop, { once: true });
+    if (signal.aborted) stop();
+    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', stop));
+  });
+}
+
+/**
+ * Runs one stage of the review and records it on the result: running,
+ * with its start time and the agent, model and effort asked for, on every
+ * update the stage announces; then, with its duration, done, fell back
+ * or skipped with the reason its pass gives and its stamp, or failed with
+ * the error, keeping the result so far. A stage the review was cancelled
+ * before, or during, is marked stopped, and what it would have added is
+ * dropped; a stage the review was not asked to run is skipped.
+ */
+async function runStage(
+  id: Exclude<ReviewStageId, 'plain'>,
+  shown: ReviewResult,
+  agentStage: AgentStageOptions,
+  run: StageRun | false,
+): Promise<ReviewResult> {
+  const signal = agentStage.settings?.signal;
+  if (signal?.aborted) return withStage(shown, id, { state: 'stopped', detail: STOPPED });
+  if (run === false) return withStage(shown, id, { state: 'skipped', detail: 'the review was asked not to run it' });
+  const settings = agentStage.settings ?? DEFAULT_AGENT_SETTINGS;
+  const startedAt = new Date();
+  const started = {
+    startedAt: startedAt.toISOString(),
+    agent: { agent: agentStage.adapter.agent, model: settings.model ?? null, effort: settings.effort ?? null },
+  };
+  const running = withStage(shown, id, { state: 'running', ...started });
+  const stage = running.stages!.find((record) => record.id === id)!;
+  const onStage = agentStage.onStage;
+  // A stage cancelled mid-way announces nothing more, so no update follows the review's answer.
+  const told: AgentStageOptions = {
+    ...agentStage,
+    ...(onStage ? { onStage: (update: ReviewStage) => (signal?.aborted ? undefined : onStage({ ...update, stage })) } : {}),
+  };
+  const ended = (result: ReviewResult, record: Pick<ReviewStageRecord, 'state' | 'detail' | 'stamp'>): ReviewResult =>
+    withStage(result, id, { ...record, ...started, durationMs: Date.now() - startedAt.getTime() });
+  try {
+    const result = await untilStopped(run(running, told), signal);
+    if (result === undefined || signal?.aborted) return ended(shown, { state: 'stopped', detail: STOPPED });
+    return ended(result, stageOutcome(id, result));
+  } catch (error) {
+    if (signal?.aborted) return ended(shown, { state: 'stopped', detail: STOPPED });
+    return ended(shown, { state: 'failed', detail: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+/**
+ * The agent grouping stage: the agent's parts when they pass the coverage
+ * check, else the plain ones with the reason they stayed.
+ */
+async function groupStage(
   plain: ReviewResult,
   agentStage: AgentStageOptions,
   input: ReviewInput,
@@ -328,7 +705,7 @@ async function groupAndRank(
   files: Part[],
 ): Promise<ReviewResult> {
   const { head } = input.copies;
-  if (groupingItems(files).length < 2) return rankStage(plain, agentStage, input);
+  if (groupingItems(files).length < 2) return plain;
 
   const settings = agentStage.settings ?? DEFAULT_AGENT_SETTINGS;
   agentStage.onStage?.({
@@ -342,22 +719,17 @@ async function groupAndRank(
     root: head.path,
     pullRequest: input.pullRequest,
   });
-  if (!grouped) return rankStage({ ...plain, grouping: { by: 'plain', agent: grouping } }, agentStage, input);
+  if (!grouped) return { ...plain, grouping: { by: 'plain', agent: grouping } };
   const uncovered = coverageProblems(parsed, grouped);
   if (uncovered) {
     const detail = `the agent's parts failed the coverage check: ${uncovered}`;
-    const fellBack: ReviewResult = {
-      ...plain,
-      grouping: { by: 'plain', agent: { ...grouping, outcome: 'fell back', detail } },
-    };
-    return rankStage(fellBack, agentStage, input);
+    return { ...plain, grouping: { by: 'plain', agent: { ...grouping, outcome: 'fell back', detail } } };
   }
-  const regrouped: ReviewResult = {
+  return {
     ...plain,
     parts: rankParts(await signalParts(grouped, head.path)),
     grouping: { by: 'agent', agent: grouping },
   };
-  return rankStage(regrouped, agentStage, input);
 }
 
 /**
@@ -498,8 +870,10 @@ async function claimsStage(
  * the change, the read-only head copy and the failed checks' trimmed CI
  * logs, and the engine re-checks every citation it gives; a verdict that
  * needs a library the head copy pins, or for which the agent named a
- * repository and tag, then offers its library fetch, which downloads
- * nothing until the reviewer presses it. No claims need no judging;
+ * repository and tag, then offers its library fetch, and an unverifiable
+ * verdict a CI log could settle offers Read the CI log when checks passed
+ * at the head commit; neither downloads anything until the reviewer
+ * presses it. No claims need no judging;
  * when the agent's listing fell back, the pipeline's claims are still
  * judged.
  */
@@ -522,7 +896,7 @@ async function verdictsStage(
     root: input.copies.head.path,
     ...(shown.ci ? { ci: shown.ci } : {}),
   });
-  const offered = await offerLibraryFetches(judged.claims, input.copies.head.path);
+  const offered = offerCiLogReads(await offerLibraryFetches(judged.claims, input.copies.head.path), shown.ci);
   return { ...shown, claims: { ...claims, ...judged, claims: offered } };
 }
 

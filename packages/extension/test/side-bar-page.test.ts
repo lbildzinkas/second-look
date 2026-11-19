@@ -1,19 +1,29 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import { applyMark, markedPart, NO_MARKS, type Comment, type Part, type ReviewedMarks } from '@second-look/engine';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { applyMark, markedPart, NO_MARKS, type Comment, type ListedPullRequest, type Part, type PullRequestList, type ReviewedMarks } from '@second-look/engine';
 import {
+  DRAFT_COMMENT_COMMAND,
+  FETCH_LIBRARY_COMMAND,
+  FILTER_CHANGED_COMMAND,
   MARK_REVIEWED_COMMAND,
   OPEN_ALL_PARTS_COMMAND,
+  OPEN_LIBRARY_EVIDENCE_COMMAND,
   OPEN_OVERVIEW_COMMAND,
   OPEN_PART_COMMAND,
+  OPEN_SETTINGS_COMMAND,
   REVIEW_COMMAND,
   REVIEW_TREE_VIEW,
   SUBMIT_REVIEW_COMMAND,
+  WHY_THIS_MATTERS_COMMAND,
+  askCommand,
 } from '../src/commands.js';
-import { SideBarProvider } from '../src/side-bar/provider.js';
+import { SideBarProvider, type SideBarDeps } from '../src/side-bar/provider.js';
+import { PullRequestPicker } from '../src/side-bar/pull-request-picker.js';
+import { SetupForm } from '../src/side-bar/setup-form.js';
+import { StepTickStore } from '../src/side-bar/step-ticks.js';
 import type { SideBarState } from '../src/side-bar/steps.js';
 import { anchorOf, buildTree, pendingReviewSection } from '../src/tree.js';
-import { mixedResult } from './results.js';
-import { stub, window } from './vscode-stub.js';
+import { fetchedResult, judgedResult, mappedCriteriaResult, mixedResult, offeredResult, pipelineResult, reviewStages, settledResult, unexplainedResult, STAGE_MS, STAGES_START } from './results.js';
+import { ConfigurationTarget, stub, stubContext, window } from './vscode-stub.js';
 
 /**
  * The page's own behaviour, driven end to end: the script the side bar ships
@@ -43,7 +53,7 @@ class Element {
   readonly children: Element[] = [];
   parent: Element | undefined;
   readonly attributes = new Map<string, string>();
-  private readonly listeners = new Map<string, ((event: { target: Element }) => void)[]>();
+  private readonly listeners = new Map<string, ((event: PageEvent) => void)[]>();
   private ownerField: Document | undefined;
 
   constructor(readonly tagName: string) {}
@@ -73,6 +83,20 @@ class Element {
   get checked(): boolean {
     return this.attributes.has('checked');
   }
+
+  /** A text box's text: what the markup gave it, until typing replaces it. */
+  private typed: string | undefined;
+
+  get value(): string {
+    return this.typed ?? this.attributes.get('value') ?? '';
+  }
+
+  set value(value: string) {
+    this.typed = value;
+  }
+
+  /** The text the page's script wrote into the element; the markup's own text is never read. */
+  textContent = '';
 
   /** Hides or shows the element, as assigning the hidden property does. */
   set hidden(hidden: boolean) {
@@ -147,19 +171,27 @@ class Element {
     for (const child of parse(html)) this.appendChild(child);
   }
 
-  addEventListener(type: string, listener: (event: { target: Element }) => void): void {
+  addEventListener(type: string, listener: (event: PageEvent) => void): void {
     this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
   }
 
-  /** Fires the event on this element, as a bubbling press reaches the root. */
-  dispatch(type: string, target: Element = this): void {
-    for (const listener of this.listeners.get(type) ?? []) listener({ target });
-    this.parent?.dispatch(type, target);
+  /** Fires the event on this element, as a bubbling press reaches the root, with what the event carries: its input type or key. */
+  dispatch(type: string, target: Element = this, detail: { inputType?: string; key?: string } = {}): void {
+    for (const listener of this.listeners.get(type) ?? []) listener({ target, preventDefault: () => undefined, ...detail });
+    this.parent?.dispatch(type, target, detail);
   }
 
   focus(): void {
     this.owner?.becomesActive(this);
   }
+}
+
+/** An event as the page's script reads it. */
+interface PageEvent {
+  target: Element;
+  inputType?: string;
+  key?: string;
+  preventDefault(): void;
 }
 
 /** The document the page's script reads: id lookup, the active element, and the tree the parser built. */
@@ -228,9 +260,20 @@ function parse(html: string): Element[] {
   return root.children;
 }
 
-/** The window the page's script listens on, and the message the editor would deliver. */
+/** The window the page's script listens on, the message the editor would deliver, and the clock it ticks on, which a test moves. */
 class WindowShim {
   private readonly listeners = new Set<(event: { data: unknown }) => void>();
+  private readonly timers: (() => void)[] = [];
+
+  setInterval(callback: () => void): number {
+    this.timers.push(callback);
+    return this.timers.length;
+  }
+
+  /** Runs every repeating timer once, as a second passing does. */
+  tick(): void {
+    for (const timer of this.timers) timer();
+  }
 
   addEventListener(type: string, listener: (event: { data: unknown }) => void): void {
     if (type === 'message') this.listeners.add(listener);
@@ -268,6 +311,11 @@ class LoadedPage {
     this.windowShim.deliver({ type: 'render', body });
   }
 
+  /** Lets a second pass on the page's clock. */
+  passSecond(): void {
+    this.windowShim.tick();
+  }
+
   /** The element with this id, as the script would look it up. */
   element(id: string): Element {
     const element = this.document.getElementById(id);
@@ -280,6 +328,18 @@ class LoadedPage {
     this.element(id).dispatch('click');
   }
 
+  /** Types text into a box, replacing what it held, as typing or a paste does. */
+  type(id: string, text: string, inputType = 'insertText'): void {
+    const box = this.element(id);
+    box.value = text;
+    box.dispatch('input', box, { inputType });
+  }
+
+  /** Presses a key in the element that has it. */
+  press(id: string, key: string): void {
+    this.element(id).dispatch('keydown', this.element(id), { key });
+  }
+
   /** Ticks or clears a checkbox, as a press on it does, and reports the change. */
   tick(id: string, checked: boolean): void {
     const box = this.element(id);
@@ -290,8 +350,8 @@ class LoadedPage {
 }
 
 /** Loads the side bar the way the editor does: the provider resolved, then its page's script run. */
-function loadSideBar(initial: SideBarState): { provider: SideBarProvider; page: LoadedPage; view: (typeof stub.webviewViewProviders)[number] } {
-  const provider = new SideBarProvider(initial);
+function loadSideBar(initial: SideBarState, setup?: SetupForm, picker?: PullRequestPicker, deps?: SideBarDeps): { provider: SideBarProvider; page: LoadedPage; view: (typeof stub.webviewViewProviders)[number] } {
+  const provider = new SideBarProvider(initial, setup, picker, deps);
   window.registerWebviewViewProvider(REVIEW_TREE_VIEW, provider);
   const entry = stub.webviewViewProviders[0]!;
   const view = entry.resolve();
@@ -412,7 +472,7 @@ describe("the side bar's page script", () => {
     for (const element of interactive) {
       if (element.tagName === 'input') {
         expect(element.getAttribute('type')).toBe('checkbox');
-        expect(element.getAttribute('aria-label')).toMatch(/^Reviewed: /);
+        expect(element.getAttribute('aria-label')).toMatch(/^Reviewed: |^I've checked /);
       } else {
         expect(element.getAttribute('type')).toBe('button');
       }
@@ -423,5 +483,376 @@ describe("the side bar's page script", () => {
     expect(page.element('step-4-body').getAttribute('role')).toBe('region');
     expect(page.element('step-4-body').getAttribute('aria-labelledby')).toBe('step-4-title');
     expect(page.element('step-3-title').getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it("reports step 1's setup form changes and presses, keeping the text being typed across a redraw", async () => {
+    const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+    const engine = {
+      probeAgents: () => Promise.resolve({ agents: [] }),
+      testAgent: () => Promise.reject(new Error('not pressed')),
+    };
+    // The form redraws the side bar it sits in, which is loaded after it.
+    const drawn: { provider?: SideBarProvider } = {};
+    const setup = new SetupForm({ engine: () => Promise.resolve(engine), globalState: stubContext().globalState as never, onChange: () => drawn.provider?.redraw() });
+    const { provider, page, view } = loadSideBar({ settings: { agent: 'pi', model: '', effort: '', account: '' }, marks: NO_MARKS, sections: [], reviewing: false, storyRead: false }, setup);
+    drawn.provider = provider;
+    await settle();
+    page.render(postedBodies(view).at(-1)!);
+    expect(page.element('step-1').getAttribute('aria-current')).toBe('step');
+
+    // A choice is a radio button; its press changes the form.
+    page.click('setup-agent-claude-code');
+    page.render(postedBodies(view).at(-1)!);
+    expect(page.element('setup-agent-claude-code').getAttribute('aria-checked')).toBe('true');
+    expect(page.element('setup-effort-high').getAttribute('aria-checked')).toBe('true');
+
+    // Text being typed survives a redraw that arrives meanwhile, and keeps the keyboard.
+    page.element('setup-account').focus();
+    page.element('setup-account').value = 'Claude Max';
+    provider.redraw();
+    page.render(postedBodies(view).at(-1)!);
+    expect(page.element('setup-account').value).toBe('Claude Max');
+    expect(page.document.activeElement?.id).toBe('setup-account');
+
+    // Save carries the text as it stands.
+    page.click('setup-save');
+    await settle();
+    expect(stub.configurationUpdates.map(({ key, value, target }) => [key, value, target === ConfigurationTarget.Global])).toEqual([
+      ['second-look.agent', 'claude-code', true],
+      ['second-look.agentModel', 'claude-sonnet-5-5', true],
+      ['second-look.agentEffort', 'high', true],
+      ['second-look.agentAccount', 'Claude Max', true],
+    ]);
+    page.render(postedBodies(view).at(-1)!);
+    expect(page.element('step-1').hasAttribute('aria-current')).toBe(false);
+
+    // The change link opens the form again; a text box reports its change.
+    page.click('step-1-change');
+    await settle();
+    page.render(postedBodies(view).at(-1)!);
+    page.element('setup-account').value = 'personal';
+    page.element('setup-account').dispatch('change');
+    expect(setup.current.draft.account).toBe('personal');
+  });
+
+  it("works step 2's list from the keyboard: the box filters as it is typed in, a paste or Enter starts a URL's review, the chips and Review buttons press", async () => {
+    const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+    const pullRequest = (number: number, title: string): ListedPullRequest => ({
+      url: `https://github.com/octo-org/payments/pull/${number}`,
+      repository: 'octo-org/payments',
+      number,
+      title,
+      author: 'maria-k',
+      updatedAt: '2026-10-11T08:00:00Z',
+      summary: '',
+      review: { requested: number === 412, approvals: 0, changesRequested: 0, draft: false },
+      size: { additions: 1, deletions: 1, files: 1 },
+      newCommitsSinceLastLook: false,
+    });
+    const engine = {
+      listPullRequests: () =>
+        Promise.resolve<PullRequestList>({
+          outcome: 'listed',
+          groups: [
+            { group: 'review requested', pullRequests: [pullRequest(412, 'Retry idempotent charges on timeout')] },
+            { group: 'involving you', pullRequests: [pullRequest(7, 'Fix the cart badge')] },
+          ],
+        }),
+    };
+    stub.session = { accessToken: 'ghp_test-token-do-not-print' };
+    const drawn: { provider?: SideBarProvider } = {};
+    const picker = new PullRequestPicker({ engine: () => Promise.resolve(engine), onChange: () => drawn.provider?.redraw(), repository: () => Promise.resolve(undefined) });
+    const { provider, page, view } = loadSideBar({ settings: SETTINGS, marks: NO_MARKS, sections: [], reviewing: false, storyRead: false }, undefined, picker);
+    drawn.provider = provider;
+    await settle();
+    page.render(postedBodies(view).at(-1)!);
+    // Each card, by its Review button's name.
+    const cards = (): string[] => page.root.querySelectorAll('li.pr-card').map((card) => card.querySelector('button')!.getAttribute('aria-label')!);
+    expect(cards()).toEqual(['Review octo-org/payments #412: Retry idempotent charges on timeout', 'Review octo-org/payments #7: Fix the cart badge']);
+
+    // Typing filters; the text being typed, and the keyboard, survive the redraw that answers it.
+    page.element('pr-filter').focus();
+    page.type('pr-filter', 'cart');
+    await settle();
+    page.render(postedBodies(view).at(-1)!);
+    expect(cards()).toEqual(['Review octo-org/payments #7: Fix the cart badge']);
+    expect(page.element('pr-filter').value).toBe('cart');
+    expect(page.document.activeElement?.id).toBe('pr-filter');
+
+    // A chip is a toggle button; its press shows its group.
+    page.type('pr-filter', '');
+    page.click('pr-chip-review-requested');
+    await settle();
+    page.render(postedBodies(view).at(-1)!);
+    expect(page.element('pr-chip-review-requested').getAttribute('aria-pressed')).toBe('true');
+    expect(page.element('pr-chip-all').getAttribute('aria-pressed')).toBe('false');
+    expect(cards()).toEqual(['Review octo-org/payments #412: Retry idempotent charges on timeout']);
+
+    // A card's Review button, a pasted URL and Enter on a typed one each start that review.
+    page.click('pr-review-octo-org_payments__412');
+    page.type('pr-filter', 'https://github.com/octo-org/auth/pull/62', 'insertFromPaste');
+    page.type('pr-filter', 'https://github.com/octo-org/auth/pull/6');
+    page.press('pr-filter', 'Enter');
+    page.press('pr-filter', 'a');
+    await settle();
+    expect(stub.executedCommands).toEqual([
+      { id: REVIEW_COMMAND, args: ['https://github.com/octo-org/payments/pull/412'] },
+      { id: REVIEW_COMMAND, args: ['https://github.com/octo-org/auth/pull/62'] },
+      { id: REVIEW_COMMAND, args: ['https://github.com/octo-org/auth/pull/6'] },
+    ]);
+    page.render(postedBodies(view).at(-1)!);
+    expect(page.element('pr-review-url').getAttribute('data-pr-action')).toBe('review');
+  });
+
+  it("loads step 2's list when the reviewer opens its card during a review", async () => {
+    const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+    const asked: unknown[] = [];
+    const engine = { listPullRequests: (params: unknown) => (asked.push(params), Promise.resolve<PullRequestList>({ outcome: 'unreachable', reason: 'GitHub could not be reached.' })) };
+    stub.session = { accessToken: 'ghp_test-token-do-not-print' };
+    const drawn: { provider?: SideBarProvider } = {};
+    const picker = new PullRequestPicker({ engine: () => Promise.resolve(engine), onChange: () => drawn.provider?.redraw(), repository: () => Promise.resolve(undefined) });
+    const { provider, page, view } = loadSideBar(reviewState(), undefined, picker);
+    drawn.provider = provider;
+    await settle();
+    expect(asked).toEqual([]);
+
+    page.click('step-2-title');
+    await settle();
+    expect(asked).toHaveLength(1);
+    page.render(postedBodies(view).at(-1)!);
+    expect(page.element('step-2-body').hasAttribute('hidden')).toBe(false);
+
+    // Try again reads the list again; folding and opening the card again does not.
+    page.click('pr-reload');
+    page.click('step-2-title');
+    page.click('step-2-title');
+    await settle();
+    expect(asked).toHaveLength(2);
+  });
+
+  it("ticks the running stage's time so far each second, with no message from the extension", () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const stages = reviewStages('verdicts');
+      const started = STAGES_START + 6 * STAGE_MS;
+      vi.setSystemTime(started + 102_000);
+      const { page } = loadSideBar(reviewState({ result: { ...mixedResult(), stages }, reviewing: true, progress: { state: 'running', stage: stages[6]! } }));
+      const [elapsed] = page.root.querySelectorAll('span.elapsed');
+      expect(elapsed!.getAttribute('data-started')).toBe(String(started));
+
+      vi.setSystemTime(started + 103_000);
+      page.passSecond();
+      expect(elapsed!.textContent).toBe('1:43');
+      vi.setSystemTime(started + 3_600_000 + 61_000);
+      page.passSecond();
+      expect(elapsed!.textContent).toBe('1:01:01');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("works steps 5 and 6 from the keyboard: every finding action runs its command, the issue opens on GitHub, the setting in the Settings editor", async () => {
+    const result = { ...offeredResult(), criteria: mappedCriteriaResult().criteria, unexplained: unexplainedResult().unexplained };
+    const opened: [string, number][] = [];
+    const deps: SideBarDeps = { openLine: (path, line) => opened.push([path, line]), openOverviewAt: () => undefined, ticks: new StepTickStore(stubContext().globalState), comment: () => undefined };
+    const { page } = loadSideBar(reviewState({ result, storyRead: true, marks: marked(...mixedResult().parts) }), undefined, undefined, deps);
+    const part = result.parts[result.claims!.claims[1]!.part]!;
+
+    // Step 5's finding rows: draft, open (the line, read-only, through the opening the overview's chips use), verify again, the fetch, and the ask.
+    page.click('step-5-draft-claim-1');
+    page.click('step-5-open-claim-1');
+    page.click('step-5-verify-claim-1');
+    page.click('step-5-fetch-claim-2');
+    page.click('step-5-verifyClaim');
+    // Step 6's: the criteria's draft and issue link, the unexplained part's draft, the described change's, and the ⋯ at the criteria heading setting.
+    page.click('step-6-draft-criterion-1');
+    page.click('step-6-issue-criterion-1');
+    page.click('step-6-draft-unexplained-part-0');
+    page.click('step-6-draft-described-change-1');
+    page.click('step-6-criteriaHeading');
+
+    expect(stub.executedCommands).toEqual([
+      { id: DRAFT_COMMENT_COMMAND, args: [{ kind: 'claim', index: 1 }] },
+      { id: askCommand('verify'), args: [{ anchor: anchorOf(part), claim: 1 }] },
+      { id: FETCH_LIBRARY_COMMAND, args: [2] },
+      { id: askCommand('verify'), args: [] },
+      { id: DRAFT_COMMENT_COMMAND, args: [{ kind: 'criterion', index: 1 }] },
+      { id: DRAFT_COMMENT_COMMAND, args: [{ kind: 'unexplained part', index: 0 }] },
+      { id: DRAFT_COMMENT_COMMAND, args: [{ kind: 'described change', index: 1 }] },
+      { id: OPEN_SETTINGS_COMMAND, args: ['@id:second-look.criteriaHeading'] },
+    ]);
+    expect(opened).toEqual([['src/retry.py', 3]]);
+    expect(stub.openedExternals).toEqual(['https://github.com/example-org/example-repo/issues/30']);
+  });
+
+  it("opens a claim judged against a fetched library's cited file, the way the finding's thread does", () => {
+    const result = fetchedResult();
+    // The judged claim made in the description, so its finding's thread has no line of the change to sit on.
+    result.claims = {
+      ...result.claims!,
+      claims: result.claims!.claims.map((claim, index) => (index === 2 ? { ...claim, source: 'description', location: { kind: 'description', line: 2 } } : claim)),
+    };
+    const deps: SideBarDeps = { openLine: () => undefined, openOverviewAt: () => undefined, ticks: new StepTickStore(stubContext().globalState), comment: () => undefined };
+    const { page } = loadSideBar(reviewState({ result, storyRead: true, marks: marked(...mixedResult().parts) }), undefined, undefined, deps);
+
+    page.click('step-5-open-claim-2');
+
+    expect(stub.executedCommands).toEqual([{ id: OPEN_LIBRARY_EVIDENCE_COMMAND, args: [2, 0] }]);
+  });
+
+  it("opens where each claim is made from its step 5 row, and each line it cites: the head copy, or the check run on GitHub", () => {
+    const shown = pipelineResult();
+    const claims = shown.claims!;
+    const result = {
+      ...shown,
+      claims: {
+        ...claims,
+        claims: claims.claims.map((claim, index) =>
+          index === 0 && claim.verdict.kind !== 'not checked'
+            ? { ...claim, verdict: { ...claim.verdict, kind: 'refuted' as const } }
+            : index === 1
+              ? { ...claim, verdict: { kind: 'unverifiable' as const, source: "the model's memory" as const, reason: 'Nothing in the change shows it.', evidence: [], looked: [], settles: { kind: 'code' as const, note: 'the agent judged it verified, so the code should settle it: check it' } } }
+              : claim,
+        ),
+      },
+    };
+    const opened: [string, number][] = [];
+    const overviews: { descriptionLine?: number; storySentence?: number }[] = [];
+    const deps: SideBarDeps = {
+      openLine: (path, line) => opened.push([path, line]),
+      openOverviewAt: (options) => overviews.push(options),
+      ticks: new StepTickStore(stubContext().globalState),
+      comment: () => undefined,
+    };
+    const { page } = loadSideBar(reviewState({ result, storyRead: true, marks: marked(...mixedResult().parts) }), undefined, undefined, deps);
+
+    // A docstring's where opens its line in the head copy; the description's the overview at its marked line; the story's the story.
+    page.click('step-5-where-claim-2');
+    page.click('step-5-where-claim-1');
+    page.click('step-5-where-claim-4');
+    // A cited head-copy line opens in the head copy, the opening the overview's chips use; a cited CI log line its check run on GitHub.
+    page.click('step-5-cite-claim-2-0');
+    page.click('step-5-cite-claim-0-0');
+
+    expect(opened).toEqual([
+      ['src/retry.py', 3],
+      ['src/retry.py', 6],
+    ]);
+    expect(overviews).toEqual([{ descriptionLine: 1 }, { storySentence: 1 }]);
+    expect(stub.openedExternals).toEqual(['https://github.com/example-org/example-repo/actions/runs/700/job/9001']);
+  });
+
+  it('opens each range a claim\u2019s agent looked at from its step 5 row, in the head copy', () => {
+    const opened: [string, number][] = [];
+    const deps: SideBarDeps = {
+      openLine: (path, line) => opened.push([path, line]),
+      openOverviewAt: () => undefined,
+      ticks: new StepTickStore(stubContext().globalState),
+      comment: () => undefined,
+    };
+    const { page } = loadSideBar(reviewState({ result: settledResult(), storyRead: true, marks: marked(...mixedResult().parts) }), undefined, undefined, deps);
+
+    page.click('step-5-looked-claim-1-0');
+    page.click('step-5-looked-claim-1-1');
+    // A quiet claim's reading opens too: it has no thread, but its lines are the head copy's.
+    page.click('step-5-looked-claim-4-0');
+
+    expect(opened).toEqual([
+      ['src/retry.py', 5],
+      ['src/settings.ts', 2],
+      ['src/retry.py', 1],
+    ]);
+  });
+
+  it("ticks a step's I've-checked-these box, which redraws the card as done and keeps its tick across a redraw", async () => {
+    const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+    const result = judgedResult();
+    const ticks = new StepTickStore(stubContext().globalState);
+    const { provider, page, view } = loadSideBar(reviewState({ result, storyRead: true, marks: marked(...mixedResult().parts) }), undefined, undefined, { openLine: () => undefined, openOverviewAt: () => undefined, ticks, comment: () => undefined });
+    expect(page.element('step-5-tick').hasAttribute('checked')).toBe(false);
+
+    page.tick('step-5-tick', true);
+    await settle();
+    page.render(postedBodies(view).at(-1)!);
+    expect(page.element('step-5-tick').hasAttribute('checked')).toBe(true);
+    expect(page.element('step-5').getAttribute('class')).toBe('step done');
+    expect(ticks.read(result.pullRequest.url, result.pullRequest.headSha)).toEqual({ claims: true, criteria: false });
+
+    // A redraw the session posts keeps the tick, which the store reads for the review shown.
+    provider.update(reviewState({ result, storyRead: true, marks: marked(...mixedResult().parts) }), undefined);
+    page.render(postedBodies(view).at(-1)!);
+    expect(page.element('step-5-tick').hasAttribute('checked')).toBe(true);
+
+    page.tick('step-5-tick', false);
+    await settle();
+    page.render(postedBodies(view).at(-1)!);
+    expect(page.element('step-5-tick').hasAttribute('checked')).toBe(false);
+    expect(page.element('step-5').getAttribute('class')).toBe('step current');
+  });
+
+  it('names every finding row and tick for a screen reader, and the verdict words travel with their glyphs', () => {
+    const result = { ...judgedResult(), criteria: mappedCriteriaResult().criteria, unexplained: unexplainedResult().unexplained };
+    const { page } = loadSideBar(reviewState({ result, storyRead: true, marks: marked(...mixedResult().parts) }));
+
+    const interactive: Element[] = [];
+    const walk = (element: Element): void => {
+      if (['button', 'input'].includes(element.tagName)) interactive.push(element);
+      for (const child of element.children) walk(child);
+    };
+    walk(page.root);
+    for (const element of interactive) {
+      if (element.tagName === 'input') {
+        expect(element.getAttribute('type')).toBe('checkbox');
+        expect(element.getAttribute('aria-label')).toMatch(/^Reviewed: |^I've checked /);
+      } else {
+        expect(element.getAttribute('type')).toBe('button');
+      }
+    }
+    // The verdict words ride with their glyphs, and the state pills carry both.
+    expect(page.root.querySelectorAll('span.pill').length).toBeGreaterThan(3);
+    for (const pill of page.root.querySelectorAll('span.pill')) {
+      expect(pill.querySelector('span.icon')).not.toBeNull();
+    }
+  });
+
+  it("works steps 4, 7 and 8 from the keyboard: a part's Ask… and ⋯, step 4's ⋯ and filter, each comment's and draft's buttons, and the review sent", async () => {
+    const result = { ...mixedResult(), sinceLastLook: { commit: mixedResult().copies.base.commit, changedParts: [0] } } as unknown as ReturnType<typeof mixedResult>;
+    const pressed: [number, string][] = [];
+    const deps: SideBarDeps = { openLine: () => undefined, openOverviewAt: () => undefined, ticks: new StepTickStore(stubContext().globalState), comment: (id, action) => pressed.push([id, action]) };
+    const comments = [
+      { id: 1, kind: 'comment' as const, location: 'src/retry.py:5', body: 'Why five?' },
+      { id: 2, kind: 'draft' as const, location: 'src/retry.py:3', body: 'The loop runs five.', from: 'refuted claim' },
+    ];
+    const sent = { submit: 'approve' as const, comments: 1, commit: '998ded4a1234567890abcdef1234567890abcdef', url: 'https://github.com/example-org/example-repo/pull/42#pullrequestreview-1' };
+    const { page } = loadSideBar(reviewState({ result, comments, sent }), undefined, undefined, deps);
+    const anchor = anchorOf(result.parts[0]!);
+    const key = `${anchor.path}@${anchor.hunk?.oldStart ?? ''},${anchor.hunk?.newStart ?? ''}`;
+    const picks = ['What covers this?', 'Why this matters', 'Mirror reviewed files to GitHub’s Viewed'];
+    stub.quickPickResult = (items: { label: string }[]) => items.find((item) => item.label === picks[stub.quickPicks.length - 1]);
+    const settle = (): Promise<void> => new Promise((done) => setTimeout(done, 0));
+
+    page.click(`ask-${key}`);
+    await settle();
+    page.click(`more-${key}`);
+    await settle();
+    page.click('step-4-partsMenu');
+    await settle();
+    page.click('step-4-filterChanged');
+    page.click('step-7-open-1');
+    page.click('step-7-discard-1');
+    page.click('step-7-add-2');
+    page.click('step-7-discard-2');
+    page.click('step-8-openSent');
+    page.click('step-8-send');
+
+    expect(stub.executedCommands).toEqual([
+      { id: askCommand('cover'), args: [{ anchor }] },
+      { id: WHY_THIS_MATTERS_COMMAND, args: [{ anchor }] },
+      { id: FILTER_CHANGED_COMMAND, args: [] },
+      { id: SUBMIT_REVIEW_COMMAND, args: [] },
+    ]);
+    expect(stub.configurationUpdates).toEqual([{ key: 'second-look.mirrorViewedToGitHub', value: true, target: ConfigurationTarget.Global }]);
+    expect(pressed).toEqual([[1, 'open'], [1, 'discard'], [2, 'add'], [2, 'discard']]);
+    expect(stub.openedExternals).toEqual([sent.url]);
   });
 });

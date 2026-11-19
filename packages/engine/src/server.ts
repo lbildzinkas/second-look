@@ -7,9 +7,11 @@ import { NO_BUDGET_LIMITS, budgetLimitsProblem, budgetMeter, limitReason, limite
 import { pullRequestCacheDir } from './cache.js';
 import { draftComment, draftFinding, isFindingRef } from './draft-comment.js';
 import { GitHubClient, parsePullRequestUrl } from './github.js';
+import { pressCiLogRead } from './ci-log-read.js';
 import { pressLibraryFetch } from './library-verdicts.js';
-import { FINDING_REF_KINDS, type ReviewResult } from './protocol.js';
+import { FINDING_REF_KINDS, type ReviewResult, type ReviewStageAgent } from './protocol.js';
 import { reviewPullRequest } from './review.js';
+import { restoreSavedReview, saveReview, type SavedStamp } from './saved-review.js';
 import { sendReview } from './send.js';
 import { isMarkedPart, readReviewedMarks, saveReviewedMark, wholeFilesReviewed } from './reviewed-marks.js';
 import { isAskedClaim, withVerifiedClaim } from './verify.js';
@@ -17,10 +19,12 @@ import type { TestedRanking } from './ranking.js';
 import { isRepositoryName, listPullRequests } from './pull-request-list.js';
 import {
   ASK_METHOD,
+  CANCEL_REVIEW_METHOD,
   DRAFT_COMMENT_METHOD,
   ENGINE_FAILED_CODE,
   ENGINE_PROTOCOL_VERSION,
   FETCH_LIBRARY_METHOD,
+  READ_CI_LOG_METHOD,
   INITIALIZE_METHOD,
   JSON_RPC_INVALID_PARAMS,
   JSON_RPC_INVALID_REQUEST,
@@ -39,8 +43,10 @@ import {
   isRpcRequest,
   redactToken,
   type AskParams,
+  type CancelReviewParams,
   type DraftCommentParams,
   type FetchLibraryParams,
+  type ReadCiLogParams,
   type InitializeParams,
   type MarkReviewedParams,
   type MarkViewedParams,
@@ -134,6 +140,10 @@ export interface RpcServerDeps {
  * reviewer presses it: the engine keeps each pull request's latest review
  * result, so the claim is named by its index there, and answers with that
  * result, the claim judged again against the library's source.
+ * `readCiLog` presses one claim's Read the CI log the same way, only when
+ * the reviewer presses it, with the request's token: the engine reads the
+ * passing checks' logs at the reviewed head commit and answers with that
+ * result, the claim judged again with them.
  * `draftComment` drafts a comment from one finding of that latest
  * result, only when the reviewer asks for it, and answers with the
  * checked draft, which the reviewer edits and adds to the pending review
@@ -176,6 +186,22 @@ export interface RpcServerDeps {
  * groups with the request's token, reading each one's new-commits flag
  * from the last-look records and storing nothing; with no token, a token
  * GitHub refuses, or GitHub out of reach, it answers with the reason.
+ *
+ * `review/cancel` stops a running review by its request's id: the stage
+ * running stops, its agent run with it, and the review answers with the
+ * results that had landed, every stage not run marked stopped in the
+ * result's stages. Every stage notification and the response record each
+ * stage's id, position, start time, duration, agent and outcome.
+ *
+ * Each pull request's latest result is saved in its cache folder too, with
+ * when and by which agent, model and effort it was produced, and saved
+ * again as later fetches and asks change it. A review of a pull request
+ * whose result is saved at its head commit answers with that result at
+ * once, labelled, and runs no agent pass, unless its request asks for a
+ * fresh review. Once the pull request has new commits since, the review
+ * carries the saved result over for what they did not change and runs
+ * the agent again only for the rest; with no agent, the saved result is
+ * shown marked as from an earlier commit.
  */
 export async function runRpcServer(
   source: RpcLineSource,
@@ -188,6 +214,9 @@ export async function runRpcServer(
   const reviews = new Map<string, ReviewResult>();
   /** The budget meter of each pull request's latest review, by its URL, which its later fetches, asks and drafts add to. */
   const meters = new Map<string, BudgetMeter>();
+  /** What stops each running review, by its request's id. */
+  const stops = new Map<number, AbortController>();
+  const saver = reviewSaver(deps.cacheDir);
   for (;;) {
     const line = await source.readLine();
     if (line === null) {
@@ -223,11 +252,19 @@ export async function runRpcServer(
       continue;
     }
     if (value.method === REVIEW_METHOD) {
-      running.push(review(value.params, value.id, sink, initialized, deps, reviews, meters));
+      running.push(review(value.params, value.id, sink, initialized, deps, reviews, meters, stops, saver));
+      continue;
+    }
+    if (value.method === CANCEL_REVIEW_METHOD) {
+      cancelReview(value.params, value.id, sink, initialized, stops);
       continue;
     }
     if (value.method === FETCH_LIBRARY_METHOD) {
-      running.push(fetchLibrary(value.params, value.id, sink, initialized, deps, reviews, meters));
+      running.push(fetchLibrary(value.params, value.id, sink, initialized, deps, reviews, meters, saver));
+      continue;
+    }
+    if (value.method === READ_CI_LOG_METHOD) {
+      running.push(readCiLog(value.params, value.id, sink, initialized, deps, reviews, meters, saver));
       continue;
     }
     if (value.method === DRAFT_COMMENT_METHOD) {
@@ -235,7 +272,7 @@ export async function runRpcServer(
       continue;
     }
     if (value.method === ASK_METHOD) {
-      running.push(ask(value.params, value.id, sink, initialized, deps, reviews, meters));
+      running.push(ask(value.params, value.id, sink, initialized, deps, reviews, meters, saver));
       continue;
     }
     if (value.method === SEND_REVIEW_METHOD) {
@@ -263,7 +300,7 @@ export async function runRpcServer(
       failure(
         value.id,
         JSON_RPC_METHOD_NOT_FOUND,
-        `unknown method: ${value.method}; this engine speaks ${INITIALIZE_METHOD}, ${PROBE_AGENTS_METHOD}, ${TEST_AGENT_METHOD}, ${REVIEW_METHOD}, ${FETCH_LIBRARY_METHOD}, ${DRAFT_COMMENT_METHOD}, ${ASK_METHOD}, ${SEND_REVIEW_METHOD}, ${REVIEWED_MARKS_METHOD}, ${MARK_REVIEWED_METHOD}, ${MARK_VIEWED_METHOD} and ${LIST_PULL_REQUESTS_METHOD}`,
+        `unknown method: ${value.method}; this engine speaks ${INITIALIZE_METHOD}, ${PROBE_AGENTS_METHOD}, ${TEST_AGENT_METHOD}, ${REVIEW_METHOD}, ${CANCEL_REVIEW_METHOD}, ${FETCH_LIBRARY_METHOD}, ${READ_CI_LOG_METHOD}, ${DRAFT_COMMENT_METHOD}, ${ASK_METHOD}, ${SEND_REVIEW_METHOD}, ${REVIEWED_MARKS_METHOD}, ${MARK_REVIEWED_METHOD}, ${MARK_VIEWED_METHOD} and ${LIST_PULL_REQUESTS_METHOD}`,
       ),
     );
   }
@@ -465,6 +502,31 @@ function reviewFetch(deps: RpcServerDeps, meter: BudgetMeter | undefined): typeo
   return meter ? limitedFetch(deps.fetch ?? fetch, meter) : deps.fetch;
 }
 
+/** Saves each pull request's latest result in its cache folder, one save after another so the latest lands last. */
+interface ReviewSaver {
+  /** Saves the result, with who produced it when given, else with the stamp its pull request's result was saved with before. */
+  save(url: string, result: ReviewResult, stamp?: SavedStamp): Promise<void>;
+}
+
+/**
+ * The saver of the latest results. A save that fails leaves the result
+ * shown as it is: the next visit then simply reviews again.
+ */
+function reviewSaver(cacheDir: string): ReviewSaver {
+  const stamps = new Map<string, SavedStamp>();
+  let queue: Promise<void> = Promise.resolve();
+  return {
+    save(url, result, stamp) {
+      if (stamp !== undefined) stamps.set(url, stamp);
+      const kept = stamps.get(url);
+      const ref = parsePullRequestUrl(url);
+      if (kept === undefined || ref === null) return queue;
+      queue = queue.then(() => saveReview(cacheDir, ref, result, kept)).catch(() => undefined);
+      return queue;
+    },
+  };
+}
+
 async function review(
   params: unknown,
   id: number,
@@ -473,6 +535,8 @@ async function review(
   deps: RpcServerDeps,
   reviews: Map<string, ReviewResult>,
   meters: Map<string, BudgetMeter>,
+  stops: Map<number, AbortController>,
+  saver: ReviewSaver,
 ): Promise<void> {
   if (!initialized) {
     respond(
@@ -485,16 +549,20 @@ async function review(
     );
     return;
   }
-  const { url, token, agent: choice, criteriaHeading, budget } = (params ?? {}) as Partial<ReviewParams>;
+  const { url, token, agent: choice, criteriaHeading, budget, fresh } = (params ?? {}) as Partial<ReviewParams>;
   if (typeof url !== 'string' || url.length === 0 || typeof token !== 'string' || token.length === 0) {
     respond(
       sink,
       failure(
         id,
         JSON_RPC_INVALID_PARAMS,
-        `${REVIEW_METHOD} needs params: { "url": string, "token": string, "agent"?: { "agent": "${AGENT_NAMES.join('" | "')}", "model"?: string, "account"?: string }, "criteriaHeading"?: string, "budget"?: { "agentRuns": number, "filesFetched": number, "downloadMiB": number } }`,
+        `${REVIEW_METHOD} needs params: { "url": string, "token": string, "agent"?: { "agent": "${AGENT_NAMES.join('" | "')}", "model"?: string, "account"?: string }, "criteriaHeading"?: string, "budget"?: { "agentRuns": number, "filesFetched": number, "downloadMiB": number }, "fresh"?: boolean }`,
       ),
     );
+    return;
+  }
+  if (fresh !== undefined && typeof fresh !== 'boolean') {
+    respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${REVIEW_METHOD}: fresh must be a boolean`));
     return;
   }
   if (criteriaHeading !== undefined && (typeof criteriaHeading !== 'string' || criteriaHeading.trim() === '')) {
@@ -512,19 +580,40 @@ async function review(
     return;
   }
   const meter = budgetMeter(budget ?? NO_BUDGET_LIMITS);
+  const stop = new AbortController();
+  stops.set(id, stop);
+  const ref = parsePullRequestUrl(url);
   try {
+    const restored =
+      fresh === true || ref === null
+        ? undefined
+        : await restoreSavedReview({ cacheDir: deps.cacheDir, ref, client: new GitHubClient({ token, ...(deps.fetch ? { fetch: deps.fetch } : {}) }) });
+    // New commits since the saved result are reviewed with it carried over, when an agent can run.
+    const earlier = restored?.result.saved?.newHead !== undefined && deps.agent ? restored : undefined;
+    if (restored !== undefined && earlier === undefined) {
+      // The saved result's later fetches, asks and drafts add to the use it had.
+      if (restored.result.budget !== undefined) Object.assign(meter.used, restored.result.budget.used);
+      const shown = withBudget(restored.result, meter);
+      reviews.set(shown.pullRequest.url, shown);
+      meters.set(shown.pullRequest.url, meter);
+      await saver.save(shown.pullRequest.url, shown, restored.stamp);
+      respond(sink, { jsonrpc: '2.0', id, result: shown });
+      return;
+    }
+    const agentStage = deps.agent ? { adapter: choiceAdapter(deps.agent, choice), settings: agentRunSettings(deps.agent, choice) } : undefined;
     const result = await reviewPullRequest(url, {
       token,
       cacheDir: deps.cacheDir,
       lastLook: true,
       budget: meter,
+      signal: stop.signal,
       ...(criteriaHeading !== undefined ? { criteriaHeading } : {}),
       ...(deps.fetch ? { fetch: deps.fetch } : {}),
-      ...(deps.agent
+      ...(earlier ? { earlier } : {}),
+      ...(deps.agent && agentStage
         ? {
             agentStage: {
-              adapter: choiceAdapter(deps.agent, choice),
-              settings: agentRunSettings(deps.agent, choice),
+              ...agentStage,
               ...(deps.agent.testedRankings ? { testedRankings: deps.agent.testedRankings } : {}),
               onStage: (stage) => notify(sink, REVIEW_STAGE_METHOD, { id, ...stage }),
             },
@@ -533,11 +622,49 @@ async function review(
     });
     reviews.set(result.pullRequest.url, result);
     meters.set(result.pullRequest.url, meter);
+    // The label names the agent, model and effort the review asked for, as its stages record them.
+    const agent: ReviewStageAgent | undefined = agentStage && {
+      agent: agentStage.adapter.agent,
+      model: agentStage.settings.model ?? null,
+      effort: agentStage.settings.effort ?? null,
+    };
+    await saver.save(result.pullRequest.url, result, { reviewedAt: new Date().toISOString(), ...(agent ? { agent } : {}) });
     respond(sink, { jsonrpc: '2.0', id, result });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = stop.signal.aborted
+      ? 'the review was stopped before its first result landed'
+      : error instanceof Error
+        ? error.message
+        : String(error);
     respond(sink, failure(id, ENGINE_FAILED_CODE, redactToken(message, token)));
+  } finally {
+    stops.delete(id);
   }
+}
+
+/**
+ * Cancels the running review the request names by its id, and answers
+ * whether one was running; the review itself answers with what had landed.
+ */
+function cancelReview(
+  params: unknown,
+  id: number,
+  sink: RpcLineSink,
+  initialized: boolean,
+  stops: Map<number, AbortController>,
+): void {
+  if (!initialized) {
+    respond(sink, failure(id, NOT_INITIALIZED_CODE, `the protocol starts with a version handshake: ${INITIALIZE_METHOD} before ${CANCEL_REVIEW_METHOD}`));
+    return;
+  }
+  const { id: reviewId } = (params ?? {}) as Partial<CancelReviewParams>;
+  if (typeof reviewId !== 'number' || !Number.isInteger(reviewId)) {
+    respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${CANCEL_REVIEW_METHOD} needs params: { "id": number }, the id of the review request to stop`));
+    return;
+  }
+  const stop = stops.get(reviewId);
+  stop?.abort();
+  respond(sink, { jsonrpc: '2.0', id, result: { cancelled: stop !== undefined } });
 }
 
 /**
@@ -562,6 +689,7 @@ async function fetchLibrary(
   deps: RpcServerDeps,
   reviews: Map<string, ReviewResult>,
   meters: Map<string, BudgetMeter>,
+  saver: ReviewSaver,
 ): Promise<void> {
   if (!initialized) {
     respond(sink, failure(id, NOT_INITIALIZED_CODE, `the protocol starts with a version handshake: ${INITIALIZE_METHOD} before ${FETCH_LIBRARY_METHOD}`));
@@ -614,9 +742,83 @@ async function fetchLibrary(
     const latestMeter = meters.get(url);
     const updated = latestMeter ? withBudget(judged, latestMeter) : judged;
     reviews.set(url, updated);
+    await saver.save(url, updated);
     respond(sink, { jsonrpc: '2.0', id, result: updated });
   } catch (error) {
     respond(sink, failure(id, ENGINE_FAILED_CODE, error instanceof Error ? error.message : String(error)));
+  }
+}
+
+/**
+ * Presses one claim's Read the CI log in the pull request's latest review:
+ * reads the logs of the checks that passed at the head commit it read,
+ * with the request's token, and has the agent judge the claim again with
+ * them, then answers with the review result holding the new verdict. A
+ * read fails with a plain message, the token redacted, when the review is
+ * unknown, the claim offers no read, no passing check's log has lines or
+ * the agent gives no usable answer, and is refused, naming the limit,
+ * once the review has reached one of its budget limits.
+ */
+async function readCiLog(
+  params: unknown,
+  id: number,
+  sink: RpcLineSink,
+  initialized: boolean,
+  deps: RpcServerDeps,
+  reviews: Map<string, ReviewResult>,
+  meters: Map<string, BudgetMeter>,
+  saver: ReviewSaver,
+): Promise<void> {
+  if (!initialized) {
+    respond(sink, failure(id, NOT_INITIALIZED_CODE, `the protocol starts with a version handshake: ${INITIALIZE_METHOD} before ${READ_CI_LOG_METHOD}`));
+    return;
+  }
+  const { url, token, claim: index, agent: choice } = (params ?? {}) as Partial<ReadCiLogParams>;
+  const ref = typeof url === 'string' ? parsePullRequestUrl(url) : null;
+  if (ref === null || typeof url !== 'string' || typeof token !== 'string' || token.length === 0 || typeof index !== 'number' || !Number.isInteger(index) || index < 0) {
+    respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${READ_CI_LOG_METHOD} needs params: { "url": string, "token": string, "claim": number, "agent"?: { "agent": "${AGENT_NAMES.join('" | "')}", "model"?: string, "account"?: string } }`));
+    return;
+  }
+  const problem = choice === undefined ? undefined : agentChoiceProblem(choice);
+  if (problem !== undefined) {
+    respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${READ_CI_LOG_METHOD}: ${problem}`));
+    return;
+  }
+  const result = reviews.get(url);
+  const claim = result?.claims?.claims[index];
+  if (result === undefined || claim === undefined || deps.agent === undefined) {
+    respond(sink, failure(id, ENGINE_FAILED_CODE, `this engine has no reviewed claim ${index} of ${url}; review the pull request again`));
+    return;
+  }
+  const meter = meters.get(url);
+  const spent = meter === undefined ? undefined : spentLimit(meter);
+  if (spent !== undefined) {
+    respond(sink, failure(id, ENGINE_FAILED_CODE, `this CI log read is refused: ${limitReason(meter!, spent, 'read it')}`));
+    return;
+  }
+  const fetchImpl = reviewFetch(deps, meter);
+  try {
+    const judged = await pressCiLogRead(result, index, {
+      client: new GitHubClient({ token, ...(fetchImpl ? { fetch: fetchImpl } : {}) }),
+      ref,
+      adapter: choiceAdapter(deps.agent, choice),
+      settings: { ...agentRunSettings(deps.agent, choice, meter), stopAtBudget: true },
+    });
+    // Another press or a new review may have landed meanwhile: the new
+    // verdict goes into the latest result, and only onto the same claim.
+    const latest = reviews.get(url);
+    const claims = latest?.claims;
+    if (latest === undefined || claims === undefined || claims.claims[index]?.quote !== claim.quote) {
+      throw new Error('the review changed while the CI logs were read; press Read the CI log again');
+    }
+    const updated: ReviewResult = { ...latest, claims: { ...claims, claims: claims.claims.map((each, at) => (at === index ? judged : each)) } };
+    const latestMeter = meters.get(url);
+    const withUse = latestMeter ? withBudget(updated, latestMeter) : updated;
+    reviews.set(url, withUse);
+    await saver.save(url, withUse);
+    respond(sink, { jsonrpc: '2.0', id, result: withUse });
+  } catch (error) {
+    respond(sink, failure(id, ENGINE_FAILED_CODE, redactToken(error instanceof Error ? error.message : String(error), token)));
   }
 }
 
@@ -700,6 +902,7 @@ async function ask(
   deps: RpcServerDeps,
   reviews: Map<string, ReviewResult>,
   meters: Map<string, BudgetMeter>,
+  saver: ReviewSaver,
 ): Promise<void> {
   if (!initialized) {
     respond(sink, failure(id, NOT_INITIALIZED_CODE, `the protocol starts with a version handshake: ${INITIALIZE_METHOD} before ${ASK_METHOD}`));
@@ -744,6 +947,7 @@ async function ask(
       const updated = latest === undefined ? undefined : withVerifiedClaim(latest, answer.claim);
       if (updated === undefined) throw new Error('the review changed while the claim was judged; ask again');
       reviews.set(url, updated);
+      await saver.save(url, updated);
     }
     respond(sink, { jsonrpc: '2.0', id, result: answer });
   } catch (error) {

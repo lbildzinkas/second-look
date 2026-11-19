@@ -5,12 +5,14 @@ import {
   claimCounts,
   filesOfPart,
   findingCounts,
+  isFinding,
   isLabelledNoise,
   noiseSinks,
   partsLeft,
   reviewedState,
   unexplainedReasons,
   type AgentStamp,
+  type CarriedOver,
   type ClaimJudging,
   type Claims,
   type Comment,
@@ -38,7 +40,7 @@ export interface TreePart {
   kind: 'part' | 'noise';
   /** How many claims are attached to the part; absent when it has none. */
   claims?: number;
-  /** How many of its claims are findings, refuted or unverifiable; absent when none is. */
+  /** How many of its claims are findings — refuted, or unverifiable the code or a library's source could settle; absent when none is. */
   findings?: number;
   /** Why neither the description nor a linked issue explains the part; absent when the comparison does not flag it. */
   unexplained?: string;
@@ -127,6 +129,7 @@ export function buildTree(result: ReviewResult, marks: ReviewedMarks = NO_MARKS,
 
   const counts = claimCounts(result.claims, result.parts.length);
   const findings = findingCounts(result.claims, result.parts.length);
+  const quiet = quietCounts(result.claims, result.parts.length);
   const asked = askedCounts(result.claims, result.parts.length);
   const judged = result.claims?.judging?.outcome === 'judged';
   const unexplained = unexplainedReasons(result.unexplained, result.parts.length);
@@ -134,7 +137,8 @@ export function buildTree(result: ReviewResult, marks: ReviewedMarks = NO_MARKS,
   const changed = result.parts.map((part) => since !== undefined && changedSinceLastLook(part, since));
   const withBadges = (node: TreePart, index: number): TreePart => {
     const reviewed = reviewedState(result.parts[index]!, marks);
-    const badged = withUnexplained(withClaims(node, counts[index]!, findings[index]!, judged, asked[index]!, result.claims?.judging), unexplained[index]);
+    const carried = result.carriedOver === undefined ? node : withCarried(node, result.parts[index]!, result.carriedOver);
+    const badged = withUnexplained(withClaims(carried, counts[index]!, findings[index]!, judged, asked[index]!, quiet[index]!, result.claims?.judging), unexplained[index]);
     return withReviewed(changed[index] ? withLastLook(badged, since!, reviewed) : badged, reviewed);
   };
   result.parts.forEach((part, index) => {
@@ -209,7 +213,7 @@ export function pendingReviewSection(comments: readonly Comment[]): TreeSection 
 }
 
 /** The comment's first line, cut short for the row beside it. */
-function preview(body: string): string {
+export function preview(body: string): string {
   const firstLine = body.split('\n')[0] ?? '';
   return firstLine.length > 60 ? `${firstLine.slice(0, 57)}…` : firstLine;
 }
@@ -264,16 +268,19 @@ export function findingBadge(count: number): string {
  * findings: first beside the label, and in the tooltip with the claims'
  * state. A part with no claim is left as it is.
  */
-function withClaims(node: TreePart, count: number, findings: number, judged: boolean, asked: number, judging: ClaimJudging | undefined): TreePart {
+function withClaims(node: TreePart, count: number, findings: number, judged: boolean, asked: number, quiet: number, judging: ClaimJudging | undefined): TreePart {
   if (count === 0) return node;
   const badge = findings > 0 ? `${findingBadge(findings)} · ` : '';
   const text = `${badge}${claimCountText(count)}`;
+  const threads = `${findings} refuted, or unverifiable the code or a library's source could settle, each a thread on the diff`;
   const state = judged
     ? findings > 0
-      ? `${findings} refuted or unverifiable, each a thread on the diff; the overview lists them`
-      : 'all verified; the overview lists them'
+      ? `${threads}; the overview lists them`
+      : quiet > 0
+        ? `none is a finding, ${quiet} the code cannot settle; the overview lists them`
+        : 'all verified; the overview lists them'
     : asked > 0
-      ? `${asked} checked by the Verify this claim ask${findings > 0 ? `, ${findings} refuted or unverifiable, each a thread on the diff` : ''}, the ${judging === undefined ? 'verdicts pass did not run' : 'judging pass fell back'}; the overview lists them`
+      ? `${asked} checked by the Verify this claim ask${findings > 0 ? `, ${threads}` : ''}, the ${judging === undefined ? 'verdicts pass did not run' : 'judging pass fell back'}; the overview lists them`
       : 'not checked yet; the overview lists them';
   const line = `${claimCountText(count)}, ${state}`;
   return {
@@ -294,6 +301,15 @@ function askedCounts(claims: Claims | undefined, partCount: number): number[] {
   return counts;
 }
 
+/** How many claims each part holds that only the author's run or something outside the repository can settle, and so are no finding, by the part's index. */
+function quietCounts(claims: Claims | undefined, partCount: number): number[] {
+  const counts = new Array<number>(partCount).fill(0);
+  for (const claim of claims?.claims ?? []) {
+    if (claim.verdict.kind === 'unverifiable' && !isFinding(claim) && claim.part >= 0 && claim.part < partCount) counts[claim.part]!++;
+  }
+  return counts;
+}
+
 /** What a part whose content changed since the reviewer marked it says. */
 export const CHANGED_SINCE_MARKED = 'changed since you marked it';
 
@@ -309,6 +325,29 @@ function withReviewed(node: TreePart, reviewed: ReviewedState): TreePart {
     ...node,
     reviewed,
     description: node.description === undefined ? CHANGED_SINCE_MARKED : `${CHANGED_SINCE_MARKED} · ${node.description}`,
+    tooltip: node.tooltip === undefined ? line : `${node.tooltip}\n${line}`,
+  };
+}
+
+/** What a part carried over from the saved review of an earlier commit says. */
+export const CARRIED_OVER = 'carried over';
+
+/** What a part the review checked again, after the saved review of an earlier commit, says. */
+export const RECHECKED = 're-checked';
+
+/**
+ * A part's node in a review that carried results over from the saved
+ * review of an earlier commit: carried over, or re-checked when its code
+ * changed since, beside the label and in the tooltip with that commit.
+ */
+function withCarried(node: TreePart, part: Part, from: CarriedOver): TreePart {
+  const commit = shortCommit(from.commit);
+  const [note, line] = part.carried
+    ? [CARRIED_OVER, `Carried over from the review of ${commit}: its code did not change since.`]
+    : [RECHECKED, `Re-checked: its code changed since the review of ${commit}.`];
+  return {
+    ...node,
+    description: node.description === undefined ? note : `${note} · ${node.description}`,
     tooltip: node.tooltip === undefined ? line : `${node.tooltip}\n${line}`,
   };
 }
@@ -365,14 +404,41 @@ export function sinceLastLookLine(result: ReviewResult): string | undefined {
 }
 
 /**
- * The line above the tree: what changed since the reviewer's last look,
- * saying when the filter shows only those parts, then the review's
- * status; see {@link reviewStatus}.
+ * The line saying a saved review is from an earlier commit, so it is
+ * never read as current: the pull request has new commits since. Absent
+ * for a review that ran, and for a saved one of the head commit.
+ */
+export function earlierCommitLine(result: ReviewResult): string | undefined {
+  const newHead = result.saved?.newHead;
+  if (newHead === undefined) return undefined;
+  return `This saved review is of an earlier commit, ${shortCommit(result.pullRequest.headSha)}: the pull request has new commits, up to ${shortCommit(newHead)}. Review again to review them.`;
+}
+
+/**
+ * The line saying a review carried results over from the saved review of
+ * an earlier commit: that commit and its day, and how many parts and
+ * claims were carried over, the rest re-checked. Absent for a review
+ * that ran in full.
+ */
+export function carriedOverLine(result: ReviewResult): string | undefined {
+  const from = result.carriedOver;
+  if (from === undefined) return undefined;
+  const count = (items: readonly { carried?: true }[], noun: string): string =>
+    `${items.filter((item) => item.carried).length} of ${items.length} ${noun}${items.length === 1 ? '' : 's'}`;
+  const claims = result.claims === undefined ? '' : ` and ${count(result.claims.claims, 'claim')}`;
+  return `Re-checked only what changed since the review of ${shortCommit(from.commit)} on ${from.reviewedAt.slice(0, 10)}: ${count(result.parts, 'part')}${claims} carried over from it, the rest re-checked.`;
+}
+
+/**
+ * The line above the tree: that a saved review is from an earlier
+ * commit, or what the review carried over from one, what changed since
+ * the reviewer's last look, saying when the filter shows only those
+ * parts, then the review's status; see {@link reviewStatus}.
  */
 export function treeMessage(result: ReviewResult, running?: string, filter: TreeFilter = {}): string | undefined {
   const since = sinceLastLookLine(result);
   const shown = since !== undefined && filter.onlyChangedSinceLastLook ? `${since} Showing only those.` : since;
-  const lines = [shown, reviewStatus(result, running)].filter((line) => line !== undefined);
+  const lines = [earlierCommitLine(result), carriedOverLine(result), shown, reviewStatus(result, running)].filter((line) => line !== undefined);
   return lines.length === 0 ? undefined : lines.join(' ');
 }
 

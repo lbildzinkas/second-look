@@ -1,9 +1,15 @@
 import {
   REVIEW_RESULT_VERSION,
+  REVIEW_STAGE_IDS,
+  type Claim,
+  type ClaimVerdict,
   type Hunk,
   type NoiseAssessment,
   type Part,
   type ReviewResult,
+  type ReviewStageId,
+  type ReviewStageRecord,
+  type Settles,
 } from '@second-look/engine';
 
 /** The noise assessment every part carries: no rule applied. */
@@ -271,6 +277,7 @@ export function judgedResult(copies?: CopyPaths): ReviewResult {
             source: 'the change itself',
             reason: 'send retries a failed delivery.',
             evidence: [{ path: 'src/retry.py', line: 5, quote: 'return retry(send)' }],
+            looked: [{ path: 'src/retry.py', line: 1, endLine: 8 }],
           },
         },
         {
@@ -280,11 +287,12 @@ export function judgedResult(copies?: CopyPaths): ReviewResult {
             source: 'the change itself',
             reason: 'The loop runs five times.',
             evidence: [{ path: 'src/retry.py', line: 6, quote: 'for attempt in range(5):' }],
+            looked: [],
           },
         },
         {
           ...comment!,
-          verdict: { kind: 'unverifiable', source: 'the change itself', reason: 'The status check is in the library.', evidence: [], needsLibrary: 'requests' },
+          verdict: { kind: 'unverifiable', source: 'the change itself', reason: 'The status check is in the library.', evidence: [], needsLibrary: 'requests', looked: [], settles: { kind: 'library', note: 'the source of requests could settle it' } },
         },
         {
           ...story!,
@@ -293,9 +301,58 @@ export function judgedResult(copies?: CopyPaths): ReviewResult {
             source: "the model's memory",
             reason: 'Nothing in the change shows it.',
             evidence: [],
+            looked: [],
+            settles: { kind: 'code', note: 'the agent judged it verified, so the code should settle it: check it' },
             recheck: "the model's memory never yields verified",
           },
         },
+      ],
+    },
+  };
+}
+
+/**
+ * The judged result as a review after new commits leaves it: the retry
+ * part carried over from the saved review of an earlier commit with its
+ * description and docstring claims, and the settings part re-checked.
+ */
+export function carriedResult(copies?: CopyPaths): ReviewResult {
+  const shown = judgedResult(copies);
+  const claims = shown.claims!;
+  return {
+    ...shown,
+    carriedOver: { commit: '5555555555555555555555555555555555555555', reviewedAt: '2026-10-11T14:03:27.000Z', agent: { agent: 'pi', model: null, effort: 'high' } },
+    parts: shown.parts.map((each, index) => (index === 0 ? { ...each, carried: true } : each)),
+    claims: { ...claims, claims: claims.claims.map((claim, index) => (index < 2 ? { ...claim, carried: true } : claim)) },
+  };
+}
+
+/**
+ * The judged result with the agent's reading on the refuted claim, and
+ * two more description claims the code cannot settle: one only the
+ * author's run can, one only something outside the repository can.
+ */
+export function settledResult(copies?: CopyPaths): ReviewResult {
+  const shown = judgedResult(copies);
+  const claims = shown.claims!;
+  const [description, docstring] = claims.claims;
+  const quiet = (quote: string, line: number, settles: Settles): Claim => ({
+    ...description!,
+    quote,
+    location: { kind: 'description', line },
+    verdict: { kind: 'unverifiable', source: 'the change itself', reason: 'Nothing in the change can show it.', evidence: [], looked: [{ path: 'src/retry.py', line: 1, endLine: 8 }], settles },
+  });
+  return {
+    ...shown,
+    claims: {
+      ...claims,
+      claims: [
+        description!,
+        { ...docstring!, verdict: { ...(docstring!.verdict as Exclude<ClaimVerdict, { kind: 'not checked' }>), looked: [{ path: 'src/retry.py', line: 5, endLine: 6 }, { path: 'src/settings.ts', line: 2, endLine: 2 }] } },
+        claims.claims[2]!,
+        claims.claims[3]!,
+        quiet('Sends 40% fewer duplicates in our runs.', 7, { kind: 'author', note: "the measured numbers come from the author's own run" }),
+        quiet('The delivery service accepts five retries.', 8, { kind: 'outside-repository', note: 'the delivery service limits' }),
       ],
     },
   };
@@ -355,12 +412,52 @@ export function pipelineResult(copies?: CopyPaths): ReviewResult {
             source: 'a CI log',
             reason: 'The failed test shows five attempts.',
             evidence: [{ path: 'check / test', line: 2, quote: 'FAILED test_retry.py::test_gives_up - assert 5 == 3', ciLog: true }],
+            looked: [],
           },
         },
         ...claims.claims,
       ],
     },
   };
+}
+
+/**
+ * The pipeline result with its description claim unverifiable, a CI log
+ * could settle it, offering Read the CI log for the check that passed.
+ */
+export function ciLogOfferedResult(copies?: CopyPaths): ReviewResult {
+  const shown = pipelineResult(copies);
+  const claims = shown.claims!;
+  const verdict = {
+    kind: 'unverifiable' as const,
+    source: 'the change itself' as const,
+    reason: 'Only a check run shows it.',
+    evidence: [],
+    looked: [],
+    settles: { kind: 'ci-log' as const, note: 'the lint check would show it' },
+    ciLogFetch: { checks: ['check / lint'], reason: 'check / lint passed at the head commit; reading its log could settle the claim.' },
+  };
+  return { ...shown, claims: { ...claims, claims: claims.claims.map((claim, index) => (index === 1 ? { ...claim, verdict } : claim)) } };
+}
+
+/** The offered result after the reviewer pressed Read the CI log: the description claim refuted by a line of the passing check's log. */
+export function ciLogReadResult(copies?: CopyPaths): ReviewResult {
+  const shown = ciLogOfferedResult(copies);
+  const claims = shown.claims!;
+  const verdict = {
+    kind: 'refuted' as const,
+    source: 'a CI log' as const,
+    reason: 'The lint check reports a warning.',
+    evidence: [{ path: 'check / lint', line: 2, quote: '1 problem (0 errors, 1 warning)', ciLog: true as const, passingCheck: true as const }],
+    looked: [],
+    ciLogFetch: { checks: ['check / lint'], reason: 'check / lint passed at the head commit; reading its log could settle the claim.' },
+    ciLogs: {
+      checks: [{ name: 'check / lint', url: 'https://github.com/example-org/example-repo/actions/runs/700/job/9002', detail: 'the log marks no failing step, so its last 3 lines are kept' }],
+      promptVersion: '7',
+      stamp: claims.stamp,
+    },
+  };
+  return { ...shown, claims: { ...claims, claims: claims.claims.map((claim, index) => (index === 1 ? { ...claim, verdict } : claim)) } };
 }
 
 /** The library fetch the judged result's comment claim offers, for the source of `requests`. */
@@ -405,6 +502,7 @@ export function fetchedResult(libraryPath = '/cache/github.com/example-org/examp
                 source: 'library source at the pinned version',
                 reason: 'raise_for_status raises only for 4xx and 5xx statuses.',
                 evidence: [{ path: 'requests/models.py', line: 1021, quote: 'if 400 <= self.status_code < 500:' }],
+                looked: [],
                 libraryFetch: REQUESTS_FETCH,
                 library: {
                   library: 'requests',
@@ -578,4 +676,74 @@ export function docLinksResult(copies?: CopyPaths): ReviewResult {
       },
     },
   };
+}
+
+/** The agent, model and effort every stage of the staged results below ran on. */
+const STAGE_AGENT = { agent: 'pi', model: 'zai/glm-4.6', effort: 'high' } as const;
+
+/** The start of the review, as the plain pass records it. */
+const REVIEW_STARTED_AT = '2026-10-04T00:00:00.000Z';
+
+/**
+ * The stages of a review whose verdicts stage is running, over the claims
+ * result: every stage before it done, the ranking fallen back, the
+ * criteria and documentation links still to come.
+ */
+export function verdictsRunningStages(): ReviewStageRecord[] {
+  const stage = (
+    id: ReviewStageRecord['id'],
+    position: number,
+    state: ReviewStageRecord['state'],
+    more: Partial<ReviewStageRecord> = {},
+  ): ReviewStageRecord => ({ id, position, total: 9, state, ...more });
+  return [
+    stage('plain', 1, 'done', { startedAt: REVIEW_STARTED_AT, durationMs: 3_000 }),
+    stage('grouping', 2, 'done', { startedAt: '2026-10-04T00:00:03.000Z', durationMs: 31_000, agent: STAGE_AGENT }),
+    stage('ranking', 3, 'fell back', { startedAt: '2026-10-04T00:00:34.000Z', durationMs: 0, agent: STAGE_AGENT, detail: 'plain ranking kept: no ranking evaluation for this combination' }),
+    stage('story', 4, 'done', { startedAt: '2026-10-04T00:00:34.000Z', durationMs: 22_000, agent: STAGE_AGENT }),
+    stage('unexplained', 5, 'done', { startedAt: '2026-10-04T00:00:56.000Z', durationMs: 19_000, agent: STAGE_AGENT }),
+    stage('claims', 6, 'done', { startedAt: '2026-10-04T00:01:15.000Z', durationMs: 21_000, agent: STAGE_AGENT }),
+    stage('verdicts', 7, 'running', { startedAt: '2026-10-04T00:01:36.000Z', agent: STAGE_AGENT }),
+    stage('criteria', 8, 'to come'),
+    stage('docLinks', 9, 'to come'),
+  ];
+}
+
+/**
+ * The stages of a finished review over the judged result: every stage
+ * done save the ranking, which fell back, with the durations that sum to
+ * the review's whole time.
+ */
+export function doneStages(): ReviewStageRecord[] {
+  const ends: Partial<Record<ReviewStageRecord['id'], number>> = { verdicts: 102_000, criteria: 38_000, docLinks: 15_000 };
+  return verdictsRunningStages().map((record) =>
+    ends[record.id] === undefined ? record : { ...record, state: 'done' as const, durationMs: ends[record.id] },
+  );
+}
+
+/** When the staged reviews below start, and how long each of their finished stages takes: nine of them, 4:12 in all. */
+export const STAGES_START = Date.parse('2026-10-11T10:00:00.000Z');
+export const STAGE_MS = 28_000;
+
+/**
+ * A review's stages as the engine records them: every stage before
+ * `running` done, `running` running since its start, the rest to come —
+ * or, with no stage running, every one done — each stage that ran with
+ * Claude Code on claude-sonnet-5-5 at high, the plain pass with no agent,
+ * then `changes` applied to the stages they name.
+ */
+export function reviewStages(running?: ReviewStageId, changes: Partial<Record<ReviewStageId, Partial<ReviewStageRecord>>> = {}): ReviewStageRecord[] {
+  const at = running === undefined ? REVIEW_STAGE_IDS.length : REVIEW_STAGE_IDS.indexOf(running);
+  return REVIEW_STAGE_IDS.map((id, index): ReviewStageRecord => {
+    const ran =
+      index > at
+        ? { state: 'to come' as const }
+        : {
+            state: index === at ? ('running' as const) : ('done' as const),
+            startedAt: new Date(STAGES_START + index * STAGE_MS).toISOString(),
+            ...(index === at ? {} : { durationMs: STAGE_MS }),
+            ...(id === 'plain' ? {} : { agent: { agent: 'claude-code', model: 'claude-sonnet-5-5', effort: 'high' } }),
+          };
+    return { id, position: index + 1, total: REVIEW_STAGE_IDS.length, ...ran, ...changes[id] };
+  });
 }

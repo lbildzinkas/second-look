@@ -133,7 +133,7 @@ describe('offerLibraryFetches', () => {
     source: 'docstring',
     location: { kind: 'file', path: 'app/doc_links.py', line: 9, endLine: 9 },
     part: 0,
-    verdict: { kind: 'unverifiable', source: 'the change itself', reason: 'It turns on httpx.', evidence: [], ...(needsLibrary ? { needsLibrary } : {}) },
+    verdict: { kind: 'unverifiable', source: 'the change itself', reason: 'It turns on httpx.', evidence: [], ...(needsLibrary ? { needsLibrary } : {}), looked: [], settles: { kind: 'library', note: 'the source of httpx could settle it' } },
   });
 
   it('offers a fetch naming the library, the pinned version, the lock file and why, for a claim that needs a pinned library', async () => {

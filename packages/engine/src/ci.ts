@@ -1,12 +1,14 @@
 import type { CheckRunListing, GitHubClient, PullRequestRef } from './github.js';
-import type { CheckLog, CheckRun, CiResults } from './protocol.js';
+import type { CheckLog, CheckRun, CiResults, Claim } from './protocol.js';
 
 /**
  * The CI pass: lists the check runs and annotations GitHub reports at the
  * pull request's head commit, read-only, and fetches a job's log only when
  * the job failed, trimmed to the step that failed. A pull request's checks
  * run on its merge commit, so the companion labels them that way. CI
- * that cannot be read never fails the review: the result says why.
+ * that cannot be read never fails the review: the result says why. A
+ * passing job's log is fetched only when the reviewer presses Read the CI
+ * log on a claim a CI log could settle, as library source is (ADR 0003).
  */
 
 /** The conclusions that mean a check failed, so its log is worth reading. */
@@ -30,6 +32,11 @@ const ERROR_LINE = /^##\[error\]/;
 /** Whether a check run failed. */
 export function checkFailed(conclusion: string | null): boolean {
   return conclusion !== null && FAILED.has(conclusion);
+}
+
+/** Whether a check run passed. */
+export function checkPassed(conclusion: string | null): boolean {
+  return conclusion === 'success';
 }
 
 /** A line kept short. */
@@ -77,19 +84,22 @@ function reason(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** A check run's trimmed log, or why it has none: only a GitHub Actions job has a log to read. */
+async function readLog(client: GitHubClient, ref: PullRequestRef, listed: CheckRunListing): Promise<CheckLog> {
+  if (listed.app !== 'github-actions') return { lines: [], detail: 'it is not a GitHub Actions job, so there is no log to read' };
+  try {
+    return trimLog(await client.downloadJobLog(ref, listed.id));
+  } catch (error) {
+    return { lines: [], detail: `its log could not be read: ${reason(error)}` };
+  }
+}
+
 /** One check run with its annotations and, when it failed, its trimmed log. */
 async function readCheck(client: GitHubClient, ref: PullRequestRef, listed: CheckRunListing): Promise<CheckRun> {
   const annotations = listed.annotations > 0 ? await client.listAnnotations(ref, listed.id).catch(() => []) : [];
   const check: CheckRun = { name: listed.name, status: listed.status, conclusion: listed.conclusion, url: listed.url, annotations };
   if (!checkFailed(listed.conclusion)) return check;
-  if (listed.app !== 'github-actions') {
-    return { ...check, log: { lines: [], detail: 'it is not a GitHub Actions job, so there is no log to read' } };
-  }
-  try {
-    return { ...check, log: trimLog(await client.downloadJobLog(ref, listed.id)) };
-  } catch (error) {
-    return { ...check, log: { lines: [], detail: `its log could not be read: ${reason(error)}` } };
-  }
+  return { ...check, log: await readLog(client, ref, listed) };
 }
 
 /**
@@ -107,20 +117,74 @@ export async function readCi(client: GitHubClient, ref: PullRequestRef, headSha:
   }
   const checks = await Promise.all(listed.map((each) => readCheck(client, ref, each)));
   const failed = checks.filter((check) => checkFailed(check.conclusion)).length;
-  const detail = `${checks.length} check run${checks.length === 1 ? '' : 's'} at the head commit, ${failed} failed; logs are read only for failed jobs`;
+  const detail = `${checks.length} check run${checks.length === 1 ? '' : 's'} at the head commit, ${failed} failed; logs are read only for failed jobs, and a passing job's only on the reviewer's press`;
   return { ...base, outcome: 'read', detail, checks };
 }
 
-/** The failed checks' readable logs, each with the id the verdicts prompt gives it. */
+/**
+ * Reads the logs of the checks that passed at the pull request's head
+ * commit, only once the reviewer pressed Read the CI log: lists the check
+ * runs again and fetches each passing GitHub Actions job's log, trimmed
+ * and capped as a failed job's is (see {@link trimLog}). Throws with a
+ * plain reason when the check runs cannot be read. Nothing is written to
+ * GitHub.
+ */
+export async function readPassingLogs(client: GitHubClient, ref: PullRequestRef, headSha: string): Promise<CheckRun[]> {
+  let listed: CheckRunListing[];
+  try {
+    listed = await client.listCheckRuns(ref, headSha);
+  } catch (error) {
+    throw new Error(`the check runs could not be read: ${reason(error)}`);
+  }
+  const passed = listed.filter((each) => checkPassed(each.conclusion));
+  return Promise.all(
+    passed.map(async (each) => ({ name: each.name, status: each.status, conclusion: each.conclusion, url: each.url, annotations: [], log: await readLog(client, ref, each) })),
+  );
+}
+
+/** The checks' readable logs, each with the id the verdicts prompt gives it. */
 export interface CiLogItem {
   /** The id the prompt gives it, such as `log1`. */
   id: string;
   check: CheckRun;
   log: CheckLog;
+  /** True for a passing check's log, read on the reviewer's press; a failed check's otherwise. */
+  passing?: true;
+}
+
+/** The checks whose logs have lines, numbered in the order GitHub lists them. */
+function logItems(checks: readonly CheckRun[], passing: boolean): CiLogItem[] {
+  const read = checks.filter((check) => check.log !== undefined && check.log.lines.length > 0);
+  return read.map((check, index) => ({ id: `log${index + 1}`, check, log: check.log!, ...(passing ? { passing: true as const } : {}) }));
 }
 
 /** The failed checks whose logs have lines, numbered in the order GitHub lists them. */
 export function ciLogItems(ci: CiResults | undefined): CiLogItem[] {
-  const checks = (ci?.checks ?? []).filter((check) => check.log !== undefined && check.log.lines.length > 0);
-  return checks.map((check, index) => ({ id: `log${index + 1}`, check, log: check.log! }));
+  return logItems(ci?.checks ?? [], false);
+}
+
+/** The passing checks whose logs a press read with lines, numbered in the order GitHub lists them. */
+export function passingLogItems(checks: readonly CheckRun[]): CiLogItem[] {
+  return logItems(checks, true);
+}
+
+/**
+ * Offers Read the CI log on every unverifiable claim a CI log could
+ * settle, when the CI the review read has checks that passed at the head
+ * commit and the claim was not judged with their logs already; an offer
+ * not yet pressed, such as one a claim carried from an earlier commit,
+ * is made again from this CI, or withdrawn. Nothing is fetched until the
+ * reviewer presses it.
+ */
+export function offerCiLogReads(claims: readonly Claim[], ci: CiResults | undefined): Claim[] {
+  const passed = (ci?.checks ?? []).filter((check) => checkPassed(check.conclusion)).map((check) => check.name);
+  const checks = passed.length === 1 ? `${passed[0]} passed` : `${passed.length} checks passed`;
+  const reason = `${checks} at the head commit; reading ${passed.length === 1 ? 'its log' : 'their logs'} could settle the claim.`;
+  return claims.map((claim) => {
+    const { verdict } = claim;
+    if (verdict.kind === 'not checked' || verdict.ciLogs !== undefined) return claim;
+    const { ciLogFetch: unpressed, ...rest } = verdict;
+    if (verdict.kind !== 'unverifiable' || verdict.settles?.kind !== 'ci-log' || passed.length === 0) return unpressed === undefined ? claim : { ...claim, verdict: rest };
+    return { ...claim, verdict: { ...rest, ciLogFetch: { checks: passed, reason } } };
+  });
 }

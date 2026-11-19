@@ -3,14 +3,20 @@ import { REVIEW_RESULT_VERSION, type NoiseAssessment, type ReviewResult } from '
 import { ProtocolError, isReviewResult, parseReviewResult } from '../src/index.js';
 import {
   REQUESTS_FETCH,
+  reviewStages,
+  carriedResult,
+  ciLogOfferedResult,
+  ciLogReadResult,
   claimsResult,
   criteriaResult,
+  doneStages,
   fetchedResult,
   judgedResult,
   mappedCriteriaResult,
   offeredResult,
   pipelineResult,
   unexplainedResult,
+  verdictsRunningStages,
 } from './results.js';
 
 function sampleResult(): ReviewResult {
@@ -129,6 +135,31 @@ describe('isReviewResult', () => {
     expect(isReviewResult(null)).toBe(false);
     expect(isReviewResult('review')).toBe(false);
     expect(isReviewResult({ version: 3 })).toBe(false);
+  });
+
+  it('accepts the review\u2019s stages, running and finished, and rejects a record without its shape', () => {
+    const withRunning = { ...sampleResult(), stages: verdictsRunningStages() };
+    const withDone = { ...sampleResult(), stages: doneStages() };
+    expect(isReviewResult(withRunning)).toBe(true);
+    expect(isReviewResult(withDone)).toBe(true);
+    expect(isReviewResult(JSON.parse(JSON.stringify(withRunning)))).toBe(true);
+
+    const stages = () => JSON.parse(JSON.stringify(withRunning)).stages as Record<string, unknown>[];
+    for (const broken of [
+      [{ id: 'no-such-stage', position: 1, total: 9, state: 'done' }],
+      [{ id: 'plain', position: 1, total: 9, state: 'finished' }],
+      [{ id: 'plain', position: 0, total: 9, state: 'done' }],
+      [{ id: 'plain', position: 1, total: 0, state: 'done' }],
+      [{ id: 'plain', position: 1, total: 9, state: 'done', durationMs: -1 }],
+      [{ id: 'plain', position: 1, total: 9, state: 'done', startedAt: 42 }],
+      [{ id: 'verdicts', position: 7, total: 9, state: 'running', agent: { agent: 'pi', model: 4 } }],
+      [{ id: 'verdicts', position: 7, total: 9, state: 'running', stamp: { agent: 'pi' } }],
+    ]) {
+      expect(isReviewResult({ ...sampleResult(), stages: broken })).toBe(false);
+    }
+    const misshapen = stages();
+    delete misshapen[0]!['state'];
+    expect(isReviewResult({ ...sampleResult(), stages: misshapen })).toBe(false);
   });
 
   it('rejects a part without its syntax findings', () => {
@@ -403,7 +434,7 @@ describe('isReviewResult for the claims', () => {
       location: { kind: 'file', path: 'src/retry.py', line: 9, endLine: 9 },
       part: 0,
       asked: true,
-      verdict: { kind: 'refuted', source: 'the change itself', reason: 'A 404 is retried.', evidence: [{ path: 'src/retry.py', line: 5, quote: 'if response.status >= 400:' }] },
+      verdict: { kind: 'refuted', source: 'the change itself', reason: 'A 404 is retried.', evidence: [{ path: 'src/retry.py', line: 5, quote: 'if response.status >= 400:' }], looked: [] },
     };
     const pipeline: Record<string, unknown> = {
       quote: 'send gives up after five attempts.',
@@ -456,7 +487,7 @@ describe('isReviewResult for the verdicts', () => {
     value.claims.claims[index]!['verdict'] = verdict;
     return value;
   };
-  const refuted = { kind: 'refuted', source: 'the change itself', reason: 'r', evidence: [{ path: 'src/retry.py', line: 6, quote: 'for attempt in range(5):' }] };
+  const refuted = { kind: 'refuted', source: 'the change itself', reason: 'r', evidence: [{ path: 'src/retry.py', line: 6, quote: 'for attempt in range(5):' }], looked: [] };
 
   it('accepts judged claims, each verdict with its evidence source, and a judging that fell back with every claim not checked', () => {
     expect(isReviewResult(judgedResult())).toBe(true);
@@ -496,6 +527,41 @@ describe('isReviewResult for the verdicts', () => {
     for (const value of cases) expect(isReviewResult(value)).toBe(false);
   });
 
+  it('accepts what each verdict looked at, and what settles an unverifiable one, and rejects a verdict missing or misshaping either', () => {
+    const settles = { kind: 'author', note: 'Only the author ran it.' };
+    const unverifiable = { ...refuted, kind: 'unverifiable', evidence: [], settles };
+    expect(isReviewResult(withVerdict({ ...refuted, looked: [{ path: 'src/retry.py', line: 1, endLine: 8 }] }))).toBe(true);
+    expect(isReviewResult(withVerdict({ ...unverifiable, lookedRecheck: 'dropped what the agent read at src/gone.py:1 names a file the head copy does not have' }))).toBe(true);
+    for (const kind of ['code', 'library', 'ci-log', 'sandboxed-run', 'outside-repository', 'author']) {
+      expect(isReviewResult(withVerdict({ ...unverifiable, settles: { ...settles, kind } }))).toBe(true);
+    }
+    const cases: unknown[] = [
+      withVerdict({ ...refuted, looked: undefined }),
+      withVerdict({ ...refuted, looked: [{ path: 'src/retry.py', line: 4, endLine: 2 }] }),
+      withVerdict({ ...refuted, looked: [{ path: '', line: 1, endLine: 1 }] }),
+      withVerdict({ ...refuted, lookedRecheck: 3 }),
+      withVerdict({ ...refuted, settles }),
+      withVerdict({ ...unverifiable, settles: undefined }),
+      withVerdict({ ...unverifiable, settles: { ...settles, kind: 'a hunch' } }),
+      withVerdict({ ...unverifiable, settles: { kind: 'author' } }),
+    ];
+    for (const value of cases) expect(isReviewResult(value)).toBe(false);
+  });
+
+  it('ignores a judged result of the previous version, whose verdicts carry neither, rather than misreading it', () => {
+    const older = judged() as Loose & { version: number };
+    older.version = REVIEW_RESULT_VERSION - 1;
+    for (const claim of older.claims.claims) {
+      const verdict = claim['verdict'] as Record<string, unknown>;
+      delete verdict['looked'];
+      delete verdict['settles'];
+    }
+    expect(isReviewResult(older)).toBe(false);
+    expect(() => parseReviewResult(JSON.stringify(older))).toThrow(ProtocolError);
+    // The same verdicts read as the current version are refused too: no field is guessed.
+    expect(isReviewResult({ ...older, version: REVIEW_RESULT_VERSION })).toBe(false);
+  });
+
   it('accepts a verdict offering a library fetch, and one judged against the fetched library', () => {
     expect(isReviewResult(offeredResult())).toBe(true);
     expect(isReviewResult(fetchedResult())).toBe(true);
@@ -504,6 +570,26 @@ describe('isReviewResult for the verdicts', () => {
     for (const archive of ['npm package', 'crate', 'Go module', 'sources jar', 'named repository']) {
       expect(isReviewResult(withVerdict({ ...refuted, library: { ...library, archive } }))).toBe(true);
     }
+  });
+
+  it("accepts a Read the CI log offered, and a verdict judged again with a passing check's log, and rejects a malformed one", () => {
+    expect(isReviewResult(ciLogOfferedResult())).toBe(true);
+    expect(isReviewResult(ciLogReadResult())).toBe(true);
+    const offer = { checks: ['check / lint'], reason: 'r' };
+    const stamp = { agent: 'pi', agentVersion: '0.86.1', model: null, effort: null, runAt: '2026-10-04T00:00:00.000Z' };
+    const fromLog = { ...refuted, source: 'a CI log', evidence: [{ path: 'check / lint', line: 2, quote: 'Lint passed.', ciLog: true, passingCheck: true }] };
+    expect(isReviewResult(withVerdict({ ...fromLog, ciLogFetch: offer, ciLogs: { checks: [{ name: 'check / lint', url: 'https://x', detail: 'd' }], promptVersion: '7', stamp } }))).toBe(true);
+    const cases: unknown[] = [
+      withVerdict({ ...refuted, ciLogFetch: { ...offer, checks: [] } }),
+      withVerdict({ ...refuted, ciLogFetch: { ...offer, checks: [''] } }),
+      withVerdict({ ...refuted, ciLogFetch: { checks: offer.checks } }),
+      withVerdict({ ...fromLog, ciLogs: { checks: [{ name: 'check / lint', url: 'https://x' }], promptVersion: '7', stamp } }),
+      withVerdict({ ...fromLog, ciLogs: { checks: [], promptVersion: '7' } }),
+      withVerdict({ ...fromLog, evidence: [{ path: 'check / lint', line: 2, quote: 'Lint passed.', ciLog: true, passingCheck: 'yes' }] }),
+      // Only a CI log's line can be a passing check's.
+      withVerdict({ ...refuted, evidence: [{ path: 'src/retry.py', line: 6, quote: 'for attempt in range(5):', passingCheck: true }] }),
+    ];
+    for (const value of cases) expect(isReviewResult(value)).toBe(false);
   });
 
   it('accepts a named repository offered or named, and the plain reason a verdict offers no fetch', () => {
@@ -755,6 +841,78 @@ describe('isReviewResult for the budget', () => {
   });
 });
 
+describe('isReviewResult for the stages', () => {
+  it('accepts a result with its stages, running or ended, and one without, as a plain review is', () => {
+    expect(isReviewResult({ ...sampleResult(), stages: reviewStages('verdicts') })).toBe(true);
+    expect(isReviewResult({ ...sampleResult(), stages: reviewStages(undefined, { ranking: { state: 'fell back', detail: 'no evaluation' } }) })).toBe(true);
+    expect(isReviewResult(sampleResult())).toBe(true);
+  });
+
+  it('rejects a stage with an unknown id or state, a place outside the total, a start that is no time, or an agent with no name', () => {
+    const [plain, grouping] = reviewStages('grouping');
+    const cases = [
+      { ...grouping, id: 'linting' },
+      { ...grouping, state: 'paused' },
+      { ...grouping, position: 0 },
+      { ...grouping, position: 10 },
+      { ...grouping, startedAt: 'yesterday' },
+      { ...grouping, durationMs: -1 },
+      { ...grouping, agent: { model: null, effort: null } },
+      { ...grouping, detail: 3 },
+    ];
+    for (const each of cases) expect(isReviewResult({ ...sampleResult(), stages: [plain, each] })).toBe(false);
+    expect(isReviewResult({ ...sampleResult(), stages: 'running' })).toBe(false);
+  });
+});
+
+describe('isReviewResult for a saved review', () => {
+  const SAVED = { reviewedAt: '2026-10-11T14:03:27.000Z', agent: { agent: 'pi', model: null, effort: 'high' } };
+
+  it('accepts its label, of the head commit or of an earlier one, with or without the agent that produced it', () => {
+    expect(isReviewResult({ ...sampleResult(), saved: SAVED })).toBe(true);
+    expect(isReviewResult({ ...sampleResult(), saved: { ...SAVED, newHead: 'abcdef0123456789abcdef0123456789abcdef01' } })).toBe(true);
+    expect(isReviewResult({ ...sampleResult(), saved: { reviewedAt: SAVED.reviewedAt } })).toBe(true);
+  });
+
+  it('rejects a label with no time it was produced, an agent with no name, or an empty head', () => {
+    for (const saved of [{}, { reviewedAt: 'yesterday' }, { ...SAVED, agent: { model: null, effort: null } }, { ...SAVED, newHead: '' }, 'saved']) {
+      expect(isReviewResult({ ...sampleResult(), saved })).toBe(false);
+    }
+  });
+});
+
+describe('isReviewResult for a review that carried results over', () => {
+  const CARRIED = { commit: '5555555555555555555555555555555555555555', reviewedAt: '2026-10-11T14:03:27.000Z' };
+
+  it('accepts its label, the parts and claims carried over, and a stage carried over', () => {
+    const shown = carriedResult();
+    expect(isReviewResult(shown)).toBe(true);
+    expect(isReviewResult({ ...sampleResult(), carriedOver: CARRIED })).toBe(true);
+    const plain = { id: 'plain', position: 1, total: 9, state: 'done' };
+    const grouping = { id: 'grouping', position: 2, total: 9, state: 'carried over', detail: 'its input did not change since the review of 5555555, whose result of it was kept' };
+    expect(isReviewResult({ ...sampleResult(), stages: [plain, grouping] })).toBe(true);
+  });
+
+  it('accepts a carried claim with its checked verdict before the claims are judged, and in a listing that fell back', () => {
+    const shown = carriedResult();
+    const { judging: _judging, ...claims } = shown.claims!;
+    const carriedOnly = claims.claims.filter((claim) => claim.carried);
+    expect(isReviewResult({ ...shown, claims: { ...claims, claims: carriedOnly } })).toBe(true);
+    expect(isReviewResult({ ...shown, claims: { ...claims, outcome: 'fell back', claims: carriedOnly } })).toBe(true);
+    // A checked verdict on a claim neither judged, asked nor carried is still refused.
+    expect(isReviewResult({ ...shown, claims })).toBe(false);
+  });
+
+  it('rejects a label with no commit or time, and a carried mark that is not true', () => {
+    for (const carriedOver of [{}, { ...CARRIED, commit: '' }, { ...CARRIED, reviewedAt: 'yesterday' }, { ...CARRIED, agent: { model: null, effort: null } }]) {
+      expect(isReviewResult({ ...sampleResult(), carriedOver })).toBe(false);
+    }
+    const shown = carriedResult();
+    expect(isReviewResult({ ...shown, parts: shown.parts.map((each) => ({ ...each, carried: false })) })).toBe(false);
+    expect(isReviewResult({ ...shown, claims: { ...shown.claims!, claims: shown.claims!.claims.map((claim) => ({ ...claim, carried: 'yes' })) } })).toBe(false);
+  });
+});
+
 describe('parseReviewResult', () => {
   it('reads the JSON the engine printed', () => {
     const result = parseReviewResult(JSON.stringify(sampleResult()));
@@ -770,6 +928,6 @@ describe('parseReviewResult', () => {
 
 describe('the versioned protocol is shared with the engine', () => {
   it('uses the same version constant', () => {
-    expect(REVIEW_RESULT_VERSION).toBe(20);
+    expect(REVIEW_RESULT_VERSION).toBe(25);
   });
 });

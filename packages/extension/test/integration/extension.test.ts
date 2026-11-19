@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +20,7 @@ import {
   OPEN_OVERVIEW_COMMAND,
   OPEN_PART_COMMAND,
   OPEN_REVIEW_CONTAINER_COMMAND,
+  READ_CI_LOG_COMMAND,
   REVIEW_COMMAND,
   REVIEW_TREE_VIEW,
   SUBMIT_REVIEW_COMMAND,
@@ -27,16 +28,18 @@ import {
   activate,
 } from '../../src/extension.js';
 import { CHANGE_SCHEME, changeUri, libraryUri } from '../../src/change-copies.js';
-import { CHOOSE_AGENT_COMMAND, askCommand } from '../../src/commands.js';
+import { CHOOSE_AGENT_COMMAND, OPEN_COMPANION_SETTINGS_COMMAND, OPEN_SETUP_COMMAND, REFRESH_PULL_REQUESTS_COMMAND, REVIEW_AGAIN_COMMAND, REVIEWING_CONTEXT, STOP_REVIEW_COMMAND, askCommand } from '../../src/commands.js';
+import { SETUP_SEEN_KEY } from '../../src/side-bar/setup-form.js';
 import { escapeMarkdown } from '../../src/findings.js';
 import { SEND_REVIEW_VIEW_TYPE } from '../../src/send-page.js';
-import { claimsResult, criteriaResult, docLinksResult, fetchedResult, judgedResult, mixedResult, offeredResult, storyResult, unexplainedResult } from '../results.js';
+import { claimsResult, criteriaResult, docLinksResult, fetchedResult, judgedResult, mappedCriteriaResult, mixedResult, offeredResult, reviewStages, storyResult, unexplainedResult } from '../results.js';
 import { changePieces, markedPart } from '@second-look/engine';
 import { OVERVIEW_VIEW_TYPE } from '../../src/overview.js';
 import type { SideBarProvider } from '../../src/side-bar/provider.js';
 import { anchorOf, type TreePart } from '../../src/tree.js';
 import {
   Position,
+  ProgressLocation,
   Range,
   stub,
   stubContext,
@@ -63,8 +66,16 @@ interface FakeEngineOptions {
   error?: string;
   sendError?: string;
   logName: string;
+  /** How long the engine waits before answering the version handshake, as one slow to start. */
+  initDelayMs?: number;
   /** A stage notification to send before the answer, which then waits this long. */
-  stage?: { running: string; timeoutMs: number; result: unknown };
+  stage?: { running: string; timeoutMs: number; result: unknown; stage?: unknown };
+  /** Send the stage notification, then answer only a cancel. */
+  stageOnly?: boolean;
+  /** Receive these methods — a comma-separated list — and answer nothing, as a stalled engine does. */
+  stallOn?: string;
+  /** The result a review the cancel stopped answers with; without it, the review fails as one stopped before its first result. */
+  stoppedResult?: unknown;
   answerDelayMs?: number;
   /** How long the engine waits before answering sendReview. */
   sendDelayMs?: number;
@@ -74,6 +85,8 @@ interface FakeEngineOptions {
   draftResult?: unknown;
   /** The answer the engine answers an ask with. */
   askResult?: unknown;
+  /** The list of the reviewer's pull requests the engine answers with. */
+  listResult?: unknown;
 }
 
 function fakeEngine(options: FakeEngineOptions): ChildProcessWithoutNullStreams {
@@ -88,7 +101,13 @@ function fakeEngine(options: FakeEngineOptions): ChildProcessWithoutNullStreams 
         ? { FAKE_ENGINE_RESULTS_BY_URL: JSON.stringify(options.resultsByUrl) }
         : {}),
       ...(options.error !== undefined ? { FAKE_ENGINE_ERROR: options.error } : {}),
+      ...(options.initDelayMs !== undefined
+        ? { FAKE_ENGINE_INIT_DELAY_MS: String(options.initDelayMs) }
+        : {}),
       ...(options.stage !== undefined ? { FAKE_ENGINE_STAGE: JSON.stringify(options.stage) } : {}),
+      ...(options.stageOnly ? { FAKE_ENGINE_STAGE_ONLY: '1' } : {}),
+      ...(options.stallOn !== undefined ? { FAKE_ENGINE_STALL_ON: options.stallOn } : {}),
+      ...(options.stoppedResult !== undefined ? { FAKE_ENGINE_STOPPED_RESULT: JSON.stringify(options.stoppedResult) } : {}),
       ...(options.answerDelayMs !== undefined
         ? { FAKE_ENGINE_ANSWER_DELAY_MS: String(options.answerDelayMs) }
         : {}),
@@ -101,6 +120,7 @@ function fakeEngine(options: FakeEngineOptions): ChildProcessWithoutNullStreams 
       ...(options.fetchResult !== undefined ? { FAKE_ENGINE_FETCH_RESULT: JSON.stringify(options.fetchResult) } : {}),
       ...(options.draftResult !== undefined ? { FAKE_ENGINE_DRAFT_RESULT: JSON.stringify(options.draftResult) } : {}),
       ...(options.askResult !== undefined ? { FAKE_ENGINE_ASK_RESULT: JSON.stringify(options.askResult) } : {}),
+      ...(options.listResult !== undefined ? { FAKE_ENGINE_LIST_RESULT: JSON.stringify(options.listResult) } : {}),
       FAKE_ENGINE_LOG: join(workDir, options.logName),
     },
   });
@@ -118,6 +138,7 @@ async function reviewWithFakeEngine(options: FakeEngineOptions): Promise<SideBar
   });
   expect([...registeredCommands().keys()]).toEqual([
     REVIEW_COMMAND,
+    REVIEW_AGAIN_COMMAND,
     OPEN_PART_COMMAND,
     OPEN_ALL_PARTS_COMMAND,
     FILTER_CHANGED_COMMAND,
@@ -128,6 +149,7 @@ async function reviewWithFakeEngine(options: FakeEngineOptions): Promise<SideBar
     OPEN_OVERVIEW_COMMAND,
     WHY_THIS_MATTERS_COMMAND,
     FETCH_LIBRARY_COMMAND,
+    READ_CI_LOG_COMMAND,
     OPEN_LIBRARY_EVIDENCE_COMMAND,
     DRAFT_COMMENT_COMMAND,
     ADD_DRAFT_COMMAND,
@@ -137,6 +159,10 @@ async function reviewWithFakeEngine(options: FakeEngineOptions): Promise<SideBar
     askCommand('cover'),
     MARK_REVIEWED_COMMAND,
     CHOOSE_AGENT_COMMAND,
+    OPEN_SETUP_COMMAND,
+    REFRESH_PULL_REQUESTS_COMMAND,
+    STOP_REVIEW_COMMAND,
+    OPEN_COMPANION_SETTINGS_COMMAND,
   ]);
 
   stub.inputBoxResult = PR_URL;
@@ -249,6 +275,9 @@ function editorFor(uri: { toString(): string }): RecordingEditor {
 
 beforeEach(() => {
   stub.reset();
+  // A reviewer past the first open: step 1's setup form stays folded, and
+  // probes nothing, unless a test opens it. The unit tests cover the first open.
+  stub.globalState[SETUP_SEEN_KEY] = true;
 });
 
 describe('activating the companion', () => {
@@ -261,6 +290,7 @@ describe('activating the companion', () => {
 
     expect(stub.commands.map((command) => command.id)).toEqual([
       REVIEW_COMMAND,
+      REVIEW_AGAIN_COMMAND,
       OPEN_PART_COMMAND,
       OPEN_ALL_PARTS_COMMAND,
       FILTER_CHANGED_COMMAND,
@@ -271,6 +301,7 @@ describe('activating the companion', () => {
       OPEN_OVERVIEW_COMMAND,
       WHY_THIS_MATTERS_COMMAND,
       FETCH_LIBRARY_COMMAND,
+      READ_CI_LOG_COMMAND,
       OPEN_LIBRARY_EVIDENCE_COMMAND,
       DRAFT_COMMENT_COMMAND,
       ADD_DRAFT_COMMAND,
@@ -280,6 +311,10 @@ describe('activating the companion', () => {
       askCommand('cover'),
       MARK_REVIEWED_COMMAND,
       CHOOSE_AGENT_COMMAND,
+      OPEN_SETUP_COMMAND,
+      REFRESH_PULL_REQUESTS_COMMAND,
+      STOP_REVIEW_COMMAND,
+      OPEN_COMPANION_SETTINGS_COMMAND,
     ]);
     expect(stub.treeViews).toEqual([]);
     expect(stub.webviewViewProviders.map((entry) => entry.id)).toEqual([REVIEW_TREE_VIEW]);
@@ -288,7 +323,7 @@ describe('activating the companion', () => {
     expect(stub.commentControllers.map((controller) => controller.id)).toEqual(['second-look', 'second-look.findings', 'second-look.part']);
   });
 
-  it("shows the eight steps before any review ran, step 2's card open on its Review a pull request button", async () => {
+  it("shows the eight steps before any review ran, step 2's card open on its list, and the review command still asks for a URL", async () => {
     activate(stubContext() as unknown as vscode.ExtensionContext, {
       spawnEngine: () => {
         throw new Error('no review ran');
@@ -302,11 +337,72 @@ describe('activating the companion', () => {
     expect(view.page.webview.html.match(/<li class="step /g)).toHaveLength(8);
     expect(view.page.webview.html).toContain('<li class="step current" id="step-2" aria-current="step">');
 
-    // The button runs the existing review command, which asks for the URL.
+    // Step 2 carries the list's URL box; the review command, as the title button runs it, asks for the URL.
+    expect(view.page.webview.html).toContain('id="pr-filter"');
     stub.inputBoxResult = undefined;
     await press(view, { type: 'command', command: 'review' });
     expect(stub.executedCommands).toEqual([{ id: REVIEW_COMMAND, args: [] }]);
     expect(stub.inputBoxes).toHaveLength(1);
+  });
+});
+
+describe("step 2's list of pull requests, end to end against a fake engine", () => {
+  function loggedLists(logName: string): unknown[] {
+    return readFileSync(join(workDir, logName), 'utf8')
+      .split('\n')
+      .filter((line) => line !== '')
+      .map((line) => JSON.parse(line) as { method: string; params?: unknown })
+      .filter((request) => request.method === 'pullRequests/list')
+      .map((request) => request.params);
+  }
+
+  it("lists with the editor's sign-in as step 2 shows, starts the review a card picks, and reloads from the title button", async () => {
+    const listed = {
+      outcome: 'listed',
+      groups: [
+        {
+          group: 'review requested',
+          pullRequests: [
+            {
+              url: PR_URL,
+              repository: 'example-org/example-repo',
+              number: 42,
+              title: 'Retry on timeout',
+              author: 'maria-k',
+              updatedAt: '2026-10-11T08:00:00Z',
+              summary: 'Retries the charge.',
+              review: { requested: true, approvals: 0, changesRequested: 0, draft: false },
+              size: { additions: 3, deletions: 1, files: 1 },
+              newCommitsSinceLastLook: false,
+              waitingSince: '2026-10-10T08:00:00Z',
+            },
+          ],
+        },
+      ],
+    };
+    activate(stubContext() as unknown as vscode.ExtensionContext, {
+      spawnEngine: () => fakeEngine({ result: mixedResult(), listResult: listed, logName: 'list.log' }),
+    });
+    stub.session = { accessToken: TOKEN };
+
+    // Opening the side bar lists the pull requests, with the sign-in the editor already holds and no prompt.
+    const view = sideBar();
+    await until('the list', () => view.provider.current.pullRequests?.list.state === 'listed');
+    expect(stub.sessionRequests).toEqual([{ id: 'github', scopes: ['repo'], createIfNone: false }]);
+    expect(loggedLists('list.log')).toEqual([{ token: TOKEN }]);
+    expect(view.badge).toEqual({ value: 1, tooltip: '1 pull request waiting on your review' });
+    expect(view.page.webview.posted.at(-1)).toEqual({ type: 'render', body: expect.stringContaining('aria-label="Review example-org/example-repo #42: Retry on timeout"') });
+
+    // A card's Review button starts that review, with no URL to ask for; the badge then counts its parts left.
+    await press(view, { type: 'pullRequests', action: 'review', value: PR_URL });
+    expect(stub.inputBoxes).toEqual([]);
+    expect(renderedTree(view)[0]).toEqual({ label: 'Must review', tooltip: 'The parts to read first.' });
+    await until('the parts-left badge', () => view.badge?.value === 7);
+
+    // The title button reads the list again.
+    await registeredCommands().get(REFRESH_PULL_REQUESTS_COMMAND)!();
+    expect(loggedLists('list.log')).toHaveLength(2);
+    expect(stub.errorMessages).toEqual([]);
   });
 });
 
@@ -608,6 +704,200 @@ describe('a review arriving in stages', () => {
   });
 });
 
+describe('progress in the side bar and the status bar', () => {
+  const RUNNING = reviewStages('verdicts');
+  const VERDICTS = { running: 'checking the claims with claude-code', timeoutMs: 60_000, result: { ...claimsResult(), stages: RUNNING }, stage: RUNNING[6] };
+  const STOPPED = 'the review was stopped before this stage finished';
+
+  beforeEach(() => {
+    stub.configuration = { 'second-look.agent': 'claude-code', 'second-look.agentModel': 'claude-sonnet-5-5', 'second-look.agentEffort': 'high' };
+  });
+
+  /** The side bar's content as the provider last drew it. */
+  function drawn(view: SideBarView): string {
+    const renders = view.page.webview.posted.filter((message): message is { type: 'render'; body: string } => (message as { type?: unknown }).type === 'render');
+    return renders.at(-1)?.body ?? '';
+  }
+
+  /** Starts a review against the fake engine, and returns it running with the side bar. */
+  function startReview(options: FakeEngineOptions): { reviewed: Promise<void>; view: SideBarView } {
+    activate(stubContext() as unknown as vscode.ExtensionContext, { spawnEngine: () => fakeEngine(options) });
+    stub.inputBoxResult = PR_URL;
+    stub.session = { accessToken: TOKEN };
+    const reviewed = registeredCommands().get(REVIEW_COMMAND)!() as Promise<void>;
+    return { reviewed, view: sideBar() };
+  }
+
+  it('names the stage running, the agent, model and effort and its place, then the end with each fallback and why, in a notification too', async () => {
+    const final = { ...claimsResult(), stages: reviewStages(undefined, { ranking: { state: 'fell back', detail: 'no ranking evaluation for this combination yet' } }) };
+    const { reviewed, view } = startReview({ result: final, stage: VERDICTS, answerDelayMs: 500, logName: 'progress.log' });
+
+    await until('the verdicts running', () => view.provider.current.progress?.state === 'running' && view.provider.current.progress.stage.id === 'verdicts');
+    expect(stub.contextKeys[REVIEWING_CONTEXT]).toBe(true);
+    expect(stub.statusBarItems[0]!.text).toBe('$(loading~spin) 7/9 Second Look: Claude Code · claude-sonnet-5-5 · effort high');
+    expect(drawn(view)).toContain('<b>Checking the claims</b> · Claude Code · claude-sonnet-5-5 · effort high');
+    expect(drawn(view)).toContain('stage 7 of 9');
+    expect(drawn(view)).toContain('<li class="step running" id="step-5">');
+    expect(drawn(view)).toContain('<li class="step waiting" id="step-6">');
+    expect(stub.warningMessages).toEqual([]);
+    await reviewed;
+
+    expect(drawn(view)).toContain('<b>Review complete</b> in 4:12');
+    expect(drawn(view)).toContain('Ranking fell back: no ranking evaluation for this combination yet');
+    expect(stub.statusBarItems[0]!.text).toBe('Second Look: Claude Code · claude-sonnet-5-5 · effort high');
+    expect(stub.contextKeys[REVIEWING_CONTEXT]).toBe(false);
+    expect(stub.warningMessages).toEqual(['Second Look finished reviewing #42 in 4:12. Ranking fell back: no ranking evaluation for this combination yet.']);
+    expect(stub.errorMessages).toEqual([]);
+  });
+
+  it('shows a saved review at once, labelled and with no notice, and Review again asks the engine for a fresh review', async () => {
+    const saved = {
+      ...claimsResult(),
+      stages: reviewStages(undefined, { ranking: { state: 'fell back', detail: 'no ranking evaluation for this combination yet' } }),
+      saved: { reviewedAt: '2026-10-11T14:03:27.000Z', agent: { agent: 'claude-code', model: 'claude-sonnet-5-5', effort: 'high' } },
+    };
+    const { reviewed, view } = startReview({ result: saved, logName: 'saved.log' });
+    await reviewed;
+
+    expect(drawn(view)).toContain('<b>Saved review</b> of ');
+    expect(drawn(view)).toContain('from 2026-10-11 14:03 UTC by Claude Code · claude-sonnet-5-5 · effort high; no agent ran again');
+    expect(drawn(view)).toContain('data-command="reviewAgain"');
+    expect(stub.warningMessages).toEqual([]);
+
+    await registeredCommands().get(REVIEW_AGAIN_COMMAND)!();
+    const reviews = readFileSync(join(workDir, 'saved.log'), 'utf8')
+      .split('\n')
+      .filter((line) => line !== '')
+      .map((line) => JSON.parse(line) as { method: string; params?: Record<string, unknown> })
+      .filter((request) => request.method === 'review');
+    expect(reviews.map((request) => request.params?.['fresh'])).toEqual([undefined, true]);
+    expect(reviews[1]!.params?.['url']).toBe(saved.pullRequest.url);
+  });
+
+  it('asks for a review first when Review again has none to repeat', async () => {
+    activate(stubContext() as unknown as vscode.ExtensionContext, {
+      spawnEngine: () => {
+        throw new Error('no review ran');
+      },
+    });
+    await registeredCommands().get(REVIEW_AGAIN_COMMAND)!();
+    expect(stub.warningMessages).toEqual(['Review a pull request first, then review it again.']);
+  });
+
+  it('ends a clean review on the strip and the status bar alone, with no notification', async () => {
+    const { reviewed, view } = startReview({ result: { ...claimsResult(), stages: reviewStages() }, stage: VERDICTS, logName: 'clean.log' });
+    await reviewed;
+    expect(drawn(view)).toContain('<b>Review complete</b> in 4:12');
+    expect(drawn(view)).not.toContain('stage-notes');
+    expect(stub.warningMessages).toEqual([]);
+    expect(stub.informationMessages).toEqual([]);
+  });
+
+  it('stops a review mid-way from the title button, keeping what landed and saying which stages it stopped', async () => {
+    const stopped = {
+      ...claimsResult(),
+      stages: reviewStages(undefined, {
+        verdicts: { state: 'stopped', detail: STOPPED, durationMs: 1_000 },
+        criteria: { state: 'stopped', detail: STOPPED, startedAt: undefined, durationMs: undefined, agent: undefined },
+        docLinks: { state: 'stopped', detail: STOPPED, startedAt: undefined, durationMs: undefined, agent: undefined },
+      }),
+    };
+    const { reviewed, view } = startReview({ stage: VERDICTS, stageOnly: true, stoppedResult: stopped, logName: 'stop.log' });
+    await until('the verdicts running', () => view.provider.current.progress?.state === 'running' && view.provider.current.progress.stage.id === 'verdicts');
+
+    await registeredCommands().get(STOP_REVIEW_COMMAND)!();
+    await reviewed;
+
+    expect(drawn(view)).toContain('<b>Review stopped</b> after 2:49');
+    expect(drawn(view)).toContain('Stopped: the verdicts, the criteria mapping and the documentation links');
+    expect(renderedTree(view).length).toBeGreaterThan(0);
+    expect(stub.contextKeys[REVIEWING_CONTEXT]).toBe(false);
+    expect(stub.statusBarItems[0]!.text).toBe('Second Look: Claude Code · claude-sonnet-5-5 · effort high');
+    expect(stub.errorMessages).toEqual([]);
+    expect(stub.warningMessages).toEqual([]);
+    const requests = readFileSync(join(workDir, 'stop.log'), 'utf8').trim().split('\n').map((line) => JSON.parse(line) as { id: number; method: string; params: unknown });
+    const reviewId = requests.find((request) => request.method === 'review')!.id;
+    expect(requests.filter((request) => request.method === 'review/cancel').map((request) => request.params)).toEqual([{ id: reviewId }]);
+  });
+
+  it('reads a stop after results landed as stopped with what landed, when the stopped review never answers', async () => {
+    const { reviewed, view } = startReview({ stage: VERDICTS, stageOnly: true, logName: 'stop-unanswered.log' });
+    await until('the verdicts running', () => view.provider.current.progress?.state === 'running' && view.provider.current.progress.stage.id === 'verdicts');
+
+    await registeredCommands().get(STOP_REVIEW_COMMAND)!();
+    await reviewed;
+
+    expect(drawn(view)).toContain('<b>Review stopped</b> after 2:48');
+    expect(drawn(view)).toContain('Stopped: the verdicts, the criteria mapping and the documentation links');
+    expect(renderedTree(view).length).toBeGreaterThan(0);
+    expect(stub.errorMessages).toEqual([]);
+    expect(stub.contextKeys[REVIEWING_CONTEXT]).toBe(false);
+  });
+
+  it('says a stop pressed while the review is still starting reached no engine, and a later failure is no stop', async () => {
+    const { reviewed, view } = startReview({ error: 'the engine failed the review', initDelayMs: 500, logName: 'stop-starting.log' });
+    const log = join(workDir, 'stop-starting.log');
+    await until('the handshake sent', () => existsSync(log) && readFileSync(log, 'utf8').includes('"method":"initialize"'));
+    expect(stub.contextKeys[REVIEWING_CONTEXT]).toBe(true);
+
+    await registeredCommands().get(STOP_REVIEW_COMMAND)!();
+    expect(stub.informationMessages).toEqual(['The review has not reached the engine yet. Stop it again in a moment.']);
+
+    await reviewed;
+    expect(stub.errorMessages).toEqual(['the engine failed the review']);
+    expect(drawn(view)).not.toContain('Review stopped');
+    expect(stub.contextKeys[REVIEWING_CONTEXT]).toBe(false);
+  });
+
+  it('never marks the review that replaced one a stop was pressed for', async () => {
+    let engines = 0;
+    activate(stubContext() as unknown as vscode.ExtensionContext, {
+      spawnEngine: () =>
+        fakeEngine(
+          ++engines === 1
+            ? { stallOn: 'review,review/cancel', logName: 'stop-replace-1.log' }
+            : { error: 'the engine failed the review', logName: 'stop-replace-2.log' },
+        ),
+    });
+    stub.inputBoxResult = PR_URL;
+    stub.session = { accessToken: TOKEN };
+    const first = registeredCommands().get(REVIEW_COMMAND)!() as Promise<void>;
+    const firstLog = join(workDir, 'stop-replace-1.log');
+    await until('the review sent', () => existsSync(firstLog) && readFileSync(firstLog, 'utf8').includes('"method":"review"'));
+
+    const stopping = registeredCommands().get(STOP_REVIEW_COMMAND)!() as Promise<void>;
+    await until('the cancel sent', () => readFileSync(firstLog, 'utf8').includes('"method":"review/cancel"'));
+
+    const second = registeredCommands().get(REVIEW_COMMAND)!() as Promise<void>;
+    await Promise.all([first, second, stopping]);
+
+    expect(stub.informationMessages).toEqual([]);
+    expect(stub.errorMessages).toEqual(['the engine was stopped', 'the engine failed the review']);
+    expect(drawn(sideBar())).not.toContain('Review stopped');
+    expect(stub.contextKeys[REVIEWING_CONTEXT]).toBe(false);
+  });
+
+  it('says a review stopped before its first result kept nothing, as no failure', async () => {
+    const { reviewed, view } = startReview({ result: mixedResult(), stallOn: 'review', logName: 'stop-early.log' });
+    const log = join(workDir, 'stop-early.log');
+    await until('the review sent', () => existsSync(log) && readFileSync(log, 'utf8').includes('"method":"review"'));
+    expect(drawn(view)).toContain('<b>Reading the pull request</b>');
+
+    await registeredCommands().get(STOP_REVIEW_COMMAND)!();
+    await reviewed;
+
+    expect(drawn(view)).toContain('<b>Review stopped</b> before its first result landed, so nothing was kept');
+    expect(stub.errorMessages).toEqual([]);
+    expect(stub.contextKeys[REVIEWING_CONTEXT]).toBe(false);
+  });
+
+  it('says so when no review is running to stop', async () => {
+    activate(stubContext() as unknown as vscode.ExtensionContext, { spawnEngine: () => fakeEngine({ logName: 'idle.log' }) });
+    await registeredCommands().get(STOP_REVIEW_COMMAND)!();
+    expect(stub.informationMessages).toEqual(['No review is running.']);
+  });
+});
+
 describe('the agent ranking arriving', () => {
   it('re-ranks the tree in place, and the tooltip names the cited signals and the agent ranking', async () => {
     const plain = mixedResult();
@@ -874,7 +1164,7 @@ describe('the overview', () => {
     const part = result.parts[0]!;
     const claim = {
       ...result.claims!.claims[2]!,
-      verdict: { kind: 'refuted', source: 'the change itself', reason: 'A 404 is retried like any other status.', evidence: [{ path: 'src/retry.py', line: 5, quote: 'if response.status >= 400:' }] },
+      verdict: { kind: 'refuted', source: 'the change itself', reason: 'A 404 is retried like any other status.', evidence: [{ path: 'src/retry.py', line: 5, quote: 'if response.status >= 400:' }], looked: [{ path: 'src/retry.py', line: 1, endLine: 8 }] },
     };
     return {
       ask: 'verify',
@@ -1035,6 +1325,7 @@ describe('the overview', () => {
     expect(stub.warningMessages).toEqual(['Review a pull request first, then open its overview.']);
 
     stub.reset();
+    stub.globalState[SETUP_SEEN_KEY] = true;
     await reviewWithFakeEngine({ result: storyResult(), logName: 'reopen.log' });
     overview().dispose();
     await registeredCommands().get(OPEN_OVERVIEW_COMMAND)!();
@@ -1204,6 +1495,9 @@ describe('the pending review and sending it', () => {
     expect(thread.range?.start.line).toBe(2);
     expect(thread.label).toBe('Draft comment · src/retry.py:3');
     expect(thread.comments[0]).toMatchObject({ body: escapeMarkdown(draft.body), contextValue: 'second-look-draft' });
+    // The drafting showed as a notification, and the draft's line opened, so the reviewer sees it wherever they pressed.
+    expect(stub.progress.at(-1)).toEqual({ title: 'Drafting a comment from the refuted claim…', location: ProgressLocation.Notification });
+    expect(stub.executedCommands.at(-1)).toEqual({ id: 'vscode.open', args: [head('src/retry.py'), { selection: new Range(2, 0, 2, 0), preview: true }] });
     expect(renderedTree(view)[0]).toEqual({ label: 'Must review', tooltip: 'The parts to read first.' });
 
     // The reviewer edits the draft and adds it: it joins the pending review.
@@ -1227,6 +1521,56 @@ describe('the pending review and sending it', () => {
         },
       },
     });
+  });
+
+  it('drafts, lists, opens, adds and sends from the side bar alone, then links the review sent on step 8', async () => {
+    const draft = draftOf({ kind: 'claim', index: 1 }, 'Gives up after three attempts, whatever the status.', 'The docstring says three attempts; the loop runs five.');
+    const view = await reviewWithFakeEngine({ result: judgedResult(), draftResult: draft, logName: 'side-bar-send.log' });
+    const settle = async (): Promise<void> => {
+      for (let turn = 0; turn < 5; turn++) await new Promise((done) => setTimeout(done, 0));
+    };
+
+    // Step 5's Draft comment: the draft lists on step 7, undecided.
+    await press(view, { type: 'finding', action: 'draft', kind: 'claim', index: 1 });
+    await eventually('the draft to list', () => (view.provider.current.comments?.length === 1 ? true : undefined));
+    const [listed] = view.provider.current.comments!;
+    expect(listed).toMatchObject({ kind: 'draft', location: 'src/retry.py:3', body: escapeMarkdown(draft.body), from: 'refuted claim' });
+    expect(view.page.webview.posted.at(-1)).toMatchObject({ type: 'render' });
+    expect((view.page.webview.posted.at(-1) as { body: string }).body).toContain(`id="step-7-add-${listed!.id}"`);
+
+    // Its row opens its thread at its line, then adds it to the pending review.
+    await press(view, { type: 'comment', action: 'open', id: listed!.id });
+    await settle();
+    expect(stub.executedCommands.at(-1)).toEqual({ id: 'vscode.open', args: [head('src/retry.py'), { selection: new Range(2, 0, 2, 0), preview: true }] });
+    await press(view, { type: 'comment', action: 'add', id: listed!.id });
+    expect(view.provider.current.comments).toEqual([{ id: listed!.id, kind: 'comment', location: 'src/retry.py:3', body: escapeMarkdown(draft.body) }]);
+
+    // Step 8 opens the Send review page; after Submit it shows the review sent and links it.
+    await press(view, { type: 'command', command: 'send' });
+    drive(sendPage(), { type: 'submit' });
+    await eventually('the review to be sent', () => (view.provider.current.sent !== undefined ? true : undefined));
+    expect(view.provider.current.sent).toEqual({ submit: 'comment', comments: 1, commit: 'f00dcafe1234567890abcdef1234567890abcdef12', url: SENT_URL });
+    expect(view.provider.current.comments).toEqual([]);
+    expect((view.page.webview.posted.at(-1) as { body: string }).body).toContain('Sent as Comment · 1 comment · pinned to f00dcaf');
+    await press(view, { type: 'command', command: 'openSent' });
+    expect(stub.openedExternals.at(-1)).toBe(SENT_URL);
+
+    // The title bar's ⋯ opens every one of the companion's settings.
+    await registeredCommands().get(OPEN_COMPANION_SETTINGS_COMMAND)!();
+    expect(stub.executedCommands.at(-1)).toEqual({ id: 'workbench.action.openSettings', args: ['@ext:lbildzinkas.second-look-extension'] });
+  });
+
+  it('says on step 8 why a send failed, every comment kept', async () => {
+    const view = await reviewWithFakeEngine({ result: mixedResult(), sendError: 'GitHub refused the review', logName: 'side-bar-send-failed.log' });
+    const line = stub.commentControllers[0]!.createCommentThread(head('src/retry.py'), new Range(4, 0, 4, 0), []);
+    await registeredCommands().get(ADD_COMMENT_COMMAND)!({ thread: line, text: 'a cap, please' });
+
+    await press(view, { type: 'command', command: 'send' });
+    drive(sendPage(), { type: 'submit' });
+    await eventually('the send to fail', () => (view.provider.current.sendFailure !== undefined ? true : undefined));
+    expect(view.provider.current.sendFailure).toContain('GitHub refused the review');
+    expect(view.provider.current.sent).toBeUndefined();
+    expect(view.provider.current.comments).toHaveLength(1);
   });
 
   it('discards a draft with no trace in the pending review', async () => {
@@ -1455,6 +1799,7 @@ describe('the pending review and sending it', () => {
   it('submits each of the three kinds, one write each', async () => {
     for (const submit of ['comment', 'approve', 'request changes'] as const) {
       stub.reset();
+      stub.globalState[SETUP_SEEN_KEY] = true;
       await reviewWithFakeEngine({ result: mixedResult(), logName: `kind-${submit}.log` });
       const thread = stub.commentControllers[0]!.createCommentThread(
         head('src/retry.py'),
@@ -1753,6 +2098,16 @@ describe('reviewed marks', () => {
 });
 
 describe('the side bar', () => {
+  /** The requests the fake engine logged, as JSON values. */
+  function engineRequests(logName: string): { method: string; params?: Record<string, unknown> }[] {
+    return readFileSync(join(workDir, logName), 'utf8')
+      .split('\n')
+      .filter((line) => line !== '')
+      .map((line) => JSON.parse(line) as { method: string; params?: Record<string, unknown> });
+  }
+
+  const head = (path: string) => changeUri('head', mixedResult().copies.head.commit, path);
+
   /** Which step's card is open: the current step's. */
   function currentStep(view: SideBarView): string | undefined {
     return /data-current="(\d)"/.exec(String((view.page.webview.posted.at(-1) as { body?: string } | undefined)?.body ?? view.page.webview.html))?.[1];
@@ -1816,6 +2171,147 @@ describe('the side bar', () => {
     stub.configuration = { 'second-look.agent': 'claude-code', 'second-look.agentModel': 'sonnet', 'second-look.agentEffort': 'high' };
     stub.fireConfigurationChange();
     expect(String((view.page.webview.posted.at(-1) as { body: string }).body)).toContain('<span class="summary">Claude Code · sonnet · effort high</span>');
+  });
+
+  it("lists the claim findings on step 5, every button running the command the finding's thread and the overview offer", async () => {
+    const shown = offeredResult();
+    const draft = {
+      finding: { kind: 'claim', index: 1 },
+      statement: 'Gives up after three attempts, whatever the status.',
+      body: 'The docstring says three attempts, but `src/retry.py:6` loops five times.',
+      promptVersion: '1',
+      stamp: { agent: 'pi', agentVersion: '0.86.1', model: 'zai/glm-4.6', effort: null, runAt: '2026-10-06T00:00:00.000Z' },
+    };
+    const verified = {
+      ask: 'verify',
+      part: 0,
+      partName: 'src/retry.py',
+      sections: [{ heading: 'Verdict', text: 'unverifiable, from the change itself: the status check is in the library.' }],
+      cited: [],
+      promptVersion: '5',
+      stamp: { agent: 'pi', agentVersion: '0.86.1', model: 'zai/glm-4.6', effort: null, runAt: '2026-10-07T00:00:00.000Z' },
+      claim: {
+        index: 2,
+        // The verify ask judges the claim again and still cannot settle it
+        // from the change alone, so its answer keeps the library the claim
+        // needs and the fetch its verdict offers — the fetch pressed below
+        // finds that offer, the way the engine's own answer carries it.
+        claim: { ...shown.claims!.claims[2]!, asked: true },
+      },
+    };
+    const view = await reviewWithFakeEngine({ result: shown, draftResult: draft, askResult: verified, fetchResult: fetchedResult('/cache/libraries/requests-2.32.3', undefined), logName: 'step-5.log' });
+    // The parts all reviewed, the claims' card is the current one, with its findings.
+    for (const part of shown.parts) await tick(view, part.name ?? part.path, true);
+    await until('the claims card to open', () => currentStep(view) === '5');
+    const body = String((view.page.webview.posted.at(-1) as { body: string }).body);
+    expect(body).toContain('<span class="pill tone-bad"><span class="icon" aria-hidden="true">✕</span> refuted</span><button type="button" class="where" id="step-5-where-claim-1" data-claim-where="1">docstring · src/retry.py:3–4</button>');
+    expect(body).toContain('<q class="quote">Gives up after three attempts, whatever the status.</q>');
+    // The claim a library's source would settle sits under Needs a library, its fetch first.
+    expect(body).toContain('<h3 class="group">Needs a library</h3>');
+    expect(body).toContain('<div class="actions"><button type="button" id="step-5-fetch-claim-2"');
+    expect(body).toContain('<p class="folded"><span class="tone-ok" aria-hidden="true">✓</span> 1 verified</p>');
+    expect(body).toMatch(/<input type="checkbox" id="step-5-tick" data-tick="claims"/);
+    stub.executedCommands = [];
+
+    // Draft comment runs the draft command, the engine drafts from the finding, and the draft opens at its line.
+    await press(view, { type: 'finding', action: 'draft', kind: 'claim', index: 1 });
+    expect(stub.executedCommands).toEqual([
+      { id: DRAFT_COMMENT_COMMAND, args: [{ kind: 'claim', index: 1 }] },
+      { id: 'vscode.open', args: [head('src/retry.py'), { selection: new Range(2, 0, 2, 0), preview: true }] },
+    ]);
+    expect(engineRequests('step-5.log').at(-1)).toMatchObject({ method: 'draftComment', params: { url: PR_URL, finding: { kind: 'claim', index: 1 } } });
+    expect(stub.commentControllers[0]!.threads.at(-1)).toMatchObject({ label: 'Draft comment · src/retry.py:3' });
+    stub.executedCommands = [];
+
+    // Open opens the finding's line in the read-only head copy.
+    await press(view, { type: 'finding', action: 'open', kind: 'claim', index: 1 });
+    expect(stub.executedCommands.at(-1)).toEqual({ id: 'vscode.open', args: [head('src/retry.py'), { selection: new Range(2, 0, 2, 0), preview: true }] });
+    stub.executedCommands = [];
+
+    // Verify again runs the verify ask about that claim alone, with no pick to make.
+    await press(view, { type: 'finding', action: 'verify', kind: 'claim', index: 2 });
+    expect(stub.quickPicks).toEqual([]);
+    expect(engineRequests('step-5.log').at(-1)).toMatchObject({ method: 'ask', params: { url: PR_URL, ask: 'verify', part: 0, claim: { index: 2 } } });
+    stub.executedCommands = [];
+
+    // The fetch downloads only when pressed, and the judged claim replaces the one shown.
+    await press(view, { type: 'finding', action: 'fetch', kind: 'claim', index: 2 });
+    expect(stub.executedCommands).toEqual([{ id: FETCH_LIBRARY_COMMAND, args: [2] }]);
+    expect(engineRequests('step-5.log').at(-1)).toMatchObject({ method: 'fetchLibrary', params: { url: PR_URL, claim: 2 } });
+    expect(view.provider.current.result?.claims?.claims[2]?.verdict).toMatchObject({ kind: 'refuted', source: 'library source at the pinned version' });
+    stub.executedCommands = [];
+
+    // Verify a claim… runs the same ask with no claim named, so the reviewer picks one.
+    stub.quickPickResult = { label: 'Never retries a 4xx.', index: 2 };
+    await press(view, { type: 'command', command: 'verifyClaim' });
+    expect(stub.quickPicks[0]!.title).toBe('Verify this claim');
+    expect(engineRequests('step-5.log').at(-1)).toMatchObject({ method: 'ask', params: { claim: { index: 2 } } });
+    expect(stub.errorMessages).toEqual([]);
+  });
+
+  it("lists the criteria not fully met and the unexplained changes on step 6, with the issue link, the draft and the ⋯ at the setting", async () => {
+    const shown = { ...mappedCriteriaResult(), unexplained: unexplainedResult().unexplained };
+    const draft = {
+      finding: { kind: 'criterion', index: 1 },
+      statement: 'The retries are logged',
+      body: 'The issue asks that retries are logged, but nothing in the change logs one.',
+      promptVersion: '1',
+      stamp: { agent: 'pi', agentVersion: '0.86.1', model: 'zai/glm-4.6', effort: null, runAt: '2026-10-06T00:00:00.000Z' },
+    };
+    const view = await reviewWithFakeEngine({ result: shown, draftResult: draft, logName: 'step-6.log' });
+    for (const part of shown.parts) await tick(view, part.name ?? part.path, true);
+    stub.inputBoxResult = 'The issue asks that retries are logged, but nothing in the change logs one.';
+    stub.executedCommands = [];
+
+    // The ⋯ beside the heading opens the Settings editor at the criteria heading setting.
+    await press(view, { type: 'command', command: 'criteriaHeading' });
+    expect(stub.executedCommands).toEqual([{ id: 'workbench.action.openSettings', args: ['@id:second-look.criteriaHeading'] }]);
+    stub.executedCommands = [];
+
+    // The issue link opens the linked issue on GitHub.
+    await press(view, { type: 'openIssue', issue: 0 });
+    expect(stub.openedExternals.at(-1)).toBe('https://github.com/example-org/example-repo/issues/30');
+
+    // Drafting from the not-met criterion runs the draft command, and the engine drafts from the finding.
+    await press(view, { type: 'finding', action: 'draft', kind: 'criterion', index: 1 });
+    expect(stub.executedCommands).toEqual([{ id: DRAFT_COMMENT_COMMAND, args: [{ kind: 'criterion', index: 1 }] }]);
+    expect(engineRequests('step-6.log').at(-1)).toMatchObject({ method: 'draftComment', params: { url: PR_URL, finding: { kind: 'criterion', index: 1 } } });
+    expect(stub.errorMessages).toEqual([]);
+  });
+
+  it("keeps the steps' ticks per pull request, re-opening them only for the pull request they were ticked on", async () => {
+    const other = { ...judgedResult(), pullRequest: { ...judgedResult().pullRequest, url: OTHER_PR_URL, number: 43 } };
+    const view = await reviewWithFakeEngine({ resultsByUrl: { [PR_URL]: judgedResult(), [OTHER_PR_URL]: other }, logName: 'step-ticks.log' });
+    for (const part of judgedResult().parts) await tick(view, part.name ?? part.path, true);
+    await until('the claims card to open', () => currentStep(view) === '5');
+
+    await press(view, { type: 'tick', step: 'claims', checked: true });
+    await until('the ticked card to fold', () => currentStep(view) === '6');
+    expect(stub.globalState['second-look.stepTicks']).toEqual({
+      version: 1,
+      pullRequests: { [PR_URL]: { claims: judgedResult().pullRequest.headSha } },
+    });
+
+    // Another review of the same pull request, at the same head, keeps the tick.
+    // A fresh review re-opens the story step, so the reviewer reads it again
+    // before the ticked step's card opens.
+    stub.inputBoxResult = PR_URL;
+    await registeredCommands().get(REVIEW_COMMAND)!() as Promise<void>;
+    await until('the story to open again', () => currentStep(view) === '3');
+    await press(view, { type: 'command', command: 'overview' });
+    await until('the review to land again', () => currentStep(view) === '6');
+
+    // Another pull request has its own ticks: its claims card opens unticked.
+    stub.inputBoxResult = OTHER_PR_URL;
+    await registeredCommands().get(REVIEW_COMMAND)!() as Promise<void>;
+    await until('the story to open for the other review', () => currentStep(view) === '3');
+    await press(view, { type: 'command', command: 'overview' });
+    await until('the other review to land', () => currentStep(view) === '5');
+    expect(stub.globalState['second-look.stepTicks']).toEqual({
+      version: 1,
+      pullRequests: { [PR_URL]: { claims: judgedResult().pullRequest.headSha } },
+    });
+    expect(stub.errorMessages).toEqual([]);
   });
 });
 

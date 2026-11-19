@@ -4,9 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it, vi } from 'vitest';
-import { ProtocolError } from '../src/protocol.js';
+import { ProtocolError, SendProtocolError } from '../src/protocol.js';
 import { EngineClient, spawnEngineProcess, type ReviewStageUpdate } from '../src/engine-client.js';
-import { criteriaResult, fetchedResult, mixedResult } from './results.js';
+import type { PendingReview } from '@second-look/engine';
+import { ciLogReadResult, criteriaResult, fetchedResult, mixedResult, reviewStages } from './results.js';
 
 const FAKE_ENGINE = fileURLToPath(new URL('./fixtures/fake-engine.mjs', import.meta.url));
 const PR_URL = 'https://github.com/example-org/example-repo/pull/42';
@@ -35,7 +36,11 @@ interface FakeEngineOptions {
   viewedError?: string;
   askResult?: unknown;
   askError?: string;
+  sendResult?: unknown;
   probeResult?: unknown;
+  testResult?: unknown;
+  listResult?: unknown;
+  stoppedResult?: unknown;
 }
 
 /** Starts the fake engine as a separate process, speaking real stdio. */
@@ -66,7 +71,11 @@ function fakeEngine(options: FakeEngineOptions = {}): ChildProcessWithoutNullStr
       ...(options.viewedError !== undefined ? { FAKE_ENGINE_VIEWED_ERROR: options.viewedError } : {}),
       ...(options.askResult !== undefined ? { FAKE_ENGINE_ASK_RESULT: JSON.stringify(options.askResult) } : {}),
       ...(options.askError !== undefined ? { FAKE_ENGINE_ASK_ERROR: options.askError } : {}),
+      ...(options.sendResult !== undefined ? { FAKE_ENGINE_SEND_RESULT: JSON.stringify(options.sendResult) } : {}),
       ...(options.probeResult !== undefined ? { FAKE_ENGINE_PROBE_RESULT: JSON.stringify(options.probeResult) } : {}),
+      ...(options.testResult !== undefined ? { FAKE_ENGINE_TEST_RESULT: JSON.stringify(options.testResult) } : {}),
+      ...(options.listResult !== undefined ? { FAKE_ENGINE_LIST_RESULT: JSON.stringify(options.listResult) } : {}),
+      ...(options.stoppedResult !== undefined ? { FAKE_ENGINE_STOPPED_RESULT: JSON.stringify(options.stoppedResult) } : {}),
     },
   });
 }
@@ -112,7 +121,7 @@ describe('EngineClient against a fake engine', () => {
     await client.initialize();
     const result = await client.review(PR_URL, TOKEN);
 
-    expect(result.version).toBe(20);
+    expect(result.version).toBe(25);
     expect(result.parts).toHaveLength(7);
 
     const requests = loggedRequests('round-trip.log') as {
@@ -160,6 +169,21 @@ describe('EngineClient against a fake engine', () => {
     client.dispose();
   });
 
+  it('asks for a fresh review only for Review again, so a plain review may show the saved result', async () => {
+    const client = new EngineClient(() => fakeEngine({ result: mixedResult(), logName: 'fresh.log' }));
+
+    await client.initialize();
+    await client.review(PR_URL, TOKEN, undefined, undefined, undefined, undefined, true);
+    await client.review(PR_URL, TOKEN);
+
+    const reviews = loggedRequests('fresh.log').filter(
+      (request) => (request as { method: string }).method === 'review',
+    ) as { params: Record<string, unknown> }[];
+    expect(reviews[0]!.params['fresh']).toBe(true);
+    expect(reviews[1]!.params).not.toHaveProperty('fresh');
+    client.dispose();
+  });
+
   it('presses a library fetch by the claim, with the agent choice, and returns the result with its new verdict', async () => {
     const client = new EngineClient(() => fakeEngine({ fetchResult: fetchedResult(), logName: 'fetch-library.log' }));
 
@@ -170,6 +194,29 @@ describe('EngineClient against a fake engine', () => {
     const fetch = loggedRequests('fetch-library.log').find((request) => (request as { method: string }).method === 'fetchLibrary') as { params: unknown };
     // A fetch carries no token: it reads nothing from GitHub.
     expect(fetch.params).toEqual({ url: PR_URL, claim: 2, agent: { agent: 'pi', model: 'pi/model' } });
+    client.dispose();
+  });
+
+  it("presses Read the CI log by the claim, with the token and the agent choice, and returns the result with its new verdict", async () => {
+    const client = new EngineClient(() => fakeEngine({ fetchResult: ciLogReadResult(), logName: 'read-ci-log.log' }));
+
+    await client.initialize();
+    const result = await client.readCiLog(PR_URL, TOKEN, 1, { agent: 'pi', model: 'pi/model' });
+
+    expect(result.claims!.claims[1]!.verdict).toMatchObject({ kind: 'refuted', ciLogs: { checks: [{ name: 'check / lint' }] } });
+    const read = loggedRequests('read-ci-log.log').find((request) => (request as { method: string }).method === 'readCiLog') as { params: unknown };
+    // A read carries the token for its GitHub reads.
+    expect(read.params).toEqual({ url: PR_URL, token: TOKEN, claim: 1, agent: { agent: 'pi', model: 'pi/model' } });
+    client.dispose();
+  });
+
+  it("reads a CI log read's failure as the engine's plain message", async () => {
+    const message = "no passing check's log has lines to read (check / lint: its log could not be read: GitHub answered 410)";
+    const client = new EngineClient(() => fakeEngine({ fetchError: message }));
+
+    await client.initialize();
+
+    await expect(client.readCiLog(PR_URL, TOKEN, 1)).rejects.toThrow(message);
     client.dispose();
   });
 
@@ -245,7 +292,7 @@ describe('EngineClient against a fake engine', () => {
       source: 'reviewer',
       location: { kind: 'file', path: 'app/retry.py', line: 2, endLine: 2 },
       part: 0,
-      verdict: { kind: 'refuted', source: 'the change itself', reason: 'It retries five times.', evidence: [{ path: 'app/retry.py', line: 4, quote: 'retry(send, 5)' }] },
+      verdict: { kind: 'refuted', source: 'the change itself', reason: 'It retries five times.', evidence: [{ path: 'app/retry.py', line: 4, quote: 'retry(send, 5)' }], looked: [] },
     };
     const answer = {
       ask: 'verify',
@@ -283,6 +330,37 @@ describe('EngineClient against a fake engine', () => {
     await malformed.initialize();
     await expect(malformed.ask(PR_URL, 'explain', 0)).rejects.toThrow("the engine's answer is not the answer to an ask");
     malformed.dispose();
+  });
+
+  it('sends the pending review with the request’s token, and returns the link with the head commit it is pinned to', async () => {
+    const sent = { url: 'https://github.com/example-org/example-repo/pull/42#pullrequestreview-4242', commit: 'f00dcafe1234567890abcdef1234567890abcdef12' };
+    const client = new EngineClient(() => fakeEngine({ sendResult: sent, logName: 'send-review.log' }));
+    const review: PendingReview = {
+      submit: 'comment',
+      body: 'One deliberate pass.',
+      comments: [{ kind: 'line', path: 'src/retry.py', side: 'head', line: 5, body: 'a cap, please' }],
+    };
+
+    await client.initialize();
+    expect(await client.sendReview(PR_URL, TOKEN, review)).toEqual(sent);
+    const request = loggedRequests('send-review.log').find((each) => (each as { method: string }).method === 'sendReview') as { params: unknown };
+    expect(request.params).toEqual({ url: PR_URL, token: TOKEN, review });
+    client.dispose();
+  });
+
+  it('refuses a sent review that carries no head commit, or one that is not a commit', async () => {
+    // The link alone is the answer an older engine gives: a review it sent
+    // cannot be pinned to a commit, so step 8 cannot show it as sent.
+    const answers = [
+      { url: 'https://github.com/example-org/example-repo/pull/42#pullrequestreview-4242' },
+      { url: 'https://github.com/example-org/example-repo/pull/42#pullrequestreview-4242', commit: 'not-a-commit' },
+    ];
+    for (const answer of answers) {
+      const client = new EngineClient(() => fakeEngine({ sendResult: answer }));
+      await client.initialize();
+      await expect(client.sendReview(PR_URL, TOKEN, { submit: 'approve', comments: [] })).rejects.toThrow(SendProtocolError);
+      client.dispose();
+    }
   });
 
   it('ticks and clears a part’s reviewed checkbox, and reads the marks back', async () => {
@@ -346,6 +424,75 @@ describe('EngineClient against a fake engine', () => {
     await odd.initialize();
     await expect(odd.probeAgents()).rejects.toThrow("the engine's answer is not the probe of the installed agents");
     odd.dispose();
+  });
+
+  it("lists the reviewer's pull requests with the request's token and repository, reads a reason as an answer, and refuses an answer that is no list", async () => {
+    const listed = {
+      outcome: 'listed',
+      groups: [
+        {
+          group: 'review requested',
+          pullRequests: [
+            {
+              url: PR_URL,
+              repository: 'example-org/example-repo',
+              number: 42,
+              title: 'Retry on timeout',
+              author: 'maria-k',
+              updatedAt: '2026-10-11T08:00:00Z',
+              summary: 'Retries the charge.',
+              review: { requested: true, approvals: 1, changesRequested: 0, draft: false },
+              size: { additions: 84, deletions: 12, files: 5 },
+              newCommitsSinceLastLook: true,
+              waitingSince: '2026-10-09T12:00:00Z',
+            },
+          ],
+        },
+      ],
+    };
+    const client = new EngineClient(() => fakeEngine({ listResult: listed, logName: 'list.log' }));
+    await client.initialize();
+    expect(await client.listPullRequests({ token: TOKEN, repository: 'example-org/example-repo' })).toEqual(listed);
+    const request = loggedRequests('list.log').find((each) => (each as { method: string }).method === 'pullRequests/list') as { params: unknown };
+    expect(request.params).toEqual({ token: TOKEN, repository: 'example-org/example-repo' });
+    client.dispose();
+
+    const offline = new EngineClient(() => fakeEngine({ listResult: { outcome: 'unreachable', reason: 'GitHub could not be reached.' } }));
+    await offline.initialize();
+    expect(await offline.listPullRequests({ token: TOKEN })).toEqual({ outcome: 'unreachable', reason: 'GitHub could not be reached.' });
+    offline.dispose();
+
+    const odd = new EngineClient(() => fakeEngine({ listResult: { outcome: 'listed', groups: [{ group: 'starred', pullRequests: [] }] } }));
+    await odd.initialize();
+    await expect(odd.listPullRequests({ token: TOKEN })).rejects.toThrow("the engine's answer is not the list of your pull requests");
+    odd.dispose();
+  });
+
+  it('tests the chosen agent, model and effort, answering a failed run as a result, and refuses an answer that is no test result', async () => {
+    const stamp = { agent: 'claude-code', agentVersion: '2.1.296', model: 'claude-sonnet-5-5', effort: 'high', runAt: '2026-10-10T00:00:00.000Z' };
+    const choice = { agent: 'claude-code' as const, model: 'claude-sonnet-5-5', effort: 'high', account: 'work' };
+    const client = new EngineClient(() => fakeEngine({ testResult: { ok: true, stamp }, logName: 'test.log' }));
+    await client.initialize();
+    expect(await client.testAgent(choice)).toEqual({ ok: true, stamp });
+    const request = loggedRequests('test.log').find((each) => (each as { method: string }).method === 'agents/test') as { params: unknown };
+    expect(request.params).toEqual({ agent: choice });
+    client.dispose();
+
+    const failed = { ok: false, reason: 'not-signed-in', message: 'Claude Code is not signed in: run claude login', stamp };
+    const signedOut = new EngineClient(() => fakeEngine({ testResult: failed }));
+    await signedOut.initialize();
+    expect(await signedOut.testAgent(choice)).toEqual(failed);
+    signedOut.dispose();
+
+    const odd = new EngineClient(() => fakeEngine({ testResult: { ok: false, reason: 'unplugged', message: 'x', stamp } }));
+    await odd.initialize();
+    await expect(odd.testAgent(choice)).rejects.toThrow("the engine's answer is not the result of the agent test");
+    odd.dispose();
+
+    const none = new EngineClient(() => fakeEngine());
+    await none.initialize();
+    await expect(none.testAgent(choice)).rejects.toThrow('this engine runs no agent, so it has none to test');
+    none.dispose();
   });
 
   it('refuses a marks answer that is not the reviewed marks', async () => {
@@ -536,7 +683,7 @@ describe('EngineClient against a fake engine', () => {
       await timedOut;
 
       await client.initialize();
-      expect(await client.review(PR_URL, TOKEN)).toMatchObject({ version: 20 });
+      expect(await client.review(PR_URL, TOKEN)).toMatchObject({ version: 25 });
       expect(spawns).toBe(2);
       client.dispose();
     } finally {
@@ -560,6 +707,47 @@ describe('EngineClient against a fake engine', () => {
     client.dispose();
   });
 
+  it('hands on the stage record a notification names, and drops a notification whose record is malformed', async () => {
+    const stages = reviewStages('verdicts');
+    const result = { ...mixedResult(), stages };
+    const named = new EngineClient(() => fakeEngine({ result: mixedResult(), stage: { running: 'checking the claims with claude-code', timeoutMs: 1000, result, stage: stages[6] } }));
+    const heard: ReviewStageUpdate[] = [];
+    await named.initialize();
+    await named.review(PR_URL, TOKEN, undefined, (stage) => heard.push(stage));
+    expect(heard).toEqual([{ running: 'checking the claims with claude-code', result, stage: stages[6] }]);
+    named.dispose();
+
+    const malformed = new EngineClient(() =>
+      fakeEngine({ result: mixedResult(), stage: { running: 'checking the claims', timeoutMs: 1000, result, stage: { ...stages[6], position: 10 } } }),
+    );
+    const dropped: ReviewStageUpdate[] = [];
+    await malformed.initialize();
+    await malformed.review(PR_URL, TOKEN, undefined, (stage) => dropped.push(stage));
+    expect(dropped).toEqual([]);
+    malformed.dispose();
+  });
+
+  it('stops the review in flight by its request id, which answers with what landed, and stops nothing once none runs', async () => {
+    const stopped = { ...mixedResult(), stages: reviewStages(undefined, { docLinks: { state: 'stopped', detail: 'the review was stopped before this stage finished' } }) };
+    const client = new EngineClient(() =>
+      fakeEngine({ stage: { running: 'grouping', timeoutMs: 60_000, result: mixedResult() }, stageOnly: true, stoppedResult: stopped, logName: 'cancel.log' }),
+    );
+    await client.initialize();
+    expect(await client.cancelReview()).toBe(false);
+    let staged!: () => void;
+    const stageArrived = new Promise<void>((done) => (staged = done));
+    const review = client.review(PR_URL, TOKEN, undefined, () => staged());
+    await stageArrived;
+
+    expect(await client.cancelReview()).toBe(true);
+    expect(await review).toEqual(stopped);
+    expect(await client.cancelReview()).toBe(false);
+    const requests = loggedRequests('cancel.log') as { id: number; method: string; params: unknown }[];
+    const reviewId = requests.find((request) => request.method === 'review')!.id;
+    expect(requests.filter((request) => request.method === 'review/cancel').map((request) => request.params)).toEqual([{ id: reviewId }]);
+    client.dispose();
+  });
+
   it('ignores a stage whose result is not a review result, and still returns the final one', async () => {
     const client = new EngineClient(() =>
       fakeEngine({ result: mixedResult(), stage: { running: 'grouping', timeoutMs: 1000, result: { version: 3 } } }),
@@ -567,7 +755,7 @@ describe('EngineClient against a fake engine', () => {
     const stages: ReviewStageUpdate[] = [];
 
     await client.initialize();
-    expect(await client.review(PR_URL, TOKEN, undefined, (stage) => stages.push(stage))).toMatchObject({ version: 20 });
+    expect(await client.review(PR_URL, TOKEN, undefined, (stage) => stages.push(stage))).toMatchObject({ version: 25 });
     expect(stages).toEqual([]);
     client.dispose();
   });

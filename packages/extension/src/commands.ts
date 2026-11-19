@@ -4,6 +4,13 @@ import type { AskKind } from '@second-look/engine';
 export const REVIEW_COMMAND = 'second-look.reviewPullRequest' as const;
 
 /**
+ * Reviews the pull request shown again, afresh: every agent pass runs
+ * and the result replaces the one the engine saved. A plain review of a
+ * pull request with a saved result shows that result and runs nothing.
+ */
+export const REVIEW_AGAIN_COMMAND = 'second-look.reviewAgain' as const;
+
+/**
  * The side bar: one webview view carrying the review path's eight steps
  * (ADR 0008). Its id is the one the native tree had, so the view's focus
  * command, title buttons and progress keep their place.
@@ -67,6 +74,14 @@ export const FINDING_THREAD_CONTEXT = 'second-look-finding' as const;
  */
 export const FETCH_LIBRARY_COMMAND = 'second-look.fetchLibrary' as const;
 
+/**
+ * Presses one finding's Read the CI log: the engine reads the logs of
+ * the checks that passed at the head commit and judges the claim again.
+ * Runs only from the claim's button on step 5 and in the overview, which
+ * the reviewer presses; such a claim is no finding, so it has no thread.
+ */
+export const READ_CI_LOG_COMMAND = 'second-look.readCiLog' as const;
+
 /** Opens one file a verdict cites in a fetched library's source, read-only, at the cited line. */
 export const OPEN_LIBRARY_EVIDENCE_COMMAND = 'second-look.openLibraryEvidence' as const;
 
@@ -110,3 +125,27 @@ export const PART_BANNER_CONTEXT = 'second-look-part-banner' as const;
 
 /** Opens the quick pick that changes the agent, model, effort and account label, as the status bar entry does. */
 export const CHOOSE_AGENT_COMMAND = 'second-look.chooseAgent' as const;
+
+/** The editor's own command that opens its Settings editor, which step 6's ⋯ opens at the criteria heading setting. */
+export const OPEN_SETTINGS_COMMAND = 'workbench.action.openSettings' as const;
+
+/** Opens the editor's Settings at every one of the companion's settings: the side bar title's ⋯ menu. */
+export const OPEN_COMPANION_SETTINGS_COMMAND = 'second-look.openSettings' as const;
+
+/** The Settings editor's search for the companion's own settings, by its id in the manifest (publisher.name). */
+export const COMPANION_SETTINGS_QUERY = '@ext:lbildzinkas.second-look-extension' as const;
+
+/** The command that opens step 1's setup form in the side bar, which the agent quick pick's last item runs. */
+export const OPEN_SETUP_COMMAND = 'second-look.openSetup' as const;
+
+/**
+ * Stops the review running: the side bar's Stop review title button. What
+ * already landed stays, and every stage not run is marked stopped.
+ */
+export const STOP_REVIEW_COMMAND = 'second-look.stopReview' as const;
+
+/** The context key that is true while a review runs, which shows the Stop review title button. */
+export const REVIEWING_CONTEXT = 'second-look.reviewing' as const;
+
+/** Reloads step 2's list of the reviewer's open pull requests: the side bar's refresh title button. */
+export const REFRESH_PULL_REQUESTS_COMMAND = 'second-look.refreshPullRequests' as const;

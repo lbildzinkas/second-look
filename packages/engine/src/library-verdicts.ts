@@ -4,7 +4,7 @@ import { decompileNuGetLibrary, type DecompileOptions } from './decompile.js';
 import type { JsonSchema } from './json-schema.js';
 import { fetchLibrary, findLibraryPin, type LibraryDownload } from './library-fetch.js';
 import { NoExactSourceError } from './nuget-fetch.js';
-import type { CheckedVerdictKind, Claim, ClaimVerdict, EvidenceSource, FetchedLibrary, LibraryFetchOffer, Part } from './protocol.js';
+import type { CheckedVerdictKind, Claim, ClaimVerdict, EvidenceSource, FetchedLibrary, LibraryFetchOffer, Part, Settles } from './protocol.js';
 import { fetchNamedRepository } from './repository-fetch.js';
 import { UNTRUSTED_INPUT_RULE, untrustedBlock } from './untrusted.js';
 import { claimPlace, claimText, copyReader, diffLines, recheckCitation, settleVerdict } from './verdicts.js';
@@ -163,7 +163,8 @@ export function holdToExactSource(verdict: ClaimVerdict, unproven: readonly stri
   const cited = [...new Set(verdict.evidence.map((each) => each.path).filter((path) => isUnprovenSource(path, unproven)))];
   if (cited.length === 0) return verdict;
   const files = cited.length === 1 ? `${cited[0]}, which is unproven` : `${cited.join(', ')}, which are unproven`;
-  return { ...verdict, kind: 'unverifiable', recheck: `the verdict cites ${files}: no hash its PDB records matches, so it may not be the source the library was built from` };
+  const settles: Settles = { kind: 'library', note: `exact source of ${cited.join(', ')} would settle it` };
+  return { ...verdict, kind: 'unverifiable', settles, recheck: `the verdict cites ${files}: no hash its PDB records matches, so it may not be the source the library was built from` };
 }
 
 /**
@@ -269,7 +270,14 @@ export async function pressLibraryFetch(parts: readonly Part[], claim: Claim, op
   const rechecked = await Promise.all(cited.map((each) => recheckCitation(read, each, where)));
   // A named repository's evidence is labelled as such, and decompiled code's as decompiled, never as pinned source.
   const source = answer.source !== LIBRARY_SOURCE ? answer.source : named !== undefined ? 'a named repository' : decompile ? 'decompiled library code' : answer.source;
-  const settled = holdToExactSource(settleVerdict({ id: '', ...answer, source, library: null }, rechecked, where), fetched.unproven ?? []);
+  // What the agent read in the head copy for the claim stays the verdicts pass's, and what still settles it is the library.
+  const { looked, lookedRecheck } = verdict;
+  const unsettled: Settles = { kind: 'library', note: `${where} did not settle it as the agent read it; the fetched source is there to read` };
+  const answered = { id: '', ...answer, source, looked: [], settles: null, library: null };
+  const settled = holdToExactSource(
+    settleVerdict(answered, rechecked, where, { looked, ...(lookedRecheck ? { lookedRecheck } : {}) }, unsettled),
+    fetched.unproven ?? [],
+  );
   if (settled.kind === 'not checked') return { outcome: 'fell back', claim, detail: 'the verdict could not be settled', stamp: result.stamp };
   const { file, sha256, archive, path, note, unproven } = fetched;
   const library: FetchedLibrary = {

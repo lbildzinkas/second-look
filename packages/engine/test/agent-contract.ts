@@ -84,7 +84,8 @@ const FAST: AgentSettings = { ...DEFAULT_AGENT_SETTINGS, timeoutMs: 10_000 };
 /**
  * The contract every agent adapter must pass, run against a fake agent
  * executable: probing, schema-checked answers with one retry, the stamp,
- * timeouts that keep partial results, the concurrency limit, and the
+ * timeouts that keep partial results, a cancel that stops the run going,
+ * the concurrency limit, and the
  * GitHub login kept from the agent while its own login passes untouched.
  */
 export function describeAgentContract(
@@ -168,6 +169,20 @@ export function describeAgentContract(
       expect(results[0]).toMatchObject({ ok: false, reason: 'timeout', partial: '{"verd', attempts: 1 });
       expect(results[0]!.stamp.agent).toBe(agent.adapter.agent);
       expect(results[1]).toMatchObject({ ok: true, answer: { verdict: 'yes' } });
+    });
+
+    it('stops the run going when the review is cancelled, and starts none after it', async () => {
+      const agent = start({ runs: [{ hang: true, partial: '{"verd' }, { text: '{"verdict":"yes"}' }] });
+      const cancel = new AbortController();
+      const running = runAgentTasks(agent.adapter, [task(root), task(root)], { ...FAST, concurrency: 1, signal: cancel.signal });
+      const deadline = Date.now() + 10_000;
+      while (agent.runs().length === 0 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20));
+      cancel.abort();
+      const { results } = await running;
+      // Stopped well before its 10-second timeout, so it failed rather than timed out.
+      expect(results[0]).toMatchObject({ ok: false, reason: 'agent-failed', attempts: 1 });
+      expect(results[1]).toMatchObject({ ok: false, reason: 'stopped', message: 'the review was stopped', attempts: 0 });
+      expect(agent.runs()).toHaveLength(1);
     });
 
     it('stamps no model when the run ends before the agent names one', async () => {

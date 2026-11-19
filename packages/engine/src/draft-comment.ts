@@ -122,9 +122,10 @@ export function isFindingRef(value: unknown): value is FindingRef {
   return (FINDING_REF_KINDS as readonly unknown[]).includes(kind) && typeof index === 'number' && Number.isInteger(index) && index >= 0;
 }
 
-/** A citation's place as a draft cites it: `path:line`, or a CI log's line. */
+/** A citation's place as a draft cites it: `path:line`, or a CI log's line, labelled when the check passed. */
 function citedAt(cited: Citation): string {
-  return cited.ciLog ? `CI log of ${cited.path}, line ${cited.line}` : `${cited.path}:${cited.line}`;
+  if (!cited.ciLog) return `${cited.path}:${cited.line}`;
+  return `CI log of ${cited.path}${cited.passingCheck ? ' (a passing check)' : ''}, line ${cited.line}`;
 }
 
 /** A citation as the finding holds it: its place and its quote. */
@@ -141,7 +142,7 @@ function claimLocation(claim: Claim): string {
   return location.path !== undefined && location.line !== undefined ? `${location.path}:${location.line}` : 'the pipeline report';
 }
 
-/** A claim finding: refuted or unverifiable, with its evidence and the library it needs or was judged in. */
+/** A claim finding: refuted, or unverifiable the code or a library's source could settle, with its evidence and the library it needs or was judged in. */
 function claimFinding(claim: Claim): DraftFinding | undefined {
   const { verdict } = claim;
   if (!isFinding(claim) || verdict.kind === 'not checked') return undefined;
@@ -170,7 +171,8 @@ function claimFinding(claim: Claim): DraftFinding | undefined {
 
 /**
  * The finding a reference names in a review result, read for the draft
- * prompt: a refuted or unverifiable claim, a part neither the description
+ * prompt: a refuted claim or an unverifiable one the code or a library's
+ * source could settle, a part neither the description
  * nor a linked issue explains, a change they describe that the diff does
  * not contain, or a not met or partly met acceptance criterion. Undefined
  * when the reference names nothing there, or something that is no

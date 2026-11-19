@@ -1,0 +1,70 @@
+[project]
+# uv project docs: https://docs.astral.sh/uv/concepts/projects/
+name = "interview-coach"
+version = "0.1.0"
+description = "A LangGraph interview coach and study buddy with measured RAG, long-term memory and evaluation at every level."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.13"
+dependencies = [
+    "huggingface-hub>=1.0",     # https://huggingface.co/docs/huggingface_hub/guides/download
+    "langchain-openai>=1.6.6",  # https://python.langchain.com/docs/integrations/chat/openai/
+    "langgraph>=1.2.12",        # https://langchain-ai.github.io/langgraph/
+    "pyarrow>=21",              # https://arrow.apache.org/docs/python/parquet.html
+    "pydantic>=2.13",           # https://docs.pydantic.dev/latest/
+    "pyyaml>=6.0",              # https://pyyaml.org/wiki/PyYAMLDocumentation
+]
+
+# The `coach` command: https://docs.astral.sh/uv/concepts/projects/#entry-points
+[project.scripts]
+coach = "interview_coach.cli:main"
+
+[dependency-groups]
+# uv dependency groups docs: https://docs.astral.sh/uv/concepts/projects/#dependency-groups
+# Exact versions are pinned in uv.lock, which is committed to the repository.
+dev = [
+    "pyright>=1.1.402",  # https://microsoft.github.io/pyright/
+    "pytest>=8.4",       # https://docs.pytest.org/en/stable/
+    "ranx>=0.3.21",      # cross-checks the hand-written search metrics: https://amenra.github.io/ranx/
+    "ruff>=0.13",        # https://docs.astral.sh/ruff/
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Tell hatchling where the package lives in a src layout:
+# https://hatch.pypa.io/latest/config/build/#packages
+[tool.hatch.build.targets.wheel]
+packages = ["src/interview_coach"]
+
+# --- Ruff: linter and formatter -------------------------------------------
+# Ruff docs: https://docs.astral.sh/ruff/
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["src", "tests"]
+
+# Rule selections reference: https://docs.astral.sh/ruff/rules/
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort (import sorting)
+    "UP", # pyupgrade (modern syntax)
+    "B",  # flake8-bugbear (common bug patterns)
+]
+
+# --- Pyright: static type checker -------------------------------------------
+# Pyright configuration docs: https://github.com/microsoft/pyright/blob/main/docs/configuration.md
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.13"
+venvPath = "."
+venv = ".venv"
+
+# --- Pytest: test runner -----------------------------------------------------
+# pytest configuration docs: https://docs.pytest.org/en/stable/reference/reference.html#ini-options
+[tool.pytest.ini_options]
+testpaths = ["tests"]

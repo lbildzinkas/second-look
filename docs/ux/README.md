@@ -13,7 +13,7 @@ Sending ships as the **Send review page** — the interim quick pick it first sh
 
 ## Main screens
 
-1. **First open, results still arriving.** The overview tab shows the story as soon as it is ready, with a chip for each stage still running. The tree already ranks the parts and shows a spinner on each part whose claims are still being checked. The most important part is checked first.
+1. **First open, results still arriving.** The overview tab shows the story as soon as it is ready, with a stage list of the stages done, the one running and the ones to come. The tree already ranks the parts and shows a spinner on each part whose claims are still being checked. The most important part is checked first.
 2. **Reading a must-review part.** Selecting a part opens the multi-file diff for just that part. A banner above the diff gives the importance with its one-line reason, the signals, the three asks and the reviewed checkbox. Findings are comment threads on their lines; verified claims are quiet lines above the code.
 
    The banner is a read-only comment thread at the top of the part's first file ([ADR 0007](../adr/0007-part-banner-as-a-file-comment.md)); the asks stay in each part's context menu and the reviewed checkbox in the tree as well, and the banner, the context menu and the tree act alike.
