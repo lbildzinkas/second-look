@@ -34,12 +34,13 @@ The agent uses whatever login the reviewer gave it. The companion never opens, r
 
 ### Agents never have network access; the companion does all fetching
 
-No agent is given a tool that reaches the network: each runs with file-reading tools only (see each agent below). Every download the review needs is made by the engine's own code, never by the agent and never on the agent's word alone ([ADR 0003](adr/0003-library-source-only-on-reviewer-request.md)):
+No agent is given a tool that reaches the network: each runs with file-reading tools only (see each agent below), with one narrow exception, the Jira fetch run, set out after the table. Every download the review needs is made by the engine's own code, never by the agent and never on the agent's word alone ([ADR 0003](adr/0003-library-source-only-on-reviewer-request.md)):
 
 | What the companion fetches | From where | When | Code |
 | --- | --- | --- | --- |
 | The pull request, its diff, merge base, base and head archives, `.gitattributes`, last review | GitHub's REST API with the reviewer's token | every review | `github.ts:76-300`, `github.ts:366` |
 | Linked issues | GitHub's GraphQL API | every review | `github.ts:173-215` |
+| Jira tickets the pull request's key references name, at most five | the reviewer's Jira Cloud site, **fetched by the agent's MCP connector** (the reviewer's Claude Code Atlassian connector) in the Jira fetch run, the one exception below | every review with a key reference, on Claude Code only | not built yet ([ADR 0010](adr/0010-issue-tracker-sources.md)) |
 | Check runs, annotations and the logs of failed GitHub Actions jobs | GitHub's REST API | every review | `github.ts:105-170`, `ci.ts` |
 | The logs of passing GitHub Actions jobs at the reviewed head commit | GitHub's REST API with the reviewer's token | only when the reviewer presses **Read the CI log** (`readCiLog`) | `ci.ts`, `ci-log-read.ts` |
 | The reviewer's open pull requests, one search per group | GitHub's GraphQL API with the reviewer's token | each time the reviewer's pull requests are listed (`pullRequests/list`) | `github.ts:395-418`, `pull-request-list.ts` |
@@ -56,6 +57,14 @@ What the agent may influence, it influences only through the engine's checks:
 - A documentation page the agent suggests is never fetched: the engine checks only that it is an https address on a named public host, and shows it labelled as the agent's suggestion (`doc-suggestions.ts:14-20`).
 - An inventory download, which a pull request's lock files steer, is https on a named host with no credentials and no port, connects only to public addresses — loopback, private-network and link-local ones are refused as the connection is made — follows no redirect, and is capped (`doc-fetch.ts:7-35`, `doc-fetch.ts:37-100`).
 - A downloaded library is checked against the hash the project pins before anything is unpacked (`library-fetch.ts:238`, `ecosystem-fetch.ts`, `nuget-fetch.ts`), and is unpacked read-only, never built, installed or run (`archive.ts`).
+
+**The one exception: the Jira fetch run** ([ADR 0010](adr/0010-issue-tracker-sources.md)). This is decided but not built yet, so no code backs it on this page. Jira tickets are read through the reviewer's Claude Code Atlassian connector, because the engine holds no Jira login. Claude Code only, so Pi reviewers get no Jira. The run that reads them is separate from every review run, and it is the only agent run that reaches the network:
+
+- **No repository copy.** It starts in an empty temporary folder with no `SECOND_LOOK_READ_ROOT`, so the guard denies every file read.
+- **Jira read tools only.** It runs with no built-in tool (`--tools ""`). Only `getJiraIssue` and `getAccessibleAtlassianResources` are pre-approved, by their exact `mcp__…` names (`--allowedTools`). With `--permission-mode default` and `--permission-prompts none`, every other MCP tool is denied, the connector's write tools included. The guard allow-lists the same two names and checks their arguments: the issue key must be key-shaped, and the `cloudId` must be the configured Jira site.
+- **Validated output.** The run answers in JSON (`--json-schema`). The engine checks every quoted field against the raw MCP `tool_result` in the run's stream-json events and discards any field that doesn't match. The ticket text then reaches the review runs cleaned and fenced like every other text from others (below).
+
+Every review run keeps `--strict-mcp-config` with no MCP configuration, and so no MCP server.
 
 The one program besides the agent that the companion starts is the .NET decompiler, `ilspycmd`, as the reviewer installed it, and only when the reviewer presses a decompile. The companion — never the agent — runs it with fixed arguments and with the network cut by the operating system: under macOS's `sandbox-exec` with a profile that denies all network, or on Linux in a new network namespace with `unshare`; on any other system nothing is decompiled (`decompile.ts:74-86`).
 
