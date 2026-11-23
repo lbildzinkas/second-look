@@ -23,7 +23,7 @@ import { SideBarProvider, sideBarMessage, type SideBarDeps } from '../src/side-b
 import { StepTickStore } from '../src/side-bar/step-ticks.js';
 import { nextPartToReview, setupLine, sideBarSteps, type SideBarState } from '../src/side-bar/steps.js';
 import { anchorOf, buildTree, pendingReviewSection, treeMessage } from '../src/tree.js';
-import { REQUESTS_FETCH, carriedResult, ciLogOfferedResult, ciLogReadResult, claimsResult, criteriaResult, fetchedResult, judgedResult, mappedCriteriaResult, mixedResult, nonDefaultBranchResult, offeredResult, pipelineResult, reviewStages, settledResult, unexplainedResult } from './results.js';
+import { REQUESTS_FETCH, carriedResult, ciLogOfferedResult, ciLogReadResult, claimsResult, criteriaResult, fetchedResult, jiraKeysResult, judgedResult, mappedCriteriaResult, mixedResult, nonDefaultBranchResult, offeredResult, pipelineResult, reviewStages, settledResult, unexplainedResult } from './results.js';
 import { ConfigurationTarget, stub, stubContext, window, type StubWebviewView } from './vscode-stub.js';
 
 const NOW = new Date('2026-10-06T12:00:00Z');
@@ -575,6 +575,22 @@ describe("the side bar's page", () => {
     expect(body).toContain('<p class="note">None is checked: no checklist was found to map.</p>');
     expect(body).toContain('<p class="note">Not compared: the pull request has neither a description nor a linked issue to compare with.</p>');
     expect(body).toMatch(/<input type="checkbox" id="step-6-tick" data-tick="criteria" aria-label="I&#39;ve checked the criteria">/);
+  });
+
+  it('names the Jira keys found when the pull request links no issue, and says nothing of Jira when it names none', () => {
+    const state = (keys: string[]) => reviewState({ result: jiraKeysResult(keys), storyRead: true, marks: marked(...mixedResult().parts) });
+    const named = sideBarBody(state(['PORT-42']));
+    expect(named).toContain('<p class="note">Jira ticket PORT-42 found; connect Jira to read its criteria.</p><p class="note">None is checked: no checklist was found to map.</p>');
+    expect(sideBarBody(state(['PORT-42', 'ABC-1']))).toContain('<p class="note">Jira tickets PORT-42 and ABC-1 found; connect Jira to read their criteria.</p>');
+
+    const none = sideBarBody(state([]));
+    expect(none).not.toContain('Jira');
+    expect(none).toContain('<p class="note">None is checked: no checklist was found to map.</p>');
+
+    const linked = criteriaResult();
+    const keyed = { ...linked, criteria: { ...linked.criteria!, keyReferences: [{ key: 'PORT-42', place: 'branch' as const }] } };
+    const shownState = (result: typeof linked) => reviewState({ result, storyRead: true, marks: marked(...mixedResult().parts) });
+    expect(sideBarBody(shownState(keyed))).toBe(sideBarBody(shownState(linked)));
   });
 
   it('treats a fallen-back criteria mapping as final: the honest note and the tick', () => {

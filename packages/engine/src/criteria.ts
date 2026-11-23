@@ -90,7 +90,8 @@ async function readSource(source: IssueTrackerSource, pr: LinkedIssuesRequest): 
  * issue tracker source finds it links, source by source in the order
  * given, and each checklist under the heading. A source that cannot read
  * never fails the review: its read says why, and the criteria are
- * unreadable only when no source could read. Each criterion starts as
+ * unreadable only when no source could read. The key references the
+ * request carries are kept as they are. Each criterion starts as
  * not checked; judging them is a later pass.
  */
 export async function readCriteria(
@@ -104,6 +105,7 @@ export async function readCriteria(
     outcome: reads.some((read) => read.outcome === 'read') ? 'read' : 'unreadable',
     detail: reads.map((read) => read.detail).join('; '),
     sources: reads.map((read, index) => ({ source: sources[index]!.source, outcome: read.outcome, detail: read.detail })),
+    keyReferences: [...(pr.keyReferences ?? [])],
     heading,
     issues,
     criteria: issues.flatMap((issue, index) => criteriaOf(index, issue.body, heading)),

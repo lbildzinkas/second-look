@@ -11,6 +11,7 @@ import {
   criteriaResult,
   doneStages,
   fetchedResult,
+  jiraKeysResult,
   judgedResult,
   mappedCriteriaResult,
   offeredResult,
@@ -717,6 +718,24 @@ describe('isReviewResult for the acceptance criteria', () => {
     for (const value of cases) expect(isReviewResult(value)).toBe(false);
   });
 
+  it('accepts the key references the criteria keep, and rejects none kept, a key that is not key-shaped, an unknown place or more than five', () => {
+    expect(isReviewResult(jiraKeysResult(['PORT-42', 'ABC-1', 'DEF-2', 'GHI-3', 'JKL-4']))).toBe(true);
+    const changed = (change: (value: Loose) => void): Loose => {
+      const value = shown();
+      change(value);
+      return value;
+    };
+    const cases: unknown[] = [
+      changed((value) => delete value.criteria['keyReferences']),
+      changed((value) => (value.criteria['keyReferences'] = [{ key: 'abc-1', place: 'title' }])),
+      changed((value) => (value.criteria['keyReferences'] = [{ key: '<b>ABC-1</b>', place: 'title' }])),
+      changed((value) => (value.criteria['keyReferences'] = [{ key: 'ABC-1', place: 'commit' }])),
+      changed((value) => (value.criteria['keyReferences'] = ['ABC-1'])),
+      changed((value) => (value.criteria['keyReferences'] = ['A-1', 'B-2', 'C-3', 'D-4', 'E-5', 'F-6'].map((key) => ({ key: `X${key}`, place: 'description' })))),
+    ];
+    for (const value of cases) expect(isReviewResult(value)).toBe(false);
+  });
+
   it('rejects criteria that are malformed, or a criterion whose issue or verdict is off', () => {
     const changed = (change: (value: Loose) => void): Loose => {
       const value = shown();
@@ -959,6 +978,6 @@ describe('parseReviewResult', () => {
 
 describe('the versioned protocol is shared with the engine', () => {
   it('uses the same version constant', () => {
-    expect(REVIEW_RESULT_VERSION).toBe(26);
+    expect(REVIEW_RESULT_VERSION).toBe(27);
   });
 });

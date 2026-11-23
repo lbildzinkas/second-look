@@ -531,6 +531,7 @@ export function criteriaResult(copies?: CopyPaths): ReviewResult {
       outcome: 'read',
       detail: '1 issue this pull request closes and 1 issue that references it',
       sources: [{ source: 'github', outcome: 'read', detail: '1 issue this pull request closes and 1 issue that references it' }],
+      keyReferences: [],
       heading: 'Acceptance criteria',
       issues: [
         {
@@ -619,6 +620,25 @@ export function nonDefaultBranchResult(copies?: CopyPaths): ReviewResult {
           detail: "GitHub returns no closing references for a pull request into release/2.0, not the repository's default branch master, and no issue references it",
         },
       ],
+      keyReferences: [],
+      heading: 'Acceptance criteria',
+      issues: [],
+      criteria: [],
+    },
+  };
+}
+
+/** The result of a pull request that links no issue but names Jira keys: in its branch name, and in its title. */
+export function jiraKeysResult(keys: readonly string[] = ['PORT-42'], copies?: CopyPaths): ReviewResult {
+  const shown = criteriaResult(copies);
+  return {
+    ...shown,
+    pullRequest: { ...shown.pullRequest, head: `feature/${keys[0] ?? 'login'}_login`, title: `${keys.slice(1).join(' ')} Retry webhooks`.trim() },
+    criteria: {
+      outcome: 'read',
+      detail: 'this pull request links no issue',
+      sources: [{ source: 'github', outcome: 'read', detail: 'this pull request links no issue' }],
+      keyReferences: keys.map((key, index) => ({ key, place: index === 0 ? 'branch' : 'title' })),
       heading: 'Acceptance criteria',
       issues: [],
       criteria: [],

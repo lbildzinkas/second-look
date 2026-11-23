@@ -1,4 +1,4 @@
-import { escapeHtml, claimWhere, citedWhere, issueName, lookedWhere, sanitiseUntrusted, settlesLine, stageEndLine, STATES } from '../overview.js';
+import { escapeHtml, claimWhere, citedWhere, issueName, keysFoundLine, lookedWhere, sanitiseUntrusted, settlesLine, stageEndLine, STATES } from '../overview.js';
 import { FINDING_SETTLES, isFinding, isUnmetCriterion, isUnprovenSource, type AcceptanceCriterion, type Claim, type ClaimVerdict, type FindingRef, type LinkedIssue, type ReviewResult, type ReviewStageId, type SettlesKind, type SubmitKind } from '@second-look/engine';
 import type { ListedComment } from '../comments.js';
 import { anchorOf, preview, type PartAnchor, type TreePart, type TreeSection } from '../tree.js';
@@ -456,8 +456,11 @@ function criteriaBody(state: SideBarState): string {
   // The tick shows once the step's results are in: its stages ended, whatever they left.
   const settled = !producing(state, 'unexplained', 'criteria');
   const unexplained = unexplainedRows(result, settled);
+  const keys = criteria === undefined ? undefined : keysFoundLine(criteria);
+  const keysNote = keys === undefined ? '' : note(`${keys}.`);
   const list =
-    criteria === undefined
+    keysNote +
+    (criteria === undefined
       ? note(settled ? 'No criteria were read for this review.' : 'The acceptance criteria show here once the review reads the linked issues.')
       : criteria.outcome === 'unreadable'
         ? note(`${criteria.detail}. No criteria were read, so none is checked.`)
@@ -465,7 +468,7 @@ function criteriaBody(state: SideBarState): string {
           ? `<ul class="findings" aria-label="Criteria not fully met">${rows.join('')}</ul>`
           : criteria.criteria.some((criterion) => criterion.verdict.kind !== 'not checked')
             ? note('Every criterion is met.')
-            : note(unmappedNote(state, criteria));
+            : note(unmappedNote(state, criteria)));
   const folded = met === 0 ? '' : `<p class="folded"><span class="tone-ok" aria-hidden="true">✓</span> ${met} met</p>`;
   const unexplainedHeading = unexplained.heading ? '<h3 class="group">Unexplained changes</h3>' : '';
   return (

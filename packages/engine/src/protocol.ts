@@ -11,7 +11,7 @@ import type { AgentStamp } from './agent.js';
 import type { AskKind } from './asks.js';
 
 /** Version of the review result schema. */
-export const REVIEW_RESULT_VERSION = 26 as const;
+export const REVIEW_RESULT_VERSION = 27 as const;
 
 /**
  * Version 2 added the head commit's SHA and each part's noise assessment;
@@ -70,7 +70,10 @@ export const REVIEW_RESULT_VERSION = 26 as const;
  * names the issue tracker it was read from and the key it is shown by,
  * with GitHub's number and repository only on a GitHub issue, and the
  * criteria keep what each source's read came to. A saved result of
- * version 25 is read as 26, each of its issues GitHub's.
+ * version 25 is read as 26, each of its issues GitHub's; version 27
+ * added the criteria's key references: the ticket keys the branch name,
+ * title and description name. A saved result of version 25 or 26 is
+ * read as 27, its key references found in its pull request.
  */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
@@ -571,6 +574,22 @@ export interface IssueSourceRead {
   detail: string;
 }
 
+/** Where in the pull request a key reference was found. */
+export type KeyReferencePlace = 'branch' | 'title' | 'description';
+
+/** The places key references are looked for, in the order they are read. */
+export const KEY_REFERENCE_PLACES: readonly KeyReferencePlace[] = ['branch', 'title', 'description'];
+
+/**
+ * A ticket key the pull request names (the glossary's key reference),
+ * such as `ABC-123`, and where it was found first. It is only a
+ * candidate until its issue tracker source returns the ticket.
+ */
+export interface KeyReference {
+  key: string;
+  place: KeyReferencePlace;
+}
+
 /**
  * One condition from a linked issue that the change must meet (the
  * glossary's acceptance criterion), quoted from the checklist under the
@@ -679,6 +698,12 @@ export interface Criteria {
   detail: string;
   /** What each issue tracker source's read came to, in the order the sources were read. */
   sources: IssueSourceRead[];
+  /**
+   * The ticket keys the pull request names, such as `ABC-123`: the branch
+   * name's first, then the title's, then the description's, each once
+   * and at most five; empty when it names none.
+   */
+  keyReferences: KeyReference[];
   /** The heading the checklists were read from under, such as `Acceptance criteria`. */
   heading: string;
   /** The issues the pull request links, source by source in the order they were read — GitHub's closing references first, in GitHub's order; empty when none was read. */

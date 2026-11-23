@@ -5,6 +5,7 @@ import { ensureCopy, pullRequestCacheDir } from './cache.js';
 import type { GitHubClient, PullRequestRef } from './github.js';
 import { withIssueSources, type UnsourcedCriteria } from './issue-sources.js';
 import { REVIEW_RESULT_VERSION, type ReviewResult, type ReviewResultVersion, type SavedReview } from './protocol.js';
+import { withKeyReferences } from './ticket-keys.js';
 
 /** The file in a pull request's cache folder that holds its latest review result. */
 export const SAVED_REVIEW_FILE = 'review-result.json';
@@ -28,25 +29,31 @@ function savedPath(cacheDir: string, ref: PullRequestRef): string {
 
 /**
  * The result versions a saved record may have been saved at and still be
- * read: the current one, and 25, which differs only in its linked issues
- * naming no source.
+ * read: the current one; 26, which differs only in its criteria keeping
+ * no key references; and 25, whose linked issues also name no source.
  */
-const READABLE_VERSIONS: readonly number[] = [25, REVIEW_RESULT_VERSION];
+const READABLE_VERSIONS: readonly number[] = [25, 26, REVIEW_RESULT_VERSION];
 
 /**
  * A saved result read at the current version: a version-25 result's
  * linked issues are all GitHub's, so each gets its source and the key
- * it is shown by, and its criteria the read GitHub's was.
+ * it is shown by, and its criteria the read GitHub's was; a result of
+ * version 25 or 26 gets the key references its pull request makes,
+ * found as a review finds them.
  */
 function upgraded(result: ReviewResult, ref: PullRequestRef): ReviewResult {
   if (result.version === REVIEW_RESULT_VERSION) return result;
   const criteria = result.criteria as UnsourcedCriteria | undefined;
-  return { ...result, version: REVIEW_RESULT_VERSION, ...(criteria ? { criteria: withIssueSources(criteria, ref) } : {}) };
+  return {
+    ...result,
+    version: REVIEW_RESULT_VERSION,
+    ...(criteria ? { criteria: withKeyReferences(withIssueSources(criteria, ref), result.pullRequest) } : {}),
+  };
 }
 
 /**
  * Reads the pull request's saved review, read at the current result
- * version when it was saved at version 25; null when none was saved, or
+ * version when it was saved at version 25 or 26; null when none was saved, or
  * when it was saved at any other result version, is not of the commit
  * it names, or is not a record at all, which is then left out rather
  * than misread.

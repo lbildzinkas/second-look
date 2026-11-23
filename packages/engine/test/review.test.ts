@@ -42,7 +42,7 @@ describe('reviewPullRequest', () => {
     });
 
     expect(result.version).toBe(REVIEW_RESULT_VERSION);
-    expect(result.version).toBe(26);
+    expect(result.version).toBe(27);
     expect(result.pullRequest.number).toBe(42);
     expect(result.pullRequest.description).toHaveLength(8082);
     // The head commit's SHA, where the noise attributes are read.
@@ -206,6 +206,30 @@ describe('reviewPullRequest', () => {
     const offline = await reviewChange(input);
     expect(transport.requests).toHaveLength(requests);
     expect(offline.parts).toEqual((await reviewPullRequest(PR_7_URL, options)).parts);
+  });
+
+  it('keeps the ticket keys the branch name, title and description name with the criteria, and none when they name none', async () => {
+    const plain = await reviewPullRequest(PR_URL, { token: 'test-token', fetch: fixtureFetch().fetch, cacheDir });
+    expect(plain.criteria!.keyReferences).toEqual([]);
+
+    const transport = fixtureFetch();
+    const named: typeof fetch = async (input, init) => {
+      const answer = await transport.fetch(input, init);
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url !== 'https://api.github.com/repos/example-org/example-repo/pulls/42' || !(answer.headers.get('content-type') ?? '').includes('json')) return answer;
+      const pull = (await answer.json()) as { head: { ref: string }; title: string; body: string };
+      pull.head.ref = 'feature/PAY-17_retries';
+      pull.title = 'PAY-17: retry the sends (WEB-9)';
+      pull.body = 'Hashes with SHA-256. Ticket: https://x.atlassian.net/browse/OPS-3';
+      return Response.json(pull);
+    };
+    const result = await reviewPullRequest(PR_URL, { token: 'test-token', fetch: named, cacheDir });
+
+    expect(result.criteria!.keyReferences).toEqual([
+      { key: 'PAY-17', place: 'branch' },
+      { key: 'WEB-9', place: 'title' },
+      { key: 'OPS-3', place: 'description' },
+    ]);
   });
 
   it('reads the acceptance criteria of the recorded linked issues, under the configured heading', async () => {
