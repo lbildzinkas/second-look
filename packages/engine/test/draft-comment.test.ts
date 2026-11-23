@@ -91,8 +91,9 @@ function reviewed(): ReviewResult {
     criteria: {
       outcome: 'read',
       detail: 'read',
+      sources: [{ source: 'github', outcome: 'read', detail: 'read' }],
       heading: 'Acceptance criteria',
-      issues: [{ number: 30, title: 'Retry', url: 'https://github.com/example-org/example-repo/issues/30', repository: 'example-org/example-repo', body: 'x', link: 'closes' }],
+      issues: [{ source: 'github', key: '#30', number: 30, title: 'Retry', url: 'https://github.com/example-org/example-repo/issues/30', repository: 'example-org/example-repo', body: 'x', link: 'closes' }],
       criteria: [
         {
           quote: 'A send is retried three times.',

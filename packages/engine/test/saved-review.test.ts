@@ -47,10 +47,40 @@ describe('the saved review', () => {
     expect(await readSavedReview(cacheDir, REF)).toBeNull();
   });
 
+  it('reads a record saved at version 25 as the current version, each linked issue GitHub’s with the key it is shown by', async () => {
+    const detail = '1 issue this pull request closes and 1 issue that references it';
+    const own = { number: 30, title: 'Retry', url: 'https://github.com/example-org/example-repo/issues/30', repository: 'example-org/example-repo', body: '- [ ] retried', link: 'closes' };
+    const elsewhere = { number: 7, title: 'Track', url: 'https://github.com/example-org/planning/issues/7', repository: 'example-org/planning', body: '', link: 'references' };
+    const criteria = { outcome: 'read', detail, heading: 'Acceptance criteria', issues: [own, elsewhere], criteria: [] };
+    await writeRecord({ version: 25, commit: HEAD, ...STAMP, result: { ...result(), version: 25, criteria } });
+
+    expect(await readSavedReview(cacheDir, REF)).toEqual({
+      version: REVIEW_RESULT_VERSION,
+      commit: HEAD,
+      ...STAMP,
+      result: {
+        ...result(),
+        criteria: {
+          ...criteria,
+          sources: [{ source: 'github', outcome: 'read', detail }],
+          issues: [
+            { source: 'github', key: '#30', ...own },
+            { source: 'github', key: 'example-org/planning#7', ...elsewhere },
+          ],
+        },
+      },
+    });
+
+    // A version-25 result that read no criteria is read as it was.
+    await writeRecord({ version: 25, commit: HEAD, ...STAMP, result: { ...result(), version: 25 } });
+    expect(await readSavedReview(cacheDir, REF)).toEqual({ version: REVIEW_RESULT_VERSION, commit: HEAD, ...STAMP, result: result() });
+  });
+
   it('leaves out a record of another result version, of another commit than its result, or that is no record', async () => {
     for (const record of [
-      { version: REVIEW_RESULT_VERSION - 1, commit: HEAD, ...STAMP, result: { ...result(), version: REVIEW_RESULT_VERSION - 1 } },
-      { version: REVIEW_RESULT_VERSION, commit: HEAD, ...STAMP, result: { ...result(), version: REVIEW_RESULT_VERSION - 1 } },
+      { version: 24, commit: HEAD, ...STAMP, result: { ...result(), version: 24 } },
+      { version: REVIEW_RESULT_VERSION, commit: HEAD, ...STAMP, result: { ...result(), version: 25 } },
+      { version: 25, commit: HEAD, ...STAMP, result: { ...result(), version: REVIEW_RESULT_VERSION } },
       { version: REVIEW_RESULT_VERSION, commit: 'c'.repeat(40), ...STAMP, result: result() },
       { version: REVIEW_RESULT_VERSION, commit: HEAD, result: result() },
       { version: REVIEW_RESULT_VERSION, commit: HEAD, ...STAMP, result: { ...result(), parts: undefined } },

@@ -1,6 +1,6 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { pathInCopy } from '@second-look/engine';
+import { parsePullRequestUrl, pathInCopy, withIssueSources } from '@second-look/engine';
 import type {
   Criteria,
   CriterionVerdictKind,
@@ -10,6 +10,7 @@ import type {
   PullRequestSummary,
   ReviewInput,
   SettlesKind,
+  UnsourcedCriteria,
 } from '@second-look/engine';
 
 /**
@@ -302,6 +303,10 @@ export async function loadCase(folder: string): Promise<EvaluationCase> {
       `${folder}: case format ${String(record.formatVersion)} is not ${CASE_FORMAT_VERSION}`,
     );
   }
+  // A case recorded before linked issues named their source keeps GitHub
+  // issues only, read as a saved review of that version is.
+  const ref = parsePullRequestUrl(record.source);
+  if (record.criteria && ref !== null) record.criteria = withIssueSources(record.criteria as UnsourcedCriteria, ref);
   const recorded = await readJson<Partial<ExpectedResults>>(join(folder, 'expected.json'));
   const expected: ExpectedResults = {
     noise: recorded.noise ?? {},

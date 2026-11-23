@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ensureCopy, pullRequestCacheDir } from './cache.js';
 import type { GitHubClient, PullRequestRef } from './github.js';
+import { withIssueSources, type UnsourcedCriteria } from './issue-sources.js';
 import { REVIEW_RESULT_VERSION, type ReviewResult, type ReviewResultVersion, type SavedReview } from './protocol.js';
 
 /** The file in a pull request's cache folder that holds its latest review result. */
@@ -26,10 +27,29 @@ function savedPath(cacheDir: string, ref: PullRequestRef): string {
 }
 
 /**
- * Reads the pull request's saved review; null when none was saved, or
- * when it was saved at another result version, is not of the commit it
- * names, or is not a record at all, which is then left out rather than
- * misread.
+ * The result versions a saved record may have been saved at and still be
+ * read: the current one, and 25, which differs only in its linked issues
+ * naming no source.
+ */
+const READABLE_VERSIONS: readonly number[] = [25, REVIEW_RESULT_VERSION];
+
+/**
+ * A saved result read at the current version: a version-25 result's
+ * linked issues are all GitHub's, so each gets its source and the key
+ * it is shown by, and its criteria the read GitHub's was.
+ */
+function upgraded(result: ReviewResult, ref: PullRequestRef): ReviewResult {
+  if (result.version === REVIEW_RESULT_VERSION) return result;
+  const criteria = result.criteria as UnsourcedCriteria | undefined;
+  return { ...result, version: REVIEW_RESULT_VERSION, ...(criteria ? { criteria: withIssueSources(criteria, ref) } : {}) };
+}
+
+/**
+ * Reads the pull request's saved review, read at the current result
+ * version when it was saved at version 25; null when none was saved, or
+ * when it was saved at any other result version, is not of the commit
+ * it names, or is not a record at all, which is then left out rather
+ * than misread.
  */
 export async function readSavedReview(cacheDir: string, ref: PullRequestRef): Promise<SavedRecord | null> {
   let stored: unknown;
@@ -39,11 +59,12 @@ export async function readSavedReview(cacheDir: string, ref: PullRequestRef): Pr
     return null;
   }
   if (typeof stored !== 'object' || stored === null) return null;
-  const { version, commit, reviewedAt, agent, result } = stored as Partial<SavedRecord>;
-  if (version !== REVIEW_RESULT_VERSION || typeof commit !== 'string' || typeof reviewedAt !== 'string') return null;
-  if (typeof result !== 'object' || result === null || result.version !== REVIEW_RESULT_VERSION) return null;
-  if (result.pullRequest?.headSha !== commit || !Array.isArray(result.parts)) return null;
-  return { version, commit, reviewedAt, ...(agent ? { agent } : {}), result };
+  const { version, commit, reviewedAt, agent, result } = stored as { [Key in keyof SavedRecord]?: unknown };
+  if (typeof version !== 'number' || !READABLE_VERSIONS.includes(version) || typeof commit !== 'string' || typeof reviewedAt !== 'string') return null;
+  if (typeof result !== 'object' || result === null) return null;
+  const kept = result as ReviewResult;
+  if (kept.version !== version || kept.pullRequest?.headSha !== commit || !Array.isArray(kept.parts)) return null;
+  return { version: REVIEW_RESULT_VERSION, commit, reviewedAt, ...(agent ? { agent: agent as SavedStamp['agent'] } : {}), result: upgraded(kept, ref) };
 }
 
 /**

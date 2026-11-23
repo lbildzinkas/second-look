@@ -327,7 +327,7 @@ export class OverviewPanel implements vscode.Disposable {
       return;
     }
     const issue = this.state?.result.criteria?.issues[message.target];
-    if (issue !== undefined) {
+    if (issue?.url !== undefined) {
       void vscode.env.openExternal(vscode.Uri.parse(issue.url));
     }
   }
@@ -891,9 +891,9 @@ const ISSUE_LINKS: Record<LinkedIssue['link'], string> = {
   references: 'references',
 };
 
-/** A linked issue as the page names it: its number in its repository. */
+/** A linked issue as the page names it: a GitHub issue by its number in its repository, any other by its key. */
 export function issueName(issue: LinkedIssue): string {
-  return `#${issue.number} in ${issue.repository}`;
+  return issue.source === 'github' ? `#${issue.number} in ${issue.repository}` : issue.key;
 }
 
 /** A criterion's cited lines of one kind, each a chip that opens the line in the head copy, with its quote; or none. */

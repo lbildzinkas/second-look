@@ -598,7 +598,7 @@ describe('the criteria verdicts the agent gives', () => {
 
 describe('the unexplained changes the agent finds', () => {
   const ISSUES: LinkedIssue[] = [
-    { number: 30, title: 't', url: 'https://github.com/example-org/example-repo/issues/30', repository: 'example-org/example-repo', body: 'b', link: 'closes' },
+    { source: 'github', key: '#30', number: 30, title: 't', url: 'https://github.com/example-org/example-repo/issues/30', repository: 'example-org/example-repo', body: 'b', link: 'closes' },
   ];
   const EXPECTED_UNEXPLAINED: ExpectedUnexplained = {
     parts: ['src/cart.ts'],

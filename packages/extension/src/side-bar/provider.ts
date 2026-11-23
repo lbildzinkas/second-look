@@ -248,8 +248,8 @@ export class SideBarProvider implements vscode.WebviewViewProvider {
       return;
     }
     if (message.type === 'openIssue') {
-      const issue = result?.criteria?.issues[message.issue];
-      if (issue !== undefined && issue.url.startsWith('https://')) void vscode.env.openExternal(vscode.Uri.parse(issue.url));
+      const url = result?.criteria?.issues[message.issue]?.url;
+      if (url !== undefined && url.startsWith('https://')) void vscode.env.openExternal(vscode.Uri.parse(url));
       return;
     }
     if (message.type === 'finding') {

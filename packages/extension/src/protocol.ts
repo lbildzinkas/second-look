@@ -7,6 +7,7 @@ import {
   EVIDENCE_SOURCES,
   FINDING_REF_KINDS,
   IMPORTANCE_ORDER,
+  ISSUE_SOURCES,
   LIBRARY_ARCHIVES,
   PULL_REQUEST_GROUPS,
   REVIEW_RESULT_VERSION,
@@ -622,17 +623,29 @@ function isCiResults(value: unknown): boolean {
   );
 }
 
-/** One issue the pull request links: its number, title, page, repository and full body, and how it is linked. */
+/**
+ * One issue the pull request links: its source, the key it is shown by,
+ * its title, full body and page when it has one, and how it is linked;
+ * a GitHub issue also with its number, page and repository.
+ */
 function isLinkedIssue(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    isNumber(value['number']) &&
-    isString(value['title']) &&
-    isString(value['url']) &&
-    isString(value['repository']) &&
-    isString(value['body']) &&
-    isOneOf(value['link'], ISSUE_LINKS)
-  );
+  if (
+    !isRecord(value) ||
+    !isOneOf(value['source'], ISSUE_SOURCES) ||
+    !isNonEmptyString(value['key']) ||
+    !isString(value['title']) ||
+    !isOptionalString(value['url']) ||
+    !isString(value['body']) ||
+    !isOneOf(value['link'], ISSUE_LINKS)
+  ) {
+    return false;
+  }
+  return value['source'] !== 'github' || (isNumber(value['number']) && isString(value['url']) && isString(value['repository']));
+}
+
+/** What one issue tracker source's read came to: read or unreadable, with its plain line. */
+function isIssueSourceRead(value: unknown): boolean {
+  return isRecord(value) && isOneOf(value['source'], ISSUE_SOURCES) && isOneOf(value['outcome'], ['read', 'unreadable'] as const) && isString(value['detail']);
 }
 
 /** A manual check the description reports: its quote and the description line it starts on. */
@@ -697,6 +710,7 @@ function isCriteria(value: unknown): boolean {
   if (!isOneOf(value['outcome'], ['read', 'unreadable'] as const) || !isString(value['detail']) || !isNonEmptyString(value['heading'])) {
     return false;
   }
+  if (!Array.isArray(value['sources']) || !value['sources'].every(isIssueSourceRead)) return false;
   if (!Array.isArray(value['issues']) || !value['issues'].every(isLinkedIssue)) return false;
   const issues = value['issues'];
   const criteria = value['criteria'];

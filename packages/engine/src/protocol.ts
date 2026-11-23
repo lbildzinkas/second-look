@@ -11,7 +11,7 @@ import type { AgentStamp } from './agent.js';
 import type { AskKind } from './asks.js';
 
 /** Version of the review result schema. */
-export const REVIEW_RESULT_VERSION = 25 as const;
+export const REVIEW_RESULT_VERSION = 26 as const;
 
 /**
  * Version 2 added the head commit's SHA and each part's noise assessment;
@@ -66,7 +66,11 @@ export const REVIEW_RESULT_VERSION = 25 as const;
  * 25 added the Read the CI log offer on an unverifiable claim a CI log
  * could settle, the passing checks' logs a claim was judged again with
  * once the reviewer pressed it, and the label on a citation of a passing
- * check's log.
+ * check's log; version 26 made the linked issues source-neutral: each
+ * names the issue tracker it was read from and the key it is shown by,
+ * with GitHub's number and repository only on a GitHub issue, and the
+ * criteria keep what each source's read came to. A saved result of
+ * version 25 is read as 26, each of its issues GitHub's.
  */
 export type ReviewResultVersion = typeof REVIEW_RESULT_VERSION;
 
@@ -510,24 +514,61 @@ export interface DocLinks {
   suggestions?: DocSuggestions;
 }
 
+/** The issue tracker a linked issue is read from (ADR 0010). */
+export type IssueSource = 'github' | 'jira';
+
+/** The issue tracker sources, in the order a review reads them. */
+export const ISSUE_SOURCES: readonly IssueSource[] = ['github', 'jira'];
+
 /**
- * One issue the pull request links, read only: its number, title, page,
- * repository and full body, exactly as GitHub stores it. The body is
+ * What every linked issue holds, whatever tracker it is read from: its
+ * source, the key it is shown by, its title and full body, its page when
+ * the source gives one, and how the pull request links it. The body is
  * untrusted text: the companion parses it and never follows anything it
- * says, and the panel flags the content GitHub hides.
+ * says, and the panel flags the content the tracker hides.
  */
-export interface LinkedIssue {
+interface LinkedIssueFields {
+  source: IssueSource;
+  /** The key the issue is shown by: `#42` in the pull request's repository, `owner/name#42` in another, `ABC-123` in Jira. */
+  key: string;
+  title: string;
+  /** The issue's page, when its source gives one. */
+  url?: string;
+  /** The issue's full body, exactly as its source stores it, never truncated. */
+  body: string;
+  /** How the pull request links it: `closes` when merging would close it, else `references`. */
+  link: 'closes' | 'references';
+}
+
+/** One GitHub issue the pull request links, read only: with its number, page and repository, exactly as GitHub stores it. */
+export interface GitHubLinkedIssue extends LinkedIssueFields {
+  source: 'github';
   /** The issue's number in its own repository. */
   number: number;
-  title: string;
   /** The issue's page on GitHub. */
   url: string;
   /** The repository the issue lives in, as `owner/name`. */
   repository: string;
-  /** The issue's full body, exactly as GitHub stores it, never truncated. */
-  body: string;
-  /** How the pull request links it: `closes` when merging would close it, else `references`. */
-  link: 'closes' | 'references';
+}
+
+/** One Jira ticket the pull request names, read only: its key is its Jira key, such as `ABC-123`. */
+export interface JiraLinkedIssue extends LinkedIssueFields {
+  source: 'jira';
+}
+
+/** One issue the pull request links, from whichever issue tracker source read it. */
+export type LinkedIssue = GitHubLinkedIssue | JiraLinkedIssue;
+
+/**
+ * What one issue tracker source's read came to: `read` when its issues
+ * were read, none among them included; `unreadable` when the tracker
+ * refused or failed, with why in plain words.
+ */
+export interface IssueSourceRead {
+  source: IssueSource;
+  outcome: 'read' | 'unreadable';
+  /** One plain line: what was read, or why nothing was. */
+  detail: string;
 }
 
 /**
@@ -632,13 +673,15 @@ export interface CriteriaMapping {
  * each criterion to the change, and its mapping says what came of it.
  */
 export interface Criteria {
-  /** `read` when the linked issues were read; `unreadable` when GitHub refused or failed. */
+  /** `read` when any source's linked issues were read; `unreadable` when every source refused or failed. */
   outcome: 'read' | 'unreadable';
-  /** One plain line: what was read, or why nothing was — including when GitHub returns no closing references for a pull request into a non-default branch. */
+  /** One plain line: what was read, or why nothing was — including when GitHub returns no closing references for a pull request into a non-default branch — each source's detail in turn. */
   detail: string;
+  /** What each issue tracker source's read came to, in the order the sources were read. */
+  sources: IssueSourceRead[];
   /** The heading the checklists were read from under, such as `Acceptance criteria`. */
   heading: string;
-  /** The issues the pull request links, closing references first, in GitHub's order; empty when none was read. */
+  /** The issues the pull request links, source by source in the order they were read — GitHub's closing references first, in GitHub's order; empty when none was read. */
   issues: LinkedIssue[];
   /** The criteria, each quoted, and not checked until mapped; empty when no checklist was found. */
   criteria: AcceptanceCriterion[];

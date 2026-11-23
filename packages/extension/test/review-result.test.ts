@@ -686,6 +686,37 @@ describe('isReviewResult for the acceptance criteria', () => {
     expect(isReviewResult(crossRepository)).toBe(true);
   });
 
+  it('accepts a ticket of another issue tracker source by its key, with no GitHub field and no page, beside each source’s read', () => {
+    const beside = shown();
+    beside.criteria.issues.push({ source: 'jira', key: 'ABC-123', title: 'Webhook retries', body: '', link: 'references' });
+    beside.criteria['sources'] = [
+      { source: 'github', outcome: 'read', detail: '1 issue this pull request closes and 1 issue that references it' },
+      { source: 'jira', outcome: 'read', detail: '1 Jira ticket this pull request names' },
+    ];
+    expect(isReviewResult(beside)).toBe(true);
+  });
+
+  it('rejects a linked issue that names no source or key, a GitHub issue without its GitHub fields, and criteria that keep no read per source', () => {
+    const changed = (change: (value: Loose) => void): Loose => {
+      const value = shown();
+      change(value);
+      return value;
+    };
+    const cases: unknown[] = [
+      changed((value) => delete value.criteria.issues[0]!['source']),
+      changed((value) => (value.criteria.issues[0]!['source'] = 'linear')),
+      changed((value) => delete value.criteria.issues[0]!['key']),
+      changed((value) => (value.criteria.issues[0]!['key'] = '')),
+      changed((value) => delete value.criteria.issues[0]!['number']),
+      changed((value) => delete value.criteria.issues[0]!['repository']),
+      changed((value) => delete value.criteria.issues[0]!['url']),
+      changed((value) => delete value.criteria['sources']),
+      changed((value) => (value.criteria['sources'] = [{ source: 'github', outcome: 'not connected', detail: '' }])),
+      changed((value) => (value.criteria['sources'] = [{ outcome: 'read', detail: '' }])),
+    ];
+    for (const value of cases) expect(isReviewResult(value)).toBe(false);
+  });
+
   it('rejects criteria that are malformed, or a criterion whose issue or verdict is off', () => {
     const changed = (change: (value: Loose) => void): Loose => {
       const value = shown();
@@ -928,6 +959,6 @@ describe('parseReviewResult', () => {
 
 describe('the versioned protocol is shared with the engine', () => {
   it('uses the same version constant', () => {
-    expect(REVIEW_RESULT_VERSION).toBe(25);
+    expect(REVIEW_RESULT_VERSION).toBe(26);
   });
 });

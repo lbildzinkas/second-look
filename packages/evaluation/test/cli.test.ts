@@ -90,6 +90,18 @@ describe('the run command', () => {
     expect(readFileSync(join(runFolder(), TRACE_FILE), 'utf8')).toBe('');
   });
 
+  it('reads a case recorded before linked issues named their source as GitHub issues, each with the key it is shown by', async () => {
+    const loaded = await loadCase(join(REPOSITORY_CASES, 'lbildzinkas-interview-coach-97'));
+    const criteria = loaded.record.criteria!;
+
+    expect(criteria.issues.map((issue) => [issue.source, issue.key])).toEqual([
+      ['github', '#96'],
+      ['github', 'lbildzinkas/second-look#173'],
+      ['github', 'lbildzinkas/second-look#174'],
+    ]);
+    expect(criteria.sources).toEqual([{ source: 'github', outcome: criteria.outcome, detail: criteria.detail }]);
+  });
+
   it('keeps scoring a case whose expected.json omits whole sections', async () => {
     const legacy = join(scratch, 'cases', 'example-7');
     cpSync(join(REPOSITORY_CASES, 'example-7'), legacy, { recursive: true });
