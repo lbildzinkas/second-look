@@ -20,7 +20,14 @@ export const MAX_KEY_REFERENCES = 5;
  * while `xABC-123` and `ABC-123x` yield nothing. A `…/browse/ABC-123`
  * link holds its key after a `/`, so the same pattern finds it.
  */
-const KEY = /(?<![A-Za-z0-9])([A-Z][A-Z0-9_]{1,9})-[1-9]\d*(?![A-Za-z0-9])/g;
+const KEY_SHAPE = /([A-Z][A-Z0-9_]{1,9})-[1-9]\d*/.source;
+const KEY = new RegExp(`(?<![A-Za-z0-9])${KEY_SHAPE}(?![A-Za-z0-9])`, 'g');
+const WHOLE_KEY = new RegExp(`^${KEY_SHAPE}$`);
+
+/** Whether a text is, whole, a ticket key by its shape. */
+export function isTicketKey(text: string): boolean {
+  return WHOLE_KEY.test(text);
+}
 
 /**
  * Prefixes that name a standard, an algorithm, an encoding or a model

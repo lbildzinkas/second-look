@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_KEY_REFERENCES, findKeyReferences } from '../src/ticket-keys.js';
+import { MAX_KEY_REFERENCES, findKeyReferences, isTicketKey } from '../src/ticket-keys.js';
 
 /** The key references a pull request makes that names keys in one place only. */
 function keysIn(place: 'head' | 'title' | 'description', text: string): string[] {
@@ -89,5 +89,15 @@ describe('findKeyReferences', () => {
 
   it('finds no key in a pull request that names none', () => {
     expect(findKeyReferences({ head: 'main', title: 'Bump the packages to 0.2.2', description: 'Closes #187.' })).toEqual([]);
+  });
+});
+
+describe('isTicketKey', () => {
+  it.each(['ABC-123', 'J2_X-9'])('accepts %s', (text) => {
+    expect(isTicketKey(text)).toBe(true);
+  });
+
+  it.each(['abc-123', 'ABC-0', 'ABC-012', 'A-1', 'ABC-123 ', 'xABC-123 y', ''])('rejects %j', (text) => {
+    expect(isTicketKey(text)).toBe(false);
   });
 });

@@ -9,6 +9,7 @@ import {
   IMPORTANCE_ORDER,
   ISSUE_SOURCES,
   KEY_REFERENCE_PLACES,
+  isTicketKey,
   LIBRARY_ARCHIVES,
   MAX_KEY_REFERENCES,
   PULL_REQUEST_GROUPS,
@@ -645,12 +646,9 @@ function isLinkedIssue(value: unknown): boolean {
   return value['source'] !== 'github' || (isNumber(value['number']) && isString(value['url']) && isString(value['repository']));
 }
 
-/** A ticket key as the engine finds one: a project key, a hyphen and a number with no leading zero. */
-const TICKET_KEY = /^[A-Z][A-Z0-9_]{1,9}-[1-9]\d*$/;
-
 /** A key reference the pull request makes: a key-shaped ticket key, and the place it was found. */
 function isKeyReference(value: unknown): boolean {
-  return isRecord(value) && isString(value['key']) && TICKET_KEY.test(value['key']) && isOneOf(value['place'], KEY_REFERENCE_PLACES);
+  return isRecord(value) && isString(value['key']) && isTicketKey(value['key']) && isOneOf(value['place'], KEY_REFERENCE_PLACES);
 }
 
 /** What one issue tracker source's read came to: read or unreadable, with its plain line. */
