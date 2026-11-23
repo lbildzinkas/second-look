@@ -30,6 +30,7 @@ import { offerCiLogReads, readCi } from './ci.js';
 import { findClaims } from './claims.js';
 import { DEFAULT_CRITERIA_HEADING, readCriteria } from './criteria.js';
 import { gitHubIssues } from './issue-sources.js';
+import { findKeyReferences } from './ticket-keys.js';
 import { mapCriteria } from './criteria-mapping.js';
 import { publicDocsFetch } from './doc-fetch.js';
 import { findDocLinks } from './doc-links.js';
@@ -287,7 +288,7 @@ export async function fetchChange(url: string, options: ReviewOptions): Promise<
     copy(mergeBase),
     copy(pullRequest.headSha),
     readCi(client, ref, pullRequest.headSha, mergeCommit),
-    readCriteria([gitHubIssues(client)], { ref, base: pullRequest.base }, heading === undefined || heading === '' ? DEFAULT_CRITERIA_HEADING : heading),
+    readCriteria([gitHubIssues(client)], { ref, base: pullRequest.base, keyReferences: findKeyReferences(pullRequest) }, heading === undefined || heading === '' ? DEFAULT_CRITERIA_HEADING : heading),
     options.lastLook ? lookSinceLastLook({ client, cacheDir: options.cacheDir, ref, pullRequest, diff }) : undefined,
   ]);
   return { pullRequest, diff, gitAttributes, copies: { base, head }, ci, criteria, ...(sinceLastLook ? { sinceLastLook } : {}) };

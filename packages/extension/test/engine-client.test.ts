@@ -121,7 +121,7 @@ describe('EngineClient against a fake engine', () => {
     await client.initialize();
     const result = await client.review(PR_URL, TOKEN);
 
-    expect(result.version).toBe(26);
+    expect(result.version).toBe(27);
     expect(result.parts).toHaveLength(7);
 
     const requests = loggedRequests('round-trip.log') as {
@@ -683,7 +683,7 @@ describe('EngineClient against a fake engine', () => {
       await timedOut;
 
       await client.initialize();
-      expect(await client.review(PR_URL, TOKEN)).toMatchObject({ version: 26 });
+      expect(await client.review(PR_URL, TOKEN)).toMatchObject({ version: 27 });
       expect(spawns).toBe(2);
       client.dispose();
     } finally {
@@ -755,7 +755,7 @@ describe('EngineClient against a fake engine', () => {
     const stages: ReviewStageUpdate[] = [];
 
     await client.initialize();
-    expect(await client.review(PR_URL, TOKEN, undefined, (stage) => stages.push(stage))).toMatchObject({ version: 26 });
+    expect(await client.review(PR_URL, TOKEN, undefined, (stage) => stages.push(stage))).toMatchObject({ version: 27 });
     expect(stages).toEqual([]);
     client.dispose();
   });

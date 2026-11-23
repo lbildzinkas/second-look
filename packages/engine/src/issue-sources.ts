@@ -1,5 +1,6 @@
 import type { GitHubClient, GitHubIssue, PullRequestRef } from './github.js';
-import type { Criteria, GitHubLinkedIssue, IssueSource, IssueSourceRead, LinkedIssue } from './protocol.js';
+import type { UnkeyedCriteria } from './ticket-keys.js';
+import type { Criteria, GitHubLinkedIssue, IssueSource, IssueSourceRead, KeyReference, LinkedIssue } from './protocol.js';
 
 /**
  * Issue tracker sources (ADR 0010): where a pull request's linked issues
@@ -9,10 +10,15 @@ import type { Criteria, GitHubLinkedIssue, IssueSource, IssueSourceRead, LinkedI
  * position in the list.
  */
 
-/** What a source is asked to read the linked issues of: the pull request, and the branch it goes into. */
+/**
+ * What a source is asked to read the linked issues of: the pull request,
+ * the branch it goes into, and the key references it makes, none when
+ * absent.
+ */
 export interface LinkedIssuesRequest {
   ref: PullRequestRef;
   base: string;
+  keyReferences?: readonly KeyReference[];
 }
 
 /** What one source read: its issues, and its outcome with one plain line saying what was read or why nothing was. */
@@ -109,9 +115,10 @@ export function gitHubIssues(client: GitHubClient): IssueTrackerSource {
  * Criteria as a version-25 result kept them, before linked issues named
  * their source: every issue was GitHub's, and the one read was GitHub's.
  */
-export type UnsourcedCriteria = Omit<Criteria, 'issues' | 'sources'> & {
+export type UnsourcedCriteria = Omit<Criteria, 'issues' | 'sources' | 'keyReferences'> & {
   issues: (GitHubIssue | LinkedIssue)[];
   sources?: IssueSourceRead[];
+  keyReferences?: KeyReference[];
 };
 
 /**
@@ -121,7 +128,7 @@ export type UnsourcedCriteria = Omit<Criteria, 'issues' | 'sources'> & {
  * GitHub's, with the criteria's outcome and detail. Criteria that
  * already name their sources are kept as they are.
  */
-export function withIssueSources(criteria: UnsourcedCriteria, ref: Pick<PullRequestRef, 'owner' | 'repo'>): Criteria {
+export function withIssueSources(criteria: UnsourcedCriteria, ref: Pick<PullRequestRef, 'owner' | 'repo'>): UnkeyedCriteria {
   const issues = criteria.issues.map((issue): LinkedIssue => ('source' in issue ? issue : { source: 'github', key: gitHubKey(ref, issue), ...issue }));
   const sources = criteria.sources ?? [{ source: 'github', outcome: criteria.outcome, detail: criteria.detail }];
   return { ...criteria, sources, issues };

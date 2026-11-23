@@ -20,6 +20,7 @@ import {
   carriedResult,
   doneStages,
   fetchedResult,
+  jiraKeysResult,
   judgedResult,
   mappedCriteriaResult,
   mixedResult,
@@ -814,6 +815,32 @@ describe('the acceptance criteria on the overview', () => {
     expect(html).not.toContain('<table class="ct">');
   });
 
+  it('names the Jira keys the pull request names when it links no issue, after what GitHub returned', () => {
+    const one = overviewHtml({ result: jiraKeysResult(['PORT-42']) }, 'N');
+    expect(one).toContain('<p class="note">this pull request links no issue.</p><p class="note">Jira ticket PORT-42 found; connect Jira to read its criteria.</p>');
+
+    const three = overviewHtml({ result: jiraKeysResult(['PORT-42', 'ABC-1', 'DEF-2']) }, 'N');
+    expect(three).toContain('<p class="note">Jira tickets PORT-42, ABC-1 and DEF-2 found; connect Jira to read their criteria.</p>');
+
+    const unreadable = jiraKeysResult(['PORT-42']);
+    unreadable.criteria = { ...unreadable.criteria!, outcome: 'unreadable', detail: 'the linked issues could not be read: GitHub answered 403' };
+    expect(overviewHtml({ result: unreadable }, 'N')).toContain(
+      '<p class="note">the linked issues could not be read: GitHub answered 403.</p><p class="note">Jira ticket PORT-42 found; connect Jira to read its criteria.</p>',
+    );
+  });
+
+  it('says nothing of Jira when the pull request names no key, or links an issue beside the keys it names', () => {
+    const none = jiraKeysResult([]);
+    expect(none.criteria!.keyReferences).toEqual([]);
+    expect(overviewHtml({ result: none }, 'N')).not.toContain('Jira');
+    expect(overviewHtml({ result: none }, 'N')).toContain('<p class="note">this pull request links no issue.</p><p class="note">Each condition');
+
+    const linked = criteriaResult();
+    linked.criteria = { ...linked.criteria!, keyReferences: [{ key: 'PORT-42', place: 'branch' }] };
+    expect(overviewHtml({ result: linked }, 'N')).not.toContain('Jira');
+    expect(overviewHtml({ result: linked }, 'N')).toBe(overviewHtml({ result: criteriaResult() }, 'N'));
+  });
+
   it('shows a skeleton and a still-to-come line while the criteria wait, or why none was read', () => {
     const plain = mixedResult();
     expect(overviewHtml({ result: { ...plain, stages: verdictsRunningStages() }, running: 'checking the claims with pi' }, 'N')).toContain(
@@ -827,6 +854,7 @@ describe('the acceptance criteria on the overview', () => {
         outcome: 'unreadable',
         detail: 'the linked issues could not be read: GitHub answered 403',
         sources: [{ source: 'github', outcome: 'unreadable', detail: 'the linked issues could not be read: GitHub answered 403' }],
+        keyReferences: [],
         heading: 'Acceptance criteria',
         issues: [],
         criteria: [],

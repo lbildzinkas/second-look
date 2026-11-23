@@ -92,6 +92,7 @@ function reviewed(): ReviewResult {
       outcome: 'read',
       detail: 'read',
       sources: [{ source: 'github', outcome: 'read', detail: 'read' }],
+      keyReferences: [],
       heading: 'Acceptance criteria',
       issues: [{ source: 'github', key: '#30', number: 30, title: 'Retry', url: 'https://github.com/example-org/example-repo/issues/30', repository: 'example-org/example-repo', body: 'x', link: 'closes' }],
       criteria: [

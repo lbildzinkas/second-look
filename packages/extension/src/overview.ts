@@ -896,6 +896,21 @@ export function issueName(issue: LinkedIssue): string {
   return issue.source === 'github' ? `#${issue.number} in ${issue.repository}` : issue.key;
 }
 
+/**
+ * What the criteria say of the ticket keys the pull request names when
+ * it links no issue: each key, and that connecting Jira reads its
+ * criteria, such as "Jira ticket ABC-123 found; connect Jira to read its
+ * criteria". Undefined when an issue is linked or no key was found.
+ */
+export function keysFoundLine(criteria: Pick<NonNullable<ReviewResult['criteria']>, 'issues' | 'keyReferences'>): string | undefined {
+  const keys = criteria.keyReferences.map((reference) => reference.key);
+  if (criteria.issues.length > 0 || keys.length === 0) return undefined;
+  const named = keys.length === 1 ? keys[0]! : `${keys.slice(0, -1).join(', ')} and ${keys.at(-1)!}`;
+  return keys.length === 1
+    ? `Jira ticket ${named} found; connect Jira to read its criteria`
+    : `Jira tickets ${named} found; connect Jira to read their criteria`;
+}
+
 /** A criterion's cited lines of one kind, each a chip that opens the line in the head copy, with its quote; or none. */
 function citedLines(criterion: number, evidence: CitedEvidence, cited: readonly { path: string; line: number; quote: string }[]): string {
   if (cited.length === 0) return '<span class="none">none</span>';
@@ -1001,7 +1016,8 @@ function criteriaSection(state: OverviewState): string {
     if (state.running !== undefined) return `<h2>Acceptance criteria</h2>${beingChecked(state, 'criteria')}`;
     return `<h2>Acceptance criteria</h2><p class="note">No criteria were read for this review.</p>`;
   }
-  const detail = `<p class="note">${escapeHtml(criteria.detail)}.</p>`;
+  const keys = keysFoundLine(criteria);
+  const detail = `<p class="note">${escapeHtml(criteria.detail)}.</p>${keys === undefined ? '' : `<p class="note">${escapeHtml(keys)}.</p>`}`;
   if (criteria.outcome === 'unreadable') {
     return `<h2>Acceptance criteria</h2>${detail}<p class="note">No criteria were read, so none is checked.</p>`;
   }

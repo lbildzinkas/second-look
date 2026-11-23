@@ -51,6 +51,7 @@ export * from './ci.js';
 export * from './ci-log-read.js';
 export * from './criteria.js';
 export * from './issue-sources.js';
+export * from './ticket-keys.js';
 export * from './criteria-mapping.js';
 export * from './draft-comment.js';
 export * from './explain.js';

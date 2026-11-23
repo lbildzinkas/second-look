@@ -356,6 +356,7 @@ describe('readCriteria against recorded responses', () => {
       outcome: 'unreadable',
       detail,
       sources: [{ source: 'github', outcome: 'unreadable', detail }],
+      keyReferences: [],
       heading: DEFAULT_CRITERIA_HEADING,
       issues: [],
       criteria: [],

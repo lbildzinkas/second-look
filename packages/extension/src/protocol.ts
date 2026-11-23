@@ -8,7 +8,9 @@ import {
   FINDING_REF_KINDS,
   IMPORTANCE_ORDER,
   ISSUE_SOURCES,
+  KEY_REFERENCE_PLACES,
   LIBRARY_ARCHIVES,
+  MAX_KEY_REFERENCES,
   PULL_REQUEST_GROUPS,
   REVIEW_RESULT_VERSION,
   REVIEW_STAGE_IDS,
@@ -643,6 +645,14 @@ function isLinkedIssue(value: unknown): boolean {
   return value['source'] !== 'github' || (isNumber(value['number']) && isString(value['url']) && isString(value['repository']));
 }
 
+/** A ticket key as the engine finds one: a project key, a hyphen and a number with no leading zero. */
+const TICKET_KEY = /^[A-Z][A-Z0-9_]{1,9}-[1-9]\d*$/;
+
+/** A key reference the pull request makes: a key-shaped ticket key, and the place it was found. */
+function isKeyReference(value: unknown): boolean {
+  return isRecord(value) && isString(value['key']) && TICKET_KEY.test(value['key']) && isOneOf(value['place'], KEY_REFERENCE_PLACES);
+}
+
 /** What one issue tracker source's read came to: read or unreadable, with its plain line. */
 function isIssueSourceRead(value: unknown): boolean {
   return isRecord(value) && isOneOf(value['source'], ISSUE_SOURCES) && isOneOf(value['outcome'], ['read', 'unreadable'] as const) && isString(value['detail']);
@@ -711,6 +721,8 @@ function isCriteria(value: unknown): boolean {
     return false;
   }
   if (!Array.isArray(value['sources']) || !value['sources'].every(isIssueSourceRead)) return false;
+  const keys = value['keyReferences'];
+  if (!Array.isArray(keys) || keys.length > MAX_KEY_REFERENCES || !keys.every(isKeyReference)) return false;
   if (!Array.isArray(value['issues']) || !value['issues'].every(isLinkedIssue)) return false;
   const issues = value['issues'];
   const criteria = value['criteria'];

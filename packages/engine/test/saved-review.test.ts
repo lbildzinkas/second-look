@@ -12,10 +12,17 @@ const HEAD = 'f00dcafe1234567890abcdef1234567890abcdef';
 const STAMP = { reviewedAt: '2026-10-12T09:00:00.000Z', agent: { agent: 'pi', model: 'pi/model', effort: null } };
 
 /** The least of a review result the store reads: its version, its pull request's head commit, its copies and its parts. */
-function result(headSha = HEAD): ReviewResult {
+function result(headSha = HEAD, named: { head?: string; title?: string; description?: string } = {}): ReviewResult {
   return {
     version: REVIEW_RESULT_VERSION,
-    pullRequest: { url: 'https://github.com/example-org/example-repo/pull/42', number: 42, headSha },
+    pullRequest: {
+      url: 'https://github.com/example-org/example-repo/pull/42',
+      number: 42,
+      headSha,
+      head: named.head ?? 'feature/retries',
+      title: named.title ?? 'Retry webhook sends',
+      description: named.description ?? '',
+    },
     copies: { base: { commit: 'b'.repeat(40), path: '/cache/base', reused: false }, head: { commit: headSha, path: '/cache/head', reused: false } },
     parts: [],
   } as unknown as ReviewResult;
@@ -63,6 +70,7 @@ describe('the saved review', () => {
         criteria: {
           ...criteria,
           sources: [{ source: 'github', outcome: 'read', detail }],
+          keyReferences: [],
           issues: [
             { source: 'github', key: '#30', ...own },
             { source: 'github', key: 'example-org/planning#7', ...elsewhere },
@@ -74,6 +82,29 @@ describe('the saved review', () => {
     // A version-25 result that read no criteria is read as it was.
     await writeRecord({ version: 25, commit: HEAD, ...STAMP, result: { ...result(), version: 25 } });
     expect(await readSavedReview(cacheDir, REF)).toEqual({ version: REVIEW_RESULT_VERSION, commit: HEAD, ...STAMP, result: result() });
+  });
+
+  it('reads a record saved at version 26 as the current version, with the key references its pull request makes', async () => {
+    const named = { head: 'feature/PORT-42_login', title: 'ABC-7: fix the login', description: 'Uses SHA-256. See https://x.atlassian.net/browse/PORT-42' };
+    const detail = 'this pull request links no issue';
+    const criteria = { outcome: 'read', detail, sources: [{ source: 'github', outcome: 'read', detail }], heading: 'Acceptance criteria', issues: [], criteria: [] };
+    await writeRecord({ version: 26, commit: HEAD, ...STAMP, result: { ...result(HEAD, named), version: 26, criteria } });
+
+    expect(await readSavedReview(cacheDir, REF)).toEqual({
+      version: REVIEW_RESULT_VERSION,
+      commit: HEAD,
+      ...STAMP,
+      result: {
+        ...result(HEAD, named),
+        criteria: {
+          ...criteria,
+          keyReferences: [
+            { key: 'PORT-42', place: 'branch' },
+            { key: 'ABC-7', place: 'title' },
+          ],
+        },
+      },
+    });
   });
 
   it('leaves out a record of another result version, of another commit than its result, or that is no record', async () => {

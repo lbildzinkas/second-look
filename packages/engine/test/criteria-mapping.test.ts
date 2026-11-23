@@ -77,6 +77,7 @@ function criteria(): Criteria {
     outcome: 'read',
     detail: '1 issue this pull request closes',
     sources: [{ source: 'github', outcome: 'read', detail: '1 issue this pull request closes' }],
+    keyReferences: [],
     heading: 'Acceptance criteria',
     issues: [ISSUE],
     criteria: [
