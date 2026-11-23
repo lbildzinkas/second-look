@@ -85,7 +85,7 @@ A ticket the pull request points at that its issue tracker source confirmed and 
 _Avoid_: Story, Jira issue, related ticket
 
 **Tracker login**:
-The reviewer's own sign-in an issue tracker source reads through, such as the editor's GitHub sign-in or Claude Code's Atlassian connector for Jira; the companion uses it only through that path and never reads or stores it.
+The reviewer's own sign-in an issue tracker source reads through, such as the editor's GitHub sign-in or Claude Code's Atlassian connector for Jira; the companion uses it only through that path and never stores it.
 _Avoid_: Jira token, credentials, API key
 
 **Acceptance criterion**:
