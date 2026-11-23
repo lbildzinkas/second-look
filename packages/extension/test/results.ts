@@ -530,9 +530,12 @@ export function criteriaResult(copies?: CopyPaths): ReviewResult {
     criteria: {
       outcome: 'read',
       detail: '1 issue this pull request closes and 1 issue that references it',
+      sources: [{ source: 'github', outcome: 'read', detail: '1 issue this pull request closes and 1 issue that references it' }],
       heading: 'Acceptance criteria',
       issues: [
         {
+          source: 'github',
+          key: '#30',
           number: 30,
           title: 'Retry failed webhook sends',
           url: 'https://github.com/example-org/example-repo/issues/30',
@@ -541,6 +544,8 @@ export function criteriaResult(copies?: CopyPaths): ReviewResult {
           link: 'closes',
         },
         {
+          source: 'github',
+          key: 'example-org/planning#7',
           number: 7,
           title: 'Track the webhook retries',
           url: 'https://github.com/example-org/planning/issues/7',
@@ -607,6 +612,13 @@ export function nonDefaultBranchResult(copies?: CopyPaths): ReviewResult {
     criteria: {
       outcome: 'read',
       detail: "GitHub returns no closing references for a pull request into release/2.0, not the repository's default branch master, and no issue references it",
+      sources: [
+        {
+          source: 'github',
+          outcome: 'read',
+          detail: "GitHub returns no closing references for a pull request into release/2.0, not the repository's default branch master, and no issue references it",
+        },
+      ],
       heading: 'Acceptance criteria',
       issues: [],
       criteria: [],

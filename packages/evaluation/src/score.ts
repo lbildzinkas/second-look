@@ -509,10 +509,11 @@ function namesPart(part: Part | undefined, label: string): boolean {
  * with the one's text holding the other's, as claims are matched.
  */
 export function sameDescribed(listed: DescribedChange, wanted: ExpectedDescribed, issues: readonly LinkedIssue[]): boolean {
+  const issue = listed.location.kind === 'issue' ? issues[listed.location.issue] : undefined;
   const samePlace =
     'in' in wanted.origin
       ? listed.location.kind === 'description'
-      : listed.location.kind === 'issue' && issues[listed.location.issue]?.number === wanted.origin.issue;
+      : issue?.source === 'github' && issue.number === wanted.origin.issue;
   if (!samePlace) return false;
   const [quote, text] = [matchText(listed.quote), matchText(wanted.text)];
   return quote.includes(text) || text.includes(quote);

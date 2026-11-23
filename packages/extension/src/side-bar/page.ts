@@ -358,9 +358,15 @@ function claimsBody(state: SideBarState): string {
   );
 }
 
-/** The linked issue a criterion comes from, as a button that opens it on GitHub. */
+/** How the side bar names the tracker each linked issue opens in. */
+const ISSUE_TRACKERS: Record<LinkedIssue['source'], string> = {
+  github: 'GitHub',
+  jira: 'Jira',
+};
+
+/** The linked issue a criterion comes from, as a button that opens it in its tracker. */
 function issueButton(issue: LinkedIssue, id: string, index: number): string {
-  return `<button type="button" class="issue" id="${id}" data-issue="${index}" aria-label="Open ${escapeHtml(issueName(issue))} on GitHub">${escapeHtml(issueName(issue))}</button>`;
+  return `<button type="button" class="issue" id="${id}" data-issue="${index}" aria-label="Open ${escapeHtml(issueName(issue))} on ${ISSUE_TRACKERS[issue.source]}">${escapeHtml(issueName(issue))}</button>`;
 }
 
 /** Step 6's row for one criterion not fully met: its verdict, its quote, its issue link, and the draft. */

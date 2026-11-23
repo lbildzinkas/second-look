@@ -823,7 +823,14 @@ describe('the acceptance criteria on the overview', () => {
 
     const unreadable: ReviewResult = {
       ...criteriaResult(),
-      criteria: { outcome: 'unreadable', detail: 'the linked issues could not be read: GitHub answered 403', heading: 'Acceptance criteria', issues: [], criteria: [] },
+      criteria: {
+        outcome: 'unreadable',
+        detail: 'the linked issues could not be read: GitHub answered 403',
+        sources: [{ source: 'github', outcome: 'unreadable', detail: 'the linked issues could not be read: GitHub answered 403' }],
+        heading: 'Acceptance criteria',
+        issues: [],
+        criteria: [],
+      },
     };
     expect(overviewHtml({ result: unreadable }, 'N')).toContain(
       '<p class="note">the linked issues could not be read: GitHub answered 403.</p>',

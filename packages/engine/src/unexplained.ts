@@ -147,8 +147,11 @@ function describePart(item: ClaimItem, blockId: string): string {
 /** One linked issue as the prompt shows it: its id and link outside the untrusted block; its title and body inside it. */
 function describeIssue(item: IssueItem, blockId: string): string {
   const { issue } = item;
+  // A Jira ticket is named by its key alone until its wording lands with
+  // its evaluation (ADR 0006); no source gives one yet.
+  const name = issue.source === 'github' ? `#${issue.number} in ${issue.repository}` : issue.key;
   return [
-    `[${item.id}] #${issue.number} in ${issue.repository}, which the pull request ${issue.link === 'closes' ? 'closes' : 'references'}`,
+    `[${item.id}] ${name}, which the pull request ${issue.link === 'closes' ? 'closes' : 'references'}`,
     untrustedBlock(`issue ${item.id} title`, issue.title, blockId),
     untrustedBlock(`issue ${item.id} body`, issue.body, blockId),
   ].join('\n');

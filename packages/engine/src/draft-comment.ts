@@ -9,7 +9,7 @@ import {
 import { isUnmetCriterion } from './criteria-mapping.js';
 import type { JsonSchema } from './json-schema.js';
 import { filesOfPart } from './parts.js';
-import { FINDING_REF_KINDS, type Citation, type Claim, type FindingRef, type ReviewResult } from './protocol.js';
+import { FINDING_REF_KINDS, type Citation, type Claim, type FindingRef, type LinkedIssue, type ReviewResult } from './protocol.js';
 import { namesIn } from './story.js';
 import { UNTRUSTED_INPUT_RULE, untrustedBlock } from './untrusted.js';
 import { claimPlace, isFinding } from './verdicts.js';
@@ -133,6 +133,15 @@ function evidenceOf(cited: Citation): DraftFinding['evidence'][number] {
   return { at: citedAt(cited), quote: cited.quote };
 }
 
+/**
+ * A linked issue as a draft cites it: a GitHub issue by its number, a
+ * Jira ticket by its key until its wording lands with its evaluation
+ * (ADR 0006).
+ */
+function issueTag(issue: LinkedIssue): string {
+  return issue.source === 'github' ? `#${issue.number}` : issue.key;
+}
+
 /** Where a claim is made, as a draft cites it. */
 function claimLocation(claim: Claim): string {
   const { location } = claim;
@@ -207,11 +216,11 @@ export function draftFinding(result: ReviewResult, ref: FindingRef): DraftFindin
     return {
       kind: 'described change the diff does not contain',
       statement: change.quote,
-      madeIn: issue === undefined ? `the pull request's description, line ${change.location.line}` : `issue #${issue.number}, line ${change.location.line}`,
+      madeIn: issue === undefined ? `the pull request's description, line ${change.location.line}` : `issue ${issueTag(issue)}, line ${change.location.line}`,
       reason: change.reason,
       evidence: [],
       notes: ['the diff does not contain this change'],
-      locations: [issue === undefined ? 'description' : `#${issue.number}`],
+      locations: [issue === undefined ? 'description' : issueTag(issue)],
     };
   }
   const criterion = result.criteria?.criteria[ref.index];
@@ -225,11 +234,11 @@ export function draftFinding(result: ReviewResult, ref: FindingRef): DraftFindin
   return {
     kind: `acceptance criterion ${verdict.kind}`,
     statement: criterion.quote,
-    madeIn: `issue #${issue.number}, line ${criterion.line}`,
+    madeIn: `issue ${issueTag(issue)}, line ${criterion.line}`,
     reason: verdict.reason,
     evidence,
     notes: [],
-    locations: evidence.length > 0 ? evidence.map((each) => each.at) : [`#${issue.number}`],
+    locations: evidence.length > 0 ? evidence.map((each) => each.at) : [issueTag(issue)],
   };
 }
 

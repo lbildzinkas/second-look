@@ -160,7 +160,7 @@ describe('runRpcServer', () => {
 
     expect(responses[0]!.result).toEqual({ protocolVersion: ENGINE_PROTOCOL_VERSION });
     const first = responses[1]!.result as { version: number; parts: unknown[] };
-    expect(first.version).toBe(25);
+    expect(first.version).toBe(26);
     expect(first.parts).toHaveLength(11);
     const second = responses[2]!.result as { parts: unknown[] };
     expect(second.parts).toHaveLength(11);
@@ -483,7 +483,7 @@ describe('runRpcServer with an agent', () => {
         id: 2,
         running: 'grouping related hunks with fake',
         timeoutMs: 660_000,
-        result: { version: 25, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
+        result: { version: 26, grouping: { by: 'plain' }, ranking: { by: 'plain' } },
       },
     });
     // The fake agent has no tested ranking, so the story stage follows the grouping.
@@ -887,7 +887,7 @@ describe('runRpcServer keeping the latest review', () => {
     expect(first.agent.requests.length).toBeGreaterThan(0);
     expect(reviewed.saved).toBeUndefined();
     const saved = await readSavedReview(cacheDir, ref);
-    expect(saved).toMatchObject({ version: 25, commit: HEAD, agent: { agent: 'fake', model: null, effort: 'high' } });
+    expect(saved).toMatchObject({ version: 26, commit: HEAD, agent: { agent: 'fake', model: null, effort: 'high' } });
     expect(Date.parse(saved!.reviewedAt)).not.toBeNaN();
     expect(JSON.stringify(saved)).not.toContain(TOKEN);
     const looks = await readLooks(cacheDir, ref);
@@ -988,7 +988,7 @@ describe('runRpcServer keeping the latest review', () => {
     const again = await serveEngine(reviewLines());
     expect(again.agent.requests.length).toBeGreaterThan(0);
     expect((again.answer(2).result as ReviewResult).saved).toBeUndefined();
-    expect(await readSavedReview(cacheDir, ref)).toMatchObject({ version: 25 });
+    expect(await readSavedReview(cacheDir, ref)).toMatchObject({ version: 26 });
   });
 
   it('refuses a fresh flag that is not a boolean', async () => {
@@ -1131,7 +1131,7 @@ describe('runRpcServer fetching a library', () => {
     });
     expect(pypiBeforeFetch).toBe(0);
     expect(answer(3).result).toMatchObject({
-      version: 25,
+      version: 26,
       claims: {
         claims: [
           {
@@ -1256,7 +1256,7 @@ describe('runRpcServer fetching a library', () => {
 
     expect(answer(3).error).toBeUndefined();
     expect(answer(3).result).toMatchObject({
-      version: 25,
+      version: 26,
       claims: {
         claims: [
           {

@@ -42,6 +42,8 @@ function parts(): Part[] {
 const DESCRIPTION = 'Retries a failed send three times.\n\n> Each retry is logged with its attempt number.';
 
 const ISSUE: LinkedIssue = {
+  source: 'github',
+  key: '#30',
   number: 30,
   title: 'Retry failed <!-- hidden --> sends',
   url: 'https://github.com/example-org/example-repo/issues/30',

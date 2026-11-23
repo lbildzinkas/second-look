@@ -185,8 +185,11 @@ function issueId(index: number): string {
 /** One linked issue as the prompt shows it: its id and link outside the untrusted block; its title and body inside it. */
 function describeIssue(issue: LinkedIssue, index: number, blockId: string): string[] {
   const id = issueId(index);
+  // A Jira ticket is named by its key alone until its wording lands with
+  // its evaluation (ADR 0006); no source gives one yet.
+  const name = issue.source === 'github' ? `#${issue.number} in ${issue.repository}` : issue.key;
   return [
-    `[${id}] #${issue.number} in ${issue.repository}, which the pull request ${issue.link === 'closes' ? 'closes' : 'references'}`,
+    `[${id}] ${name}, which the pull request ${issue.link === 'closes' ? 'closes' : 'references'}`,
     untrustedBlock(`issue ${id} title`, issue.title, blockId),
     untrustedBlock(`issue ${id} body`, issue.body, blockId),
   ];

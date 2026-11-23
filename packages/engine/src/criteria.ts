@@ -1,12 +1,13 @@
-import type { GitHubClient, PullRequestRef } from './github.js';
-import type { AcceptanceCriterion, Criteria, LinkedIssue } from './protocol.js';
+import type { IssueTrackerSource, LinkedIssuesRead, LinkedIssuesRequest } from './issue-sources.js';
+import type { AcceptanceCriterion, Criteria } from './protocol.js';
 
 /**
- * The criteria pass: reads the issues the pull request links and lists
- * each condition from the checklist under the configured heading, quoted
- * and not checked. Model-free, like every plain pass. Issue text is
- * untrusted: it is parsed and never followed, and the hidden content
- * GitHub does not show stays in the quotes for the panel to flag.
+ * The criteria pass: reads the issues the pull request links, from each
+ * issue tracker source, and lists each condition from the checklist
+ * under the configured heading, quoted and not checked. Model-free, like
+ * every plain pass. Issue text is untrusted: it is parsed and never
+ * followed, and the hidden content the tracker does not show stays in
+ * the quotes for the panel to flag.
  */
 
 /** The heading the criteria checklist is read from under, unless configured otherwise. */
@@ -75,68 +76,34 @@ function criteriaOf(issue: number, body: string, heading: string): AcceptanceCri
   }));
 }
 
-/** Plain words for why something could not be read, the token never among them. */
-function reason(error: unknown): string {
-  const status = typeof error === 'object' && error !== null ? (error as { status?: unknown }).status : undefined;
-  if (typeof status === 'number') return `GitHub answered ${status}`;
-  return error instanceof Error ? error.message : String(error);
-}
-
-/** How many of the linked issues the pull request closes. */
-function closingCount(issues: readonly LinkedIssue[]): number {
-  return issues.filter((issue) => issue.link === 'closes').length;
-}
-
-/** One plain line saying what was read of the pull request's linked issues. */
-function detailOf(issues: readonly LinkedIssue[], base: string, defaultBranch: string): string {
-  const closing = closingCount(issues);
-  const referencing = issues.length - closing;
-  const plural = (count: number, one: string, many: string): string => `${count} ${count === 1 ? one : many}`;
-  if (closing === 0 && base !== defaultBranch) {
-    const beside =
-      referencing === 0
-        ? ', and no issue references it'
-        : `, while ${plural(referencing, 'issue', 'issues')} still reference${referencing === 1 ? 's' : ''} it`;
-    return `GitHub returns no closing references for a pull request into ${base}, not the repository's default branch ${defaultBranch}${beside}`;
+/** One source's read, kept whatever happens: a source that throws reads as unreadable, saying why. */
+async function readSource(source: IssueTrackerSource, pr: LinkedIssuesRequest): Promise<LinkedIssuesRead> {
+  try {
+    return await source.readLinkedIssues(pr);
+  } catch (error) {
+    return { issues: [], outcome: 'unreadable', detail: `the linked issues could not be read: ${error instanceof Error ? error.message : String(error)}` };
   }
-  if (closing === 0) {
-    return referencing === 0
-      ? 'this pull request links no issue'
-      : `${plural(referencing, 'issue references', 'issues reference')} this pull request and none will be closed by it`;
-  }
-  const beside = referencing === 0 ? '' : ` and ${plural(referencing, 'issue', 'issues')} that reference${referencing === 1 ? 's' : ''} it`;
-  return `${plural(closing, 'issue', 'issues')} this pull request closes${beside}`;
 }
 
 /**
- * Reads the acceptance criteria of one pull request: the issues it links
- * — closing references, sidebar links and issues in other repositories —
- * and each checklist under the heading. Issues that cannot be read never
- * fail the review: the result says why. Each criterion starts as not
- * checked; judging them is a later pass.
+ * Reads the acceptance criteria of one pull request: the issues each
+ * issue tracker source finds it links, source by source in the order
+ * given, and each checklist under the heading. A source that cannot read
+ * never fails the review: its read says why, and the criteria are
+ * unreadable only when no source could read. Each criterion starts as
+ * not checked; judging them is a later pass.
  */
 export async function readCriteria(
-  client: GitHubClient,
-  ref: PullRequestRef,
-  base: string,
+  sources: readonly IssueTrackerSource[],
+  pr: LinkedIssuesRequest,
   heading: string,
 ): Promise<Criteria> {
-  let linked: { defaultBranch: string; issues: LinkedIssue[] };
-  try {
-    linked = await client.getLinkedIssues(ref);
-  } catch (error) {
-    return {
-      outcome: 'unreadable',
-      detail: `the linked issues could not be read: ${reason(error)}`,
-      heading,
-      issues: [],
-      criteria: [],
-    };
-  }
-  const issues = linked.issues;
+  const reads = await Promise.all(sources.map((source) => readSource(source, pr)));
+  const issues = reads.flatMap((read) => read.issues);
   return {
-    outcome: 'read',
-    detail: detailOf(issues, base, linked.defaultBranch),
+    outcome: reads.some((read) => read.outcome === 'read') ? 'read' : 'unreadable',
+    detail: reads.map((read) => read.detail).join('; '),
+    sources: reads.map((read, index) => ({ source: sources[index]!.source, outcome: read.outcome, detail: read.detail })),
     heading,
     issues,
     criteria: issues.flatMap((issue, index) => criteriaOf(index, issue.body, heading)),

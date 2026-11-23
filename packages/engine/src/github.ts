@@ -2,7 +2,7 @@ import { Octokit } from '@octokit/rest';
 import type { PositionedComment } from './positions.js';
 import type {
   CheckAnnotation,
-  LinkedIssue,
+  GitHubLinkedIssue,
   PullRequestSummary,
   SentReview,
   SubmitKind,
@@ -180,7 +180,7 @@ export class GitHubClient {
     );
     const pullRequest = answer.repository?.pullRequest;
     const branch = answer.repository?.defaultBranchRef?.name;
-    const issues: LinkedIssue[] = [];
+    const issues: GitHubIssue[] = [];
     const seen = new Set<string>();
     for (const node of pullRequest?.closingIssuesReferences?.nodes ?? []) {
       const issue = linkedIssue(node, 'closes');
@@ -437,8 +437,14 @@ export interface LinkedReferences {
   /** The repository's default branch, as the answer names it. */
   defaultBranch: string;
   /** The linked issues: closing references first, then the issues referencing the pull request, in GitHub's order. */
-  issues: LinkedIssue[];
+  issues: GitHubIssue[];
 }
+
+/**
+ * A linked issue as GitHub's answer gives it, before the GitHub issue
+ * tracker source names its source and the key it is shown by.
+ */
+export type GitHubIssue = Omit<GitHubLinkedIssue, 'source' | 'key'>;
 
 /**
  * The query that reads the pull request's closing references and the
@@ -491,7 +497,7 @@ const MARK_FILE_AS_VIEWED_MUTATION = `mutation($id: ID!, $path: String!) {
 }`;
 
 /** One linked issue, read defensively: anything GitHub leaves out reads as absent. */
-function linkedIssue(node: unknown, link: LinkedIssue['link']): LinkedIssue | undefined {
+function linkedIssue(node: unknown, link: GitHubIssue['link']): GitHubIssue | undefined {
   if (typeof node !== 'object' || node === null) return undefined;
   const value = node as Record<string, unknown>;
   const repository =
