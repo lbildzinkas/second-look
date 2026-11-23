@@ -68,6 +68,26 @@ _Avoid_: Doc reference, API link
 
 ### Acting on the review
 
+**Issue tracker source**:
+A place the companion reads linked tickets and their criteria from, behind one interface: GitHub issues or Jira Cloud, with room for others such as Linear; each reports its own outcome: read, not connected, or nothing found.
+_Avoid_: Integration, provider, connector
+
+**Ticket key**:
+The identifier a tracker gives one ticket, such as `ABC-123` in Jira (a project key, a hyphen and a number) or `#42` in a GitHub repository.
+_Avoid_: Ticket ID, issue number, Jira ID
+
+**Key reference**:
+A ticket key found in the pull request's branch name, title or description, or in a `…/browse/` link, that passed the built-in deny-list of technical prefixes such as `UTF-8` or `SHA-256`; it is only a candidate until its source confirms it.
+_Avoid_: Mention, match, link
+
+**Linked ticket**:
+A ticket the pull request points at that its issue tracker source confirmed and returned, a GitHub issue it links or a Jira ticket whose key reference Jira returned, read for its acceptance criteria.
+_Avoid_: Story, Jira issue, related ticket
+
+**Tracker login**:
+The reviewer's own sign-in an issue tracker source reads through, such as the editor's GitHub sign-in or Claude Code's Atlassian connector for Jira; the companion uses it only through that path and never stores it.
+_Avoid_: Jira token, credentials, API key
+
 **Acceptance criterion**:
 One condition from the linked issue that the change must meet, proven by code, automated tests, or a manual check the PR reports; its verdict is **met**, **partly met**, **not met**, **can't tell**, or **needs manual check**, always with the code, tests and manual checks that show it.
 _Avoid_: Requirement, AC item
