@@ -232,6 +232,32 @@ describe('reviewPullRequest', () => {
     ]);
   });
 
+  it('asks the Jira source only when the pull request names a key, and a review on Pi reads no Jira, saying so', async () => {
+    const jira = { reach: { unavailable: 'Jira tickets need Claude Code: Pi has no MCP and runs offline' } };
+    const plain = await reviewPullRequest(PR_URL, { token: 'test-token', fetch: fixtureFetch().fetch, cacheDir, jira });
+    const gitHubOnly = await reviewPullRequest(PR_URL, { token: 'test-token', fetch: fixtureFetch().fetch, cacheDir });
+    // A GitHub-only review reads exactly as before.
+    expect(plain.criteria).toEqual(gitHubOnly.criteria);
+    expect(plain.criteria!.sources.map((source) => source.source)).toEqual(['github']);
+
+    const transport = fixtureFetch();
+    const named: typeof fetch = async (input, init) => {
+      const answer = await transport.fetch(input, init);
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url !== 'https://api.github.com/repos/example-org/example-repo/pulls/42' || !(answer.headers.get('content-type') ?? '').includes('json')) return answer;
+      const pull = (await answer.json()) as { title: string };
+      pull.title = 'PAY-17: retry the sends';
+      return Response.json(pull);
+    };
+    const result = await reviewPullRequest(PR_URL, { token: 'test-token', fetch: named, cacheDir, jira });
+    expect(result.criteria!.sources).toEqual([
+      gitHubOnly.criteria!.sources[0],
+      { source: 'jira', outcome: 'not connected', detail: 'Jira tickets need Claude Code: Pi has no MCP and runs offline' },
+    ]);
+    expect(result.criteria!.outcome).toBe('read');
+    expect(result.criteria!.issues).toEqual(gitHubOnly.criteria!.issues);
+  });
+
   it('reads the acceptance criteria of the recorded linked issues, under the configured heading', async () => {
     const transport = fixtureFetch();
     const result = await reviewPullRequest(PR_URL, {

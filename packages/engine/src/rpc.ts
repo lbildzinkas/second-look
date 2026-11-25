@@ -234,6 +234,14 @@ export interface ReviewParams {
    */
   criteriaHeading?: string;
   /**
+   * The `second-look.jira.site` setting, mirroring the editor's: the Jira
+   * Cloud site, such as `your-team.atlassian.net`, a review reads tickets
+   * from when the reviewer's Atlassian account reaches several (ADR 0010).
+   * Absent or empty, the account's only site is read. A setting that
+   * isn't a Jira Cloud host is refused.
+   */
+  jiraSite?: string;
+  /**
    * The budget's limits, mirroring the editor's settings, each 0 for no
    * limit; absent limits nothing. The engine meters the review against
    * them and stops at them — what a limit leaves says which limit — and

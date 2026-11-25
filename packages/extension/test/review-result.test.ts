@@ -712,7 +712,7 @@ describe('isReviewResult for the acceptance criteria', () => {
       changed((value) => delete value.criteria.issues[0]!['repository']),
       changed((value) => delete value.criteria.issues[0]!['url']),
       changed((value) => delete value.criteria['sources']),
-      changed((value) => (value.criteria['sources'] = [{ source: 'github', outcome: 'not connected', detail: '' }])),
+      changed((value) => (value.criteria['sources'] = [{ source: 'github', outcome: 'refused', detail: '' }])),
       changed((value) => (value.criteria['sources'] = [{ outcome: 'read', detail: '' }])),
     ];
     for (const value of cases) expect(isReviewResult(value)).toBe(false);

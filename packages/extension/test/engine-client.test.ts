@@ -153,6 +153,19 @@ describe('EngineClient against a fake engine', () => {
     client.dispose();
   });
 
+  it('carries the Jira site with a review, and leaves it off when empty', async () => {
+    const client = new EngineClient(() => fakeEngine({ result: criteriaResult(), logName: 'jira-site.log' }));
+
+    await client.initialize();
+    await client.review(PR_URL, TOKEN, undefined, undefined, undefined, undefined, undefined, 'your-team.atlassian.net');
+    await client.review(PR_URL, TOKEN, undefined, undefined, undefined, undefined, undefined, '');
+
+    const reviews = loggedRequests('jira-site.log').filter((request) => (request as { method: string }).method === 'review') as { params: Record<string, unknown> }[];
+    expect(reviews[0]!.params['jiraSite']).toBe('your-team.atlassian.net');
+    expect(reviews[1]!.params).not.toHaveProperty('jiraSite');
+    client.dispose();
+  });
+
   it('carries the budget limits with a review, and leaves them off when none are given', async () => {
     const client = new EngineClient(() => fakeEngine({ result: mixedResult(), logName: 'budget.log' }));
 

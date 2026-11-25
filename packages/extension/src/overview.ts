@@ -910,15 +910,18 @@ export function issueName(issue: LinkedIssue): string {
 
 /**
  * The ticket keys the pull request names whose Jira tickets weren't
- * read: every key reference, while it links no issue. This is the one
- * place the criteria step decides that Jira can't be read; until a Jira
- * issue tracker source reports its own outcome (ADR 0010), keys found
- * with nothing read count as Jira not connected, and that source's
- * outcome replaces this condition without touching the hint or its
- * Connect Jira button.
+ * read because Jira couldn't be reached. This is the one place the
+ * criteria step decides that: the Jira issue tracker source's own
+ * outcome (ADR 0010) says so when it is `not connected`, under Pi among
+ * the reasons. A source that asked Jira and read, or found nothing, has
+ * dropped the keys Jira didn't return quietly, and one that couldn't use
+ * what it read says why in its own detail, so neither names keys here. A
+ * result with no Jira source, kept before the source existed, counts
+ * keys found with nothing read as Jira not connected, as it always did.
  */
-export function jiraKeysNotRead(criteria: Pick<NonNullable<ReviewResult['criteria']>, 'issues' | 'keyReferences'>): string[] {
-  if (criteria.issues.length > 0) return [];
+export function jiraKeysNotRead(criteria: Pick<NonNullable<ReviewResult['criteria']>, 'issues' | 'keyReferences' | 'sources'>): string[] {
+  const jira = criteria.sources.find((source) => source.source === 'jira');
+  if (jira === undefined ? criteria.issues.length > 0 : jira.outcome !== 'not connected') return [];
   return criteria.keyReferences.map((reference) => reference.key);
 }
 
@@ -929,7 +932,7 @@ export function jiraKeysNotRead(criteria: Pick<NonNullable<ReviewResult['criteri
  * under Pi, which has no MCP and runs offline, Claude Code. Undefined
  * when there are no such keys.
  */
-export function keysFoundLine(criteria: Pick<NonNullable<ReviewResult['criteria']>, 'issues' | 'keyReferences'>, agent?: AgentName): string | undefined {
+export function keysFoundLine(criteria: Pick<NonNullable<ReviewResult['criteria']>, 'issues' | 'keyReferences' | 'sources'>, agent?: AgentName): string | undefined {
   const keys = jiraKeysNotRead(criteria);
   if (keys.length === 0) return undefined;
   const named = keys.length === 1 ? keys[0]! : `${keys.slice(0, -1).join(', ')} and ${keys.at(-1)!}`;

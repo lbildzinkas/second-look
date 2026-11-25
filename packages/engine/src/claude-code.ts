@@ -21,6 +21,7 @@ import {
 import {
   CLAUDE_READ_TOOLS,
   GUARD_AUDIT_VARIABLE,
+  JIRA_GUARD_VARIABLE,
   type GuardAuditLine,
 } from './claude-guard-check.js';
 import { CREDENTIAL_PATHS, READ_ROOT_VARIABLE } from './read-guard.js';
@@ -76,7 +77,7 @@ export const CLAUDE_GUARD_PATH = fileURLToPath(new URL('./claude-guard.js', impo
 export const CLAUDE_PERMISSION_MODE = 'default';
 
 /** Seconds Claude Code gives the guard hook for one call. */
-const GUARD_TIMEOUT_SECONDS = 30;
+export const GUARD_TIMEOUT_SECONDS = 30;
 
 /**
  * The flags the lockdown needs. A Claude Code whose help lacks any of them
@@ -197,10 +198,15 @@ export function claudeArguments(
   ];
 }
 
-/** The agent's environment: the engine's, minus the GitHub login. */
+/**
+ * The agent's environment: the engine's, minus the GitHub login and the
+ * guard's Jira mode, which only a Jira run sets for itself, so no review
+ * run inherits it.
+ */
 export function claudeEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const clean: NodeJS.ProcessEnv = { ...env };
   for (const name of GITHUB_TOKEN_VARIABLES) delete clean[name];
+  delete clean[JIRA_GUARD_VARIABLE];
   return { ...clean, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1' };
 }
 
@@ -336,7 +342,7 @@ function runHook(hookCommand: string, eventText: string, env: NodeJS.ProcessEnv,
 }
 
 /** Reads the guard's audit file: one line per call it saw. A missing file means it saw none. */
-async function readAudit(audit: string): Promise<GuardAuditLine[]> {
+export async function readAudit(audit: string): Promise<GuardAuditLine[]> {
   let text: string;
   try {
     text = await readFile(audit, 'utf8');
@@ -355,12 +361,29 @@ async function readAudit(audit: string): Promise<GuardAuditLine[]> {
   return lines;
 }
 
+/** A synthetic call the preflight hands the guard, which must refuse it, and the environment the guard runs in for it. */
+export interface GuardPreflight {
+  /** The call's tool and input, given the preflight's empty folder. */
+  call: (dir: string) => { tool_name: string; tool_input: Record<string, unknown> };
+  /** The run's environment, given its folder and audit file. */
+  env: (root: string, audit: string) => NodeJS.ProcessEnv;
+}
+
+/** The review runs' preflight: a read outside an empty copy. */
+function readPreflight(env: NodeJS.ProcessEnv): GuardPreflight {
+  return {
+    call: (dir) => ({ tool_name: 'Read', tool_input: { file_path: join(dir, 'outside.txt') } }),
+    env: (root, audit) => claudeRunEnvironment(env, root, audit),
+  };
+}
+
 /**
- * Runs the exact hook command on a synthetic read outside an empty copy,
- * with no model involved, and requires the guard to deny it and audit it.
- * Returns why the guard cannot be trusted, or undefined when it held.
+ * Runs the exact hook command on a synthetic call, with no model
+ * involved — by default a read outside an empty copy — and requires the
+ * guard to deny it and audit it. Returns why the guard cannot be trusted,
+ * or undefined when it held.
  */
-async function preflightGuard(hookCommand: string, env: NodeJS.ProcessEnv): Promise<string | undefined> {
+export async function preflightGuard(hookCommand: string, preflight: GuardPreflight): Promise<string | undefined> {
   const dir = await mkdtemp(join(tmpdir(), 'second-look-guard-preflight-'));
   try {
     const root = join(dir, 'copy');
@@ -371,11 +394,10 @@ async function preflightGuard(hookCommand: string, env: NodeJS.ProcessEnv): Prom
       hook_event_name: 'PreToolUse',
       cwd: root,
       permission_mode: CLAUDE_PERMISSION_MODE,
-      tool_name: 'Read',
-      tool_input: { file_path: join(dir, 'outside.txt') },
+      ...preflight.call(dir),
       tool_use_id: PREFLIGHT_TOOL_USE_ID,
     };
-    const answer = await runHook(hookCommand, JSON.stringify(event), claudeRunEnvironment(env, root, audit), root);
+    const answer = await runHook(hookCommand, JSON.stringify(event), preflight.env(root, audit), root);
     if (answer.error) return answer.error;
     const detail = answer.stderr.trim() ? `: ${answer.stderr.trim().split('\n').slice(-3).join(' ')}` : '';
     if (answer.code !== 0) return `the hook exited with ${answer.code}${detail}`;
@@ -386,7 +408,7 @@ async function preflightGuard(hookCommand: string, env: NodeJS.ProcessEnv): Prom
     } catch {
       decision = undefined;
     }
-    if (decision !== 'deny') return 'the hook did not refuse a read outside the copy';
+    if (decision !== 'deny') return `the hook did not refuse ${event.tool_name === 'Read' ? 'a read outside the copy' : `a call of ${event.tool_name}`}`;
     const audited = await readAudit(audit);
     if (!audited.some((line) => line.id === PREFLIGHT_TOOL_USE_ID && line.decision === 'deny')) {
       return 'the hook did not write its audit line';
@@ -444,7 +466,7 @@ export function claudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}): Agent
       return unusable(`the companion's guard cannot be handed to Claude Code safely: ${(error as Error).message}`);
     }
     if (!existsSync(guardPath)) return unusable(`the companion's guard is missing: ${guardPath}`);
-    const failure = await preflightGuard(hookCommand, env).catch((error: Error) => error.message);
+    const failure = await preflightGuard(hookCommand, readPreflight(env)).catch((error: Error) => error.message);
     if (failure !== undefined) return unusable(`the companion's guard could not be run: ${failure}`);
     return {
       ...base,

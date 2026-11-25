@@ -8,6 +8,7 @@ import {
   FINDING_REF_KINDS,
   IMPORTANCE_ORDER,
   ISSUE_SOURCES,
+  ISSUE_SOURCE_OUTCOMES,
   KEY_REFERENCE_PLACES,
   isTicketKey,
   LIBRARY_ARCHIVES,
@@ -620,7 +621,7 @@ function isCheckRun(value: unknown): boolean {
 function isCiResults(value: unknown): boolean {
   return (
     isRecord(value) &&
-    isOneOf(value['outcome'], ['read', 'unreadable'] as const) &&
+    isOneOf(value['outcome'], ISSUE_SOURCE_OUTCOMES) &&
     isString(value['detail']) &&
     isString(value['headSha']) &&
     isOptionalString(value['mergeCommit']) &&
@@ -656,7 +657,7 @@ function isKeyReference(value: unknown): boolean {
 
 /** What one issue tracker source's read came to: read or unreadable, with its plain line. */
 function isIssueSourceRead(value: unknown): boolean {
-  return isRecord(value) && isOneOf(value['source'], ISSUE_SOURCES) && isOneOf(value['outcome'], ['read', 'unreadable'] as const) && isString(value['detail']);
+  return isRecord(value) && isOneOf(value['source'], ISSUE_SOURCES) && isOneOf(value['outcome'], ISSUE_SOURCE_OUTCOMES) && isString(value['detail']);
 }
 
 /** A manual check the description reports: its quote and the description line it starts on. */
@@ -718,7 +719,7 @@ function isCriteriaMapping(value: unknown): boolean {
  */
 function isCriteria(value: unknown): boolean {
   if (!isRecord(value)) return false;
-  if (!isOneOf(value['outcome'], ['read', 'unreadable'] as const) || !isString(value['detail']) || !isNonEmptyString(value['heading'])) {
+  if (!isOneOf(value['outcome'], ISSUE_SOURCE_OUTCOMES) || !isString(value['detail']) || !isNonEmptyString(value['heading'])) {
     return false;
   }
   if (!Array.isArray(value['sources']) || !value['sources'].every(isIssueSourceRead)) return false;

@@ -554,7 +554,11 @@ export interface GitHubLinkedIssue extends LinkedIssueFields {
   repository: string;
 }
 
-/** One Jira ticket the pull request names, read only: its key is its Jira key, such as `ABC-123`. */
+/**
+ * One Jira ticket the pull request names, read only: its key is its Jira
+ * key, such as `ABC-123`, its title the summary Jira sent, and its body
+ * the description Jira sent, its rich text flattened to lines.
+ */
 export interface JiraLinkedIssue extends LinkedIssueFields {
   source: 'jira';
 }
@@ -564,12 +568,22 @@ export type LinkedIssue = GitHubLinkedIssue | JiraLinkedIssue;
 
 /**
  * What one issue tracker source's read came to: `read` when its issues
- * were read, none among them included; `unreadable` when the tracker
- * refused or failed, with why in plain words.
+ * were read, none among them included; `not connected` when the review
+ * can't reach the tracker at all, such as Jira under Pi or with no
+ * Atlassian connection; `nothing found` when the tracker was asked and
+ * returned none of the tickets the pull request names; `unreadable` when
+ * the tracker refused or failed, or what it sent couldn't be used, with
+ * why in plain words.
  */
+export type IssueSourceOutcome = 'read' | 'not connected' | 'nothing found' | 'unreadable';
+
+/** The source outcomes, in the order a reader takes them. */
+export const ISSUE_SOURCE_OUTCOMES: readonly IssueSourceOutcome[] = ['read', 'not connected', 'nothing found', 'unreadable'];
+
+/** What one issue tracker source's read came to, and one plain line saying so. */
 export interface IssueSourceRead {
   source: IssueSource;
-  outcome: 'read' | 'unreadable';
+  outcome: IssueSourceOutcome;
   /** One plain line: what was read, or why nothing was. */
   detail: string;
 }
