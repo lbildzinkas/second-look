@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it, vi } from 'vitest';
-import { ProtocolError, SendProtocolError } from '../src/protocol.js';
+import { ProtocolError, SendProtocolError, isJiraProbe, isJiraTestResult } from '../src/protocol.js';
 import { EngineClient, spawnEngineProcess, type ReviewStageUpdate } from '../src/engine-client.js';
 import type { PendingReview } from '@second-look/engine';
 import { ciLogReadResult, criteriaResult, fetchedResult, mixedResult, reviewStages } from './results.js';
@@ -493,6 +493,25 @@ describe('EngineClient against a fake engine', () => {
     await none.initialize();
     await expect(none.testAgent(choice)).rejects.toThrow('this engine runs no agent, so it has none to test');
     none.dispose();
+  });
+
+  it("reads the Jira check's and test's answers, and refuses ones that are neither", () => {
+    const site = { id: 'site-1', url: 'https://your-team.atlassian.net', name: 'Your Team' };
+    for (const answer of [
+      { state: 'connected', route: 'connector', sites: [site] },
+      { state: 'needs-login', route: 'fallback', detail: 'needs a sign-in' },
+      { state: 'not-configured' },
+      { state: 'failed', message: 'Claude Code could not be started' },
+    ]) {
+      expect(isJiraProbe(answer), JSON.stringify(answer)).toBe(true);
+    }
+    for (const odd of [{ state: 'connected', route: 'rest', sites: [] }, { state: 'connected', route: 'connector', sites: [{ id: 1 }] }, { state: 'needs-login', route: 'connector' }, { state: 'maybe' }, null]) {
+      expect(isJiraProbe(odd), JSON.stringify(odd)).toBe(false);
+    }
+    expect(isJiraTestResult({ ok: true, key: 'PORT-42', summary: 'Retry the webhook' })).toBe(true);
+    expect(isJiraTestResult({ ok: false, message: 'Jira did not return PORT-42' })).toBe(true);
+    expect(isJiraTestResult({ ok: true, key: 'PORT-42' })).toBe(false);
+    expect(isJiraTestResult({ ok: false })).toBe(false);
   });
 
   it('refuses a marks answer that is not the reviewed marks', async () => {

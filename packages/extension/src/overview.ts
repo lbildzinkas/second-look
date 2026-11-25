@@ -6,11 +6,13 @@ import {
   checkFailed,
   hiddenContent,
   isFinding,
+  isAgentName,
   isFindingRef,
   isUnmetCriterion,
   isUnprovenSource,
   parsePullRequestUrl,
   type AcceptanceCriterion,
+  type AgentName,
   type AgentStamp,
   type AskAnswer,
   type CheckRun,
@@ -484,6 +486,16 @@ function reviewAgentLine(state: OverviewState): string | undefined {
   return undefined;
 }
 
+/** The agent the review runs on, as the newest stage record that names one does. */
+function reviewAgentName(state: OverviewState): AgentName | undefined {
+  const records = state.result.stages ?? [];
+  for (let index = records.length - 1; index >= 0; index -= 1) {
+    const agent = records[index]!.agent?.agent;
+    if (agent !== undefined && isAgentName(agent)) return agent;
+  }
+  return undefined;
+}
+
 /** A stage's name with what it says of its own result: who ran it, what it listed or is checking, or why it did not land. */
 function stageName(record: ReviewStageRecord, state: OverviewState): string {
   let name = STAGE_NAMES[record.id];
@@ -897,18 +909,33 @@ export function issueName(issue: LinkedIssue): string {
 }
 
 /**
- * What the criteria say of the ticket keys the pull request names when
- * it links no issue: each key, and that connecting Jira reads its
- * criteria, such as "Jira ticket ABC-123 found; connect Jira to read its
- * criteria". Undefined when an issue is linked or no key was found.
+ * The ticket keys the pull request names whose Jira tickets weren't
+ * read: every key reference, while it links no issue. This is the one
+ * place the criteria step decides that Jira can't be read; until a Jira
+ * issue tracker source reports its own outcome (ADR 0010), keys found
+ * with nothing read count as Jira not connected, and that source's
+ * outcome replaces this condition without touching the hint or its
+ * Connect Jira button.
  */
-export function keysFoundLine(criteria: Pick<NonNullable<ReviewResult['criteria']>, 'issues' | 'keyReferences'>): string | undefined {
-  const keys = criteria.keyReferences.map((reference) => reference.key);
-  if (criteria.issues.length > 0 || keys.length === 0) return undefined;
+export function jiraKeysNotRead(criteria: Pick<NonNullable<ReviewResult['criteria']>, 'issues' | 'keyReferences'>): string[] {
+  if (criteria.issues.length > 0) return [];
+  return criteria.keyReferences.map((reference) => reference.key);
+}
+
+/**
+ * What the criteria say of the ticket keys whose Jira tickets weren't
+ * read: each key, and what reads its criteria — connecting Jira, such as
+ * "Jira ticket ABC-123 found; connect Jira to read its criteria", or,
+ * under Pi, which has no MCP and runs offline, Claude Code. Undefined
+ * when there are no such keys.
+ */
+export function keysFoundLine(criteria: Pick<NonNullable<ReviewResult['criteria']>, 'issues' | 'keyReferences'>, agent?: AgentName): string | undefined {
+  const keys = jiraKeysNotRead(criteria);
+  if (keys.length === 0) return undefined;
   const named = keys.length === 1 ? keys[0]! : `${keys.slice(0, -1).join(', ')} and ${keys.at(-1)!}`;
-  return keys.length === 1
-    ? `Jira ticket ${named} found; connect Jira to read its criteria`
-    : `Jira tickets ${named} found; connect Jira to read their criteria`;
+  const found = keys.length === 1 ? `Jira ticket ${named} found` : `Jira tickets ${named} found`;
+  if (agent === 'pi') return `${found}; Jira criteria need Claude Code`;
+  return keys.length === 1 ? `${found}; connect Jira to read its criteria` : `${found}; connect Jira to read their criteria`;
 }
 
 /** A criterion's cited lines of one kind, each a chip that opens the line in the head copy, with its quote; or none. */
@@ -1016,7 +1043,7 @@ function criteriaSection(state: OverviewState): string {
     if (state.running !== undefined) return `<h2>Acceptance criteria</h2>${beingChecked(state, 'criteria')}`;
     return `<h2>Acceptance criteria</h2><p class="note">No criteria were read for this review.</p>`;
   }
-  const keys = keysFoundLine(criteria);
+  const keys = keysFoundLine(criteria, reviewAgentName(state));
   const detail = `<p class="note">${escapeHtml(criteria.detail)}.</p>${keys === undefined ? '' : `<p class="note">${escapeHtml(keys)}.</p>`}`;
   if (criteria.outcome === 'unreadable') {
     return `<h2>Acceptance criteria</h2>${detail}<p class="note">No criteria were read, so none is checked.</p>`;

@@ -31,6 +31,7 @@ export * from './claude-guard-check.js';
 export * from './pi.js';
 export * from './claude-code.js';
 export * from './agents.js';
+export * from './jira-connect.js';
 export * from './probe.js';
 export * from './grouping.js';
 export * from './ranking.js';

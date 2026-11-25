@@ -29,13 +29,16 @@
  * reports each agent the companion can drive as installed here, without
  * running a model, so the editor can offer only what will run.
  * {@link TEST_AGENT_METHOD} runs the chosen agent once on a tiny locked-down
- * test, only when the reviewer asks for it.
+ * test, only when the reviewer asks for it. {@link JIRA_PROBE_METHOD} checks
+ * whether Claude Code reaches Jira, and {@link JIRA_TEST_METHOD} fetches one
+ * ticket the reviewer typed, both only when the reviewer asks.
  */
 
 import type { AgentProbe } from './agent.js';
 import type { AgentTestResult } from './agent-test.js';
 import type { AgentName } from './agents.js';
 import type { AskKind } from './asks.js';
+import type { JiraProbeResult, JiraRoute, JiraSite, JiraTestResult } from './jira-connect.js';
 import type { AskAnswer, AskedClaim, BudgetLimits, DraftComment, FindingRef, PendingReview, ReviewedMarks, ReviewResult, ReviewStageRecord, SentReview, ViewedFiles } from './protocol.js';
 import type { MarkedPart } from './reviewed-marks.js';
 import type { PullRequestList } from './protocol.js';
@@ -148,6 +151,41 @@ export interface TestAgentParams {
 
 /** The test request's result: ok with the run's stamp, or the failure in plain words with whatever stamp the run had. */
 export type TestAgentRpcResult = AgentTestResult;
+
+/**
+ * The request that checks the tracker login for Jira (ADR 0010, issue
+ * 191), sent only when the reviewer asks: one short run of Claude Code
+ * with the Jira fetch run's limits reports whether its Atlassian
+ * connection is connected, needs a login or isn't configured, and when
+ * connected the Jira sites the account reaches. It fetches no ticket.
+ */
+export const JIRA_PROBE_METHOD = 'jira/probe' as const;
+
+/** One Jira check: the Claude Code choice it runs on; Jira is read through Claude Code only. */
+export interface JiraProbeParams {
+  agent: ReviewAgentChoice;
+}
+
+/** The Jira check's result; a run that couldn't check says so as `failed`, not as a protocol error. */
+export type JiraProbeRpcResult = JiraProbeResult;
+
+/**
+ * The request that fetches one ticket the reviewer typed, from the
+ * chosen Jira site, in a run with the fetch run's limits, and answers
+ * with its key and summary as Jira sent them. Nothing is kept.
+ */
+export const JIRA_TEST_METHOD = 'jira/test' as const;
+
+/** One Jira test: the Claude Code choice, the route and site the check found, and the ticket key. */
+export interface JiraTestParams {
+  agent: ReviewAgentChoice;
+  route: JiraRoute;
+  site: JiraSite;
+  key: string;
+}
+
+/** The Jira test's result: the ticket's key and summary, or why none was read. */
+export type JiraTestRpcResult = JiraTestResult;
 
 /** The request that reviews one pull request. */
 export const REVIEW_METHOD = 'review' as const;

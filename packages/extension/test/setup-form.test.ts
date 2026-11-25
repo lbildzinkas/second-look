@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { NO_MARKS, type AgentPaths, type ReviewAgentChoice, type TestAgentRpcResult } from '@second-look/engine';
+import { NO_MARKS, type AgentPaths, type JiraProbeRpcResult, type JiraTestParams, type JiraTestRpcResult, type ReviewAgentChoice, type TestAgentRpcResult } from '@second-look/engine';
 import { activate } from '../src/extension.js';
 import { sideBarBody } from '../src/side-bar/page.js';
 import { sideBarMessage } from '../src/side-bar/provider.js';
@@ -39,11 +39,33 @@ const PI_READY: ProbedAgent = {
 };
 const STAMP = { agent: 'claude-code', agentVersion: '2.1.296', model: 'claude-sonnet-5-5', effort: 'high', runAt: '2026-10-10T00:00:00.000Z' };
 
-/** An engine double: answers the probe from the path settings it is given, and records every test. */
-function fakeEngine(answer: TestAgentRpcResult = { ok: true, stamp: STAMP }): SetupEngine & { probes: AgentPaths[]; tests: ReviewAgentChoice[] } {
+const SITE = { id: '11111111-2222-3333-4444-555555555555', url: 'https://your-team.atlassian.net', name: 'Your Team' };
+const OTHER_SITE = { id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', url: 'https://other-team.atlassian.net', name: 'Other Team' };
+
+/** What the Jira double answers: the check, and the test. */
+interface JiraAnswers {
+  check?: JiraProbeRpcResult;
+  test?: JiraTestRpcResult;
+}
+
+/** An engine double: answers the probe from the path settings it is given, and records every test and Jira check. */
+function fakeEngine(
+  answer: TestAgentRpcResult = { ok: true, stamp: STAMP },
+  jira: JiraAnswers = {},
+): SetupEngine & { probes: AgentPaths[]; tests: ReviewAgentChoice[]; jiraChecks: ReviewAgentChoice[]; jiraTests: JiraTestParams[] } {
   const engine = {
     probes: [] as AgentPaths[],
     tests: [] as ReviewAgentChoice[],
+    jiraChecks: [] as ReviewAgentChoice[],
+    jiraTests: [] as JiraTestParams[],
+    probeJira(agent: ReviewAgentChoice) {
+      engine.jiraChecks.push(agent);
+      return Promise.resolve(jira.check ?? ({ state: 'connected', route: 'connector', sites: [SITE] } as JiraProbeRpcResult));
+    },
+    testJira(params: JiraTestParams) {
+      engine.jiraTests.push(params);
+      return Promise.resolve(jira.test ?? ({ ok: true, key: params.key, summary: 'Retry the webhook' } as JiraTestRpcResult));
+    },
     probeAgents(paths: AgentPaths) {
       engine.probes.push(paths);
       const claude = paths['claude-code'] === '/opt/claude/bin/claude' ? CLAUDE_READY : CLAUDE_MISSING;
@@ -84,6 +106,7 @@ function view(overrides: Partial<SetupView> = {}): SetupView {
     open: true,
     draft: { agent: 'claude-code', model: 'claude-sonnet-5-5', other: false, effort: 'high', account: '', path: '' },
     probe: { state: 'probed', agents: [PI_READY, CLAUDE_READY] },
+    jira: { site: '', key: '' },
     ...overrides,
   };
 }
@@ -383,6 +406,141 @@ describe('the setup form controller', () => {
     await send(setup, { action: 'install', value: 'claude-code' });
     await send(setup, { action: 'install', value: 'https://example.com' });
     expect(stub.openedExternals).toEqual(['https://code.claude.com/docs/en/setup']);
+  });
+});
+
+describe("the setup form's Jira row", () => {
+  beforeEach(() => stub.reset());
+
+  /** The Jira row's text, its tags dropped, as the reviewer reads it. */
+  function rowText(jira: SetupView['jira'], draft?: SetupView['draft']): string {
+    const body = setupFormBody(view({ jira, ...(draft !== undefined ? { draft } : {}) }));
+    const row = body.slice(body.indexOf('<div class="jira"'));
+    return row.replace(/<[^>]+>/g, ' ').replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/\s+/g, ' ').trim();
+  }
+  const checked = (result: JiraProbeRpcResult, site = ''): SetupView['jira'] => ({ site, key: '', check: { state: 'checked', result } });
+
+  it('shows each state of the check with its own plain message and next step', () => {
+    expect(rowText({ site: '', key: '' })).toBe(
+      'Jira Not checked yet. Check Jira asks Claude Code whether its Atlassian connection can read Jira; it fetches no ticket and stores no Jira login. Check Jira',
+    );
+    expect(rowText({ site: '', key: '', check: { state: 'checking' } })).toContain('Checking Claude Code’s Atlassian connection…');
+
+    const connected = rowText(checked({ state: 'connected', route: 'connector', sites: [SITE] }));
+    expect(connected).toContain('✓ Connected through the claude.ai Atlassian connector · site your-team.atlassian.net.');
+    expect(connected).toContain('Type a ticket key and press Test to fetch it.');
+
+    const login = rowText(checked({ state: 'needs-login', route: 'connector', detail: 'Claude Code reports the Atlassian connection needs a sign-in' }));
+    expect(login).toContain('✕ Needs login: Claude Code reports the Atlassian connection needs a sign-in.');
+    expect(login).toContain('Reconnect the Atlassian connector at claude.ai → Settings → Connectors, signed in to the Claude account this profile’s Claude Code uses');
+    expect(login).not.toContain('Ticket key to test');
+    const fallbackLogin = rowText(checked({ state: 'needs-login', route: 'fallback', detail: 'Claude Code reports the Atlassian connection needs a sign-in' }));
+    expect(fallbackLogin).toContain('Sign Atlassian’s MCP server in again with claude mcp login atlassian, then check again.');
+
+    const none = rowText(checked({ state: 'not-configured' }));
+    expect(none).toContain('✕ Not configured: Claude Code has no Atlassian connection.');
+    expect(none).toContain('Authorise the Atlassian connector at claude.ai → Settings → Connectors');
+    expect(none).toContain(
+      'Without the connector, add Atlassian’s own MCP server once with claude mcp add -s user --transport http atlassian https://mcp.atlassian.com/v2/mcp, sign it in with claude mcp login atlassian, then check again.',
+    );
+
+    const failed = rowText(checked({ state: 'failed', message: 'Claude Code did not finish within 120 seconds' }));
+    expect(failed).toContain('✕ Jira could not be checked: Claude Code did not finish within 120 seconds Check again once Claude Code runs. Check again');
+    expect(rowText({ site: '', key: '', check: { state: 'failed', message: 'the engine stopped' } })).toContain('✕ Jira could not be checked: the engine stopped');
+  });
+
+  it('names the sites found when the account reaches several and no setting picks one, and picks the one the setting names', () => {
+    const several = checked({ state: 'connected', route: 'connector', sites: [SITE, OTHER_SITE] });
+    const text = rowText(several);
+    expect(text).toContain('The account reaches several Jira sites: your-team.atlassian.net, other-team.atlassian.net.');
+    expect(text).toContain('Set second-look.jira.site to the one to read tickets from, then check again.');
+    expect(text).toContain('Open the site setting');
+    expect(text).not.toContain('Ticket key to test');
+
+    expect(rowText({ ...several, site: 'https://other-team.atlassian.net/' })).toContain('· site other-team.atlassian.net.');
+    expect(rowText({ ...several, site: 'third.atlassian.net' })).toContain(
+      'second-look.jira.site names third.atlassian.net, which the account doesn’t reach. It reaches: your-team.atlassian.net, other-team.atlassian.net.',
+    );
+  });
+
+  it('refuses a site setting that is not an atlassian.net host, before and after the check', () => {
+    expect(rowText({ site: 'jira.example.com', key: '' })).toContain('The Jira site setting must be a Jira Cloud site such as your-team.atlassian.net, not "jira.example.com".');
+    const after = rowText(checked({ state: 'connected', route: 'connector', sites: [SITE] }, 'your-team.atlassian.net.evil.com'));
+    expect(after).toContain('The Jira site setting must be a Jira Cloud site');
+    expect(after).toContain('Fix the second-look.jira.site setting, or empty it, then check again.');
+    // No site is chosen from a refused setting, so nothing can be fetched.
+    expect(after).not.toContain('Ticket key to test');
+  });
+
+  it('says Jira criteria need Claude Code when the agent is Pi, with nothing to check', () => {
+    const text = rowText({ site: '', key: '' }, { agent: 'pi', model: '', other: false, effort: '', account: '', path: '' });
+    expect(text).toBe('Jira Jira criteria need Claude Code: Pi has no MCP and runs offline, so a review on Pi reads no Jira ticket. Choose Claude Code above to connect Jira.');
+  });
+
+  it('checks the connection on Claude Code when Check Jira is pressed, and tests the key typed on the chosen site', async () => {
+    stub.configuration['second-look.agent'] = 'claude-code';
+    stub.configuration['second-look.agentModel'] = 'claude-sonnet-5-5';
+    stub.configuration['second-look.claudeCodePath'] = '/opt/claude/bin/claude';
+    const { setup, engine } = form(fakeEngine(undefined, { check: { state: 'connected', route: 'connector', sites: [SITE] } }));
+    setup.open();
+    await settle();
+    expect(engine.jiraChecks).toEqual([]);
+
+    await send(setup, { action: 'checkJira' });
+    expect(engine.jiraChecks).toEqual([{ agent: 'claude-code', model: 'claude-sonnet-5-5', path: '/opt/claude/bin/claude' }]);
+    expect(setup.current.jira.check).toEqual({ state: 'checked', result: { state: 'connected', route: 'connector', sites: [SITE] } });
+
+    await send(setup, { action: 'testJira', fields: { jiraKey: 'not a key' } });
+    expect(setup.current.jira.problem).toBe('Type a Jira ticket key such as ABC-123, not "not a key".');
+    expect(engine.jiraTests).toEqual([]);
+
+    await send(setup, { action: 'testJira', fields: { jiraKey: ' PORT-42 ' } });
+    expect(engine.jiraTests).toEqual([{ agent: { agent: 'claude-code', model: 'claude-sonnet-5-5', path: '/opt/claude/bin/claude' }, route: 'connector', site: SITE, key: 'PORT-42' }]);
+    expect(setupFormBody(setup.current)).toContain('<p class="note test" role="status">✓ PORT-42 · Retry the webhook</p>');
+  });
+
+  it("shows the test's plain failure, and escapes the ticket's own text", async () => {
+    stub.configuration['second-look.agent'] = 'claude-code';
+    const failing = form(fakeEngine(undefined, { test: { ok: false, message: 'Jira did not return PORT-9: Issue does not exist' } }));
+    failing.setup.open();
+    await send(failing.setup, { action: 'checkJira' });
+    await send(failing.setup, { action: 'testJira', fields: { jiraKey: 'PORT-9' } });
+    expect(setupFormBody(failing.setup.current)).toContain('✕ Jira did not return PORT-9: Issue does not exist');
+
+    const hostile = form(fakeEngine(undefined, { test: { ok: true, key: 'PORT-1', summary: '<img src=x onerror=alert(1)>' } }));
+    hostile.setup.open();
+    await send(hostile.setup, { action: 'checkJira' });
+    await send(hostile.setup, { action: 'testJira', fields: { jiraKey: 'PORT-1' } });
+    const body = setupFormBody(hostile.setup.current);
+    expect(body).toContain('✓ PORT-1 · &lt;img src=x onerror=alert(1)&gt;');
+    expect(body).not.toContain('<img');
+  });
+
+  it('opens the form at its Jira row from Connect Jira and checks at once, scrolling to the row once per press', async () => {
+    stub.configuration['second-look.agent'] = 'claude-code';
+    stub.configuration['second-look.jira.site'] = 'your-team.atlassian.net';
+    const { setup, engine } = form(fakeEngine(undefined, { check: { state: 'not-configured' } }));
+    // An agent is set, so the form did not open by itself.
+    expect(setup.current.open).toBe(false);
+
+    await send(setup, { action: 'openJira' });
+    expect(setup.current.open).toBe(true);
+    expect(engine.jiraChecks).toHaveLength(1);
+    expect(setup.current.jira.site).toBe('your-team.atlassian.net');
+    expect(setupFormBody(setup.current)).toContain('<div class="jira" id="setup-jira-row" data-reveal="1">');
+    expect(setupFormBody(setup.current)).toContain('✕ Not configured: Claude Code has no Atlassian connection.');
+    await send(setup, { action: 'openJira' });
+    expect(setup.current.jira.reveal).toBe(2);
+  });
+
+  it('runs no Jira check from Connect Jira under Pi, and opens the site setting from its link', async () => {
+    const { setup, engine } = form();
+    await send(setup, { action: 'openJira' });
+    expect(engine.jiraChecks).toEqual([]);
+    expect(setupFormBody(setup.current)).toContain('Jira criteria need Claude Code');
+
+    await send(setup, { action: 'jiraSite' });
+    expect(stub.executedCommands.at(-1)).toEqual({ id: 'workbench.action.openSettings', args: ['second-look.jira.site'] });
   });
 });
 

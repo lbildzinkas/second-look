@@ -31,7 +31,8 @@
         "second-look.budget.filesFetched",
         "second-look.budget.downloadMiB",
         "second-look.claudeCodePath",
-        "second-look.piPath"
+        "second-look.piPath",
+        "second-look.jira.site"
       ]
     }
   },
@@ -374,7 +375,7 @@
       "properties": {
         "second-look.agent": {
           "type": "string",
-          "scope": "application",
+          "scope": "machine",
           "enum": [
             "pi",
             "claude-code"
@@ -384,19 +385,19 @@
         },
         "second-look.agentModel": {
           "type": "string",
-          "scope": "application",
+          "scope": "machine",
           "default": "",
           "description": "The model the selected agent runs for every agent pass of a review, in the agent's own naming: for example `anthropic/claude-sonnet-5` for Pi or `sonnet` for Claude Code. Empty uses the agent's own default model. The model is stamped on every agent-produced result, and the status bar shows the model in use. Choosing an agent, model and effort the companion's evaluation never tested shows a non-blocking warning naming the tested combinations; the current list is published as docs/tested-models.md in the repository."
         },
         "second-look.agentEffort": {
           "type": "string",
-          "scope": "application",
+          "scope": "machine",
           "default": "",
           "description": "The effort (thinking) level the selected agent runs at for every agent pass of a review, one of the levels the agent accepts: for example `low`, `medium`, `high`, `xhigh` or `max` for Claude Code, or `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max` for Pi. Empty uses the agent's own default effort. The effort travels with each review request, so changing it needs no engine restart; it is stamped on every agent-produced result, and the status bar shows it beside the model, as the default effort when empty. Choosing an agent, model and effort the companion's evaluation never tested shows a non-blocking warning; the current list is published as docs/tested-models.md in the repository."
         },
         "second-look.agentAccount": {
           "type": "string",
-          "scope": "application",
+          "scope": "machine",
           "default": "",
           "description": "A label for the account or subscription the agent bills, such as `Claude Max (work address)` or `Pi personal key`, stamped on every agent-produced result of a review and shown in the status bar beside the agent, model and effort. The companion never reads the agent's login: this label is what you tell it. For Claude Code, the status bar warns when an inherited ANTHROPIC_API_KEY overrides the Claude subscription."
         },
@@ -411,6 +412,12 @@
           "default": "",
           "scope": "machine",
           "description": "The absolute path of the Pi executable the companion starts in place of the `pi` command, for a Pi that is not on the PATH VS Code started with. Empty finds `pi` on that PATH. The path travels with each request, so the probe of the installed agents and every review use it; a path that holds no executable is reported in plain words. Set it in your user settings: a workspace cannot change it."
+        },
+        "second-look.jira.site": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "The Jira Cloud site the companion reads tickets from, such as `your-team.atlassian.net`, needed only when your Atlassian account reaches more than one. Empty uses the account's only site. The site is learned from Claude Code's Atlassian connection, and the one chosen is the only site a ticket is ever fetched from; anything but an `atlassian.net` site is refused. Check it with the Jira row of step 1's setup form. Set it in your user settings: a workspace cannot change it."
         },
         "second-look.mirrorViewedToGitHub": {
           "type": "boolean",

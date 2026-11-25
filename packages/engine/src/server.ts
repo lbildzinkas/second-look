@@ -1,6 +1,8 @@
 import { isAbsolute, join } from 'node:path';
 import { DEFAULT_AGENT_SETTINGS, type AgentAdapter, type AgentSettings } from './agent.js';
 import { testAgent } from './agent-test.js';
+import { isTicketKey } from './ticket-keys.js';
+import { jiraSiteHost, probeJira, testJiraFetch, type JiraCheckOptions, type JiraSite } from './jira-connect.js';
 import { AGENT_NAMES, isAgentName, modelAndEffortProblem, type AgentName } from './agents.js';
 import { ASK_KINDS, ASKS, askAboutPart, isAskKind } from './asks.js';
 import { NO_BUDGET_LIMITS, budgetLimitsProblem, budgetMeter, limitReason, limitedFetch, spentLimit, withBudget, type BudgetMeter } from './budget.js';
@@ -26,6 +28,8 @@ import {
   FETCH_LIBRARY_METHOD,
   READ_CI_LOG_METHOD,
   INITIALIZE_METHOD,
+  JIRA_PROBE_METHOD,
+  JIRA_TEST_METHOD,
   JSON_RPC_INVALID_PARAMS,
   JSON_RPC_INVALID_REQUEST,
   JSON_RPC_METHOD_NOT_FOUND,
@@ -48,6 +52,9 @@ import {
   type FetchLibraryParams,
   type ReadCiLogParams,
   type InitializeParams,
+  type JiraProbeRpcResult,
+  type JiraTestParams,
+  type JiraTestRpcResult,
   type MarkReviewedParams,
   type MarkViewedParams,
   type ProbeAgentsParams,
@@ -93,6 +100,12 @@ export interface RpcAgentDeps {
   settings?: AgentSettings;
   /** Where the agent ranking is the default; the engine's tested rankings when absent. */
   testedRankings?: readonly TestedRanking[];
+  /**
+   * How the Jira checks start Claude Code: its command, from the path
+   * setting when the request gives one, and the environment it inherits.
+   * Without it, the engine checks no Jira.
+   */
+  jiraFor?: (path?: string) => Pick<JiraCheckOptions, 'command' | 'env'>;
 }
 
 /** What the server needs besides its streams; tests inject a fake fetch. */
@@ -251,6 +264,10 @@ export async function runRpcServer(
       running.push(testAgentRequest(value.params, value.id, sink, initialized, deps));
       continue;
     }
+    if (value.method === JIRA_PROBE_METHOD || value.method === JIRA_TEST_METHOD) {
+      running.push(jiraRequest(value.method, value.params, value.id, sink, initialized, deps));
+      continue;
+    }
     if (value.method === REVIEW_METHOD) {
       running.push(review(value.params, value.id, sink, initialized, deps, reviews, meters, stops, saver));
       continue;
@@ -300,7 +317,7 @@ export async function runRpcServer(
       failure(
         value.id,
         JSON_RPC_METHOD_NOT_FOUND,
-        `unknown method: ${value.method}; this engine speaks ${INITIALIZE_METHOD}, ${PROBE_AGENTS_METHOD}, ${TEST_AGENT_METHOD}, ${REVIEW_METHOD}, ${CANCEL_REVIEW_METHOD}, ${FETCH_LIBRARY_METHOD}, ${READ_CI_LOG_METHOD}, ${DRAFT_COMMENT_METHOD}, ${ASK_METHOD}, ${SEND_REVIEW_METHOD}, ${REVIEWED_MARKS_METHOD}, ${MARK_REVIEWED_METHOD}, ${MARK_VIEWED_METHOD} and ${LIST_PULL_REQUESTS_METHOD}`,
+        `unknown method: ${value.method}; this engine speaks ${INITIALIZE_METHOD}, ${PROBE_AGENTS_METHOD}, ${TEST_AGENT_METHOD}, ${JIRA_PROBE_METHOD}, ${JIRA_TEST_METHOD}, ${REVIEW_METHOD}, ${CANCEL_REVIEW_METHOD}, ${FETCH_LIBRARY_METHOD}, ${READ_CI_LOG_METHOD}, ${DRAFT_COMMENT_METHOD}, ${ASK_METHOD}, ${SEND_REVIEW_METHOD}, ${REVIEWED_MARKS_METHOD}, ${MARK_REVIEWED_METHOD}, ${MARK_VIEWED_METHOD} and ${LIST_PULL_REQUESTS_METHOD}`,
       ),
     );
   }
@@ -428,6 +445,72 @@ async function testAgentRequest(
   }
   try {
     const result: TestAgentRpcResult = await testAgent(choiceAdapter(agent, choice), choice.agent, agentRunSettings(agent, choice));
+    respond(sink, { jsonrpc: '2.0', id, result });
+  } catch (error) {
+    respond(sink, failure(id, ENGINE_FAILED_CODE, error instanceof Error ? error.message : String(error)));
+  }
+}
+
+/** Why a Jira test's route, site or key can't be used, in plain words; absent when they can. */
+function jiraTestProblem(params: Partial<JiraTestParams>): string | undefined {
+  if (params.route !== 'connector' && params.route !== 'fallback') return 'the route must be "connector" or "fallback"';
+  const site = params.site as Partial<JiraSite> | undefined;
+  if (typeof site !== 'object' || site === null || typeof site.id !== 'string' || !/^[A-Za-z0-9-]+$/.test(site.id) || typeof site.url !== 'string' || typeof site.name !== 'string') {
+    return 'the site must be { "id": string, "url": string, "name": string }, with an id of letters, digits and -';
+  }
+  if (jiraSiteHost({ url: site.url }) === '') return 'the site url must be an https address';
+  if (typeof params.key !== 'string' || !isTicketKey(params.key)) return 'the key must be a Jira ticket key such as ABC-123';
+  return undefined;
+}
+
+/**
+ * Checks the tracker login for Jira, or fetches one ticket the reviewer
+ * typed, on Claude Code only, and only because the reviewer asked. A
+ * Claude Code that can't be locked down is never run for it, and a run
+ * that couldn't check answers so in plain words, not as a protocol error.
+ */
+async function jiraRequest(
+  method: typeof JIRA_PROBE_METHOD | typeof JIRA_TEST_METHOD,
+  params: unknown,
+  id: number,
+  sink: RpcLineSink,
+  initialized: boolean,
+  deps: RpcServerDeps,
+): Promise<void> {
+  if (!initialized) {
+    respond(sink, failure(id, NOT_INITIALIZED_CODE, `the protocol starts with a version handshake: ${INITIALIZE_METHOD} before ${method}`));
+    return;
+  }
+  const given = (params ?? {}) as Partial<JiraTestParams>;
+  const choice = given.agent;
+  const problem = agentChoiceProblem(choice) ?? (choice?.agent === 'claude-code' ? undefined : 'Jira is read through Claude Code only, so the agent must be "claude-code"');
+  const testProblem = method === JIRA_TEST_METHOD ? jiraTestProblem(given) : undefined;
+  if (problem !== undefined || testProblem !== undefined || choice === undefined) {
+    const shape = method === JIRA_PROBE_METHOD ? '{ "agent": { "agent": "claude-code", "model"?: string, "path"?: string } }' : '{ "agent": { "agent": "claude-code", … }, "route": "connector" | "fallback", "site": { "id", "url", "name" }, "key": string }';
+    respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${method} needs params: ${shape}; ${problem ?? testProblem}`));
+    return;
+  }
+  const agent = deps.agent;
+  if (agent === undefined || agent.jiraFor === undefined) {
+    respond(sink, failure(id, ENGINE_FAILED_CODE, 'this engine runs no Claude Code, so it has no Jira to check'));
+    return;
+  }
+  const runProblem = agentRunProblem(agent, choice);
+  if (runProblem !== undefined) {
+    respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${method}: ${runProblem}`));
+    return;
+  }
+  try {
+    const probed = await choiceAdapter(agent, choice).probe();
+    const settings = agentRunSettings(agent, choice);
+    const options: JiraCheckOptions = { ...agent.jiraFor(choice.path || undefined), ...(settings.model ? { model: settings.model } : {}) };
+    let result: JiraProbeRpcResult | JiraTestRpcResult;
+    if (method === JIRA_PROBE_METHOD) {
+      result = probed.usable ? await probeJira(options) : { state: 'failed', message: probed.reason ?? "Claude Code cannot run with the companion's lockdown" };
+    } else {
+      const { route, site, key } = given as JiraTestParams;
+      result = probed.usable ? await testJiraFetch(options, route, site, key) : { ok: false, message: probed.reason ?? "Claude Code cannot run with the companion's lockdown" };
+    }
     respond(sink, { jsonrpc: '2.0', id, result });
   } catch (error) {
     respond(sink, failure(id, ENGINE_FAILED_CODE, error instanceof Error ? error.message : String(error)));

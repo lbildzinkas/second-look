@@ -51,13 +51,14 @@ The settings live under the `second-look` section of the editor's Settings — o
 | `second-look.agentAccount` | A label for the account or subscription the agent bills, such as `Claude Max (work address)`. | empty: hidden |
 | `second-look.claudeCodePath` | The absolute path of the Claude Code executable, started in place of `claude`. User settings only. | empty: `claude` on the `PATH` |
 | `second-look.piPath` | The absolute path of the Pi executable, started in place of `pi`. User settings only. | empty: `pi` on the `PATH` |
+| `second-look.jira.site` | The Jira Cloud site to read tickets from, such as `your-team.atlassian.net`, needed only when your Atlassian account reaches several. Only an `atlassian.net` site is accepted. User settings only. | empty: the account's only site |
 | `second-look.criteriaHeading` | The heading the acceptance criteria checklist sits under in the issues a pull request links. | `Acceptance criteria` |
 | `second-look.mirrorViewedToGitHub` | Whether reviewed marks are mirrored to GitHub's "Viewed" checkbox. Off by default, because the GitHub Pull Requests extension syncs the same field. | off |
 | `second-look.budget.agentRuns` | The most agent runs one review may start, a retry included. | `0`: no limit |
 | `second-look.budget.filesFetched` | The most files one review may download. | `0`: no limit |
 | `second-look.budget.downloadMiB` | The most mebibytes one review may download. | `0`: no limit |
 
-The agent, model, effort, account and each agent's executable path live in the user settings only: a workspace or folder settings file, such as a pull request's own `.vscode/settings.json`, cannot change them, and VS Code lists them as restricted in an untrusted workspace. The engine refuses, before any agent starts, a model or effort that is not a plain name — letters, digits and `.` `_` `-` `/` `:`, not starting with `-` — and an effort the chosen agent does not accept, and says why.
+The agent, model, effort, account, each agent's executable path and the Jira site live in the user settings only: a workspace or folder settings file, such as a pull request's own `.vscode/settings.json`, cannot change them, and VS Code lists them as restricted in an untrusted workspace. Each VS Code profile keeps its own user settings, so they can differ per profile (see [A separate profile for work](#a-separate-profile-for-work)). The engine refuses, before any agent starts, a model or effort that is not a plain name — letters, digits and `.` `_` `-` `/` `:`, not starting with `-` — and an effort the chosen agent does not accept, and says why.
 
 The budget settings live in the user settings only too, and travel with each review request. The engine meters the review against them — every agent run it starts, every file it downloads and their bytes, its later library fetches, CI log reads, asks and drafts included — and the review's result carries the limits and the use so far as `budget`. The review stops at them: an agent pass starts only while a run is left, and what the limit leaves, such as claims and acceptance criteria, stays not checked with the limit as the reason; documentation and library downloads past the file or size limit are refused, but the review's own reads of the pull request never are. Asks and drafts are only counted.
 
@@ -69,6 +70,19 @@ Clicking the status bar, or running **Second Look: Choose agent and model**, ope
 
 The setup form opens by itself once, the first time you open the side bar with no `second-look.agent` setting; after that, step 1's **change** link and the quick pick open it. It shows a card per agent from the engine's probe — its version, "ready" and the login it would use, or "not found" with an install link — then the model, the tested ones first and marked with the effort they were tested at, the agent's own default, then **Other…** to type any model; the effort levels, the default first and the tested one marked; and the optional account label. **Save** writes the agent, model, effort and account to your user settings, checked as the engine checks them; **Use the defaults** closes the form and writes nothing. **Test** runs the chosen agent, model and effort once, on a tiny locked-down prompt, only when you press it, and shows ok with the run's stamp or why it failed. When the probe finds no chosen agent, and only then, an agent path field writes that agent's path setting to your user settings, and the probe runs again.
 
+### A separate profile for work
+
+Your work reviews may need a different Claude account from your own, so that work code and work tickets only reach the account your work allows. A VS Code profile keeps that apart. Create one with **Profiles: New Profile…**, open your work folders in it, and set the agent settings in that profile's user settings: each profile has its own `second-look.agent`, `agentModel`, `agentEffort`, `agentAccount`, `claudeCodePath`, `piPath` and `jira.site`. Setting a label such as `Claude Max (work address)` in `second-look.agentAccount` stamps it on every result from that profile.
+
+A profile changes the companion's settings, not which account Claude Code is signed in to: every `claude` on the machine shares one sign-in, kept in `~/.claude`, unless `CLAUDE_CONFIG_DIR` names another folder. To give the work profile its own Claude sign-in, point its `second-look.claudeCodePath` at a small script that sets that folder and starts Claude Code, for example `~/bin/claude-work`:
+
+```sh
+#!/bin/sh
+CLAUDE_CONFIG_DIR="$HOME/.claude-work" exec claude "$@"
+```
+
+Make it executable (`chmod +x ~/bin/claude-work`), sign it in once from a terminal with `~/bin/claude-work` and `/login` on the work account, and give its absolute path to `second-look.claudeCodePath` in the work profile. Step 1's login line and every stamp then come from that sign-in, and so does the Jira row's Atlassian connector, since a claude.ai connector belongs to the Claude account it was authorised on.
+
 ### Which passes the agent runs
 
 The grouping pass always runs on the chosen agent, and the ranking pass runs on it only for an agent, model and effort whose evaluation matched or beat the plain ranking; elsewhere the plain ranking stays and each result says which ranking it shows and why. [The tested models](tested-models.md) lists the tested combinations and their scores.
@@ -76,6 +90,25 @@ The grouping pass always runs on the chosen agent, and the ranking pass runs on 
 ### Billing and subscriptions
 
 Every agent run bills the login the agent is signed in with — your subscription, your keys. The companion never reads, stores or copies that login: the account setting is only a label you give it, stamped on the results. Each run also carries a stamp — the agent, its version, the model, the effort, the run date, and the tokens and cost when the agent reports them — so you can always tell which agent, model and effort said what.
+
+## Connecting Jira
+
+A pull request's acceptance criteria may live in a Jira Cloud ticket rather than a GitHub issue. The companion reads Jira through your own Claude Code and its Atlassian connection, never through a Jira token of its own, so it is Claude Code only: with Pi as the agent, step 1's Jira row and step 6 say "Jira criteria need Claude Code". Reviews don't read Jira tickets yet; this sets up and checks the connection they will use ([ADR 0010](adr/0010-issue-tracker-sources.md)).
+
+1. **Authorise the Atlassian connector** on claude.ai, under **Settings → Connectors**, signed in to the Claude account this profile's Claude Code uses: your work account for work tickets.
+2. Or, if that Claude account has no Atlassian connector, **add Atlassian's own MCP server** once, from a terminal:
+
+   ```sh
+   claude mcp add -s user --transport http atlassian https://mcp.atlassian.com/v2/mcp
+   claude mcp login atlassian
+   ```
+
+3. Open the Jira row at the bottom of step 1's setup form, or press **Connect Jira** in step 6 when a pull request names a Jira key, and press **Check Jira**. It runs Claude Code once, with no copy of the code and only Jira's read tools, and shows one of:
+   - **Connected**, with the Jira site it will read from. Type a ticket key and press **Test** to fetch that one ticket: the row shows its key and summary, or why Jira didn't return it.
+   - **Needs login**: the connection is there but not signed in. Reconnect the connector on claude.ai, or run `claude mcp login atlassian` for the fallback, then check again.
+   - **Not configured**: Claude Code has no Atlassian connection. Do step 1 or 2, then check again.
+
+The site is learned from your Atlassian account. When it reaches more than one Jira site, the row names them all, and `second-look.jira.site` picks one, such as `your-team.atlassian.net`; its **Open the site setting** link opens it. Only an `atlassian.net` site is accepted, and the site chosen is the only one a ticket is ever fetched from. What these runs may do is set out in [What agents can read, reach and run](agent-safety.md).
 
 ## Starting a review
 
