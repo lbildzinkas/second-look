@@ -30,6 +30,7 @@ const lockedDown = (hookCommand: string): string[] => [
   '--print',
   '--output-format',
   'stream-json',
+  '--verbose',
   '--include-partial-messages',
   '--no-session-persistence',
   '--setting-sources',

@@ -29,7 +29,7 @@ import { UNTRUSTED_INPUT_RULE, untrustedBlock } from './untrusted.js';
 export const UNEXPLAINED_PROMPT_ID = 'unexplained';
 
 /** The unexplained-changes prompt's version. */
-export const UNEXPLAINED_PROMPT_VERSION = '1';
+export const UNEXPLAINED_PROMPT_VERSION = '2';
 
 /** The longest reason the companion shows. */
 const MAX_REASON_LENGTH = 200;
@@ -147,10 +147,9 @@ function describePart(item: ClaimItem, blockId: string): string {
 /** One linked issue as the prompt shows it: its id and link outside the untrusted block; its title and body inside it. */
 function describeIssue(item: IssueItem, blockId: string): string {
   const { issue } = item;
-  // A Jira ticket is named by its key alone until its wording lands with
-  // its evaluation (ADR 0006); its title and body are fenced as a GitHub
-  // issue's are.
-  const name = issue.source === 'github' ? `#${issue.number} in ${issue.repository}` : issue.key;
+  // A Jira ticket is named by its key and its tracker; its title and body
+  // are fenced as a GitHub issue's are.
+  const name = issue.source === 'github' ? `#${issue.number} in ${issue.repository}` : `${issue.key} (Jira)`;
   return [
     `[${item.id}] ${name}, which the pull request ${issue.link === 'closes' ? 'closes' : 'references'}`,
     untrustedBlock(`issue ${item.id} title`, issue.title, blockId),

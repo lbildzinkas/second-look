@@ -140,9 +140,10 @@ export interface ExpectedDescribed {
   text: string;
   /**
    * Where it is made: the 1-based line of the description, or of the
-   * body of the linked issue with that number in the case's criteria.
+   * body of a linked issue in the case's criteria — a GitHub issue by its
+   * number, a Jira ticket by its key, such as `ABC-123`.
    */
-  origin: { in: 'description'; line: number } | { issue: number; line: number };
+  origin: { in: 'description'; line: number } | { issue: number | string; line: number };
   /** Set on a statement a reviewer may or may not count: listing it is no false finding, and leaving it out no miss. */
   optional?: true;
 }

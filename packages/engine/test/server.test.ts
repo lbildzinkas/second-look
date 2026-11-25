@@ -14,7 +14,7 @@ import type { AgentAdapter, AgentRunRequest } from '../src/agent.js';
 import type { AgentName } from '../src/agents.js';
 import type { ScriptedAgent } from './helpers.js';
 import { CLAIMS_INSTRUCTIONS } from '../src/claims.js';
-import { DRAFT_COMMENT_INSTRUCTIONS } from '../src/draft-comment.js';
+import { DRAFT_COMMENT_INSTRUCTIONS, DRAFT_COMMENT_PROMPT_VERSION } from '../src/draft-comment.js';
 import { EXPLAIN_INSTRUCTIONS } from '../src/explain.js';
 import { UNEXPLAINED_INSTRUCTIONS } from '../src/unexplained.js';
 import { GROUPING_INSTRUCTIONS } from '../src/grouping.js';
@@ -1342,7 +1342,7 @@ describe('runRpcServer fetching a library', () => {
       finding: { kind: 'claim', index: 0 },
       statement: CLAIM,
       body: `The description says the helper ${CLAIM} Could you show where, since checking it needs httpx's source?`,
-      promptVersion: '1',
+      promptVersion: DRAFT_COMMENT_PROMPT_VERSION,
       stamp: expect.objectContaining({ agent: 'fake' }),
     });
     // A draft reads nothing from PyPI and writes nothing to GitHub.

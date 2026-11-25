@@ -151,6 +151,30 @@ const LABELLED: readonly LabelledDraft[] = [
     addsClaim: true,
     short: true,
   },
+  {
+    case: 'criteria-jira-python',
+    finding: 0,
+    comment: 'ABC-250 asks for the README\'s "Parse a TOML file" section to show loading a path, and the change does not touch the README.',
+    cites: true,
+    addsClaim: false,
+    short: true,
+  },
+  {
+    case: 'criteria-jira-python',
+    finding: 0,
+    comment: 'The Jira ticket asks for the README\'s "Parse a TOML file" section to show loading a path, and the change does not touch the README.',
+    cites: false,
+    addsClaim: false,
+    short: true,
+  },
+  {
+    case: 'criteria-jira-python',
+    finding: 1,
+    comment: 'ABC-250 asks for `bytes` paths too, but `src/tomli/_parser.py:142` checks only `str` and `os.PathLike`. Is a `bytes` path meant to work?',
+    cites: true,
+    addsClaim: false,
+    short: true,
+  },
 ];
 
 describe('the draft checks against hand labels', () => {

@@ -9,7 +9,7 @@ The list is the `TESTED_MODELS` constant in [`packages/engine/src/tested-models.
 | Agent | Version | Model | Effort | Run date |
 | --- | --- | --- | --- | --- |
 | Pi | 0.86.1 | `zai-coding-cn/glm-5.3` | default | 2026-10-07T15:08:38.849Z |
-| Claude Code | 2.1.296 | `claude-sonnet-5-5` | high | 2026-10-12T10:06:12.771Z |
+| Claude Code | 2.1.330 | `claude-sonnet-5-5` | high | 2026-11-25T09:32:38.030Z |
 
 One row per tested combination. The run date is the latest run recorded behind it; the scores below keep each prompt's own run date, because the recorded baseline merges the runs taken as each prompt landed.
 
@@ -33,9 +33,9 @@ The agent ranking is the default for this combination (`TESTED_RANKINGS` in [`pa
 
 The library verdicts prompt's claim checks — `claims-found`, `claims-verdict:<kind>`, `claims-evidence` and `claims-fetch-offered` — are scored per case and keep no whole-run row; the [baseline](../packages/evaluation/baseline.json) records them, case by case, for this combination. A score with nothing to count is left out rather than given a value, so a prompt whose cases give no score has none listed.
 
-### Claude Code 2.1.296 · `claude-sonnet-5-5` · high effort
+### Claude Code 2.1.330 · `claude-sonnet-5-5` · high effort
 
-The agent ranking is the default for this combination (`TESTED_RANKINGS` in [`packages/engine/src/ranking.ts`](../packages/engine/src/ranking.ts)): over the seven cases it ranked, the known important parts sit at a median position of 1, with every one of them in the top three, against 2 and 0.8 for the plain ranking of the same parts. Every prompt's cases were scored in one run, signed in with the Claude subscription, through the engine's Claude Code adapter and its lockdown.
+The agent ranking is the default for this combination (`TESTED_RANKINGS` in [`packages/engine/src/ranking.ts`](../packages/engine/src/ranking.ts)): over the seven cases it ranked, the known important parts sit at a median position of 1, with every one of them in the top three, against 2 and 0.8 for the plain ranking of the same parts. The runs were signed in with the Claude subscription, through the engine's Claude Code adapter and its lockdown: one over every prompt's cases with Claude Code 2.1.296, then the later runs below with 2.1.330.
 
 | Prompt | Run date | Scores over all the run's cases |
 | --- | --- | --- |
@@ -44,14 +44,16 @@ The agent ranking is the default for this combination (`TESTED_RANKINGS` in [`pa
 | story | 2026-10-10T14:26:15.320Z | story-must-review 1, story-order 0.4444, story-names 1 |
 | claims | 2026-10-10T14:26:15.320Z | claims-recall 1, claims-precision 0.95 |
 | verdicts (version 6) | 2026-10-12T10:06:12.771Z | verdict-accuracy 1, false-verified 0, settles-accuracy 1, verdict-looked 0.96, verify-accuracy 1, verify-false-verified 0, verify-fetch-offered 1 |
-| unexplained changes | 2026-10-10T14:26:15.320Z | unexplained-recall 1, unexplained-precision 1, described-recall 1, described-precision 1 |
-| criteria mapping | 2026-10-10T14:26:15.320Z | criteria-accuracy 1, criteria-false-met 0, criteria-code-recall 1, criteria-tests-recall 1, criteria-manual-recall 1 |
-| draft comments | 2026-10-10T14:26:15.320Z | draft-cites-evidence 1, draft-no-new-claim 1, draft-under-cap 1 |
+| unexplained changes (version 2) | 2026-11-25T09:32:38.030Z | described-recall 1, described-precision 1 |
+| criteria mapping (version 2) | 2026-11-25T09:32:38.030Z | criteria-accuracy 1, criteria-false-met 0, criteria-code-recall 1, criteria-tests-recall 1, criteria-manual-recall 1 |
+| draft comments (version 2) | 2026-11-25T09:32:38.030Z | draft-cites-evidence 1, draft-no-new-claim 1, draft-under-cap 1 |
 | explain | 2026-10-10T14:26:15.320Z | explain-cites-part 1, explain-names-in-change 0.8333 |
 | cover | 2026-10-10T14:26:15.320Z | cover-cites-checked 1, cover-tests-recall 0.8, cover-tests-precision 1, cover-manual-recall 1, cover-none-found 1 |
 | documentation links | 2026-10-10T14:26:15.320Z | doc-links-on-site 1, doc-links-checked 1 |
 
 The verdicts prompt's version 6, which asks for what the agent read for each claim and what could settle an unverifiable one, was run with this combination alone, on its eight cases, the two interview-coach pull requests among them; the verdicts row is that run's, and the library verdicts prompt's claim checks on the canaries were taken in the same run. Pi's verdicts row is still version 5's. The library verdicts prompt's claim checks are recorded case by case in the [baseline](../packages/evaluation/baseline.json) for this combination too.
+
+Version 2 of the unexplained changes, criteria mapping and draft comments prompts, which name a Jira ticket as `ABC-123 (Jira)` where version 1 gave its key alone, was run with Claude Code 2.1.330 on the two synthetic Jira criteria cases alone, so those three rows are that run's, over two cases; every other row is the 2.1.296 run's. With no unexplained change on those cases to count, `unexplained-recall` and `unexplained-precision` are no longer listed for this combination; the baseline keeps the 2.1.296 run's per-case rows for them.
 
 ## Adding a combination
 

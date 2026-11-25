@@ -32,17 +32,17 @@
     },
     {
       "id": "unexplained",
-      "version": "1",
+      "version": "2",
       "files": ["packages/engine/src/unexplained.ts"]
     },
     {
       "id": "criteria-mapping",
-      "version": "1",
+      "version": "2",
       "files": ["packages/engine/src/criteria-mapping.ts"]
     },
     {
       "id": "draft-comment",
-      "version": "1",
+      "version": "2",
       "files": ["packages/engine/src/draft-comment.ts"]
     },
     {
