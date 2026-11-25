@@ -73,6 +73,14 @@ describe('unexplainedPrompt', () => {
     expect(prompt).not.toContain('lock = 1');
   });
 
+  it('names a Jira ticket by its key and its tracker beside a GitHub issue named by its repository', () => {
+    const ticket: LinkedIssue = { source: 'jira', key: 'ABC-123', title: 'Dead-letter queue', body: 'A send that gives up goes to the dead-letter queue.', link: 'references' };
+    const prompt = unexplainedPrompt(claimItems(parts()), { title: 'Retry sends', description: DESCRIPTION }, issueItems([ISSUE, ticket]), 'BLOCK');
+
+    expect(prompt).toContain('[i1] #30 in example-org/example-repo, which the pull request closes');
+    expect(prompt).toContain('[i2] ABC-123 (Jira), which the pull request references\n<untrusted-input id="BLOCK" source="issue i2 title">\nDead-letter queue');
+  });
+
   it('says the description stands alone when no issue was read', () => {
     const prompt = unexplainedPrompt(claimItems(parts()), { title: 't', description: 'd' }, []);
     expect(prompt).toContain('The pull request links no issue that was read, so compare the change with the description alone.');

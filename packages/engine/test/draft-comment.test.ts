@@ -223,6 +223,16 @@ describe('draftFinding', () => {
     expect(draftFinding(reviewed(), { kind: 'criterion', index: 1 })).toMatchObject({ kind: 'acceptance criterion not met', locations: ['#30'] });
     expect(draftFinding(reviewed(), { kind: 'criterion', index: 2 })).toBeUndefined();
   });
+
+  it('says a finding from a Jira ticket is made in that ticket, named with its tracker, and cites its key', () => {
+    const result = reviewed();
+    const ticket = { source: 'jira' as const, key: 'ABC-123', title: 'Retry', body: 'x', link: 'references' as const };
+    const jira = { ...result, criteria: { ...result.criteria!, issues: [ticket] } };
+
+    expect(draftFinding(jira, { kind: 'described change', index: 1 })).toMatchObject({ madeIn: 'issue ABC-123 (Jira), line 5', locations: ['ABC-123'] });
+    expect(draftFinding(jira, { kind: 'criterion', index: 1 })).toMatchObject({ madeIn: 'issue ABC-123 (Jira), line 6', locations: ['ABC-123'] });
+    expect(draftFinding(jira, { kind: 'criterion', index: 0 })).toMatchObject({ madeIn: 'issue ABC-123 (Jira), line 4', locations: ['app/retry.py:1', 'the description, line 4'] });
+  });
 });
 
 describe('draftCommentPrompt', () => {

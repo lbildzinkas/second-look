@@ -513,7 +513,9 @@ export function sameDescribed(listed: DescribedChange, wanted: ExpectedDescribed
   const samePlace =
     'in' in wanted.origin
       ? listed.location.kind === 'description'
-      : issue?.source === 'github' && issue.number === wanted.origin.issue;
+      : typeof wanted.origin.issue === 'string'
+        ? issue?.source === 'jira' && issue.key === wanted.origin.issue
+        : issue?.source === 'github' && issue.number === wanted.origin.issue;
   if (!samePlace) return false;
   const [quote, text] = [matchText(listed.quote), matchText(wanted.text)];
   return quote.includes(text) || text.includes(quote);

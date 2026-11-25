@@ -1,0 +1,117 @@
+{
+  "noise": {
+    "CHANGELOG.md": {
+      "label": "none"
+    },
+    "src/tomli/_parser.py": {
+      "label": "none"
+    },
+    "tests/test_misc.py": {
+      "label": "none"
+    }
+  },
+  "importantParts": [],
+  "claims": [],
+  "unexplained": {
+    "parts": [],
+    "described": [
+      {
+        "text": "The README's \"Parse a TOML file\" section shows loading a path.",
+        "origin": {
+          "issue": "ABC-250",
+          "line": 10
+        }
+      },
+      {
+        "text": "load accepts a path given as str or as bytes.",
+        "origin": {
+          "issue": "ABC-250",
+          "line": 6
+        },
+        "optional": true
+      }
+    ]
+  },
+  "criteria": [
+    {
+      "text": "load accepts a pathlib.Path and parses the file it names.",
+      "verdict": "met",
+      "code": [
+        "src/tomli/_parser.py"
+      ],
+      "tests": [
+        "tests/test_misc.py"
+      ]
+    },
+    {
+      "text": "load accepts a path given as str or as bytes.",
+      "verdict": "partly met",
+      "alsoRight": [
+        "not met"
+      ],
+      "code": [
+        "src/tomli/_parser.py"
+      ]
+    },
+    {
+      "text": "Passing a file opened in text mode still raises the TypeError that says to open it in binary mode.",
+      "verdict": "met",
+      "code": [
+        "src/tomli/_parser.py"
+      ],
+      "tests": [
+        "tests/test_misc.py"
+      ]
+    },
+    {
+      "text": "Type checkers accept a path argument to load.",
+      "verdict": "met",
+      "code": [
+        "src/tomli/_parser.py"
+      ]
+    },
+    {
+      "text": "Loading by path is no slower than loading from an open file.",
+      "verdict": "met",
+      "manual": [
+        {
+          "text": "Timed by hand on my machine: loading `benchmark/data.toml` 100 times took 0.41 s by path and 0.41 s from an open file.",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "text": "The README's \"Parse a TOML file\" section shows loading a path.",
+      "verdict": "not met"
+    }
+  ],
+  "drafts": [
+    {
+      "kind": "acceptance criterion not met",
+      "statement": "The README's \"Parse a TOML file\" section shows loading a path.",
+      "madeIn": "issue ABC-250 (Jira), line 10",
+      "reason": "The change does not touch the README.",
+      "evidence": [],
+      "notes": [],
+      "locations": [
+        "ABC-250"
+      ]
+    },
+    {
+      "kind": "acceptance criterion partly met",
+      "statement": "load accepts a path given as str or as bytes.",
+      "madeIn": "issue ABC-250 (Jira), line 6",
+      "reason": "load opens a str or os.PathLike path, but a bytes path is not handled and fails when it is read.",
+      "evidence": [
+        {
+          "at": "src/tomli/_parser.py:142",
+          "quote": "if isinstance(__fp, (str, os.PathLike)):"
+        }
+      ],
+      "notes": [],
+      "locations": [
+        "src/tomli/_parser.py:142"
+      ]
+    }
+  ]
+}

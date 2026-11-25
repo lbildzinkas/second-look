@@ -1,0 +1,107 @@
+{
+  "formatVersion": 1,
+  "id": "criteria-jira-typescript",
+  "source": "https://github.com/example-org/example-repo/pull/5915",
+  "recordedAt": "2026-11-25T09:00:00.000Z",
+  "prompts": [
+    "criteria-mapping",
+    "unexplained"
+  ],
+  "pullRequest": {
+    "url": "https://github.com/example-org/example-repo/pull/5915",
+    "number": 5915,
+    "title": "Show which acceptance criteria the issue already ticks",
+    "author": "contributor-login",
+    "description": "Implements XYZ-231.\n\nReads whether each acceptance criterion is ticked in its issue's checklist, and marks a ticked criterion with a ✓ beside its quote in the overview.\n\nChecked by hand in VS Code on a pull request whose linked issue ticks two of its four criteria: those two show a ✓ beside their quotes, and the other two show none.\n\nA pass with a screen reader is still to do.",
+    "base": "master",
+    "head": "XYZ-231-criteria-ticked",
+    "baseCommit": "8df5bd4d1b5077679c3fba591275d9dd94fe54ba",
+    "headSha": "acdff96fb4b28fcb27c31b4c53140b98f2fc60ab"
+  },
+  "gitAttributes": null,
+  "baseCommit": "8df5bd4d1b5077679c3fba591275d9dd94fe54ba",
+  "headCommit": "acdff96fb4b28fcb27c31b4c53140b98f2fc60ab",
+  "criteria": {
+    "outcome": "read",
+    "detail": "this pull request links no issue; Jira ticket XYZ-231 read from jira.example.com",
+    "sources": [
+      {
+        "source": "github",
+        "outcome": "read",
+        "detail": "this pull request links no issue"
+      },
+      {
+        "source": "jira",
+        "outcome": "read",
+        "detail": "Jira ticket XYZ-231 read from jira.example.com"
+      }
+    ],
+    "keyReferences": [
+      {
+        "key": "XYZ-231",
+        "place": "branch"
+      }
+    ],
+    "heading": "Acceptance criteria",
+    "issues": [
+      {
+        "source": "jira",
+        "key": "XYZ-231",
+        "title": "Show which acceptance criteria are already ticked",
+        "url": "https://jira.example.com/browse/XYZ-231",
+        "body": "An issue's author often ticks a criterion once it is done, and the overview shows every criterion the same way.\n\n## Acceptance criteria\n\nGiven an issue whose checklist ticks a criterion\nWhen the review reads the issue's criteria\nThen that criterion is read as ticked\n- Both [x] and [X] count as ticked.\n- The overview shows a ✓ beside the quote of a ticked criterion.\n- A screen reader announces a ticked criterion as ticked.\n- Reading the ticks adds no noticeable time to a review.\n- The overview counts the ticked criteria beside its heading, such as 2 of 4 ticked.",
+        "link": "references"
+      }
+    ],
+    "criteria": [
+      {
+        "quote": "Given an issue whose checklist ticks a criterion When the review reads the issue's criteria Then that criterion is read as ticked",
+        "issue": 0,
+        "line": 5,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "Both [x] and [X] count as ticked.",
+        "issue": 0,
+        "line": 8,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "The overview shows a ✓ beside the quote of a ticked criterion.",
+        "issue": 0,
+        "line": 9,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "A screen reader announces a ticked criterion as ticked.",
+        "issue": 0,
+        "line": 10,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "Reading the ticks adds no noticeable time to a review.",
+        "issue": 0,
+        "line": 11,
+        "verdict": {
+          "kind": "not checked"
+        }
+      },
+      {
+        "quote": "The overview counts the ticked criteria beside its heading, such as 2 of 4 ticked.",
+        "issue": 0,
+        "line": 12,
+        "verdict": {
+          "kind": "not checked"
+        }
+      }
+    ]
+  }
+}

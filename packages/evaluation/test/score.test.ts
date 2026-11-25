@@ -627,6 +627,16 @@ describe('the unexplained changes the agent finds', () => {
     expect(sameDescribed(described('A send that gives up goes to the dead-letter queue.', { kind: 'issue', issue: 1, line: 5 }), queued, ISSUES)).toBe(false);
   });
 
+  it('matches a described change made in a Jira ticket by the ticket key, never by a GitHub issue number', () => {
+    const issues: LinkedIssue[] = [...ISSUES, { source: 'jira', key: 'ABC-30', title: 't', body: 'b', link: 'references' }];
+    const queued = described('A send that gives up goes to the dead-letter queue.', { kind: 'issue', issue: 1, line: 5 });
+    const text = 'A send that gives up goes to the dead-letter queue.';
+    expect(sameDescribed(queued, { text, origin: { issue: 'ABC-30', line: 5 } }, issues)).toBe(true);
+    expect(sameDescribed(queued, { text, origin: { issue: 'ABC-31', line: 5 } }, issues)).toBe(false);
+    expect(sameDescribed(queued, { text, origin: { issue: 30, line: 5 } }, issues)).toBe(false);
+    expect(sameDescribed(described(text, { kind: 'issue', issue: 0, line: 5 }), { text, origin: { issue: 'ABC-30', line: 5 } }, issues)).toBe(false);
+  });
+
   it('scores recall and precision in each direction, an optional label counting in neither', () => {
     // parts(): package-lock.json, src/cart.ts, README.md.
     const tally = tallyUnexplained(

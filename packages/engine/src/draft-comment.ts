@@ -32,7 +32,7 @@ import { claimPlace, isFinding } from './verdicts.js';
 export const DRAFT_COMMENT_PROMPT_ID = 'draft-comment';
 
 /** The draft-comment prompt's version. */
-export const DRAFT_COMMENT_PROMPT_VERSION = '1';
+export const DRAFT_COMMENT_PROMPT_VERSION = '2';
 
 /** The longest draft the companion shows: the plain checks' length cap, in characters. */
 export const MAX_DRAFT_LENGTH = 600;
@@ -135,11 +135,15 @@ function evidenceOf(cited: Citation): DraftFinding['evidence'][number] {
 
 /**
  * A linked issue as a draft cites it: a GitHub issue by its number, a
- * Jira ticket by its key until its wording lands with its evaluation
- * (ADR 0006).
+ * Jira ticket by its key, which is what the draft must write.
  */
 function issueTag(issue: LinkedIssue): string {
   return issue.source === 'github' ? `#${issue.number}` : issue.key;
+}
+
+/** A linked issue as a finding says where its statement is made: a Jira ticket named with its tracker, so the agent never takes it for a GitHub issue. */
+function issueNamed(issue: LinkedIssue): string {
+  return issue.source === 'github' ? `issue #${issue.number}` : `issue ${issue.key} (Jira)`;
 }
 
 /** Where a claim is made, as a draft cites it. */
@@ -216,7 +220,7 @@ export function draftFinding(result: ReviewResult, ref: FindingRef): DraftFindin
     return {
       kind: 'described change the diff does not contain',
       statement: change.quote,
-      madeIn: issue === undefined ? `the pull request's description, line ${change.location.line}` : `issue ${issueTag(issue)}, line ${change.location.line}`,
+      madeIn: issue === undefined ? `the pull request's description, line ${change.location.line}` : `${issueNamed(issue)}, line ${change.location.line}`,
       reason: change.reason,
       evidence: [],
       notes: ['the diff does not contain this change'],
@@ -234,7 +238,7 @@ export function draftFinding(result: ReviewResult, ref: FindingRef): DraftFindin
   return {
     kind: `acceptance criterion ${verdict.kind}`,
     statement: criterion.quote,
-    madeIn: `issue ${issueTag(issue)}, line ${criterion.line}`,
+    madeIn: `${issueNamed(issue)}, line ${criterion.line}`,
     reason: verdict.reason,
     evidence,
     notes: [],
