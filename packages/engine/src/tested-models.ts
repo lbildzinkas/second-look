@@ -36,7 +36,7 @@ export interface TestedModel {
 /**
  * Every combination the evaluation has been run against, each scored over
  * every prompt's cases in the recorded baseline: Pi 0.86.1 with
- * `zai-coding-cn/glm-5.3` at its default effort, and Claude Code 2.1.296
+ * `zai-coding-cn/glm-5.3` at its default effort, and Claude Code 2.1.330
  * with `claude-sonnet-5-5` at high effort.
  */
 export const TESTED_MODELS: readonly TestedModel[] = [
@@ -86,10 +86,10 @@ export const TESTED_MODELS: readonly TestedModel[] = [
   },
   {
     agent: 'claude-code',
-    agentVersion: '2.1.296',
+    agentVersion: '2.1.330',
     model: 'claude-sonnet-5-5',
     effort: 'high',
-    runDate: '2026-10-12T10:06:12.771Z',
+    runDate: '2026-11-25T09:32:38.030Z',
     scores: {
       coverage: 1,
       'grouping-agreement': 0.7946,
@@ -107,8 +107,6 @@ export const TESTED_MODELS: readonly TestedModel[] = [
       'verify-accuracy': 1,
       'verify-false-verified': 0,
       'verify-fetch-offered': 1,
-      'unexplained-recall': 1,
-      'unexplained-precision': 1,
       'described-recall': 1,
       'described-precision': 1,
       'criteria-accuracy': 1,
