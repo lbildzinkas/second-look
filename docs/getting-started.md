@@ -93,7 +93,9 @@ Every agent run bills the login the agent is signed in with — your subscriptio
 
 ## Connecting Jira
 
-A pull request's acceptance criteria may live in a Jira Cloud ticket rather than a GitHub issue. The companion reads Jira through your own Claude Code and its Atlassian connection, never through a Jira token of its own, so it is Claude Code only: with Pi as the agent, step 1's Jira row and step 6 say "Jira criteria need Claude Code". Reviews read the tickets a pull request names through the connection this sets up and checks ([ADR 0010](adr/0010-issue-tracker-sources.md)).
+A pull request's acceptance criteria may live in a Jira Cloud ticket rather than a GitHub issue. The companion reads Jira through your own Claude Code and its Atlassian connection, never through a Jira token of its own, so it is Claude Code only. Pi has no MCP and runs offline: with Pi as the agent, step 1's Jira row and step 6 say "Jira criteria need Claude Code", and no ticket is read. Reviews read the tickets a pull request names through the connection this sets up and checks ([ADR 0010](adr/0010-issue-tracker-sources.md)); [Jira tickets](reviewing.md#jira-tickets) says which keys are read and what you see.
+
+First choose Claude Code as the agent (`second-look.agent` set to `claude-code`, from step 1 or the status bar), in the VS Code profile you review from. A claude.ai connector belongs to the Claude account it was authorised on, so for work tickets that profile's Claude Code should be signed in to your work Claude account ([A separate profile for work](#a-separate-profile-for-work)). Then:
 
 1. **Authorise the Atlassian connector** on claude.ai, under **Settings → Connectors**, signed in to the Claude account this profile's Claude Code uses: your work account for work tickets.
 2. Or, if that Claude account has no Atlassian connector, **add Atlassian's own MCP server** once, from a terminal:
@@ -103,12 +105,16 @@ A pull request's acceptance criteria may live in a Jira Cloud ticket rather than
    claude mcp login atlassian
    ```
 
-3. Open the Jira row at the bottom of step 1's setup form, or press **Connect Jira** in step 6 when a pull request names a Jira key, and press **Check Jira**. It runs Claude Code once, with no copy of the code and only Jira's read tools, and shows one of:
+   With a work profile that starts Claude Code through its own script, run the two commands through that script instead, such as `~/bin/claude-work mcp add …`, so the server is added to that sign-in rather than your own.
+
+3. Open the Jira row at the bottom of step 1's setup form and press **Check Jira**, or press **Connect Jira** in step 6 when a pull request names a Jira key, which opens the row and checks at once. The check runs Claude Code once, only when you press it, with no copy of the code and only Jira's read tools, fetches no ticket, and shows one of:
    - **Connected**, with the Jira site it will read from. Type a ticket key and press **Test** to fetch that one ticket: the row shows its key and summary, or why Jira didn't return it.
    - **Needs login**: the connection is there but not signed in. Reconnect the connector on claude.ai, or run `claude mcp login atlassian` for the fallback, then check again.
    - **Not configured**: Claude Code has no Atlassian connection. Do step 1 or 2, then check again.
 
-The site is learned from your Atlassian account. When it reaches more than one Jira site, the row names them all, and `second-look.jira.site` picks one, such as `your-team.atlassian.net`; its **Open the site setting** link opens it. Only an `atlassian.net` site is accepted, and the site chosen is the only one a ticket is ever fetched from. What these runs may do is set out in [What agents can read, reach and run](agent-safety.md).
+The site is learned from your Atlassian account. When it reaches more than one Jira site, the row names them all, and `second-look.jira.site` picks one, such as `your-team.atlassian.net`; its **Open the site setting** link opens it. Only an `atlassian.net` site is accepted, and the site chosen is the only one a ticket is ever fetched from. The setting is the only Jira setting: there is no list of projects to configure.
+
+Once the row says **Connected** with a site, nothing else is needed: each review on Claude Code whose pull request names a Jira key reads those tickets in a short run of its own, counted against the review's agent-run budget. A slow Jira read gives up after 90 seconds, and Jira never fails the review. What these runs may do is set out in [What agents can read, reach and run](agent-safety.md), and what reaches your model provider in [What stays on the machine and what is sent](privacy.md).
 
 ## Starting a review
 
