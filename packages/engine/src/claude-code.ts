@@ -160,7 +160,8 @@ export function claudeSettings(hookCommand: string): string {
 
 /**
  * The exact arguments of a locked-down Claude Code run: print mode, streamed
- * JSON with partial messages so a timeout keeps what was written, no session
+ * JSON (which print mode gives only with `--verbose`) with partial messages
+ * so a timeout keeps what was written, no session
  * file, user-level settings only, every MCP configuration ignored,
  * file-reading tools only, permission prompts denied rather than asked, the
  * default permission mode, the companion's settings with the guard hook,
@@ -177,6 +178,7 @@ export function claudeArguments(
     '--print',
     '--output-format',
     'stream-json',
+    '--verbose',
     '--include-partial-messages',
     '--no-session-persistence',
     '--setting-sources',
