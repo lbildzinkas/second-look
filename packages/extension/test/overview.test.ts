@@ -30,6 +30,7 @@ import {
   storyResult,
   unexplainedResult,
   verdictsRunningStages,
+  reviewStages,
 } from './results.js';
 import { stub } from './vscode-stub.js';
 
@@ -827,6 +828,14 @@ describe('the acceptance criteria on the overview', () => {
     expect(overviewHtml({ result: unreadable }, 'N')).toContain(
       '<p class="note">the linked issues could not be read: GitHub answered 403.</p><p class="note">Jira ticket PORT-42 found; connect Jira to read its criteria.</p>',
     );
+  });
+
+  it('says Jira criteria need Claude Code when the review ran on Pi', () => {
+    const result = jiraKeysResult(['PORT-42']);
+    result.stages = reviewStages().map((stage) => (stage.agent === undefined ? stage : { ...stage, agent: { agent: 'pi', model: 'zai/glm-4.6', effort: null } }));
+    const html = overviewHtml({ result }, 'N');
+    expect(html).toContain('<p class="note">Jira ticket PORT-42 found; Jira criteria need Claude Code.</p>');
+    expect(html).not.toContain('connect Jira');
   });
 
   it('says nothing of Jira when the pull request names no key, or links an issue beside the keys it names', () => {

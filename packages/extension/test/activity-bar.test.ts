@@ -66,6 +66,7 @@ const SIDE_BAR_PLACES: Record<string, string> = {
   'second-look.agentAccount': "step 1's form: the account label",
   'second-look.claudeCodePath': "step 1's form: the agent path",
   'second-look.piPath': "step 1's form: the agent path",
+  'second-look.jira.site': "step 1's form: the Jira row's site setting link",
   'second-look.mirrorViewedToGitHub': "step 4's ⋯ menu",
   'second-look.criteriaHeading': "step 6's ⋯",
   'second-look.budget.agentRuns': "the title bar's ⋯ menu: Open Second Look settings",

@@ -31,6 +31,9 @@ import {
   type PartOrigin,
   type PartRank,
   type PartRole,
+  type JiraProbeRpcResult,
+  type JiraSite,
+  type JiraTestRpcResult,
   type ProbeAgentsRpcResult,
   type PullRequestList,
   type ReviewedMarks,
@@ -1177,6 +1180,36 @@ export function isAgentTestResult(value: unknown): value is TestAgentRpcResult {
   if (!isRecord(value) || !isAgentStamp(value['stamp'])) return false;
   if (value['ok'] === true) return true;
   return value['ok'] === false && isOneOf(value['reason'], AGENT_TEST_FAILURES) && isString(value['message']);
+}
+
+/** Error thrown when a Jira check's answer is not what the check reports. */
+export class JiraProtocolError extends Error {
+  constructor() {
+    super(`the engine's answer is not the result of the Jira check`);
+    this.name = 'JiraProtocolError';
+  }
+}
+
+function isJiraSite(value: unknown): value is JiraSite {
+  return isRecord(value) && isString(value['id']) && isString(value['url']) && isString(value['name']);
+}
+
+const JIRA_ROUTES = ['connector', 'fallback'] as const;
+
+/** Checks that a value read over the protocol is the Jira check's result: connected with its sites, needs a login, not configured, or failed. */
+export function isJiraProbe(value: unknown): value is JiraProbeRpcResult {
+  if (!isRecord(value)) return false;
+  if (value['state'] === 'connected') return isOneOf(value['route'], JIRA_ROUTES) && Array.isArray(value['sites']) && value['sites'].every(isJiraSite);
+  if (value['state'] === 'needs-login') return isOneOf(value['route'], JIRA_ROUTES) && isString(value['detail']);
+  if (value['state'] === 'not-configured') return true;
+  return value['state'] === 'failed' && isString(value['message']);
+}
+
+/** Checks that a value read over the protocol is the Jira test's result: the ticket's key and summary, or why none was read. */
+export function isJiraTestResult(value: unknown): value is JiraTestRpcResult {
+  if (!isRecord(value)) return false;
+  if (value['ok'] === true) return isString(value['key']) && isString(value['summary']);
+  return value['ok'] === false && isString(value['message']);
 }
 
 /** Error thrown when a list answer is not the reviewer's pull requests. */

@@ -278,6 +278,7 @@ export async function runCli(
     }
     const agent: RpcAgentDeps = {
       adapterFor: (name, path) => agentAdapter(name, { pi: deps.pi, claudeCode: deps.claudeCode, env }, path),
+      jiraFor: (path) => ({ command: path ? [path] : (deps.claudeCode?.command ?? ['claude']), env }),
       defaultAgent: agentName,
       settings,
     };

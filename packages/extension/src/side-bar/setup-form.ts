@@ -1,13 +1,25 @@
 import * as vscode from 'vscode';
-import { isAgentName, type AgentPaths, type ProbeAgentsRpcResult, type ReviewAgentChoice, type TestAgentRpcResult } from '@second-look/engine';
+import {
+  isAgentName,
+  type AgentPaths,
+  type JiraProbeRpcResult,
+  type JiraTestParams,
+  type JiraTestRpcResult,
+  type ProbeAgentsRpcResult,
+  type ReviewAgentChoice,
+  type TestAgentRpcResult,
+} from '@second-look/engine';
 import { writeSetting } from '../agent-picker.js';
 import { AGENT_PATH_SETTINGS, AGENT_SETTING_KEYS, readAgentPaths, readAgentSettings, reviewAgentChoice } from '../agent-settings.js';
 import {
   INSTALL_PAGES,
   agentDraft,
+  chosenJiraSite,
+  jiraTestProblem,
   pathProblem,
   setupProblem,
   testedModels,
+  type JiraRowView,
   type SetupDraft,
   type SetupField,
   type SetupMessage,
@@ -17,10 +29,25 @@ import {
 /** The global-state flag set once step 1's form has opened by itself, or the reviewer saved or chose the defaults. */
 export const SETUP_SEEN_KEY = 'second-look.setupSeen';
 
-/** What the form asks the engine: the probe of the installed agents, and the agent test. */
+/** What the form asks the engine: the probe of the installed agents, the agent test, and the Jira row's check and test. */
 export interface SetupEngine {
   probeAgents(paths: AgentPaths): Promise<ProbeAgentsRpcResult>;
   testAgent(agent: ReviewAgentChoice): Promise<TestAgentRpcResult>;
+  probeJira(agent: ReviewAgentChoice): Promise<JiraProbeRpcResult>;
+  testJira(params: JiraTestParams): Promise<JiraTestRpcResult>;
+}
+
+/** The setting that picks the Jira site when the Atlassian account reaches several. */
+export const JIRA_SITE_SETTING = 'jira.site';
+
+/** The `second-look.jira.site` setting as it reads. */
+function readJiraSite(): string {
+  return vscode.workspace.getConfiguration('second-look').get<string>(JIRA_SITE_SETTING, '');
+}
+
+/** A message as plain words. */
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export interface SetupFormDeps {
@@ -63,10 +90,14 @@ export class SetupForm {
   /** Counts the probes and tests started, so a replaced one's late answer is dropped. */
   private probes = 0;
   private tests = 0;
+  /** The same for the Jira row's checks and tests, and the times Connect Jira opened it. */
+  private jiraChecks = 0;
+  private jiraTests = 0;
+  private reveals = 0;
 
   constructor(deps: SetupFormDeps) {
     this.deps = deps;
-    this.view = { open: opensByItself(deps.globalState), draft: settingsDraft(), probe: { state: 'probing' } };
+    this.view = { open: opensByItself(deps.globalState), draft: settingsDraft(), probe: { state: 'probing' }, jira: { site: readJiraSite(), key: '' } };
   }
 
   /** The form as it stands. */
@@ -85,9 +116,22 @@ export class SetupForm {
   open(): void {
     // A test still out describes the draft this one replaces, so its answer is dropped.
     this.tests += 1;
-    this.view = { open: true, draft: settingsDraft(), probe: { state: 'probing' } };
+    // The Jira row keeps its check: it describes Claude Code's connection, not the draft.
+    this.view = { open: true, draft: settingsDraft(), probe: { state: 'probing' }, jira: { ...this.view.jira, site: readJiraSite() } };
     this.deps.onChange();
     void this.probe();
+  }
+
+  /**
+   * Step 6's Connect Jira: opens the form at its Jira row, scrolled into
+   * view, and checks Claude Code's Atlassian connection, unless the
+   * agent is Pi, whose row says Jira needs Claude Code.
+   */
+  async openJira(): Promise<void> {
+    if (!this.view.open) this.open();
+    this.reveals += 1;
+    this.setJira({ reveal: this.reveals });
+    if (this.view.draft.agent !== 'pi') await this.checkJira();
   }
 
   async handle(message: SetupMessage): Promise<void> {
@@ -104,6 +148,13 @@ export class SetupForm {
     }
     if (message.action === 'usePath') return this.usePath();
     if (message.action === 'test') return this.test();
+    if (message.action === 'openJira') return this.openJira();
+    if (message.action === 'checkJira') return this.checkJira();
+    if (message.action === 'testJira') return this.testJira();
+    if (message.action === 'jiraSite') {
+      await vscode.commands.executeCommand('workbench.action.openSettings', `second-look.${JIRA_SITE_SETTING}`);
+      return;
+    }
     if (message.action === 'save') {
       const problem = setupProblem(this.view.draft);
       if (problem !== undefined) return this.refuse(problem);
@@ -119,6 +170,10 @@ export class SetupForm {
   }
 
   private edit(field: SetupField, value: string): void {
+    if (field === 'jiraKey') {
+      this.view = { ...this.view, jira: { ...this.view.jira, key: value, problem: undefined } };
+      return;
+    }
     const { draft } = this.view;
     let next: SetupDraft = draft;
     if (field === 'agent' && isAgentName(value) && value !== draft.agent) next = agentDraft(value, draft, readAgentPaths()[value] ?? '');
@@ -130,8 +185,8 @@ export class SetupForm {
     if (field === 'path') next = { ...draft, path: value };
     // A test describes the combination it ran, so changing it clears the result.
     const isSameRun = next.agent === draft.agent && next.model === draft.model && next.effort === draft.effort && next.account.trim() === draft.account.trim();
-    const { open, probe, test } = this.view;
-    this.view = { open, probe, draft: next, ...(isSameRun && test !== undefined ? { test } : {}) };
+    const { open, probe, test, jira } = this.view;
+    this.view = { open, probe, jira, draft: next, ...(isSameRun && test !== undefined ? { test } : {}) };
     if (!isSameRun) this.tests += 1;
   }
 
@@ -177,9 +232,60 @@ export class SetupForm {
     const refused = pathProblem(path.trim());
     if (refused !== undefined) return this.refuse(refused);
     await writeSetting(AGENT_PATH_SETTINGS[agent], path.trim());
-    const { open, draft, probe, problem } = this.view;
-    this.view = { open, draft, probe, ...(problem !== undefined ? { problem } : {}) };
+    const { open, draft, probe, problem, jira } = this.view;
+    this.view = { open, draft, probe, jira, ...(problem !== undefined ? { problem } : {}) };
     this.tests += 1;
     await this.probe();
+  }
+
+  private setJira(change: Partial<JiraRowView>): void {
+    this.view = { ...this.view, jira: { ...this.view.jira, ...change } };
+    this.deps.onChange();
+  }
+
+  /**
+   * The Claude Code the Jira row's runs use, whatever agent reviews: its
+   * path setting, and the draft's model when the draft is Claude Code
+   * with a model the engine accepts, else Claude Code's own default.
+   */
+  private jiraAgent(): ReviewAgentChoice {
+    const { draft } = this.view;
+    const model = draft.agent === 'claude-code' && setupProblem(draft) === undefined ? draft.model : '';
+    const path = readAgentPaths()['claude-code'];
+    return { agent: 'claude-code', model, ...(path !== undefined ? { path } : {}) };
+  }
+
+  /** Checks Claude Code's Atlassian connection for the Jira row, reading the site setting afresh; a test shown is cleared. */
+  private async checkJira(): Promise<void> {
+    const check = ++this.jiraChecks;
+    this.jiraTests += 1;
+    this.setJira({ site: readJiraSite(), check: { state: 'checking' }, test: undefined, problem: undefined });
+    try {
+      const result = await (await this.deps.engine()).probeJira(this.jiraAgent());
+      if (check === this.jiraChecks) this.setJira({ check: { state: 'checked', result } });
+    } catch (error) {
+      if (check === this.jiraChecks) this.setJira({ check: { state: 'failed', message: messageOf(error) } });
+    }
+  }
+
+  /** Fetches the ticket key typed from the site the check chose, with nothing kept. */
+  private async testJira(): Promise<void> {
+    const { jira } = this.view;
+    const problem = jiraTestProblem(jira);
+    const site = chosenJiraSite(jira);
+    const checked = jira.check?.state === 'checked' ? jira.check.result : undefined;
+    if (problem !== undefined || site === undefined || checked?.state !== 'connected') {
+      this.setJira({ problem: problem ?? 'Check Jira first.' });
+      return;
+    }
+    const test = ++this.jiraTests;
+    const key = jira.key.trim();
+    this.setJira({ test: { state: 'testing', key }, problem: undefined });
+    try {
+      const result = await (await this.deps.engine()).testJira({ agent: this.jiraAgent(), route: checked.route, site, key });
+      if (test === this.jiraTests) this.setJira({ test: { state: 'tested', result } });
+    } catch (error) {
+      if (test === this.jiraTests) this.setJira({ test: { state: 'failed', message: messageOf(error) } });
+    }
   }
 }

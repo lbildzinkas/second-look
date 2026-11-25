@@ -20,6 +20,7 @@ import {
 import { commentLocation, type ListedComment } from '../src/comments.js';
 import { sideBarBody, sideBarHtml } from '../src/side-bar/page.js';
 import { SideBarProvider, sideBarMessage, type SideBarDeps } from '../src/side-bar/provider.js';
+import type { SetupView } from '../src/side-bar/setup.js';
 import { StepTickStore } from '../src/side-bar/step-ticks.js';
 import { nextPartToReview, setupLine, sideBarSteps, type SideBarState } from '../src/side-bar/steps.js';
 import { anchorOf, buildTree, pendingReviewSection, treeMessage } from '../src/tree.js';
@@ -591,6 +592,35 @@ describe("the side bar's page", () => {
     const keyed = { ...linked, criteria: { ...linked.criteria!, keyReferences: [{ key: 'PORT-42', place: 'branch' as const }] } };
     const shownState = (result: typeof linked) => reviewState({ result, storyRead: true, marks: marked(...mixedResult().parts) });
     expect(sideBarBody(shownState(keyed))).toBe(sideBarBody(shownState(linked)));
+  });
+
+  it('offers Connect Jira beside the keys whose tickets were not read, and says Jira needs Claude Code under Pi, never holding up the step', () => {
+    const setup: SetupView = {
+      open: false,
+      draft: { agent: 'claude-code', model: 'sonnet', other: false, effort: 'high', account: '', path: '' },
+      probe: { state: 'probing' },
+      jira: { site: '', key: '' },
+    };
+    const state = (agent: 'pi' | 'claude-code', keys = ['PORT-42']) =>
+      reviewState({ settings: { ...SETTINGS, agent }, setup, result: jiraKeysResult(keys), storyRead: true, marks: marked(...mixedResult().parts) });
+
+    const claude = sideBarBody(state('claude-code'));
+    expect(claude).toContain(
+      '<p class="note">Jira ticket PORT-42 found; connect Jira to read its criteria.</p>' +
+        '<div class="actions"><button type="button" class="secondary" id="step-6-connectJira" data-action="openJira" data-value="">Connect Jira</button></div>' +
+        '<p class="note">None is checked: no checklist was found to map.</p>',
+    );
+    expect(claude).toMatch(/<input type="checkbox" id="step-6-tick" data-tick="criteria"/);
+    // The press opens the Jira row of the setup form.
+    expect(sideBarMessage({ type: 'setup', action: 'openJira', value: '', fields: {} })).toEqual({ type: 'setup', action: 'openJira', value: '', fields: {} });
+
+    const pi = sideBarBody(state('pi', ['PORT-42', 'ABC-1']));
+    expect(pi).toContain('<p class="note">Jira tickets PORT-42 and ABC-1 found; Jira criteria need Claude Code.</p>');
+    expect(pi).not.toContain('Connect Jira');
+    expect(pi).toMatch(/<input type="checkbox" id="step-6-tick" data-tick="criteria"/);
+
+    // No key found, or an issue linked: no button.
+    expect(sideBarBody(state('claude-code', []))).not.toContain('Connect Jira');
   });
 
   it('treats a fallen-back criteria mapping as final: the honest note and the tick', () => {

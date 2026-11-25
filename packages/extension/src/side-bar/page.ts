@@ -438,6 +438,17 @@ function unmappedNote(state: SideBarState, criteria: NonNullable<ReviewResult['c
   return `None is checked: ${stageLine(state, 'criteria') ?? 'the criteria mapping did not run'}.`;
 }
 
+/**
+ * Step 6's Connect Jira button, beside the keys whose Jira tickets
+ * weren't read: it opens the Jira row of step 1's setup form and checks
+ * the connection. Under Pi the keys' line says Jira needs Claude Code
+ * instead, and the review is never held up either way.
+ */
+function connectJira(state: SideBarState): string {
+  if (state.settings.agent === 'pi' || state.setup === undefined) return '';
+  return '<div class="actions"><button type="button" class="secondary" id="step-6-connectJira" data-action="openJira" data-value="">Connect Jira</button></div>';
+}
+
 /** Step 6's body: the criteria not fully met with their issue links and drafts, the met ones folded, the unexplained changes, and the tick. */
 function criteriaBody(state: SideBarState): string {
   const { result, ticks } = state;
@@ -456,8 +467,8 @@ function criteriaBody(state: SideBarState): string {
   // The tick shows once the step's results are in: its stages ended, whatever they left.
   const settled = !producing(state, 'unexplained', 'criteria');
   const unexplained = unexplainedRows(result, settled);
-  const keys = criteria === undefined ? undefined : keysFoundLine(criteria);
-  const keysNote = keys === undefined ? '' : note(`${keys}.`);
+  const keys = criteria === undefined ? undefined : keysFoundLine(criteria, state.settings.agent);
+  const keysNote = keys === undefined ? '' : note(`${keys}.`) + connectJira(state);
   const list =
     keysNote +
     (criteria === undefined
@@ -786,7 +797,16 @@ export function sideBarHtml(nonce: string, body: string): string {
     if (again !== null && typed !== null) again.value = typed;
     if (again !== null) again.focus();
     if (again !== null && caret !== null && typeof again.setSelectionRange === 'function') again.setSelectionRange(caret[0], caret[1]);
+    reveal();
   });
+  // A row Connect Jira opened scrolls into view once for each press, not on every redraw.
+  var revealed = null;
+  function reveal() {
+    var row = document.getElementById('setup-jira-row');
+    if (row === null || !row.hasAttribute('data-reveal') || row.getAttribute('data-reveal') === revealed) return;
+    revealed = row.getAttribute('data-reveal');
+    if (typeof row.scrollIntoView === 'function') row.scrollIntoView({ block: 'nearest' });
+  }
   // The running stage's time so far, as the extension wrote it, moves on each second.
   function elapsed(ms) {
     var seconds = Math.max(0, Math.floor(ms / 1000));
@@ -803,6 +823,7 @@ export function sideBarHtml(nonce: string, body: string): string {
     });
   }, 1000);
   keepFolds();
+  reveal();
   vscode.postMessage({ type: 'ready' });
 }());
 </script>

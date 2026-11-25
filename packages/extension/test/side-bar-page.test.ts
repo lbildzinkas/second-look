@@ -22,7 +22,7 @@ import { SetupForm } from '../src/side-bar/setup-form.js';
 import { StepTickStore } from '../src/side-bar/step-ticks.js';
 import type { SideBarState } from '../src/side-bar/steps.js';
 import { anchorOf, buildTree, pendingReviewSection } from '../src/tree.js';
-import { fetchedResult, judgedResult, mappedCriteriaResult, mixedResult, offeredResult, pipelineResult, reviewStages, settledResult, unexplainedResult, STAGE_MS, STAGES_START } from './results.js';
+import { fetchedResult, jiraKeysResult, judgedResult, mappedCriteriaResult, mixedResult, offeredResult, pipelineResult, reviewStages, settledResult, unexplainedResult, STAGE_MS, STAGES_START } from './results.js';
 import { ConfigurationTarget, stub, stubContext, window } from './vscode-stub.js';
 
 /**
@@ -183,6 +183,13 @@ class Element {
 
   focus(): void {
     this.owner?.becomesActive(this);
+  }
+
+  /** How many times the script scrolled the element into view. */
+  scrolled = 0;
+
+  scrollIntoView(): void {
+    this.scrolled += 1;
   }
 }
 
@@ -490,6 +497,8 @@ describe("the side bar's page script", () => {
     const engine = {
       probeAgents: () => Promise.resolve({ agents: [] }),
       testAgent: () => Promise.reject(new Error('not pressed')),
+      probeJira: () => Promise.reject(new Error('not pressed')),
+      testJira: () => Promise.reject(new Error('not pressed')),
     };
     // The form redraws the side bar it sits in, which is loaded after it.
     const drawn: { provider?: SideBarProvider } = {};
@@ -533,6 +542,43 @@ describe("the side bar's page script", () => {
     page.element('setup-account').value = 'personal';
     page.element('setup-account').dispatch('change');
     expect(setup.current.draft.account).toBe('personal');
+  });
+
+  it("opens step 1's Jira row from step 6's Connect Jira, checks the connection and scrolls to the row once", async () => {
+    const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+    stub.configuration['second-look.agent'] = 'claude-code';
+    const checks: unknown[] = [];
+    const engine = {
+      probeAgents: () => Promise.resolve({ agents: [] }),
+      testAgent: () => Promise.reject(new Error('not pressed')),
+      probeJira: (agent: unknown) => {
+        checks.push(agent);
+        return Promise.resolve({ state: 'needs-login' as const, route: 'connector' as const, detail: 'Claude Code reports the Atlassian connection needs a sign-in' });
+      },
+      testJira: () => Promise.reject(new Error('not pressed')),
+    };
+    const drawn: { provider?: SideBarProvider } = {};
+    const setup = new SetupForm({ engine: () => Promise.resolve(engine), globalState: stubContext().globalState as never, onChange: () => drawn.provider?.redraw() });
+    const result = jiraKeysResult(['PORT-42']);
+    const { provider, page, view } = loadSideBar(
+      { settings: SETTINGS, result, marks: marked(...result.parts), sections: buildTree(result, NO_MARKS), reviewing: false, storyRead: true, ticks: { claims: true, criteria: false } },
+      setup,
+    );
+    drawn.provider = provider;
+    await settle();
+    page.render(postedBodies(view).at(-1)!);
+    expect(() => page.element('setup-jira-row')).toThrow();
+
+    page.click('step-6-connectJira');
+    await settle();
+    page.render(postedBodies(view).at(-1)!);
+    expect(checks).toEqual([{ agent: 'claude-code', model: '' }]);
+    expect(page.element('step-1').getAttribute('aria-current')).toBe('step');
+    expect(page.element('setup-jira-row').scrolled).toBe(1);
+    // A redraw with nothing new pressed leaves the scroll where the reviewer put it.
+    provider.redraw();
+    page.render(postedBodies(view).at(-1)!);
+    expect(page.element('setup-jira-row').scrolled).toBe(0);
   });
 
   it("works step 2's list from the keyboard: the box filters as it is typed in, a paste or Enter starts a URL's review, the chips and Review buttons press", async () => {

@@ -9,6 +9,8 @@ import {
   ENGINE_PROTOCOL_VERSION,
   FETCH_LIBRARY_METHOD,
   INITIALIZE_METHOD,
+  JIRA_PROBE_METHOD,
+  JIRA_TEST_METHOD,
   LIST_PULL_REQUESTS_METHOD,
   MARK_REVIEWED_METHOD,
   MARK_VIEWED_METHOD,
@@ -27,6 +29,9 @@ import {
   type DraftComment,
   type FindingRef,
   type InitializeResult,
+  type JiraProbeRpcResult,
+  type JiraTestParams,
+  type JiraTestRpcResult,
   type ListPullRequestsParams,
   type MarkedPart,
   type PendingReview,
@@ -45,6 +50,7 @@ import {
   AgentsProtocolError,
   AskProtocolError,
   DraftProtocolError,
+  JiraProtocolError,
   MarksProtocolError,
   ProtocolError,
   PullRequestListProtocolError,
@@ -53,6 +59,8 @@ import {
   isAgentsProbe,
   isAskAnswer,
   isDraftComment,
+  isJiraProbe,
+  isJiraTestResult,
   isPullRequestList,
   isReviewResult,
   isReviewStageRecord,
@@ -117,6 +125,9 @@ const LIST_PULL_REQUESTS_TIMEOUT_MS = 60_000;
 
 /** How long the agent test may take: the agent's probe, and its one run of up to five minutes. */
 const TEST_AGENT_TIMEOUT_MS = 390_000;
+
+/** How long a Jira check may take: Claude Code's probe, and its one short run of up to two minutes. */
+const JIRA_TIMEOUT_MS = 180_000;
 
 /** How long one review request may take before the engine is given up on. */
 const REVIEW_TIMEOUT_MS = 120_000;
@@ -295,6 +306,35 @@ export class EngineClient {
     const result = await this.request(TEST_AGENT_METHOD, { agent }, TEST_AGENT_TIMEOUT_MS);
     if (!isAgentTestResult(result)) {
       throw new AgentTestProtocolError();
+    }
+    return result;
+  }
+
+  /**
+   * Checks the tracker login for Jira (issue 191), sent only when the
+   * reviewer asks: whether Claude Code's Atlassian connection is
+   * connected, needs a login or isn't configured, and the Jira sites it
+   * reaches. A check that couldn't run is an answer, not a rejection.
+   */
+  async probeJira(agent: ReviewAgentChoice): Promise<JiraProbeRpcResult> {
+    if (!this.handshaken) {
+      throw new Error('the engine has not completed its handshake yet');
+    }
+    const result = await this.request(JIRA_PROBE_METHOD, { agent }, JIRA_TIMEOUT_MS);
+    if (!isJiraProbe(result)) {
+      throw new JiraProtocolError();
+    }
+    return result;
+  }
+
+  /** Fetches the one ticket the reviewer typed, from the chosen site, and answers with its key and summary or why none was read. */
+  async testJira(params: JiraTestParams): Promise<JiraTestRpcResult> {
+    if (!this.handshaken) {
+      throw new Error('the engine has not completed its handshake yet');
+    }
+    const result = await this.request(JIRA_TEST_METHOD, params, JIRA_TIMEOUT_MS);
+    if (!isJiraTestResult(result)) {
+      throw new JiraProtocolError();
     }
     return result;
   }

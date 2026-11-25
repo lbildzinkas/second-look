@@ -45,7 +45,8 @@ import {
   temporaryCacheDir,
   zipArchive,
 } from './helpers.js';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import type { PullRequestList } from '../src/protocol.js';
@@ -269,7 +270,7 @@ describe('runRpcServer', () => {
     expect(responses[0]!.id).toBeNull();
     expect(responses[0]!.error!.message).toContain('not JSON');
     expect(responses[1]!.error!.message).toContain('unknown method: start');
-    expect(responses[1]!.error!.message).toContain('initialize, agents/probe, agents/test, review, review/cancel, fetchLibrary, readCiLog, draftComment, ask, sendReview, reviewedMarks, markReviewed, markViewed and pullRequests/list');
+    expect(responses[1]!.error!.message).toContain('initialize, agents/probe, agents/test, jira/probe, jira/test, review, review/cancel, fetchLibrary, readCiLog, draftComment, ask, sendReview, reviewedMarks, markReviewed, markViewed and pullRequests/list');
     expect(responses[2]!.result).toEqual({ protocolVersion: ENGINE_PROTOCOL_VERSION });
   });
 
@@ -840,6 +841,47 @@ describe('runRpcServer with an agent', () => {
     expect(answers(3).error).toMatchObject({ code: JSON_RPC_INVALID_PARAMS });
     expect(answers(3).error!.message).toContain('pi does not accept the effort "turbo"');
     expect(pi.requests).toHaveLength(0);
+  });
+
+  it('checks Jira through Claude Code only, refusing a Pi choice, a bad key or site, and an engine with no Claude Code', async () => {
+    const claude = namedAgent('claude-code', 'claude/model');
+    const site = { id: 'site-1', url: 'https://your-team.atlassian.net', name: 'Your Team' };
+    const answers = await serveWithAgent(
+      [
+        request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+        request('jira/probe', { agent: { agent: 'pi' } }, 2),
+        request('jira/test', { agent: { agent: 'claude-code' }, route: 'connector', site, key: 'not a key' }, 3),
+        request('jira/test', { agent: { agent: 'claude-code' }, route: 'connector', site: { ...site, url: 'http://your-team.atlassian.net' }, key: 'PORT-1' }, 4),
+        request('jira/probe', { agent: { agent: 'claude-code' } }, 5),
+      ],
+      { adapterFor: () => claude, defaultAgent: 'claude-code' },
+    );
+    expect(answers(2).error).toMatchObject({ code: JSON_RPC_INVALID_PARAMS, message: expect.stringContaining('Jira is read through Claude Code only') });
+    expect(answers(3).error).toMatchObject({ code: JSON_RPC_INVALID_PARAMS, message: expect.stringContaining('the key must be a Jira ticket key') });
+    expect(answers(4).error).toMatchObject({ code: JSON_RPC_INVALID_PARAMS, message: expect.stringContaining('https address') });
+    expect(answers(5).error).toMatchObject({ code: ENGINE_FAILED_CODE, message: 'this engine runs no Claude Code, so it has no Jira to check' });
+  });
+
+  it('answers a Jira check with what the run found, on the Claude Code the request names', async () => {
+    const claude = namedAgent('claude-code', 'claude/model');
+    const dir = mkdtempSync(join(tmpdir(), 'second-look-fake-jira-'));
+    const fake = fileURLToPath(new URL('./fixtures/fake-claude-jira.mjs', import.meta.url));
+    writeFileSync(join(dir, 'events.json'), JSON.stringify({ events: [{ type: 'system', subtype: 'init', mcp_servers: [{ name: 'claude_ai_Atlassian_MCP', status: 'needs-auth' }], permissionMode: 'default' }], hold: true }));
+    const paths: (string | undefined)[] = [];
+    const answers = await serveWithAgent(
+      [request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }), request('jira/probe', { agent: { agent: 'claude-code', path: '/opt/claude' } }, 2)],
+      {
+        adapterFor: () => claude,
+        defaultAgent: 'claude-code',
+        jiraFor: (path) => {
+          paths.push(path);
+          return { command: [process.execPath, fake], env: { PATH: process.env['PATH'], FAKE_CLAUDE_DIR: dir } };
+        },
+      },
+    );
+    expect(answers(2).result).toEqual({ state: 'needs-login', route: 'connector', detail: 'Claude Code reports the Atlassian connection needs a sign-in' });
+    expect(paths).toEqual(['/opt/claude']);
+    expect(claude.requests).toHaveLength(0);
   });
 });
 

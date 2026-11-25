@@ -3,10 +3,18 @@ import {
   AGENT_NAMES,
   DEFAULT_EFFORT,
   TESTED_MODELS,
+  chooseJiraSite,
   isTestedModel,
+  isTicketKey,
+  jiraSiteHost,
+  jiraSiteSetting,
   modelAndEffortProblem,
   type AgentName,
   type AgentStamp,
+  type JiraProbeRpcResult,
+  type JiraSite,
+  type JiraSiteChoice,
+  type JiraTestRpcResult,
   type ProbeAgentsRpcResult,
   type TestAgentRpcResult,
 } from '@second-look/engine';
@@ -40,23 +48,41 @@ export interface SetupView {
   test?: { state: 'testing' } | { state: 'tested'; result: TestAgentRpcResult } | { state: 'failed'; message: string };
   /** Why the last Save, Test or path was refused, in plain words. */
   problem?: string;
+  /** The Jira row: the tracker login's check and its Test (issue 191). */
+  jira: JiraRowView;
+}
+
+/** The setup form's Jira row as it stands. */
+export interface JiraRowView {
+  /** The `second-look.jira.site` setting as it reads, untrimmed. */
+  site: string;
+  /** The check of Claude Code's Atlassian connection: absent until the reviewer asks for it. */
+  check?: { state: 'checking' } | { state: 'checked'; result: JiraProbeRpcResult } | { state: 'failed'; message: string };
+  /** The ticket key the Test fetches, as typed. */
+  key: string;
+  /** The Test's fetch: absent before it is pressed. */
+  test?: { state: 'testing'; key: string } | { state: 'tested'; result: JiraTestRpcResult } | { state: 'failed'; message: string };
+  /** Why the last Test was refused, in plain words. */
+  problem?: string;
+  /** Counts the times Connect Jira opened the row, so the side bar scrolls to it once each time. */
+  reveal?: number;
 }
 
 /** The fields the form's controls edit. */
-export type SetupField = 'agent' | 'model' | 'other' | 'otherModel' | 'effort' | 'account' | 'path';
+export type SetupField = 'agent' | 'model' | 'other' | 'otherModel' | 'effort' | 'account' | 'path' | 'jiraKey';
 
 /** The form's buttons. */
-export type SetupAction = 'open' | 'save' | 'defaults' | 'test' | 'usePath' | 'install';
+export type SetupAction = 'open' | 'save' | 'defaults' | 'test' | 'usePath' | 'install' | 'openJira' | 'checkJira' | 'testJira' | 'jiraSite';
 
 /** A change or a press in the setup form, as the side bar's script reports it. */
 export type SetupMessage =
   | { type: 'setup'; field: SetupField; value: string }
   | { type: 'setup'; action: SetupAction; value: string; fields: Partial<Record<SetupField, string>> };
 
-const FIELDS: readonly SetupField[] = ['agent', 'model', 'other', 'otherModel', 'effort', 'account', 'path'];
-const ACTIONS: readonly SetupAction[] = ['open', 'save', 'defaults', 'test', 'usePath', 'install'];
+const FIELDS: readonly SetupField[] = ['agent', 'model', 'other', 'otherModel', 'effort', 'account', 'path', 'jiraKey'];
+const ACTIONS: readonly SetupAction[] = ['open', 'save', 'defaults', 'test', 'usePath', 'install', 'openJira', 'checkJira', 'testJira', 'jiraSite'];
 /** The fields typed in a text box, which a press carries as they stand. */
-const TEXT_FIELDS: readonly SetupField[] = ['otherModel', 'account', 'path'];
+const TEXT_FIELDS: readonly SetupField[] = ['otherModel', 'account', 'path', 'jiraKey'];
 
 /** Where each agent's install instructions are. */
 export const INSTALL_PAGES: Record<AgentName, string> = {
@@ -184,12 +210,144 @@ function testLine(view: SetupView): string {
   return `<p class="note test" role="status">${escapeHtml(text)}</p>`;
 }
 
+/** The command that adds the fallback's Atlassian server for every folder, as the docs give it. */
+export const JIRA_FALLBACK_ADD = 'claude mcp add -s user --transport http atlassian https://mcp.atlassian.com/v2/mcp';
+
+/** The command that signs the fallback's Atlassian server in. */
+export const JIRA_FALLBACK_LOGIN = 'claude mcp login atlassian';
+
+/** Where the connector is authorised: claude.ai's connector settings, on the Claude account this profile's Claude Code signs in with. */
+const CONNECTOR_STEP =
+  'Authorise the Atlassian connector at claude.ai → Settings → Connectors, signed in to the Claude account this profile’s Claude Code uses (your work account for work tickets), then check again.';
+
+/** The fallback, for an account without the connector. */
+const FALLBACK_STEP = `Without the connector, add Atlassian’s own MCP server once with ${JIRA_FALLBACK_ADD}, sign it in with ${JIRA_FALLBACK_LOGIN}, then check again.`;
+
+/** The Jira site the row reads from: the setting's problem, or the site chosen from those the account reaches. */
+export function jiraSiteChoice(jira: JiraRowView): { problem: string } | JiraSiteChoice | undefined {
+  const setting = jiraSiteSetting(jira.site);
+  if ('problem' in setting) return { problem: setting.problem };
+  const { check } = jira;
+  if (check?.state !== 'checked' || check.result.state !== 'connected') return undefined;
+  return chooseJiraSite(check.result.sites, setting.host);
+}
+
+/** The site the Test fetches from, once the check is connected and a site is chosen. */
+export function chosenJiraSite(jira: JiraRowView): JiraSite | undefined {
+  const choice = jiraSiteChoice(jira);
+  return choice !== undefined && 'state' in choice && choice.state === 'chosen' ? choice.site : undefined;
+}
+
+/** Why the Jira Test can't fetch the key typed, in plain words; absent when it can. */
+export function jiraTestProblem(jira: JiraRowView): string | undefined {
+  if (chosenJiraSite(jira) === undefined) return 'Check Jira first: the Test fetches from the site the check chose.';
+  const key = jira.key.trim();
+  if (!isTicketKey(key)) return `Type a Jira ticket key such as ABC-123${key === '' ? '' : `, not ${JSON.stringify(key)}`}.`;
+  return undefined;
+}
+
+/** The sites, by their hosts, as the row names them. */
+function siteNames(sites: readonly JiraSite[]): string {
+  return sites.map((site) => jiraSiteHost(site)).join(', ');
+}
+
+/**
+ * What the row says of the check, each state with its plain message and
+ * its next step: connected with the site, needs a login, not configured,
+ * or couldn't be checked.
+ */
+export function jiraLines(jira: JiraRowView): { status: string; next?: string } {
+  const { check } = jira;
+  if (check === undefined) {
+    return { status: 'Not checked yet.', next: 'Check Jira asks Claude Code whether its Atlassian connection can read Jira; it fetches no ticket and stores no Jira login.' };
+  }
+  if (check.state === 'checking') return { status: 'Checking Claude Code’s Atlassian connection…' };
+  if (check.state === 'failed') return { status: `✕ Jira could not be checked: ${check.message}`, next: 'Check again once Claude Code runs.' };
+  const { result } = check;
+  if (result.state === 'failed') return { status: `✕ Jira could not be checked: ${result.message}`, next: 'Check again once Claude Code runs.' };
+  if (result.state === 'not-configured') return { status: '✕ Not configured: Claude Code has no Atlassian connection.', next: `${CONNECTOR_STEP} ${FALLBACK_STEP}` };
+  if (result.state === 'needs-login') {
+    const next = result.route === 'connector' ? CONNECTOR_STEP.replace('Authorise', 'Reconnect') : `Sign Atlassian’s MCP server in again with ${JIRA_FALLBACK_LOGIN}, then check again.`;
+    return { status: `✕ Needs login: ${result.detail}.`, next };
+  }
+  const through = result.route === 'connector' ? 'the claude.ai Atlassian connector' : 'Atlassian’s MCP server (the fallback)';
+  const choice = jiraSiteChoice(jira);
+  if (choice === undefined) return { status: `✓ Connected through ${through}.` };
+  if ('problem' in choice) return { status: `✓ Connected through ${through}.`, next: 'Fix the second-look.jira.site setting, or empty it, then check again.' };
+  if (choice.state === 'chosen') return { status: `✓ Connected through ${through} · site ${jiraSiteHost(choice.site)}.`, next: 'Type a ticket key and press Test to fetch it.' };
+  if (choice.state === 'none') return { status: `✓ Connected through ${through}, but the Atlassian account reaches no Jira site.`, next: 'Sign the connection in with the Atlassian account that holds your Jira site, then check again.' };
+  if (choice.state === 'several') {
+    return { status: `✓ Connected through ${through}. The account reaches several Jira sites: ${siteNames(choice.sites)}.`, next: 'Set second-look.jira.site to the one to read tickets from, then check again.' };
+  }
+  return {
+    status: `✓ Connected through ${through}, but second-look.jira.site names ${choice.host}, which the account doesn’t reach. It reaches: ${siteNames(choice.sites) || 'no Jira site'}.`,
+    next: 'Set second-look.jira.site to one of those sites, or empty it, then check again.',
+  };
+}
+
+/** The Jira Test's line: fetching, the ticket's key and summary, or why none was read. */
+function jiraTestLine(jira: JiraRowView): string {
+  const { test } = jira;
+  if (test === undefined) return '';
+  const text =
+    test.state === 'testing'
+      ? `Fetching ${test.key} from Jira…`
+      : test.state === 'failed'
+        ? `✕ The test could not run: ${test.message}`
+        : test.result.ok
+          ? `✓ ${test.result.key} · ${test.result.summary}`
+          : `✕ ${test.result.message}`;
+  return `<p class="note test" role="status">${escapeHtml(text)}</p>`;
+}
+
+/**
+ * The setup form's Jira row (issue 191): the tracker login's check, each
+ * state with its message and next step, the site it chose or the sites
+ * to choose from, and the Test, which fetches the one ticket the reviewer
+ * types. Under Pi, the row says Jira criteria need Claude Code.
+ */
+export function jiraRow(view: SetupView): string {
+  const { jira } = view;
+  const reveal = jira.reveal === undefined ? '' : ` data-reveal="${jira.reveal}"`;
+  const heading = `<h3 class="label" id="setup-jira">Jira</h3>`;
+  if (view.draft.agent === 'pi') {
+    return `<div class="jira" id="setup-jira-row"${reveal}>${heading}<p class="note">Jira criteria need Claude Code: Pi has no MCP and runs offline, so a review on Pi reads no Jira ticket. Choose Claude Code above to connect Jira.</p></div>`;
+  }
+  const lines = jiraLines(jira);
+  const checking = jira.check?.state === 'checking';
+  const check = setupButton('checkJira', jira.check === undefined ? 'Check Jira' : 'Check again', 'secondary', '', checking);
+  const choice = jiraSiteChoice(jira);
+  const siteSetting = choice !== undefined && ('problem' in choice || choice.state === 'several' || choice.state === 'not-reached') ? setupButton('jiraSite', 'Open the site setting', 'link') : '';
+  const site = chosenJiraSite(jira);
+  const test =
+    site === undefined
+      ? ''
+      : textBox('jiraKey', 'Ticket key to test', jira.key, 'e.g. ABC-123') +
+        `<div class="actions">${setupButton('testJira', 'Test', 'secondary', '', jira.test?.state === 'testing')}</div>`;
+  const problem = jira.problem === undefined ? '' : `<p class="note problem" role="alert">${escapeHtml(jira.problem)}</p>`;
+  const setting = jiraSiteSetting(jira.site);
+  const settingProblem = 'problem' in setting ? `<p class="note problem">${escapeHtml(`${setting.problem.charAt(0).toUpperCase()}${setting.problem.slice(1)}.`)}</p>` : '';
+  return (
+    `<div class="jira" id="setup-jira-row"${reveal}>` +
+    heading +
+    settingProblem +
+    `<p class="note" role="status">${escapeHtml(lines.status)}</p>` +
+    (lines.next === undefined ? '' : `<p class="note">${escapeHtml(lines.next)}</p>`) +
+    `<div class="actions">${check}${siteSetting}</div>` +
+    test +
+    problem +
+    jiraTestLine(jira) +
+    `</div>`
+  );
+}
+
 /**
  * Step 1's setup form: a card per installed agent from the probe, the
  * model — tested ones first, then the agent's default, then any other by
  * name — the effort levels with the default first and the tested ones
  * marked, the optional account label, and the agent path field, only when
- * the probe found no agent. Save, Use the defaults and Test below.
+ * the probe found no agent. Save, Use the defaults and Test below, then
+ * the Jira row.
  */
 export function setupFormBody(view: SetupView): string {
   const { draft } = view;
@@ -224,6 +382,7 @@ export function setupFormBody(view: SetupView): string {
     problem +
     `<div class="actions">${setupButton('save', 'Save', 'primary')}${setupButton('defaults', 'Use the defaults', 'secondary')}${setupButton('test', 'Test', 'secondary', '', testing)}</div>` +
     testLine(view) +
+    jiraRow(view) +
     `</div>`
   );
 }
