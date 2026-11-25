@@ -69,7 +69,7 @@ _Avoid_: Doc reference, API link
 ### Acting on the review
 
 **Issue tracker source**:
-A place the companion reads linked tickets and their criteria from, behind one interface: GitHub issues or Jira Cloud, with room for others such as Linear; each reports its own outcome: read, not connected, or nothing found.
+A place the companion reads linked tickets and their criteria from, behind one interface: GitHub issues or Jira Cloud, with room for others such as Linear; each reports its own outcome: read, not connected, nothing found, or unreadable.
 _Avoid_: Integration, provider, connector
 
 **Ticket key**:
