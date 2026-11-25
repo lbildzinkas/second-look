@@ -52,6 +52,13 @@ describe('flattenJiraDescription', () => {
     expect(flattenJiraDescription(42)).toBe('');
   });
 
+  it('shows a date node as its day, and nothing for a timestamp that is no date', () => {
+    const date = (timestamp: string) => ({ type: 'date', attrs: { timestamp } });
+    expect(flattenJiraDescription(doc(paragraph(text('Due '), date('1700000000000'))))).toBe('Due 2023-11-14');
+    expect(flattenJiraDescription(doc(paragraph(text('Due '), date('99999999999999999')), paragraph(text('after'))))).toBe('Due \n\nafter');
+    expect(flattenJiraDescription(doc(paragraph(text('Due '), date('soon'))))).toBe('Due ');
+  });
+
   it('cuts a description past the size cap at a line, saying so', () => {
     const long = `${'word '.repeat(10)}\n`.repeat(MAX_JIRA_DESCRIPTION / 20);
     const flat = flattenJiraDescription(long);

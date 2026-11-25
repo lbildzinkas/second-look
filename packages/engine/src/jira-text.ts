@@ -52,8 +52,8 @@ function inlineText(node: Record<string, unknown>): string {
       return typeof url === 'string' ? url : '';
     }
     case 'date': {
-      const stamp = Number(attr(node, 'timestamp'));
-      return Number.isFinite(stamp) ? new Date(stamp).toISOString().slice(0, 10) : '';
+      const day = new Date(Number(attr(node, 'timestamp')));
+      return Number.isNaN(day.getTime()) ? '' : day.toISOString().slice(0, 10);
     }
     default:
       return nodesOf(node).map(inlineText).join('');
