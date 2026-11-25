@@ -337,7 +337,9 @@ describe('the Jira issue tracker source, on a fake Claude Code', () => {
   it('ends a Jira read that runs past its deadline as unreadable, never holding up the review', async () => {
     const { read } = fake([{ events: [init()], hold: true } as { events: unknown[] }], { deadlineMs: 1_500 });
     const started = Date.now();
-    expect(await read('PORT-42')).toEqual({ issues: [], outcome: 'unreadable', detail: 'the Jira sites could not be listed: Claude Code did not finish within 2 seconds' });
+    // The run gets what is left of the deadline, a hair under 1.5 s, so the seconds it names are 1 or 2.
+    const result = await read('PORT-42');
+    expect(result).toEqual({ issues: [], outcome: 'unreadable', detail: expect.stringMatching(/^the Jira sites could not be listed: Claude Code did not finish within [12] seconds$/) });
     expect(Date.now() - started).toBeLessThan(5_000);
   });
 
