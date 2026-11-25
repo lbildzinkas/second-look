@@ -830,6 +830,25 @@ describe('the acceptance criteria on the overview', () => {
     );
   });
 
+  it('takes the Jira source’s own outcome: a hint only when it isn’t connected, and none once Jira was asked', () => {
+    const withJira = (outcome: 'read' | 'not connected' | 'nothing found' | 'unreadable') => {
+      const result = jiraKeysResult(['PORT-42', 'NEW-7']);
+      result.criteria = { ...result.criteria!, sources: [...result.criteria!.sources, { source: 'jira', outcome, detail: `jira ${outcome}` }] };
+      return result;
+    };
+    expect(overviewHtml({ result: withJira('not connected') }, 'N')).toContain('<p class="note">Jira tickets PORT-42 and NEW-7 found; connect Jira to read their criteria.</p>');
+    for (const outcome of ['nothing found', 'unreadable'] as const) expect(overviewHtml({ result: withJira(outcome) }, 'N')).not.toContain('connect Jira');
+    // Keys Jira didn't return are dropped quietly beside the tickets it did.
+    const read = withJira('read');
+    read.criteria = {
+      ...read.criteria!,
+      issues: [{ source: 'jira', key: 'PORT-42', title: 'Retry', url: 'https://your-team.atlassian.net/browse/PORT-42', body: '', link: 'references' }],
+    };
+    const html = overviewHtml({ result: read }, 'N');
+    expect(html).not.toContain('found; connect Jira');
+    expect(html).not.toMatch(/Jira tickets? [^<]*NEW-7[^<]* found/);
+  });
+
   it('says Jira criteria need Claude Code when the review ran on Pi', () => {
     const result = jiraKeysResult(['PORT-42']);
     result.stages = reviewStages().map((stage) => (stage.agent === undefined ? stage : { ...stage, agent: { agent: 'pi', model: 'zai/glm-4.6', effort: null } }));

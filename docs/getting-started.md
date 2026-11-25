@@ -93,7 +93,7 @@ Every agent run bills the login the agent is signed in with — your subscriptio
 
 ## Connecting Jira
 
-A pull request's acceptance criteria may live in a Jira Cloud ticket rather than a GitHub issue. The companion reads Jira through your own Claude Code and its Atlassian connection, never through a Jira token of its own, so it is Claude Code only: with Pi as the agent, step 1's Jira row and step 6 say "Jira criteria need Claude Code". Reviews don't read Jira tickets yet; this sets up and checks the connection they will use ([ADR 0010](adr/0010-issue-tracker-sources.md)).
+A pull request's acceptance criteria may live in a Jira Cloud ticket rather than a GitHub issue. The companion reads Jira through your own Claude Code and its Atlassian connection, never through a Jira token of its own, so it is Claude Code only: with Pi as the agent, step 1's Jira row and step 6 say "Jira criteria need Claude Code". Reviews read the tickets a pull request names through the connection this sets up and checks ([ADR 0010](adr/0010-issue-tracker-sources.md)).
 
 1. **Authorise the Atlassian connector** on claude.ai, under **Settings → Connectors**, signed in to the Claude account this profile's Claude Code uses: your work account for work tickets.
 2. Or, if that Claude account has no Atlassian connector, **add Atlassian's own MCP server** once, from a terminal:

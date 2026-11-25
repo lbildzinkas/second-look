@@ -68,3 +68,5 @@ export * from './last-look.js';
 export { runCli } from './cli.js';
 export * from './pull-request-list.js';
 export * from './saved-review.js';
+export * from './jira-issues.js';
+export * from './jira-text.js';

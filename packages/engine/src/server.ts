@@ -2,7 +2,7 @@ import { isAbsolute, join } from 'node:path';
 import { DEFAULT_AGENT_SETTINGS, type AgentAdapter, type AgentSettings } from './agent.js';
 import { testAgent } from './agent-test.js';
 import { isTicketKey } from './ticket-keys.js';
-import { jiraSiteHost, probeJira, testJiraFetch, type JiraCheckOptions, type JiraSite } from './jira-connect.js';
+import { jiraSiteHost, jiraSiteSetting, probeJira, testJiraFetch, type JiraCheckOptions, type JiraSite } from './jira-connect.js';
 import { AGENT_NAMES, isAgentName, modelAndEffortProblem, type AgentName } from './agents.js';
 import { ASK_KINDS, ASKS, askAboutPart, isAskKind } from './asks.js';
 import { NO_BUDGET_LIMITS, budgetLimitsProblem, budgetMeter, limitReason, limitedFetch, spentLimit, withBudget, type BudgetMeter } from './budget.js';
@@ -12,7 +12,7 @@ import { GitHubClient, parsePullRequestUrl } from './github.js';
 import { pressCiLogRead } from './ci-log-read.js';
 import { pressLibraryFetch } from './library-verdicts.js';
 import { FINDING_REF_KINDS, type ReviewResult, type ReviewStageAgent } from './protocol.js';
-import { reviewPullRequest } from './review.js';
+import { reviewPullRequest, type ReviewOptions } from './review.js';
 import { restoreSavedReview, saveReview, type SavedStamp } from './saved-review.js';
 import { sendReview } from './send.js';
 import { isMarkedPart, readReviewedMarks, saveReviewedMark, wholeFilesReviewed } from './reviewed-marks.js';
@@ -105,7 +105,7 @@ export interface RpcAgentDeps {
    * setting when the request gives one, and the environment it inherits.
    * Without it, the engine checks no Jira.
    */
-  jiraFor?: (path?: string) => Pick<JiraCheckOptions, 'command' | 'env'>;
+  jiraFor?: (path?: string) => Pick<JiraCheckOptions, 'command' | 'env' | 'guardPath'>;
 }
 
 /** What the server needs besides its streams; tests inject a fake fetch. */
@@ -517,6 +517,36 @@ async function jiraRequest(
   }
 }
 
+/**
+ * How a review reads the Jira tickets its key references name: through
+ * the Claude Code it runs on, with the model it asks for, after the same
+ * lockdown probe every Claude Code run needs; or not at all, saying why —
+ * Pi has no MCP and runs offline, and an engine with no agent runs no
+ * fetch.
+ */
+function reviewJira(agent: RpcAgentDeps | undefined, choice: ReviewAgentChoice | undefined, site: string | undefined): NonNullable<ReviewOptions['jira']> {
+  const chosen = site === undefined ? {} : { site };
+  if (agent === undefined) return { reach: { unavailable: 'this engine runs no agent, and Jira tickets are read through Claude Code' }, ...chosen };
+  const name = choice?.agent ?? agent.defaultAgent;
+  if (name !== 'claude-code') {
+    const why = name === 'pi' ? 'Pi has no MCP and runs offline' : `${name} has no Jira connection`;
+    return { reach: { unavailable: `Jira tickets need Claude Code: ${why}` }, ...chosen };
+  }
+  if (agent.jiraFor === undefined) return { reach: { unavailable: 'this engine runs no Claude Code for Jira' }, ...chosen };
+  const settings = agentRunSettings(agent, choice);
+  const adapter = choiceAdapter(agent, choice);
+  return {
+    reach: {
+      run: { ...agent.jiraFor(choice?.path || undefined), ...(settings.model ? { model: settings.model } : {}) },
+      lockdown: async () => {
+        const probed = await adapter.probe();
+        return probed.usable ? undefined : (probed.reason ?? "Claude Code cannot run with the companion's lockdown");
+      },
+    },
+    ...chosen,
+  };
+}
+
 /** Why a request's agent choice is malformed, in plain words; absent when it is. */
 function agentChoiceProblem(value: unknown): string | undefined {
   if (typeof value !== 'object' || value === null) return 'the agent choice must be an object';
@@ -632,14 +662,14 @@ async function review(
     );
     return;
   }
-  const { url, token, agent: choice, criteriaHeading, budget, fresh } = (params ?? {}) as Partial<ReviewParams>;
+  const { url, token, agent: choice, criteriaHeading, jiraSite, budget, fresh } = (params ?? {}) as Partial<ReviewParams>;
   if (typeof url !== 'string' || url.length === 0 || typeof token !== 'string' || token.length === 0) {
     respond(
       sink,
       failure(
         id,
         JSON_RPC_INVALID_PARAMS,
-        `${REVIEW_METHOD} needs params: { "url": string, "token": string, "agent"?: { "agent": "${AGENT_NAMES.join('" | "')}", "model"?: string, "account"?: string }, "criteriaHeading"?: string, "budget"?: { "agentRuns": number, "filesFetched": number, "downloadMiB": number }, "fresh"?: boolean }`,
+        `${REVIEW_METHOD} needs params: { "url": string, "token": string, "agent"?: { "agent": "${AGENT_NAMES.join('" | "')}", "model"?: string, "account"?: string }, "criteriaHeading"?: string, "jiraSite"?: string, "budget"?: { "agentRuns": number, "filesFetched": number, "downloadMiB": number }, "fresh"?: boolean }`,
       ),
     );
     return;
@@ -650,6 +680,11 @@ async function review(
   }
   if (criteriaHeading !== undefined && (typeof criteriaHeading !== 'string' || criteriaHeading.trim() === '')) {
     respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${REVIEW_METHOD}: criteriaHeading must be a non-empty string`));
+    return;
+  }
+  const site = jiraSite === undefined ? {} : typeof jiraSite === 'string' ? jiraSiteSetting(jiraSite) : { problem: 'the Jira site setting must be a string' };
+  if ('problem' in site) {
+    respond(sink, failure(id, JSON_RPC_INVALID_PARAMS, `${REVIEW_METHOD}: jiraSite: ${site.problem}`));
     return;
   }
   const problem = agentRunProblem(deps.agent, choice);
@@ -691,6 +726,7 @@ async function review(
       budget: meter,
       signal: stop.signal,
       ...(criteriaHeading !== undefined ? { criteriaHeading } : {}),
+      jira: reviewJira(deps.agent, choice, site.host),
       ...(deps.fetch ? { fetch: deps.fetch } : {}),
       ...(earlier ? { earlier } : {}),
       ...(deps.agent && agentStage

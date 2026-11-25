@@ -1,5 +1,6 @@
 import type { IssueTrackerSource, LinkedIssuesRead, LinkedIssuesRequest } from './issue-sources.js';
-import type { AcceptanceCriterion, Criteria } from './protocol.js';
+import { jiraCriteriaSection } from './jira-text.js';
+import type { AcceptanceCriterion, Criteria, LinkedIssue } from './protocol.js';
 
 /**
  * The criteria pass: reads the issues the pull request links, from each
@@ -66,9 +67,15 @@ export function checklistUnder(body: string, heading: string): { text: string; l
   return [];
 }
 
-/** One issue's checklist as criteria, each quoted and not checked. */
-function criteriaOf(issue: number, body: string, heading: string): AcceptanceCriterion[] {
-  return checklistUnder(body, heading).map(({ text, line }) => ({
+/**
+ * One issue's criteria, each quoted and not checked: a GitHub issue's
+ * checklist under the heading, or a Jira ticket's criteria section under
+ * the heading or a bold line, whose bullets, numbered items, task items
+ * and Given/When/Then scenarios all count.
+ */
+function criteriaOf(issue: number, linked: LinkedIssue, heading: string): AcceptanceCriterion[] {
+  const listed = linked.source === 'jira' ? (jiraCriteriaSection(linked.body, heading) ?? []) : checklistUnder(linked.body, heading);
+  return listed.map(({ text, line }) => ({
     quote: text.length > MAX_QUOTE ? `${text.slice(0, MAX_QUOTE - 1)}…` : text,
     issue,
     line,
@@ -108,6 +115,6 @@ export async function readCriteria(
     keyReferences: [...(pr.keyReferences ?? [])],
     heading,
     issues,
-    criteria: issues.flatMap((issue, index) => criteriaOf(index, issue.body, heading)),
+    criteria: issues.flatMap((issue, index) => criteriaOf(index, issue, heading)),
   };
 }

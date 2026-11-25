@@ -381,6 +381,7 @@ export class EngineClient {
     criteriaHeading?: string,
     budget?: BudgetLimits,
     fresh?: boolean,
+    jiraSite?: string,
   ): Promise<ReviewResult> {
     if (!this.handshaken) {
       throw new Error('the engine has not completed its handshake yet');
@@ -398,6 +399,7 @@ export class EngineClient {
           token,
           ...(agent !== undefined ? { agent } : {}),
           ...(heading !== undefined && heading !== '' ? { criteriaHeading: heading } : {}),
+          ...(jiraSite !== undefined && jiraSite !== '' ? { jiraSite } : {}),
           ...(budget !== undefined ? { budget } : {}),
           ...(fresh === true ? { fresh } : {}),
         },

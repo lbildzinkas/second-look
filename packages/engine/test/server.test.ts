@@ -51,6 +51,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import type { PullRequestList } from '../src/protocol.js';
 import { failingFetch } from './helpers.js';
+import { CLAUDE_GUARD } from './fake-claude.js';
 
 const TOKEN = 'ghp_test-token-do-not-print';
 
@@ -202,6 +203,17 @@ describe('runRpcServer', () => {
 
     expect(responses[1]!.error!.message).toContain('review needs params');
     expect(responses[2]!.error!.message).toContain('review needs params');
+  });
+
+  it('refuses a Jira site setting that isn’t a Jira Cloud host before any review', async () => {
+    const responses = await serve([
+      request('initialize', { protocolVersion: ENGINE_PROTOCOL_VERSION }),
+      request('review', { url: PR_URL, token: TOKEN, jiraSite: 'https://evil.example.com' }, 2),
+      request('review', { url: PR_URL, token: TOKEN, jiraSite: 7 }, 3),
+    ]);
+    const byId = new Map(responses.map((response) => [response.id, response]));
+    expect(byId.get(2)!.error).toMatchObject({ code: JSON_RPC_INVALID_PARAMS, message: expect.stringContaining('jiraSite: the Jira site setting must be a Jira Cloud site') });
+    expect(byId.get(3)!.error).toMatchObject({ code: JSON_RPC_INVALID_PARAMS, message: expect.stringContaining('jiraSite') });
   });
 
   it('reads the acceptance criteria under the heading the review request names', async () => {
@@ -875,7 +887,7 @@ describe('runRpcServer with an agent', () => {
         defaultAgent: 'claude-code',
         jiraFor: (path) => {
           paths.push(path);
-          return { command: [process.execPath, fake], env: { PATH: process.env['PATH'], FAKE_CLAUDE_DIR: dir } };
+          return { command: [process.execPath, fake], guardPath: CLAUDE_GUARD, env: { PATH: process.env['PATH'], FAKE_CLAUDE_DIR: dir } };
         },
       },
     );

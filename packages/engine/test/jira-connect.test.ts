@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { CLAUDE_GUARD } from './fake-claude.js';
 import {
   JIRA_FALLBACK_MCP_CONFIG,
   chooseJiraSite,
@@ -154,27 +155,42 @@ describe('the Jira site', () => {
 describe('the Jira checks’ runs', () => {
   it('run with the fetch run’s limits: no built-in tool, only the named tools, default mode, prompts denied', () => {
     const allowed = [CONNECTOR_ISSUE, CONNECTOR_RESOURCES];
-    const args = jiraRunArguments('connector', allowed, 'the instructions', 'sonnet');
+    const args = jiraRunArguments('connector', allowed, 'the instructions', '{"hooks":{}}', 'sonnet');
     expect(args).toEqual([
       '--print', '--output-format', 'stream-json', '--verbose', '--no-session-persistence', '--setting-sources', 'user',
       '--tools', '', '--allowedTools', allowed.join(','), '--permission-prompts', 'none', '--permission-mode', 'default',
-      '--system-prompt', 'the instructions', '--model', 'sonnet',
+      '--settings', '{"hooks":{}}', '--system-prompt', 'the instructions', '--model', 'sonnet',
     ]);
     // The fallback names its one server and keeps every other MCP configuration out.
-    const fallback = jiraRunArguments('fallback', [jiraTools('fallback').issue], 'x');
+    const fallback = jiraRunArguments('fallback', [jiraTools('fallback').issue], 'x', '{}');
     expect(fallback.slice(7, 10)).toEqual(['--strict-mcp-config', '--mcp-config', JIRA_FALLBACK_MCP_CONFIG]);
     expect(JSON.parse(JIRA_FALLBACK_MCP_CONFIG)).toEqual({ mcpServers: { atlassian: { type: 'http', url: 'https://mcp.atlassian.com/v2/mcp' } } });
   });
 
   const FAKE = fileURLToPath(new URL('./fixtures/fake-claude-jira.mjs', import.meta.url));
 
+  /** One line the fake recorded: how it was started, or the guard hook's answer to one call. */
+  interface FakeLine {
+    kind: 'run' | 'hook';
+    args: string[];
+    cwd: string;
+    stdin: string;
+    env: Record<string, string>;
+    id: string;
+    tool: string;
+    status: number;
+    stdout: string;
+  }
+
   /** A fake Claude Code that writes the events, and the calls it recorded. */
   function fake(events: unknown[], hold = false) {
     const dir = mkdtempSync(join(tmpdir(), 'second-look-fake-jira-'));
     writeFileSync(join(dir, 'events.json'), JSON.stringify({ events, hold }));
-    const options = { command: [process.execPath, FAKE], env: { PATH: process.env['PATH'], FAKE_CLAUDE_DIR: dir, GITHUB_TOKEN: 'ghp_secret', SECOND_LOOK_READ_ROOT: '/somewhere' }, timeoutMs: 10_000 };
-    const calls = () => readFileSync(join(dir, 'calls.jsonl'), 'utf8').trim().split('\n').map((line) => JSON.parse(line) as { args: string[]; cwd: string; stdin: string; env: Record<string, string> });
-    return { options, calls };
+    const options = { command: [process.execPath, FAKE], guardPath: CLAUDE_GUARD, env: { PATH: process.env['PATH'], FAKE_CLAUDE_DIR: dir, GITHUB_TOKEN: 'ghp_secret', SECOND_LOOK_READ_ROOT: '/somewhere' }, timeoutMs: 10_000 };
+    const recorded = () => readFileSync(join(dir, 'calls.jsonl'), 'utf8').trim().split('\n').map((line) => JSON.parse(line) as FakeLine);
+    const calls = () => recorded().filter((line) => line.kind === 'run');
+    const hooks = () => recorded().filter((line) => line.kind === 'hook');
+    return { options, calls, hooks };
   }
 
   it('probes in an empty temporary folder, removed afterwards, with no read root and no GitHub token', async () => {
@@ -183,7 +199,7 @@ describe('the Jira checks’ runs', () => {
     const [call] = calls();
     expect(call!.args[call!.args.indexOf('--allowedTools') + 1]).toBe(`${CONNECTOR_RESOURCES},mcp__atlassian__getAccessibleAtlassianResources`);
     expect(call!.args).not.toContain(CONNECTOR_ISSUE);
-    expect(call!.env).toEqual({ CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1' });
+    expect(call!.env).toEqual({ CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', SECOND_LOOK_JIRA_GUARD: '{"answer":false}' });
     expect(call!.cwd).toContain('second-look-jira-');
     expect(existsSync(call!.cwd)).toBe(false);
   });
@@ -196,7 +212,7 @@ describe('the Jira checks’ runs', () => {
   });
 
   it('reports a Claude Code that could not start as a failed check', async () => {
-    expect(await probeJira({ command: [join(tmpdir(), 'no-such-claude-here')], env: {} })).toMatchObject({ state: 'failed', message: expect.stringContaining('Claude Code could not be started') });
+    expect(await probeJira({ command: [join(tmpdir(), 'no-such-claude-here')], guardPath: CLAUDE_GUARD, env: { PATH: process.env['PATH'] } })).toMatchObject({ state: 'failed', message: expect.stringContaining('Claude Code could not be started') });
   });
 
   it('fetches the one ticket typed with the two tools pre-approved, and refuses a key that isn’t one before any run', async () => {
@@ -211,5 +227,17 @@ describe('the Jira checks’ runs', () => {
 
     expect(await testJiraFetch(options, 'connector', PORTER, 'port-42; rm -rf')).toEqual({ ok: false, message: '"port-42; rm -rf" is not a Jira ticket key such as ABC-123' });
     expect(calls()).toHaveLength(1);
+  });
+
+  it('guards the probe and the Test with the Jira-mode hook: a ticket fetch in a probe, or another site in a Test, is refused', async () => {
+    const probe = fake([init([CONNECTED]), toolUse('t0', CONNECTOR_ISSUE, { cloudId: PORTER.id, issueIdOrKey: 'PORT-42' }), toolResult('t0', '{}'), toolUse('t1', CONNECTOR_RESOURCES), toolResult('t1', SITES), result()]);
+    expect(await probeJira(probe.options)).toEqual({ state: 'failed', message: `the companion's guard refused ${CONNECTOR_ISSUE}, so nothing the run read is used` });
+    expect(JSON.parse(probe.hooks()[0]!.stdout)).toMatchObject({ hookSpecificOutput: { permissionDecision: 'deny', permissionDecisionReason: 'Refused by Second Look: no Jira site is chosen, so no ticket may be fetched' } });
+
+    const elsewhere = fake([init([CONNECTED]), toolUse('t1', CONNECTOR_ISSUE, { cloudId: OTHER.id, issueIdOrKey: 'PORT-42' }), toolResult('t1', '{"key":"PORT-42","fields":{"summary":"S"}}'), result()]);
+    expect(await testJiraFetch(elsewhere.options, 'connector', PORTER, 'PORT-42')).toEqual({ ok: false, message: `the companion's guard refused ${CONNECTOR_ISSUE}, so nothing the run read is used` });
+    const [run] = elsewhere.calls();
+    expect(JSON.parse(run!.env['SECOND_LOOK_JIRA_GUARD']!)).toEqual({ site: { id: PORTER.id, url: PORTER.url }, answer: false });
+    expect(JSON.parse(elsewhere.hooks()[0]!.stdout)).toMatchObject({ hookSpecificOutput: { permissionDecisionReason: 'Refused by Second Look: the cloudId must be the chosen Jira site' } });
   });
 });

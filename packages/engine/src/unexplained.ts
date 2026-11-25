@@ -148,7 +148,8 @@ function describePart(item: ClaimItem, blockId: string): string {
 function describeIssue(item: IssueItem, blockId: string): string {
   const { issue } = item;
   // A Jira ticket is named by its key alone until its wording lands with
-  // its evaluation (ADR 0006); no source gives one yet.
+  // its evaluation (ADR 0006); its title and body are fenced as a GitHub
+  // issue's are.
   const name = issue.source === 'github' ? `#${issue.number} in ${issue.repository}` : issue.key;
   return [
     `[${item.id}] ${name}, which the pull request ${issue.link === 'closes' ? 'closes' : 'references'}`,

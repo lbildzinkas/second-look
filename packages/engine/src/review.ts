@@ -29,7 +29,8 @@ import {
 import { offerCiLogReads, readCi } from './ci.js';
 import { findClaims } from './claims.js';
 import { DEFAULT_CRITERIA_HEADING, readCriteria } from './criteria.js';
-import { gitHubIssues } from './issue-sources.js';
+import { gitHubIssues, type IssueTrackerSource } from './issue-sources.js';
+import { jiraIssues, type JiraReach } from './jira-issues.js';
 import { findKeyReferences } from './ticket-keys.js';
 import { mapCriteria } from './criteria-mapping.js';
 import { publicDocsFetch } from './doc-fetch.js';
@@ -86,6 +87,13 @@ export interface ReviewOptions {
   cacheDir: string;
   /** The heading the acceptance criteria checklist sits under in a linked issue; "Acceptance criteria" when absent. */
   criteriaHeading?: string;
+  /**
+   * How the review reads the Jira tickets its key references name
+   * (ADR 0010): through Claude Code, or not at all, saying why; and the
+   * `second-look.jira.site` setting's host, when set. Absent, a review
+   * reads no Jira and lists no Jira source.
+   */
+  jira?: { reach: JiraReach; site?: string };
   /** Asks the agent to group and rank the parts, write the story, compare the change with its description and issues, list the claims and judge them, and map the acceptance criteria too, after the plain pass; see {@link reviewChange}. */
   agentStage?: AgentStageOptions;
   /** True when the reviewer opened this review: it is compared with their last look, then recorded as the latest; see {@link lookSinceLastLook}. */
@@ -283,12 +291,22 @@ export async function fetchChange(url: string, options: ReviewOptions): Promise<
       commit,
       download: (wanted) => client.downloadTarball(ref, wanted),
     });
-  const heading = options.criteriaHeading?.trim();
+  const given = options.criteriaHeading?.trim();
+  const heading = given === undefined || given === '' ? DEFAULT_CRITERIA_HEADING : given;
+  const keyReferences = findKeyReferences(pullRequest);
+  // Jira is asked only for the keys the pull request names, so a
+  // GitHub-only review reads exactly as before.
+  const sources: IssueTrackerSource[] = [gitHubIssues(client)];
+  if (options.jira && keyReferences.length > 0) {
+    const { reach, site } = options.jira;
+    const stoppable = 'run' in reach && options.signal ? { ...reach, run: { ...reach.run, signal: options.signal } } : reach;
+    sources.push(jiraIssues({ reach: stoppable, heading, cacheDir: options.cacheDir, ...(site ? { site } : {}), ...(options.budget ? { budget: options.budget } : {}) }));
+  }
   const [base, head, ci, criteria, sinceLastLook] = await Promise.all([
     copy(mergeBase),
     copy(pullRequest.headSha),
     readCi(client, ref, pullRequest.headSha, mergeCommit),
-    readCriteria([gitHubIssues(client)], { ref, base: pullRequest.base, keyReferences: findKeyReferences(pullRequest) }, heading === undefined || heading === '' ? DEFAULT_CRITERIA_HEADING : heading),
+    readCriteria(sources, { ref, base: pullRequest.base, keyReferences }, heading),
     options.lastLook ? lookSinceLastLook({ client, cacheDir: options.cacheDir, ref, pullRequest, diff }) : undefined,
   ]);
   return { pullRequest, diff, gitAttributes, copies: { base, head }, ci, criteria, ...(sinceLastLook ? { sinceLastLook } : {}) };

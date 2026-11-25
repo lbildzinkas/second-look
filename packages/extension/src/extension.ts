@@ -52,7 +52,7 @@ import {
 import { SideBarProvider } from './side-bar/provider.js';
 import { StepTickStore } from './side-bar/step-ticks.js';
 import { PullRequestPicker } from './side-bar/pull-request-picker.js';
-import { SetupForm } from './side-bar/setup-form.js';
+import { JIRA_SITE_SETTING, SetupForm } from './side-bar/setup-form.js';
 import type { SentSummary, SideBarState } from './side-bar/steps.js';
 import type { CommentAction } from './side-bar/page.js';
 import { endNotice, finishedProgress, readingProgress, runningProgress, stoppedProgress, type ReviewProgress } from './side-bar/progress.js';
@@ -77,6 +77,7 @@ import {
   isFindingRef,
   markedPart,
   parsePullRequestUrl,
+  jiraSiteSetting,
   wholeFilesReviewed,
   withVerifiedClaim,
   type AskedClaim,
@@ -1244,9 +1245,13 @@ class ReviewSession {
       .getConfiguration('second-look')
       .get<string>('criteriaHeading', '')
       .trim();
+    // The Jira site setting travels the same way, as its host, when it
+    // names a Jira Cloud site; one that doesn't is left off, and the setup
+    // step's Jira row says what's wrong with it.
+    const site = jiraSiteSetting(vscode.workspace.getConfiguration('second-look').get<string>(JIRA_SITE_SETTING, ''));
     // The budget's limits travel the same way, and the engine meters the
     // review against them.
-    const reviewed = engine.review(url, token, reviewAgentChoice(readAgentSettings()), onStage, heading, readBudgetLimits(), fresh);
+    const reviewed = engine.review(url, token, reviewAgentChoice(readAgentSettings()), onStage, heading, readBudgetLimits(), fresh, 'host' in site ? site.host : undefined);
     onSent(engine);
     return reviewed;
   }
